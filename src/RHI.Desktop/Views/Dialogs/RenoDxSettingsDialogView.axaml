@@ -10,6 +10,25 @@
     <TextBlock Text="{l:T Win.ChangesWrittenImmediatelySelectedGameRenodx}" TextWrapping="Wrap" Opacity="0.72"/>
     <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Opacity="0.8" IsVisible="{Binding HasWarning}"/>
     <Panel x:Name="PeakSlot" IsVisible="False"/>
+    <!-- w8/renodx (#217): Engine.ini On/Off rows (label wraps beside the dropdown at any width; key name only in the tooltip). -->
+    <ItemsControl ItemsSource="{Binding EngineIniRows}" IsVisible="{Binding HasEngineIniRows}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Spacing="10"/>
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:RenoDxEngineIniRow">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap" FontWeight="SemiBold"
+                       ToolTip.Tip="{Binding Tooltip}" ToolTip.ShowDelay="2000"/>
+            <ComboBox Grid.Column="1" MinWidth="120" Margin="12,0,0,0" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}"
+                      IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="{Binding Name}"
+                      ToolTip.Tip="{Binding Tooltip}" ToolTip.ShowDelay="2000"/>
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
     <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding HasRows}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>

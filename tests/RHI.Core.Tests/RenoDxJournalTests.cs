@@ -192,27 +192,44 @@ public sealed class RenoDxJournalTests : IDisposable
     /// ledger save fails (rolled back in process) or the process dies there (rolled back by the next start's recovery), then
     /// <paramref name="assertRolledBack"/> runs (inside the death scope for a crash).
     /// </summary>
-    internal static async Task FailAsync(JournalFixture fx, string failure, int saveThatFails, JournalRecoveryOutcome outcome,
+    internal static Task FailAsync(JournalFixture fx, string failure, int saveThatFails, JournalRecoveryOutcome outcome,
+        Func<Task<ComponentOperationResult>> run, Action assertRolledBack)
+        => FailAsync(new JournalParts(fx.Records, fx.Journal, fx.JournalDir, fx.LedgerPath), failure, saveThatFails, outcome, run, assertRolledBack);
+
+    internal static async Task FailAsync(JournalParts parts, string failure, int saveThatFails, JournalRecoveryOutcome outcome,
         Func<Task<ComponentOperationResult>> run, Action assertRolledBack)
     {
         var saves = 0;
         if (failure == "ledger-blocked")
         {
-            fx.Records.SaveFaultForTesting = () => ++saves == saveThatFails ? new IOException("disk full (test)") : null;
+            parts.Records.SaveFaultForTesting = () => ++saves == saveThatFails ? new IOException("disk full (test)") : null;
             var result = await run();
-            fx.Records.SaveFaultForTesting = null;
+            parts.Records.SaveFaultForTesting = null;
             Assert.False(result.Success);
-            Assert.Empty(Directory.GetFiles(fx.JournalDir));
+            Assert.Empty(Directory.GetFiles(parts.JournalDir));
             assertRolledBack();
             return;
         }
-        using var death = new SimulatedDeath(fx.Journal);
-        fx.Records.SaveFaultForTesting = () => ++saves == saveThatFails ? death.Die() : null;
+        using var death = new SimulatedDeath(parts.Journal);
+        parts.Records.SaveFaultForTesting = () => ++saves == saveThatFails ? death.Die() : null;
         var (died, _) = await death.RunUntilDeathAsync(run);
         Assert.True(died);
-        var report = await SimulatedDeath.RecoverAsync(fx.JournalDir, fx.LedgerPath);
+        var report = await SimulatedDeath.RecoverAsync(parts.JournalDir, parts.LedgerPath);
         Assert.Equal(outcome, Assert.Single(report!.Entries).Outcome);
         assertRolledBack();
+    }
+
+    /// <summary>A ledger and the app's journal (as <c>CreateJournal</c> builds it) under <paramref name="stateDir"/>.</summary>
+    internal sealed record JournalParts(LinuxDeploymentRecordStore Records, DeploymentJournal Journal, string JournalDir, string LedgerPath)
+    {
+        public static JournalParts Create(string stateDir)
+        {
+            Directory.CreateDirectory(stateDir);
+            var ledger = Path.Combine(stateDir, "records.json");
+            var records = new LinuxDeploymentRecordStore(ledger);
+            var journalDir = Path.Combine(stateDir, "journal");
+            return new JournalParts(records, SimulatedDeath.NewJournal(journalDir, records).Journal, journalDir, ledger);
+        }
     }
 
     internal static string? Describe(LinuxDeploymentRecord? record)

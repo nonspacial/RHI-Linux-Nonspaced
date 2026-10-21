@@ -394,6 +394,10 @@ public sealed class RenoDxDeploymentService
                 ? UpstreamEngineIniFileManager.Deserialize(previousEngineIniJson)
                 : null;
         var peak = PeakNits?.Invoke() is { Applies: true } global ? global : null; // #182
+        // #217: RenoDX's own Engine.ini keys (r.LUT.UpdateEveryFrame on Unreal games), as the user's ⚙ choice and the manifest allow.
+        var engineKeysOn = EngineIniKeysFor(game, existingRecord);
+        var engineKeysState = RenoDxEngineIni.Read(existingRecord);
+        var engineKeysIni = engineKeysOn.Count > 0 ? RenoDxEngineIni.ResolvePath(game) : null;
 
         // #205: one journaled operation on RenoDX's record — the add-on, its [renodx] keys, peak brightness, the Engine.ini
         // template, RHI's earlier add-on under another name and the Control UE steps; the stamped record is the commit point.
@@ -417,6 +421,7 @@ public sealed class RenoDxDeploymentService
                 await inis.TrackReShadeIniAsync(reshadeIni, game.BinaryDirectory, game.InstallPath, cancellationToken).ConfigureAwait(false);
             foreach (var engineIni in EngineIniPathsTouched(game, engineIniTemplate, previousEngineIniState))
                 await inis.TrackEngineIniAsync(engineIni, cancellationToken).ConfigureAwait(false);
+            await TrackEngineKeysAsync(inis, engineKeysIni, engineKeysState, cancellationToken).ConfigureAwait(false);
 
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid."));
             // The verified copy returns the hash of what it placed: no second read of the target.
@@ -435,6 +440,8 @@ public sealed class RenoDxDeploymentService
                 UpstreamEngineIniFileManager.Cleanup(previousEngineIniState);
                 engineIniApply = new UpstreamEngineIniApplyResult(null, 0, 0, null);
             }
+            if (engineKeysIni is not null)
+                engineKeysState = RenoDxEngineIni.Apply(engineKeysIni, engineKeysOn, NoGroups, engineKeysState);
             await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
 
             // RHI's earlier add-on under another name goes before the commit point, so a rollback brings it back.
@@ -500,6 +507,7 @@ public sealed class RenoDxDeploymentService
             if (peakStates.Count > 0) record.Metadata[RenoDxPeakNits.MetadataKey] = RenoDxPeakNits.Serialize(peakStates); // #182
             if ((ueExtendedChoice ?? existingRecord?.Metadata.GetValueOrDefault(UeExtendedMetadataKey)) is { Length: > 0 } ueChoice)
                 record.Metadata[UeExtendedMetadataKey] = ueChoice; // #182: the UE-Extended choice stays across updates; a new one is saved here, in the update's own record
+            CarryEngineIniKeys(existingRecord, record, engineKeysState); // #217: the ⚙ choices stay, the keys stay owned
             // The commit point: nothing above survives without this record (the rollback, or the next start, undoes it all).
             _records.Upsert(scope.Stamp(record));
         }
@@ -525,6 +533,99 @@ public sealed class RenoDxDeploymentService
                 : "";
         var controlSummary = controlNotes.Count > 0 ? $" · Control UE: {string.Join(" ", controlNotes)}" : "";
         return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}", target);
+    }
+
+    // ── #217: RenoDX's own Engine.ini keys ─────────────────────────────────────────────────────────────────────────
+
+    private static readonly IReadOnlySet<string> NoGroups = new HashSet<string>();
+
+    /// <summary>
+    /// The Engine.ini key groups an install, update or local drop writes (upstream: the LUT key on an Unreal game unless the
+    /// user turned it off in the ⚙, the manifest's <c>ueExtendedCompatibility</c> says <c>lut: false</c> or a custom Engine.ini
+    /// file manages Engine.ini).
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>> EngineIniKeysFor(DetectedGame game, LinuxDeploymentRecord? existing)
+    {
+        var on = new Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>>(StringComparer.Ordinal);
+        if (RenoDxEngineIni.LutApplies(game) && RenoDxEngineIni.LutChosen(existing)) on[RenoDxEngineIni.LutGroup] = RenoDxEngineIni.LutKeys;
+        return on;
+    }
+
+    /// <summary>Tracks the Engine.ini the keys go into, and the one RHI's keys were in when the game's Engine.ini moved since.</summary>
+    private static async Task TrackEngineKeysAsync(RenoDxIniTracking inis, string? next, RenoDxEngineIniState? previous, CancellationToken cancellationToken)
+    {
+        if (next is null) return;
+        await inis.TrackEngineIniAsync(next, cancellationToken).ConfigureAwait(false);
+        if (previous?.IniPath is { Length: > 0 } old && File.Exists(old)) await inis.TrackEngineIniAsync(old, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>A fresh record keeps the ⚙'s Engine.ini choices of the one it replaces, and the keys RHI owns now.</summary>
+    private static void CarryEngineIniKeys(LinuxDeploymentRecord? existing, LinuxDeploymentRecord record, RenoDxEngineIniState? state)
+    {
+        foreach (var choice in new[] { RenoDxEngineIni.LutChoiceMetadataKey })
+            if (existing?.Metadata.GetValueOrDefault(choice) is { Length: > 0 } value) record.Metadata[choice] = value;
+        RenoDxEngineIni.Write(record, state);
+    }
+
+    /// <summary>Fixed text when the ⚙'s Engine.ini setting is asked of a game whose RenoDX RHI did not install (PT-BR pair); the game follows.</summary>
+    public const string EngineIniNotManagedPrefix = "RenoDX's Engine.ini settings need RenoDX installed by RHI: ";
+
+    /// <summary>Fixed text when the ⚙'s Engine.ini setting does not apply to the game (PT-BR pair); the game follows.</summary>
+    public const string EngineIniNotOfferedPrefix = "This Engine.ini setting does not apply to this game: ";
+
+    /// <summary>The LUT key as written (for the ⚙ row's tooltip: the INI key only there).</summary>
+    public static string EngineIniLutLines => string.Join(", ", RenoDxEngineIni.LutKeys.Select(key => $"{key.Key}={key.Value}"));
+
+    /// <summary>Whether the RenoDX ⚙ offers the LUT row for <paramref name="game"/> (RHI's RenoDX, an Unreal game it applies to).</summary>
+    public bool OffersEngineIniLut(DetectedGame game) => IsManaged(game) && RenoDxEngineIni.LutApplies(game);
+
+    /// <summary>Whether the LUT key is in effect for the ⚙ (RHI's, or the user's own with the value 1).</summary>
+    public bool EngineIniLutIsOn(DetectedGame game) => RenoDxEngineIni.LutIsOn(game, _records.Find(game, ManagedComponentKind.RenoDX));
+
+    /// <summary>
+    /// #217: the RenoDX ⚙ LUT switch (upstream's "LUT Update Every Frame"): On adds RHI's key where the file lacks it, Off
+    /// takes RHI's key out (one the user had stays); the choice is kept on RenoDX's record, so updates follow it. One
+    /// journaled operation on RenoDX's record (the record is the commit point).
+    /// </summary>
+    public Task<ComponentOperationResult> SetEngineIniLutAsync(DetectedGame game, bool on, CancellationToken cancellationToken = default)
+        => SetEngineIniKeysAsync(game, RenoDxEngineIni.LutGroup, RenoDxEngineIni.LutKeys, RenoDxEngineIni.LutChoiceMetadataKey,
+            RenoDxEngineIni.LutApplies(game), on, cancellationToken);
+
+    private async Task<ComponentOperationResult> SetEngineIniKeysAsync(DetectedGame game, string group,
+        IReadOnlyList<(string Section, string Key, string Value)> keys, string choiceKey, bool applies, bool on, CancellationToken cancellationToken)
+    {
+        // Find hands out a copy; the ledger changes only through the stamped Upsert below.
+        var record = _records.Find(game, ManagedComponentKind.RenoDX);
+        if (record is null) return ComponentOperationResult.Fail(EngineIniNotManagedPrefix + game.Name);
+        if (!applies || RenoDxEngineIni.ResolvePath(game) is not { } ini) return ComponentOperationResult.Fail(EngineIniNotOfferedPrefix + game.Name);
+        var state = RenoDxEngineIni.Read(record);
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "RenoDX Engine.ini setting: " + game.Name, game, ManagedComponentKind.RenoDX, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        var inis = new RenoDxIniTracking(scope);
+        try
+        {
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            await TrackEngineKeysAsync(inis, ini, state, cancellationToken).ConfigureAwait(false);
+            state = on
+                ? RenoDxEngineIni.Apply(ini, new Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>> { [group] = keys }, NoGroups, state)
+                : RenoDxEngineIni.Apply(ini, new Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>>(), new HashSet<string> { group }, state);
+            await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
+            if (on) record.Metadata.Remove(choiceKey);
+            else record.Metadata[choiceKey] = RenoDxEngineIni.Off;
+            RenoDxEngineIni.Write(record, state);
+            _records.Upsert(scope.Stamp(record));
+        }
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            inis.RestoreModesAfterRollback();
+            return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(ini, ini);
     }
 
     /// <summary>#205: the Engine.ini files an install's template step writes or cleans (the new target and the previous one).</summary>
@@ -577,7 +678,8 @@ public sealed class RenoDxDeploymentService
     /// All reports it as "could not be checked"). The same refusals as an install from the catalogue (native Linux game,
     /// no ReShade, unknown bitness, a RenoDX add-on or a same-named file RHI does not own, a managed file the user changed),
     /// plus a 32-bit add-on for a 64-bit game (and the reverse) and Control's add-on (its extra steps run from the row).
-    /// Only the add-on file is written (no INI or Engine.ini step): the source is copied verified and the RenoDX add-on RHI
+    /// Only the add-on file is written, and on an Unreal game RenoDX's Engine.ini key (#217, as upstream's drop; no INI or
+    /// template step): the source is copied verified and the RenoDX add-on RHI
     /// installed before (another name) removed in one journaled operation (#205) whose commit point is the saved record;
     /// any failure before it, or a crash, puts both back. The source file is never changed.
     /// </summary>
@@ -636,17 +738,26 @@ public sealed class RenoDxDeploymentService
 
 
         var sha = await FileHash.Sha256HexAsync(addonPath, cancellationToken).ConfigureAwait(false);
+        // #217: a dropped add-on gets RenoDX's Engine.ini key on an Unreal game too (upstream DragDropHandler.ProcessDroppedAddon).
+        var engineKeysOn = EngineIniKeysFor(game, existingRecord);
+        var engineKeysState = RenoDxEngineIni.Read(existingRecord);
+        var engineKeysIni = engineKeysOn.Count > 0 ? RenoDxEngineIni.ResolvePath(game) : null;
         // #205: one journaled operation on RenoDX's record; the stamped record is the commit point.
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RenoDX local add-on: " + game.Name, game, ManagedComponentKind.RenoDX, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
+        var inis = new RenoDxIniTracking(scope);
         try
         {
             // Checks are done: from the copy on, Cancel is refused.
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            await TrackEngineKeysAsync(inis, engineKeysIni, engineKeysState, cancellationToken).ConfigureAwait(false);
             Directory.CreateDirectory(deployDir);
             await scope.PlaceCopyAsync(addonPath, target, cancellationToken, sha).ConfigureAwait(false);
+            if (engineKeysIni is not null)
+                engineKeysState = RenoDxEngineIni.Apply(engineKeysIni, engineKeysOn, NoGroups, engineKeysState);
+            await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
             // RHI's earlier add-on under another name goes before the commit point, so a rollback brings it back.
             if (managedOldPath is not null && !PathsEqual(managedOldPath, target) && File.Exists(managedOldPath))
                 await scope.DeleteAsync(managedOldPath, cancellationToken).ConfigureAwait(false);
@@ -666,11 +777,13 @@ public sealed class RenoDxDeploymentService
             VerifiedDownload.Forget(record.Metadata);
             record.Metadata[LocalPackageMetadataKey] = "1";
             record.Metadata[AddonVersionMetadataKey] = ReadAddonVersion(target);
+            RenoDxEngineIni.Write(record, engineKeysState);
             _records.Upsert(scope.Stamp(record));
         }
         catch (Exception failure) // any failure up to the saved record (the ledger refusing the save too) puts everything back
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            inis.RestoreModesAfterRollback();
             return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -949,11 +1062,15 @@ public sealed class RenoDxDeploymentService
                 await inis.TrackReShadeIniAsync(ini!, Path.GetDirectoryName(ini!) ?? ini!, game.InstallPath, cancellationToken).ConfigureAwait(false);
             if (engineIniState?.IniPath is { Length: > 0 } engineIni && File.Exists(engineIni))
                 await inis.TrackEngineIniAsync(engineIni, cancellationToken).ConfigureAwait(false);
+            var engineKeysState = RenoDxEngineIni.Read(record); // #217
+            if (engineKeysState?.IniPath is { Length: > 0 } keysIni && File.Exists(keysIni))
+                await inis.TrackEngineIniAsync(keysIni, cancellationToken).ConfigureAwait(false);
 
             RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
             RenoDxIniOverrideManager.Cleanup(fgHdrState, gameRoot: game.InstallPath);
             RenoDxPeakNits.Cleanup(peakStates, game.InstallPath); // #182
             UpstreamEngineIniFileManager.Cleanup(engineIniState);
+            RenoDxEngineIni.Cleanup(engineKeysState); // #217: only RHI's keys come out, the earlier lock state goes back
             await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
             foreach (var file in record.Files)
                 if (File.Exists(file.Path)) await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);

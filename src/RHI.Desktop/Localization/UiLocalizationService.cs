@@ -1541,6 +1541,10 @@ public static class UiLocalizationService
             "O nome da DLL do ReShade não pode ser mudado enquanto o DX9 HDR estiver instalado neste jogo: o DX9 HDR moveu o ReShade para a camada Vulkan dele, que não tem nome de DLL. Remova primeiro o DX9 HDR na linha dele (o ReShade volta a ser d3d9.dll) e depois escolha o nome."),
         // w8/reshade-ini rows
         // w8/renodx rows
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotManagedPrefix,
+            "As configurações do Engine.ini do RenoDX precisam do RenoDX instalado pelo RHI: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotOfferedPrefix,
+            "Esta configuração do Engine.ini não se aplica a este jogo: "),
         // w8/commit-point rows
     ];
 

@@ -2894,6 +2894,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // w5/ini-presets hook (#182): RenoDX peak brightness (journaled; set by the app's composition).
     public RenoDxPeakNits? RenoDxPeakNits { get; set; }
 
+    // w8/renodx hook (#217/#218): the RenoDX service for the ⚙'s Engine.ini switches (journaled; writes guarded by IniWriteRefusal).
+    public RenoDxDeploymentService RenoDx => _renodx;
+
     // ── w7/shader-sets (#179): global shader / add-on sets, per-game Global / Select / Off ──────────────────────────
 
     /// <summary>Fixed text before the reason when a game's own shader or add-on choice could not be saved (PT-BR pair).</summary>

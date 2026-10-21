@@ -521,6 +521,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.";
         // w8/reshade-ini rows
         // w8/renodx rows
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotManagedPrefix + "Hogwarts Legacy"; // #217
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotOfferedPrefix + "Hogwarts Legacy";
         // w8/commit-point rows
     }
 
