@@ -86,8 +86,13 @@
         <Button Content="{l:T Win.OpenCustomShaders}" Padding="12,6" Command="{Binding OpenCustomShadersCommand}"/>
         <Button Content="{l:T Win.OpenCustomAddOns}" Padding="12,6" Command="{Binding OpenCustomAddonsCommand}"/>
       </WrapPanel>
-      <Button Grid.Column="1" Content="{Binding ApplyText}" Padding="14,7" HorizontalAlignment="Right" VerticalAlignment="Top"
-              Command="{Binding ApplyCommand}" IsEnabled="{Binding CanApply}"/>
+      <!-- w7 follow-up B16: the global Save runs from a dialog over Settings, so the main window's busy overlay (and its
+           Cancel) is out of reach: the dialog shows its own Cancel while that Save runs. -->
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Top">
+        <Button Name="CancelGlobalSave" Content="{l:T Win.Cancel}" Padding="14,7" Command="{Binding CancelSaveCommand}"
+                IsVisible="{Binding CanCancelSave}"/>
+        <Button Content="{Binding ApplyText}" Padding="14,7" Command="{Binding ApplyCommand}" IsEnabled="{Binding CanApply}"/>
+      </StackPanel>
       <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.78"/>
     </Grid>
   </Grid>

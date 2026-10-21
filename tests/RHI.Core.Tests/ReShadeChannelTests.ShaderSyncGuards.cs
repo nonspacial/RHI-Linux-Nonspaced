@@ -185,4 +185,36 @@ public sealed partial class ReShadeChannelTests
         Assert.Contains("KeyOverlay=36,0,0,0", File.ReadAllText(ini));
         Assert.Contains("CrosireMaster", File.ReadAllText(ini));
     }
+
+    // B14 (shader-sets re-review nit 4): with the ledger unreadable, start-up adoption adopts nothing and saves nothing.
+    [Fact]
+    public async Task AdoptFromLedger_UnreadableLedger_AdoptsNothing()
+    {
+        var fx = RrFixture("b14");
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        File.WriteAllText(fx.Ledger, "{ not json");
+        var setsPath = Path.Combine(_root, "b14", "adopt-sets.json");
+        var sets = new GlobalShaderAddonStore(new LinuxDeploymentRecordStore(fx.Ledger), setsPath);
+
+        Assert.Empty(sets.AdoptFromLedger());
+        Assert.False(File.Exists(setsPath));
+    }
+
+    // B15 (shader-sets re-review nit 5): the "not up to date" lines name the real causes (a change that did not finish, a
+    // game left out of Update all, no native compiler for shaders), never only "cancelled or skipped"; and the missing-
+    // compiler note says a DLL picked with Browse takes effect through the profile's Apply.
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pt-BR")]
+    public void BehindLines_NameTheRealCauses(string language)
+    {
+        var shaders = RHI.Desktop.Localization.UiLocalizationService.TextFor(language, "Sets.ShadersBehind");
+        var addons = RHI.Desktop.Localization.UiLocalizationService.TextFor(language, "Sets.AddonsBehind");
+        var updateAll = language == "en-US" ? "Update all" : "Atualizar tudo";
+        Assert.Contains(updateAll, shaders);
+        Assert.Contains(updateAll, addons);
+        Assert.Contains("D3DCompiler 47", shaders);
+        Assert.DoesNotContain("D3DCompiler", addons);
+        Assert.Contains("Browse", LinuxManagedComponentService.ShaderPacksNotInstalledNote);
+    }
 }

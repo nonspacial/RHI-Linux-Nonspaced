@@ -1410,7 +1410,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncFailedPrefix, "Os pacotes de shaders não foram alterados: "),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncDonePrefix, "Pacotes de shaders atualizados; o próprio ReShade não foi alterado. Pacotes: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote,
-            " Os pacotes de shaders do jogo não foram instalados: eles precisam de um D3DCompiler_47 nativo no prefixo Wine. Instale-o na linha D3DCompiler 47 da seção ReShade e depois use Aplicar em Shaders/Add-ons."),
+            " Os pacotes de shaders do jogo não foram instalados: eles precisam de um D3DCompiler_47 nativo no prefixo Wine. Instale-o com o Protontricks ou o Winetricks na linha D3DCompiler 47 da seção ReShade e depois use Aplicar em Shaders/Add-ons; uma DLL escolhida ali com Procurar passa a valer com o Aplicar do perfil do ReShade."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotOfferedMessage,

@@ -9,7 +9,8 @@ using RHI.Desktop.ViewModels;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// #179 layout B: Settings → Shaders/Add-ons → "Global shader and add-on set": one "Global shaders and add-ons…" button
+/// #179 layout B: Settings → ReShade → "Global shader and add-on set" (under "Manage ReShade.ini search paths", as the
+/// owner's 179-B prototype): one "Global shaders and add-ons…" button
 /// that opens the Shaders/Add-ons dialog for the global set (its Save applies at once to the games set to "Use the global
 /// set", not on the Settings dialog's Save; Reset leaves it), and one line saying who uses it.
 /// </summary>

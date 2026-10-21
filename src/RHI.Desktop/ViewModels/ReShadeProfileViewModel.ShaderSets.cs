@@ -148,7 +148,7 @@ public sealed partial class ReShadeProfileViewModel
         ShaderMaxG2D = _selectedShaderPackIds.Contains("MaxG2DSimpleHDR");
     }
 
-    // -- Global sets (Settings -> Shaders/Add-ons -> Global shaders and add-ons...) ---------------------------------------
+    // -- Global sets (Settings -> ReShade -> Global shaders and add-ons...) ---------------------------------------
 
     /// <summary>The global dialog's lists as saved now (the packs and add-ons games set to the global set get).</summary>
     internal (IReadOnlyList<string> Shaders, IReadOnlyList<string> Addons) GlobalLists()

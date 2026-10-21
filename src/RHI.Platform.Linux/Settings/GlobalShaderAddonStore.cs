@@ -10,7 +10,7 @@ namespace RHI.Platform.Linux.Settings;
 /// <summary>A game's choice for its shaders or its add-ons (#179, upstream per-game Global / Select / Off).</summary>
 public enum ShaderAddonMode
 {
-    /// <summary>The global set (Settings → Shaders/Add-ons).</summary>
+    /// <summary>The global set (Settings → ReShade → Global shaders and add-ons…).</summary>
     Global,
     /// <summary>The game's own list.</summary>
     Select,
@@ -183,7 +183,8 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
         if (addonManager is not null && !addonManager.ReconcileSavedList()) return [];
         lock (_gate)
         {
-            if (_records.CorruptLedgerPath is not null) return []; // records read as none: adopting would save “Global”
+            // An unreadable ledger reads as no records, so nothing below is adopted (and nothing saved as "Global"): no
+            // separate guard is needed (shader-sets re-review nit 4; pinned by AdoptFromLedger_UnreadableLedger_AdoptsNothing).
             var load = _file.Load();
             if (load.IsUnreadable) throw new JsonStoreUnavailableException(Path.GetFullPath(FilePath), load.QuarantinePath);
             var doc = load.Value ?? new Document();

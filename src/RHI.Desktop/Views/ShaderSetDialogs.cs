@@ -8,13 +8,13 @@ namespace RHI.Desktop.Views;
 
 /// <summary>
 /// #179: opens the existing Shaders/Add-ons dialog (and a pack's Files dialog) for the global set and add-ons from
-/// Settings → Shaders/Add-ons. Same sizes and fitting as the main window's own Shaders/Add-ons button.
+/// Settings → ReShade. Same sizes and fitting as the main window's own Shaders/Add-ons button.
 /// </summary>
 internal static class ShaderSetDialogs
 {
     private const double SideMargin = 32; // as MainWindow.DialogSideMargin
 
-    /// <summary>The global shader set and add-ons (Settings → Shaders/Add-ons → Global shaders and add-ons…).</summary>
+    /// <summary>The global shader set and add-ons (Settings → ReShade → Global shaders and add-ons…).</summary>
     public static async Task ShowGlobalAsync(Control anchor, MainWindowViewModel vm, Action<string> show)
     {
         if (TopLevel.GetTopLevel(anchor) is not Window owner) return;

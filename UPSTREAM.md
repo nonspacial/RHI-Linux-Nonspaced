@@ -558,8 +558,9 @@ build.
   `PerGameShaderMode`/`PerGameAddonMode`): a global shader set and global add-ons, and per game a choice for shaders and
   for add-ons. Layout (owner's pick, B): no new controls in the game's panel; the game's **Shaders/Add-ons** dialog starts
   each tab with **Use the global set / Choose for this game / None** (upstream Global / Select / Off), the list below can
-  be ticked only for Choose (it shows the global set, or nothing, otherwise); Settings → Shaders/Add-ons → **Global
-  shaders and add-ons…** opens the same dialog for the global set (Save global set). The add-on choice is not shown while
+  be ticked only for Choose (it shows the global set, or nothing, otherwise); Settings → ReShade → **Global
+  shaders and add-ons…** (under "Manage ReShade.ini search paths") opens the same dialog for the global set (Save global
+  set), with its own Cancel while the Save brings the games up to date (the main window's busy overlay is behind Settings). The add-on choice is not shown while
   ReShade is the No Addons build (its add-ons are held). Upstream's global shader mode is the global list itself: nothing
   ticked = Off, only "Custom Shaders (local)" ticked = Custom.
 - One answer per game: ReShade's install and update (the ReShade row, profile Apply, ReShade installed for another

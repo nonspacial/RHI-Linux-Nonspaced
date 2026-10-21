@@ -522,6 +522,7 @@ public sealed class WaveOneMessageLocalizationTests
         { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "Foreign RenoDX protection" },
         { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "will not overwrite" },
         // w7 follow-up
+        { "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote, "takes effect with the ReShade profile" },
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
     };
 

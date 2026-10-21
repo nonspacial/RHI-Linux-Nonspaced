@@ -51,7 +51,7 @@ Components
   on RTX 50 cards, and **Newest DLSS from NVIDIA**. They are passed to Proton's NVIDIA layer at launch (Proton 10 or
   newer); for Steam games the dialog gives the launch-options line to paste into Steam. **Restore all** sets them back
   to Default.
-- **Global shader set and add-ons**: Settings → Shaders/Add-ons → **Global shaders and add-ons…** sets the shader packs
+- **Global shader set and add-ons**: Settings → ReShade → **Global shaders and add-ons…** sets the shader packs
   and Addon Manager add-ons every game gets by default. Each tab of a game's **Shaders/Add-ons** dialog chooses **Use
   the global set**, **Choose for this game** or **None**, and says when the game's files are not up to date with its
   choice. A game RHI already manages keeps the packs and add-ons it has, as its own list.

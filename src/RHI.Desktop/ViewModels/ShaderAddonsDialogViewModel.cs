@@ -76,13 +76,14 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
             applyChoices: selection => shell.ReShadeProfile.ApplyShaderAddonChoicesAsync(selection));
 
     /// <summary>
-    /// #179: the same dialog for the global shader set and add-ons (Settings → Shaders/Add-ons → Global shaders and
+    /// #179: the same dialog for the global shader set and add-ons (Settings → ReShade → Global shaders and
     /// add-ons…): no choice row; Save saves them and brings every game set to the global set up to date.
     /// </summary>
     internal static ShaderAddonsDialogViewModel ForGlobal(MainWindowViewModel shell, ShaderAddonManagerUiSnapshot snapshot,
         Func<string, (bool Opened, string? Error)> openFolder, Func<ReShadeShaderPackInfo, Task> showFiles)
         => new(snapshot, "", (shaders, addons) => shell.ReShadeProfile.ApplyGlobalSetsAsync(shaders, addons),
-            openFolder, showFiles, line => shell.StatusText = line, shell.Parity, isGlobal: true);
+            openFolder, showFiles, line => shell.StatusText = line, shell.Parity, isGlobal: true,
+            applyCancellable: (shaders, addons, token) => shell.ReShadeProfile.ApplyGlobalSetsAsync(shaders, addons, token));
 
     /// <param name="openFolder">Opens (creating) a folder; says whether it opened, and why not.</param>
     /// <param name="choices">#179: the game's choices (null: no choice row, Apply sends the ticked lists).</param>
@@ -90,9 +91,11 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
         Func<IReadOnlyList<string>, IReadOnlyList<string>, Task<ComponentOperationResult>> apply,
         Func<string, (bool Opened, string? Error)> openFolder, Func<ReShadeShaderPackInfo, Task> showFiles, Action<string> showMainStatus,
         ParityFeatures? parity = null, bool isGlobal = false, ShaderAddonSetChoices? choices = null,
-        Func<ShaderAddonSetSelection, Task<ComponentOperationResult>>? applyChoices = null)
+        Func<ShaderAddonSetSelection, Task<ComponentOperationResult>>? applyChoices = null,
+        Func<IReadOnlyList<string>, IReadOnlyList<string>, CancellationToken, Task<ComponentOperationResult>>? applyCancellable = null)
     {
         _apply = apply;
+        _applyCancellable = applyCancellable;
         _applyChoices = applyChoices;
         _choices = isGlobal || applyChoices is null ? null : choices;
         _openFolder = openFolder;
@@ -236,6 +239,23 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
     [ObservableProperty] private string status;
     [ObservableProperty] private bool canApply = true;
 
+    // w7 follow-up B16 (shader-sets re-review nit 6): the global Save's batch runs from this dialog, modal over modal
+    // Settings, where the main window's busy overlay (and its Cancel) cannot be reached; the dialog's own Cancel stops the
+    // batch between games, as the overlay's would.
+    private readonly Func<IReadOnlyList<string>, IReadOnlyList<string>, CancellationToken, Task<ComponentOperationResult>>? _applyCancellable;
+    private CancellationTokenSource? _saveCancel;
+
+    /// <summary>The dialog's Cancel is shown: the global Save is running.</summary>
+    [ObservableProperty] private bool canCancelSave;
+
+    [RelayCommand]
+    private void CancelSave()
+    {
+        if (_saveCancel is not { } running) return;
+        running.Cancel();
+        CanCancelSave = false;
+    }
+
     private IEnumerable<ShaderPackRow> Packs => ShaderItems.OfType<ShaderPackRow>();
 
     /// <summary>The ticked shader packs (the shader-profile panel saves these).</summary>
@@ -257,9 +277,19 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
             var shaders = TickedShaderIds().ToArray();
             var addons = TickedAddonIds();
             Status = TF("Win.ApplyingShaderPackSAddS", shaders.Length, addons.Count);
-            var result = _choices is not null && _applyChoices is not null
-                ? await _applyChoices(new ShaderAddonSetSelection(ShaderMode, shaders, HasAddonChoice ? AddonMode : null, addons))
-                : await _apply(shaders, addons);
+            ComponentOperationResult result;
+            if (_choices is not null && _applyChoices is not null)
+                result = await _applyChoices(new ShaderAddonSetSelection(ShaderMode, shaders, HasAddonChoice ? AddonMode : null, addons));
+            else if (_applyCancellable is not null)
+            {
+                using var cancel = new CancellationTokenSource();
+                _saveCancel = cancel;
+                CanCancelSave = true;
+                try { result = await _applyCancellable(shaders, addons, cancel.Token); }
+                finally { _saveCancel = null; CanCancelSave = false; }
+            }
+            else
+                result = await _apply(shaders, addons);
             Status = UiLocalizationService.Present(result.Message);
         }
         finally

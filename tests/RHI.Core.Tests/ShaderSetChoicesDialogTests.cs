@@ -252,6 +252,54 @@ public sealed class ShaderSetChoicesDialogTests
         public bool IsRunning(DetectedGame game) => false;
     }
 
+    // w7 follow-up B16 (re-review nit 6): the global Save runs from a dialog over Settings, where the main window's busy
+    // overlay is out of reach; the dialog's own Cancel shows while the Save runs and stops the batch between games.
+    [Fact]
+    public async Task TheGlobalDialog_OwnCancel_ShowsWhileTheSaveRuns_AndStopsTheBatchBetweenGames()
+    {
+        var (fx, game) = await StartWithGameAsync();
+        using var _ = fx;
+        var second = fx.Game("Second Game");
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
+        {
+            Name = second.Name, InstallPath = second.InstallPath, ExecutablePath = second.ExecutablePath, Runner = "Manual Windows"
+        });
+        Assert.True(added, message);
+        second = fx.Vm.AllLibraryGames.Single(g => g.Name == "Second Game");
+        GiveReShade(fx, game);
+        GiveReShade(fx, second);
+        var sets = fx.Managed.ShaderSets!;
+        sets.SetShaderMode(game, ShaderAddonMode.Global, []);
+        sets.SetShaderMode(second, ShaderAddonMode.Global, []);
+        var global = ShaderAddonsDialogViewModel.ForGlobal(fx.Vm, await fx.Vm.ReShadeProfile.GetGlobalShaderAddonSnapshotAsync(),
+            _ => (true, null), _ => Task.CompletedTask);
+        Assert.False(global.CanCancelSave); // hidden while nothing runs
+        var probe = new CancelsFromTheDialog(global);
+        fx.Vm.ReShadeProfile.RunningProbe = probe;
+        global.TickShaders(["CrosireMaster"]);
+
+        await global.ApplyCommand.ExecuteAsync(null);
+
+        Assert.True(probe.CancelShown);           // shown while the Save ran
+        Assert.Equal(1, probe.Units);             // the second game's unit never started
+        Assert.False(global.CanCancelSave);       // hidden again
+        Assert.Equal(["CrosireMaster"], sets.GlobalShaderPackIds); // the global set itself was saved before the batch
+    }
+
+    private sealed class CancelsFromTheDialog(ShaderAddonsDialogViewModel dialog) : IGameRunningProbe
+    {
+        public int Units { get; private set; }
+        public bool CancelShown { get; private set; }
+
+        public bool IsRunning(DetectedGame game)
+        {
+            Units++;
+            CancelShown |= dialog.CanCancelSave;
+            dialog.CancelSaveCommand.Execute(null); // the user presses the dialog's Cancel as this game's unit starts
+            return false;
+        }
+    }
+
     [Fact]
     public async Task TheGlobalDialog_HasNoChoiceRow_SaysWhatTheListIs_AndSavesTheGlobalLists()
     {
