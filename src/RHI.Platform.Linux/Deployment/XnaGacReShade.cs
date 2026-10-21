@@ -183,6 +183,21 @@ public static class XnaGacReShade
     public const string MissingCopyAfterMovePrefix =
         "Nothing was changed: RHI's ReShade copy is no longer in the old prefix, and the .NET assembly folder of the prefix the game uses now has no d3d9.dll. Copy the game folder's d3d9.dll (RHI's ReShade) into that folder, then choose Repair after move again. Folder: ";
 
+    /// <summary>
+    /// #214: added to Repair after move's line when RHI's GAC ReShade.ini copy changed since RHI placed it (kept as it is,
+    /// so it still names the old game folder): what to set, the new base path last (PT-BR presentation pair).
+    /// </summary>
+    public const string GacIniChangedAfterMovePrefix =
+        ". ReShade's settings file in the .NET assembly folder of the prefix changed since RHI placed it, so RHI left it as it is and it still names the game's old folder: set BasePath in that file to ";
+
+    /// <summary>#214: added to Repair after move's line while Wine runs for the prefix (PT-BR presentation pair).</summary>
+    public const string GacIniWineRunningAfterMoveMessage =
+        ". Wine is running for this game's prefix, so ReShade's settings file in its .NET assembly folder still names the game's old folder: close the game, then use Apply / Update in the ReShade section once.";
+
+    /// <summary>#214: added to Repair after move's line when that file could not be rewritten (rolled back; PT-BR pair, reason last).</summary>
+    public const string GacIniNotUpdatedAfterMovePrefix =
+        ". ReShade's settings file in the .NET assembly folder of the prefix could not be updated and still names the game's old folder: use Apply / Update in the ReShade section once. Reason: ";
+
     /// <summary>The bitness the GAC folder declares (<c>GAC_32</c> = x86, <c>GAC_64</c> = x64), else the game's.</summary>
     internal static PeArchitecture ArchitectureOf(DetectedGame game)
     {

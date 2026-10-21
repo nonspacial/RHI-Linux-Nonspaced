@@ -1540,6 +1540,12 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameMovedByDxvkHdrMessage,
             "O nome da DLL do ReShade não pode ser mudado enquanto o DX9 HDR estiver instalado neste jogo: o DX9 HDR moveu o ReShade para a camada Vulkan dele, que não tem nome de DLL. Remova primeiro o DX9 HDR na linha dele (o ReShade volta a ser d3d9.dll) e depois escolha o nome."),
         // w8/reshade-ini rows
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.GacIniChangedAfterMovePrefix, // #214
+            ". O arquivo de configurações do ReShade na pasta de assemblies .NET do prefixo mudou desde que o RHI o colocou, então o RHI o deixou como está e ele ainda indica a pasta antiga do jogo: defina BasePath nesse arquivo como "),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.GacIniWineRunningAfterMoveMessage,
+            ". O Wine está rodando para o prefixo deste jogo, então o arquivo de configurações do ReShade na pasta de assemblies .NET dele ainda indica a pasta antiga do jogo: feche o jogo e use Aplicar / Atualizar na seção do ReShade uma vez."),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.GacIniNotUpdatedAfterMovePrefix,
+            ". O arquivo de configurações do ReShade na pasta de assemblies .NET do prefixo não pôde ser atualizado e ainda indica a pasta antiga do jogo: use Aplicar / Atualizar na seção do ReShade uma vez. Motivo: "),
         // w8/renodx rows
         // w8/commit-point rows
     ];
