@@ -71,6 +71,8 @@ Components
   and, as copies, into the .NET assembly folder of the game's prefix, where XNA loads it. Updates replace both copies;
   removal takes away only the copies RHI placed. Repair after move also re-points those copies when the prefix moved;
   switching the game to another prefix, or reaching the same prefix through a symbolic link, does not count as a move.
+  When the game moved to a fresh prefix, Repair after move says to copy the game folder's `d3d9.dll` into that prefix's
+  .NET assembly folder first.
 - ReShade's install and update now fill in only the keys a `reshade.ini` template adds that the game's ReShade.ini does
   not have yet; **Deploy** still writes every key.
 - A ReShade.ini linked to your shared file in `~/.config/ReShade` stays a link when a ReShade install, update or removal
@@ -90,6 +92,7 @@ Library and interface
 - The card menu's **Update inclusion…** is now **Choose what Update All changes…**, and the Update All summary says how
   many components you left out.
 - A component row's ⓘ is highlighted where the selected game has notes of its own.
+- **What's new** shows the changelog's text again, not only its headings.
 - **Create shortcut** gives the shortcut the game's own icon (from its `.exe`, else its Steam art).
 
 ## Wave 6 — 2026-10-20: Addon Manager updates, non-Steam shortcuts, crash-safe Feeder and Luma

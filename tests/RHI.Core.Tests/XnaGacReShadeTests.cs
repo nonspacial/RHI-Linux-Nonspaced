@@ -278,6 +278,58 @@ public sealed class XnaGacReShadeTests : IDisposable
         Assert.Null(relocation.Guard(moved));
     }
 
+    // W7 final re-review 2, 3: the same move, but the prefix in use is fresh and its GAC folder has no d3d9.dll. The Guard
+    // blocks every component (the game folder moved) and Repair cannot find RHI's GAC copy: it refuses, changes nothing,
+    // names the folder (not a "d3d9.dll RHI did not install" that does not exist) and says what to do; doing it works.
+    [Fact]
+    public async Task Repair_GameMoved_OldPrefixGone_NoD3d9InTheNewGacFolder_SaysWhatToDo_AndThatWorks()
+    {
+        var fx = Fixture("repair-empty");
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions())).Success);
+        var root = Path.Combine(_root, "repair-empty");
+        var newBin = Path.Combine(root, "library2", "steamapps", "common", "Terraria");
+        Directory.CreateDirectory(Path.GetDirectoryName(newBin)!);
+        Directory.Move(fx.Bin, newBin);
+        var fresh = FreshPrefix(Path.Combine(root, "prefixes", "terraria"));
+        Directory.Delete(fx.Prefix, recursive: true);
+        var moved = new DetectedGame
+        {
+            Name = fx.Game.Name, InstallPath = newBin, BinaryDirectory = newBin, ExecutablePath = Path.Combine(newBin, "Terraria.exe"),
+            PrefixPath = fresh, Runner = fx.Game.Runner, GraphicsApi = fx.Game.GraphicsApi, Source = fx.Game.Source,
+            SteamAppId = fx.Game.SteamAppId, ManifestXnaGacFolder = fx.Game.ManifestXnaGacFolder
+        };
+        var newGac = XnaGacReShade.ResolveFolder(moved).Folder!;
+        Assert.False(File.Exists(Path.Combine(newGac, "d3d9.dll")));
+        var ledgerBefore = File.ReadAllBytes(fx.LedgerPath);
+        var relocation = new DeploymentRelocation(fx.Records);
+        Assert.NotNull(relocation.Guard(moved));
+
+        var refused = relocation.Repair(moved, [], out _);
+
+        Assert.False(refused.Success);
+        Assert.Equal(XnaGacReShade.MissingCopyAfterMovePrefix + newGac, refused.Message);
+        Assert.Equal(ledgerBefore, File.ReadAllBytes(fx.LedgerPath));
+        Assert.False(File.Exists(Path.Combine(newGac, "d3d9.dll")));
+
+        // RHI's game-folder d3d9.dll missing at the new location is still the plain "not at the new location" refusal.
+        var gameDll = Path.Combine(newBin, "d3d9.dll");
+        File.Move(gameDll, gameDll + ".away");
+        Assert.Equal(DeploymentRelocation.RepairMissingPrefix + gameDll, relocation.Repair(moved, [], out _).Message);
+        File.Move(gameDll + ".away", gameDll);
+
+        // What the message says: copy the game folder's d3d9.dll into that folder, Repair again.
+        File.Copy(gameDll, Path.Combine(newGac, "d3d9.dll"));
+        var repaired = relocation.Repair(moved, [], out _);
+
+        Assert.True(repaired.Success, repaired.Message);
+        Assert.Equal(newGac, fx.Records.Find(moved, ManagedComponentKind.ReShade)!.Metadata[XnaGacReShade.FolderMetadataKey]);
+        Assert.Null(relocation.Guard(moved));
+        // And ReShade comes off the game again, both copies.
+        Assert.True((await fx.Service.RemoveAsync(moved)).Success);
+        Assert.False(File.Exists(gameDll));
+        Assert.False(File.Exists(Path.Combine(newGac, "d3d9.dll")));
+    }
+
     // A prefix with the game's GAC folder and a user.reg, as Wine/Proton leave a freshly set-up one.
     private static string FreshPrefix(string prefix)
     {

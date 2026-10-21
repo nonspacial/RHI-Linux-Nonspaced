@@ -129,17 +129,25 @@ public static class XnaGacReShade
     }
 
     /// <summary>
-    /// W7 final review 2: the <c>d3d9.dll</c> in the GAC folder the game's prefix holds now when it is not RHI's copy (its
-    /// bytes differ from the record's), while <paramref name="file"/> is the record's GAC copy and Repair after move did not
-    /// find it at <paramref name="lookedAt"/>; else null. Repair then says how to hand the folder back to RHI.
+    /// Repair after move's refusal when <paramref name="file"/> is the record's GAC copy, Repair did not find it at
+    /// <paramref name="lookedAt"/> and the copy did not count as moved; else null (Repair says the plain "not at the new
+    /// location"). Repair then says how to hand the GAC folder of the prefix the game uses now back to RHI:
+    /// <list type="bullet">
+    /// <item>W7 final review 2: that folder holds a <c>d3d9.dll</c> that is not RHI's copy (its bytes differ from the
+    /// record's): <see cref="ForeignCopyAfterMovePrefix"/> and the file.</item>
+    /// <item>W7 final re-review 2, 3: that folder holds no <c>d3d9.dll</c> (a fresh prefix, the old one gone):
+    /// <see cref="MissingCopyAfterMovePrefix"/> and the folder. Repair checks the game folder's <c>d3d9.dll</c> first, so it
+    /// is there with RHI's bytes when this is said.</item>
+    /// </list>
     /// </summary>
-    internal static string? ForeignCopyInCurrentFolder(LinuxDeploymentRecord record, DetectedGame game, LinuxDeployedFile file, string lookedAt)
+    internal static string? RepairRefusalAfterMove(LinuxDeploymentRecord record, DetectedGame game, LinuxDeployedFile file, string lookedAt)
     {
         if (!IsGacRecord(record) || !IsListed(game) || File.Exists(lookedAt)) return null;
         if (!string.Equals(file.Path, Path.Combine(record.Metadata[FolderMetadataKey], ProxyName), StringComparison.Ordinal)) return null;
         if (ResolveFolder(game).Folder is not { } current) return null;
         var copy = Path.Combine(current, ProxyName);
-        return File.Exists(copy) && !HoldsRhisCopy(record, current) ? copy : null;
+        if (!File.Exists(copy)) return MissingCopyAfterMovePrefix + current;
+        return HoldsRhisCopy(record, current) ? null : ForeignCopyAfterMovePrefix + copy;
     }
 
     /// <summary>Whether <paramref name="folder"/>'s <c>d3d9.dll</c> has the bytes of the GAC copy <paramref name="record"/> placed.</summary>
@@ -166,6 +174,14 @@ public static class XnaGacReShade
     /// </summary>
     public const string ForeignCopyAfterMovePrefix =
         "Nothing was changed: RHI's ReShade copy is no longer in the old prefix, and the .NET assembly folder of the prefix the game uses now holds a d3d9.dll RHI did not install. Move that file out of the folder, copy the game folder's d3d9.dll (RHI's ReShade) in its place, then choose Repair after move again. File: ";
+
+    /// <summary>
+    /// W7 final re-review 3: Repair after move refused because RHI's ReShade copy is gone from the old prefix and the .NET
+    /// assembly folder of the prefix the game uses now has no <c>d3d9.dll</c> (PT-BR presentation pair; the folder comes
+    /// last). Copying the game folder's <c>d3d9.dll</c> there lets Repair re-point the record (test follows the step).
+    /// </summary>
+    public const string MissingCopyAfterMovePrefix =
+        "Nothing was changed: RHI's ReShade copy is no longer in the old prefix, and the .NET assembly folder of the prefix the game uses now has no d3d9.dll. Copy the game folder's d3d9.dll (RHI's ReShade) into that folder, then choose Repair after move again. Folder: ";
 
     /// <summary>The bitness the GAC folder declares (<c>GAC_32</c> = x86, <c>GAC_64</c> = x64), else the game's.</summary>
     internal static PeArchitecture ArchitectureOf(DetectedGame game)

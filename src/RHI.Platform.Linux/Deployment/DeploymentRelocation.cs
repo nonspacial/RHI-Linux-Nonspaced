@@ -188,9 +188,10 @@ public sealed class DeploymentRelocation
             {
                 var mapped = MapPath(NrCostScalerService.ContentPath(record, file, gameRecords));
                 if (!File.Exists(mapped))
-                    // W7 final review 2: RHI's XNA GAC copy is gone and the prefix in use holds a d3d9.dll RHI did not place.
-                    return new(false, 0, gac is null && XnaGacReShade.ForeignCopyInCurrentFolder(record, game, file, mapped) is { } foreign
-                        ? XnaGacReShade.ForeignCopyAfterMovePrefix + foreign
+                    // W7 final review 2, re-review 2/3: RHI's XNA GAC copy is gone and the prefix in use holds a d3d9.dll RHI
+                    // did not place, or none: say how to hand that folder back to RHI.
+                    return new(false, 0, gac is null && XnaGacReShade.RepairRefusalAfterMove(record, game, file, mapped) is { } step
+                        ? step
                         : $"{RepairMissingPrefix}{mapped}");
                 if (!string.Equals(FileHash.Sha256Hex(mapped), file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return new(false, 0, $"{RepairChangedPrefix}{mapped}");

@@ -441,6 +441,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return XnaGacReShade.ForeignFilePrefix + P;
         yield return XnaGacReShade.ChangedCopyPrefix + P;
         yield return XnaGacReShade.ForeignCopyAfterMovePrefix + P; // w7 final review 2
+        yield return XnaGacReShade.MissingCopyAfterMovePrefix + P; // w7 final re-review 3
         // w7/shader-sets rows
         yield return LinuxManagedComponentService.ShaderSetsUnreadableMessage;
         yield return LinuxManagedComponentService.ShaderChoiceNotSavedPrefix + E;
@@ -556,6 +557,7 @@ public sealed class WaveOneMessageLocalizationTests
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
         // w7 final review 2
         { RHI.Platform.Linux.Deployment.XnaGacReShade.ForeignCopyAfterMovePrefix + P, "in its place" },
+        { RHI.Platform.Linux.Deployment.XnaGacReShade.MissingCopyAfterMovePrefix + P, "has no d3d9.dll" },
     };
 
     [Theory]
