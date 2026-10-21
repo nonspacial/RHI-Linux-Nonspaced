@@ -1182,6 +1182,8 @@ internal static class UiStrings
         ("Rx.Renaming", "Renomeando a DLL…", "Renaming the DLL…"),
         ("Rx.Resetting", "Redefinindo os nomes de DLL…", "Resetting the DLL names…"),
         ("Rx.DllNameTipRename", "O ReShade está instalado como {0}. Escolha outro nome para renomeá-lo no lugar; o override do Wine vai junto com ele.", "ReShade is installed as {0}. Choose another name to rename it in place; its Wine override moves with it."),
+        ("Rx.DllChangedTip", "O RHI não mexe em uma DLL que mudou depois que ele a instalou: renomear, atualizar e remover pelo RHI são todos recusados. Coloque de volta o arquivo que o RHI instalou, ou apague você mesmo o arquivo alterado; depois, Remover na linha do {0} tira o registro do RHI e você pode instalá-lo de novo.", "RHI does not touch a DLL that changed after it installed it: renaming, updating and removing it from RHI are all refused. Put back the file RHI installed, or delete the changed file yourself; then Remove on {0}'s row takes RHI's record away and you can install it again."),
+        ("Rx.DllMissingTip", "A DLL não está mais na pasta do jogo. Remover na linha do {0} tira o registro do RHI; depois instale o {0} de novo.", "The DLL is no longer in the game folder. Remove on {0}'s row takes RHI's record away; then install {0} again."),
         ("Rx.OptiScalerDllNameTipRename", "O OptiScaler está instalado como {0}. Escolha outro nome para renomeá-lo no lugar; o override do Wine vai junto com ele.", "OptiScaler is installed as {0}. Choose another name to rename it in place; its Wine override moves with it."),
         // w7/shader-sets rows
         // w7/nvapi-launch rows

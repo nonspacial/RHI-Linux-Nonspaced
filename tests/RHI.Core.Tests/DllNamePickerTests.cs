@@ -105,6 +105,32 @@ public sealed class DllNamePickerTests
         Assert.Equal(UiLocalizationService.Present(ReShadeDeploymentService.RenameNotInPlacePrefix + "ReShade64.dll"), picker.Hint);
     }
 
+    [Fact]
+    public async Task Picker_DllChangedSinceInstall_LockedTipNamesWhatLetsRhiManageItAgain()
+    {
+        // Review 4: no control in RHI changes a DLL that changed outside it; the tip says so and names the row's Remove for
+        // after the file is put back or deleted. A DLL that is gone needs only that Remove.
+        var (fx, game) = await StartAsync("Changed Game");
+        using var _ = fx;
+        var picker = fx.Vm.DllNamePicker;
+        SeedReShade(fx, game, "winmm.dll");
+        var payload = Path.Combine(game.BinaryDirectory!, "winmm.dll");
+        File.AppendAllText(payload, "changed by hand");
+        await ReselectAsync(fx, game, picker);
+
+        Assert.False(picker.CanChoose);
+        Assert.Equal(UiLocalizationService.Present(ProxyRename.ChangedPrefix + payload) + " "
+                     + UiLocalizationService.Format("Rx.DllChangedTip", "ReShade"), picker.Hint);
+        Assert.Contains(UiLocalizationService.Text("Vm.Remove"), picker.Hint);
+
+        File.Delete(payload);
+        await ReselectAsync(fx, game, picker);
+
+        Assert.Equal(UiLocalizationService.Present(ProxyRename.ChangedPrefix + payload) + " "
+                     + UiLocalizationService.Format("Rx.DllMissingTip", "ReShade"), picker.Hint);
+        Assert.Contains(UiLocalizationService.Text("Vm.Remove"), picker.Hint);
+    }
+
     private static void SeedReShade(ViewModelFixture fx, DetectedGame game, string name)
     {
         var payload = Path.Combine(game.BinaryDirectory!, name);

@@ -29,7 +29,7 @@ public static class OptiScalerDllNamePresenter
             {
                 // The file changed since RHI installed it: only the installed name, locked, and why.
                 var only = new DllNameOption(installed, installed);
-                return new([only], only, false, UiLocalizationService.Present(refusal));
+                return new([only], only, false, DllNamePickerViewModel.LockedHint(refusal, "OptiScaler"));
             }
             // #196: Automatic (when its name is free or is this one), the installed name and every free name; a choice
             // renames OptiScaler in place (RenameAsync).

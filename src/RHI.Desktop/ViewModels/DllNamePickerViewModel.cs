@@ -190,7 +190,7 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
                     Options.Add(only);
                     SelectedOption = only;
                     CanChoose = false;
-                    Hint = UiLocalizationService.Present(refusal);
+                    Hint = LockedHint(refusal, "ReShade");
                     return;
                 }
                 // #196: Automatic (when its name is free or is this one), the installed name, and every free offered name.
@@ -219,6 +219,20 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
         {
             _rebuilding = false;
         }
+    }
+
+    /// <summary>
+    /// The tooltip of a locked DLL-name dropdown (#196): the refusal and, for a DLL that changed since RHI installed it,
+    /// what lets RHI manage it again (review 4). No control in RHI changes a file that changed (rename, update and removal
+    /// all leave it alone), so the tip says so and names Remove on <paramref name="component"/>'s row for after the file
+    /// is put back or deleted; a DLL that is gone needs only that Remove.
+    /// </summary>
+    internal static string LockedHint(string refusal, string component)
+    {
+        var presented = UiLocalizationService.Present(refusal);
+        if (!refusal.StartsWith(ProxyRename.ChangedPrefix, StringComparison.Ordinal)) return presented;
+        var path = refusal[ProxyRename.ChangedPrefix.Length..];
+        return presented + " " + UiLocalizationService.Format(File.Exists(path) ? "Rx.DllChangedTip" : "Rx.DllMissingTip", component);
     }
 
     // What Automatic stands for: the resolution without the user's choice.
