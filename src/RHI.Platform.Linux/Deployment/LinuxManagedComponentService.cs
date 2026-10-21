@@ -33,6 +33,7 @@ public sealed partial class LinuxManagedComponentService : ILinuxManagedUpdateBa
     private readonly NeuralAddonVersionPreferenceStore _neuralVersionPins;
     private readonly ComponentUpdateRecorder? _history;
     private readonly ComponentUpdateLogStore? _updateLog;
+    private readonly ManagedDependencyPlanner _dependencies; // #212
     private readonly ManagedComponentRowDecorator _rows; // #212
 
     public LinuxManagedComponentService(
@@ -98,6 +99,7 @@ public sealed partial class LinuxManagedComponentService : ILinuxManagedUpdateBa
         _history = updateLog is null ? null : new ComponentUpdateRecorder(records, updateLog);
         _rows = new ManagedComponentRowDecorator(_records, _reshade, _renodx, _lumaFramework, _lumaPolicy, _dlssg2030,
             _dlssEnablerStandalone, _rtx40Mfg, _rtxEncore, _dxvkHdr, _updateInclusion);
+        _dependencies = new ManagedDependencyPlanner(_records, _lumaPolicy);
     }
 
     // Records the operation in the update history (when configured); refusals made before
