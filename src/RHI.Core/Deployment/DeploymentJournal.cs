@@ -56,9 +56,15 @@ public interface IDeploymentCommitCheck
 
 /// <summary>
 /// An operation was refused before it changed anything: an earlier operation on the same game is still undecided (its
-/// commit point could not be read after it failed). The message is <see cref="DeploymentJournal.EarlierChangeUndecidedMessage"/>.
+/// commit point could not be read after it failed; <see cref="DeploymentJournal.EarlierChangeUndecidedMessage"/>), or its
+/// undo, run before this operation, failed (<see cref="DeploymentJournal.EarlierUndoFailedMessage"/>, w8 follow-up C8).
 /// </summary>
-public sealed class DeploymentDecisionPendingException() : IOException(DeploymentJournal.EarlierChangeUndecidedMessage);
+public sealed class DeploymentDecisionPendingException(string message) : IOException(message)
+{
+    public DeploymentDecisionPendingException() : this(DeploymentJournal.EarlierChangeUndecidedMessage)
+    {
+    }
+}
 
 /// <summary>
 /// Write-ahead journal for deployment operations. An operation's owned files (pre-operation hashes)
@@ -108,8 +114,8 @@ public sealed class DeploymentJournal
     /// <exception cref="DeploymentDecisionPendingException">An earlier operation on the same game is still undecided.</exception>
     public async Task<DeploymentOperation> BeginAsync(string description, string? commitProbe = null, CancellationToken cancellationToken = default)
     {
-        if (await SettleWaitingAsync(commitProbe).ConfigureAwait(false))
-            throw new DeploymentDecisionPendingException();
+        if (await SettleWaitingAsync(commitProbe).ConfigureAwait(false) is { } heldUp)
+            throw new DeploymentDecisionPendingException(heldUp);
         AtomicFile.CreateDirectoryDurable(Directory);
         var id = Guid.NewGuid().ToString("N");
         var lockStream = new FileStream(LockPath(id), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
@@ -166,31 +172,34 @@ public sealed class DeploymentJournal
     /// Before a new operation (review w8 finding 2): settles every waiting entry as start-up recovery would — from the
     /// commit store as it reads now; committed → copies and entry dropped, not committed → rolled back in crash-recovery
     /// mode (a file changed since keeps its change). One that still cannot be decided (or whose rollback failed) keeps
-    /// waiting; returns true when such an entry holds up an operation with <paramref name="newProbe"/> (same game).
+    /// waiting; returns the refusal when such an entry holds up an operation with <paramref name="newProbe"/> (same game):
+    /// <see cref="EarlierChangeUndecidedMessage"/> while one is still undecided, else <see cref="EarlierUndoFailedMessage"/>
+    /// (w8 follow-up C8: the ledger reads, the undo failed). Null: nothing holds it up.
     /// </summary>
-    private async Task<bool> SettleWaitingAsync(string? newProbe)
+    private async Task<string?> SettleWaitingAsync(string? newProbe)
     {
-        if (CommitCheck is not { } check) return false;
+        if (CommitCheck is not { } check) return null;
         KeyValuePair<string, string?>[] waiting;
         lock (_waiting)
         {
-            if (_waiting.Count == 0) return false;
+            if (_waiting.Count == 0) return null;
         }
         await _settling.WaitAsync().ConfigureAwait(false);
         try
         {
             lock (_waiting) waiting = _waiting.ToArray();
-            var heldUp = false;
+            string? heldUp = null;
             foreach (var (id, mark) in waiting)
             {
-                var (settled, probe) = await SettleWaitingEntryAsync(id, mark, check).ConfigureAwait(false);
+                var (settled, probe, undoFailed) = await SettleWaitingEntryAsync(id, mark, check).ConfigureAwait(false);
                 if (settled)
                 {
                     lock (_waiting) _waiting.Remove(id);
                 }
                 else if (check.HoldsUp(probe, newProbe))
                 {
-                    heldUp = true;
+                    if (!undoFailed) heldUp = EarlierChangeUndecidedMessage;
+                    else heldUp ??= EarlierUndoFailedMessage;
                 }
             }
             return heldUp;
@@ -201,10 +210,11 @@ public sealed class DeploymentJournal
         }
     }
 
-    private async Task<(bool Settled, string? Probe)> SettleWaitingEntryAsync(string id, string? mark, IDeploymentCommitCheck check)
+    // UndoFailed: the entry was decided (not committed) but its rollback failed; else it is still undecided or locked.
+    private async Task<(bool Settled, string? Probe, bool UndoFailed)> SettleWaitingEntryAsync(string id, string? mark, IDeploymentCommitCheck check)
     {
         var entryPath = EntryPath(id);
-        if (!File.Exists(entryPath)) return (true, null); // recovered elsewhere (another instance's start)
+        if (!File.Exists(entryPath)) return (true, null, false); // recovered elsewhere (another instance's start)
         FileStream lockStream;
         try
         {
@@ -212,13 +222,13 @@ public sealed class DeploymentJournal
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (false, ProbeOf(entryPath)); // another process works on it now
+            return (false, ProbeOf(entryPath), false); // another process works on it now
         }
         try
         {
             await using (lockStream.ConfigureAwait(false))
             {
-                if (!File.Exists(entryPath)) return (true, null);
+                if (!File.Exists(entryPath)) return (true, null, false);
                 var (outcome, probe) = await RecoverEntryAsync(id, entryPath, info =>
                 {
                     try
@@ -231,18 +241,19 @@ public sealed class DeploymentJournal
                         return CommitDecision.Undecided;
                     }
                 }).ConfigureAwait(false);
-                if (outcome is null) return (false, probe);
+                if (outcome is null) return (false, probe, false);
                 RHI.Core.Services.AppLog.Warn("deployment-journal",
                     $"Earlier undecided operation settled before the next one: {outcome.Outcome}: {outcome.Description} [{id}]"
                     + (outcome.Problems.Count > 0 ? " " + string.Join("; ", outcome.Problems) : ""));
                 // A rollback that failed keeps its entry for the next start, and keeps holding up its game meanwhile.
-                return (outcome.Outcome != JournalRecoveryOutcome.RollbackFailed, probe);
+                var failed = outcome.Outcome == JournalRecoveryOutcome.RollbackFailed;
+                return (!failed, probe, failed);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             RHI.Core.Services.AppLog.Warn("deployment-journal", $"An earlier undecided operation could not be settled: {id}", ex);
-            return (false, ProbeOf(entryPath));
+            return (false, ProbeOf(entryPath), false);
         }
         finally
         {
@@ -446,6 +457,13 @@ public sealed class DeploymentJournal
     public const string EarlierChangeUndecidedMessage =
         "RHI has not yet finished or undone an earlier change to this game, because the deployment ledger cannot be read. Nothing was changed. Repair the ledger or restart RHI, then try again.";
 
+    /// <summary>
+    /// w8 follow-up C8: fixed text of the refusal while the undo of an earlier change to this game failed (PT-BR pair): the
+    /// ledger reads, so it is not the ledger the user has to look at, but the game's files.
+    /// </summary>
+    public const string EarlierUndoFailedMessage =
+        "RHI could not finish undoing an earlier change to this game, so it makes no new change here yet. Nothing was changed. Check that RHI can write to the game's folders and files (rhi.log names the file that failed), then try again: RHI tries the undo again first.";
+
     internal string EntryPath(string id) => Path.Combine(Directory, id + EntryExtension);
 
     internal string LockPath(string id) => Path.Combine(Directory, id + LockExtension);
@@ -609,7 +627,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
 
     /// <summary>Fixed text of a failure whose commit point could not be read again: nothing was undone now (PT-BR pair).</summary>
     public const string UndecidedNote =
-        "The deployment ledger could not be read after the error, so nothing was undone now; RHI finishes or undoes this change at the next start.";
+        "The deployment ledger could not be read after the error, so nothing was undone now; RHI finishes or undoes this change before the game's next change, or at the next start.";
 
     /// <summary>The value <see cref="IDeploymentCommitCheck.Mark"/> returned when the operation began.</summary>
     internal string? CommitMark { get; set; }

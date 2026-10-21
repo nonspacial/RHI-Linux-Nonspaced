@@ -1,5 +1,6 @@
 using RHI.Core.Deployment;
 using RHI.Core.Models;
+using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
@@ -220,7 +221,8 @@ public sealed partial class DeploymentScopeCommitPointTests
             var (refused, refusal) = await DeploymentScope.BeginAsync(journal, "retry", Game, ManagedComponentKind.ReShade, CancellationToken.None);
 
             Assert.Null(refused);
-            Assert.Equal(DeploymentJournal.EarlierChangeUndecidedMessage, refusal);
+            // w8 follow-up C8: the ledger reads; the refusal names the failed undo, not the ledger.
+            Assert.Equal(DeploymentJournal.EarlierUndoFailedMessage, refusal);
             Assert.Single(JournalEntries());
         }
         finally
@@ -259,5 +261,53 @@ public sealed partial class DeploymentScopeCommitPointTests
         Assert.Equal(Before, File.ReadAllBytes(Payload));
         Assert.Empty(JournalEntries());
         Assert.Empty(journal.WaitingForTesting);
+    }
+
+    // ── w8 follow-up C9, C10 ───────────────────────────────────────────────────────────────────────────────────────
+
+    // C9: the note says when RHI finishes or undoes the change: before the game's next change too, not only at the next start.
+    [Fact]
+    public void TheUndecidedNote_SaysTheChangeIsSettledBeforeTheGamesNextChange_OrAtTheNextStart()
+    {
+        Assert.Contains("before the game's next change, or at the next start", DeploymentOperation.UndecidedNote, StringComparison.Ordinal);
+        Assert.Contains("antes da próxima alteração do jogo, ou na próxima inicialização",
+            UiLocalizationService.PresentFor("pt-BR", DeploymentOperation.UndecidedNote), StringComparison.Ordinal);
+    }
+
+    // C10 (R6): a waiting entry whose probe cannot be read (or is not a record probe) holds up every game — fail closed;
+    // a readable probe holds up only its own game, and a plain file transaction (no record probe) is never held up.
+    [Fact]
+    public void AWaitingEntryWithoutAReadableProbe_HoldsUpEveryGame()
+    {
+        var check = new LedgerCommitCheck(new LinuxDeploymentRecordStore(Ledger));
+        var game = LinuxDeploymentRecovery.RecordCommitProbe(Game, ManagedComponentKind.ReShade);
+        var other = LinuxDeploymentRecovery.RecordCommitProbe(
+            new DetectedGame { Name = "Other", Source = "Steam", SteamAppId = 4712, InstallPath = P("other"), BinaryDirectory = P("other") },
+            ManagedComponentKind.ReShade);
+
+        Assert.True(check.HoldsUp(null, game));
+        Assert.True(check.HoldsUp("not a record probe", game));
+        Assert.True(check.HoldsUp(game, game));
+        Assert.True(check.HoldsUp(LinuxDeploymentRecovery.RecordRemovalProbe(Game, ManagedComponentKind.OptiScaler), game));
+        Assert.False(check.HoldsUp(other, game));
+        Assert.False(check.HoldsUp(null, null));
+    }
+
+    // C10 (R7): the landed-write count belongs to the ledger file, not to one store: a write another store of this process
+    // renamed into place since the operation began makes an unreadable ledger Undecided (never a wrong NotCommitted).
+    [Fact]
+    public void ALandedWriteByAnotherStoreOfTheLedger_MakesTheDecisionUndecided()
+    {
+        var first = new LinuxDeploymentRecordStore(Ledger);
+        var second = new LinuxDeploymentRecordStore(Ledger);
+        var check = new LedgerCommitCheck(second);
+        var mark = check.Mark();
+
+        first.Upsert(Record(ManagedComponentKind.OptiScaler));
+        File.WriteAllText(Ledger, "{ not json");
+        var entry = new JournalEntryInfo("c10", "test install", LinuxDeploymentRecovery.RecordCommitProbe(Game, ManagedComponentKind.ReShade), false, [Payload]);
+
+        Assert.Equal(CommitDecision.Undecided, check.Decide(entry, mark));
+        Assert.Equal(CommitDecision.NotCommitted, check.Decide(entry, check.Mark())); // nothing landed since this mark
     }
 }
