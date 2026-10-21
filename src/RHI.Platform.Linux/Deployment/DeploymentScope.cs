@@ -189,7 +189,8 @@ public sealed class DeploymentScope : IAsyncDisposable
     /// <para>#204: journaled, the commit point is read again first (<see cref="SettleAfterFailureAsync"/>): when the commit
     /// write landed and then reported an error nothing is undone and the result says
     /// <see cref="OwnedFileSetRollback.Committed"/> (report <see cref="Landed"/>); when the ledger cannot tell, nothing is
-    /// undone and the next start decides (<see cref="CommitDecision.Undecided"/>). Run any further in-process undo step of
+    /// undone and the entry waits — settled before the game's next operation, or at the next start
+    /// (<see cref="CommitDecision.Undecided"/>). Run any further in-process undo step of
     /// a catch only while <see cref="OwnedFileSetRollback.RolledBack"/>.</para>
     /// </summary>
     public async Task<OwnedFileSetRollback> RollbackAsync()

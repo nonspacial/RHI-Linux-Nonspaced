@@ -354,6 +354,10 @@ public static class LinuxDeploymentRecovery
         {
             operation = await journal.BeginAsync(description, RecordRemovalProbe(game, component), cancellationToken).ConfigureAwait(false);
         }
+        catch (DeploymentDecisionPendingException ex)
+        {
+            return (null, ex.Message);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return (null, $"{JournalUnavailablePrefix}{ex.Message}); nothing was changed.");
@@ -398,6 +402,10 @@ public static class LinuxDeploymentRecovery
         {
             return (await journal.BeginAsync(description, RecordCommitProbe(game, component), cancellationToken).ConfigureAwait(false), null);
         }
+        catch (DeploymentDecisionPendingException ex)
+        {
+            return (null, ex.Message);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return (null, $"{JournalUnavailablePrefix}{ex.Message}); nothing was changed.");
@@ -438,7 +446,13 @@ public static class LinuxDeploymentRecovery
         try
         {
             recovery = await RecoverAsync(journal, records).ConfigureAwait(false);
-            if (recovery is null) deferred = journal.ReferencedOperationIds().Count;
+            if (recovery is null)
+            {
+                deferred = journal.ReferencedOperationIds().Count;
+                // Review w8 finding 2: once the ledger reads again in this session, each kept entry is settled before its
+                // game's next operation (a retry would otherwise be undone by the start that finally recovers it).
+                journal.WaitOnKeptEntries();
+            }
         }
         catch (Exception ex)
         {
@@ -584,20 +598,36 @@ public static class LinuxDeploymentRecovery
 /// <summary>
 /// The commit decision of a failed operation (#204): reads the ledger FILE again (never the store's cache, which a real
 /// failure inside the write — a directory fsync after the rename — leaves holding the old ledger) and applies the rule
-/// start-up recovery applies (<see cref="LinuxDeploymentRecovery.IsCommitted"/>). An unreadable ledger that is byte for
-/// byte the one the operation began with cannot hold a write of it (it was already unreadable, so every save was refused):
-/// not committed, roll back as before. One that changed since and cannot be read is undecided: the next start decides.
+/// start-up recovery applies (<see cref="LinuxDeploymentRecovery.IsCommitted"/>). When the file cannot be read (damaged,
+/// permission, I/O error) the decision comes from the store, not the bytes (review w8 finding 1): no write of the ledger
+/// renamed into place since the operation began (<see cref="LinuxDeploymentRecordStore.LandedWrites"/>; every save
+/// refused or failed before its rename) means nothing of it can have landed — not committed, roll back now; otherwise
+/// undecided, and the entry waits (settled before the game's next operation, or at the next start). An operation of this
+/// session whose commit point is not a ledger record (no record probe) is never committed by the ledger: rolled back as
+/// before. An entry kept by a deferred start-up (no mark) is decided only by a readable ledger, as start-up would.
 /// </summary>
 internal sealed class LedgerCommitCheck(LinuxDeploymentRecordStore records) : IDeploymentCommitCheck
 {
-    public string? Mark() => records.ReadFileFresh().Sha256;
+    public string? Mark() => records.LandedWrites.ToString(CultureInfo.InvariantCulture);
 
     public CommitDecision Decide(JournalEntryInfo entry, string? mark)
     {
-        var (ledger, sha) = records.ReadFileFresh();
-        if (ledger is not null)
+        if (records.ReadFileFresh() is { } ledger)
             return LinuxDeploymentRecovery.IsCommitted(entry, ledger) ? CommitDecision.Committed : CommitDecision.NotCommitted;
-        return sha is not null && string.Equals(sha, mark, StringComparison.Ordinal) ? CommitDecision.NotCommitted : CommitDecision.Undecided;
+        // No mark: an entry a deferred start-up kept (begun in an earlier session) — only a readable ledger decides it.
+        if (!long.TryParse(mark, NumberStyles.None, CultureInfo.InvariantCulture, out var landedAtBegin)) return CommitDecision.Undecided;
+        if (LinuxDeploymentRecovery.GameKeyOfCommitProbe(entry.CommitProbe) is null) return CommitDecision.NotCommitted;
+        return landedAtBegin == records.LandedWrites ? CommitDecision.NotCommitted : CommitDecision.Undecided;
+    }
+
+    /// <summary>
+    /// Same game (the record key in both probes). A new operation without a record probe (a plain file transaction) is
+    /// not held up: the ledger does not commit it, and start-up recovery keeps what it writes as a later change.
+    /// </summary>
+    public bool HoldsUp(string? waitingProbe, string? newProbe)
+    {
+        if (LinuxDeploymentRecovery.GameKeyOfCommitProbe(newProbe) is not { } game) return false;
+        return LinuxDeploymentRecovery.GameKeyOfCommitProbe(waitingProbe) is not { } waiting || string.Equals(waiting, game, StringComparison.Ordinal);
     }
 }
 

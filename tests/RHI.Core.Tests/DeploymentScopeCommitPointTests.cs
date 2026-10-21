@@ -11,7 +11,7 @@ namespace RHI.Core.Tests;
 /// back as before; ledger unreadable → nothing undone in process, the next start decides.
 /// </summary>
 [Trait("Category", "CommitPoint")]
-public sealed class DeploymentScopeCommitPointTests : IDisposable
+public sealed partial class DeploymentScopeCommitPointTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-commit-point-" + Guid.NewGuid().ToString("N"));
     private static readonly byte[] Before = "pre-operation bytes"u8.ToArray();

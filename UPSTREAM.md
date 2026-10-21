@@ -667,9 +667,13 @@ build.
   finished as committed (nothing is rolled back: files, Wine overrides, DLL renames, ReShade's DX9 translation and the
   second record of a two-record save all stay) and the result reads "Done; the deployment ledger reported an error after
   the change was written, so nothing was undone: <component>" (or "Removed; …"); if it did not land, everything is rolled
-  back as before; if the ledger cannot be read, nothing is undone now and the next start decides. The row, Update All and
-  the update history then match the ledger (a DX9 Feeder/Luma install used to leave ReShade's record naming `dxgi.dll`
-  while ReShade was back at `d3d9.dll`, so every later removal failed).
+  back as before. If the ledger cannot be read (damaged, no permission, a disk error): when no save of the operation got
+  as far as replacing the file, it is rolled back at once as before; otherwise nothing is undone now and the change waits
+  — RHI finishes or undoes it before the next install, update or removal on that game in the same session (as soon as the
+  ledger reads again; until then that game's next change is refused: "RHI has not yet finished or undone an earlier change
+  to this game…"), or at the next start. The row, Update All and the update history then match the ledger (a DX9
+  Feeder/Luma install used to leave ReShade's record naming `dxgi.dll` while ReShade was back at `d3d9.dll`, so every
+  later removal failed).
 
 ### #213 — Luma and DLSS5 Feeder journal the file behind a linked ReShade.ini
 - Luma Framework's install and removal and the DLSS5 Feeder's install and removal journal the file a ReShade.ini link

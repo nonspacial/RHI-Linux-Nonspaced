@@ -143,6 +143,8 @@ public sealed partial class ShortFuseDeploymentServiceTests
         using var _ = ctx;
         AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
         Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
+        Assert.Equal("1", ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse)!.Metadata[ShortFuseDeploymentService.MetaUalInstalledByShortFuse]);
+        Assert.NotNull(ctx.Records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
         var asi = Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName);
         var dxgi = Path.Combine(fixture.Bin, "dxgi.dll");
         // The first registry edit of the removal is ReShade's override re-enable; the next ledger save is the commit write.
@@ -167,6 +169,11 @@ public sealed partial class ShortFuseDeploymentServiceTests
         Assert.Equal(dxgi, reshade.Files.Single().Path);
         Assert.Equal("native,builtin", Override(fixture, "dxgi"));
         Assert.Empty(Directory.GetFiles(journalDir, "*.json"));
+        // w8 commit-point review, finding 4: the ASI Loader ShortFuse installed goes too (its own operation, after the
+        // commit), as on a removal that did not report an error.
+        Assert.Null(after.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+        Assert.DoesNotContain(ShortFuseDeploymentService.UalKeptPrefix, remove.Message, StringComparison.Ordinal);
     }
 
     // Review w3-journal #6: ShortFuse's record goes and ReShade's renamed-back record is saved in ONE ledger write. Split

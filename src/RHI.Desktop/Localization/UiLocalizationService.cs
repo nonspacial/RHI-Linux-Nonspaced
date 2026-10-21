@@ -1550,6 +1550,9 @@ public static class UiLocalizationService
             "Removido; o registro de implantações informou um erro depois que a remoção foi gravada, então nada foi desfeito: "),
         (RHI.Core.Deployment.DeploymentOperation.UndecidedNote,
             "O registro de implantações não pôde ser lido depois do erro, então nada foi desfeito agora; o RHI conclui ou desfaz esta alteração na próxima inicialização."),
+        // w8 commit-point review, finding 2: an operation refused while an earlier change to the same game is undecided.
+        (RHI.Core.Deployment.DeploymentJournal.EarlierChangeUndecidedMessage,
+            "O RHI ainda não concluiu nem desfez uma alteração anterior neste jogo, porque o registro de implantações não pode ser lido. Nada foi alterado. Repare o registro ou reinicie o RHI e tente novamente."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

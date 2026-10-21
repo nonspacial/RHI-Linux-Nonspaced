@@ -495,6 +495,11 @@ public sealed partial class ReShadeDeploymentService
                     LinuxDeploymentRecovery.RecordCommitProbe(game, ManagedComponentKind.ReShade),
                     cancellationToken).ConfigureAwait(false);
             }
+            catch (DeploymentDecisionPendingException ex)
+            {
+                if (updateSnapshot is not null) FileCleanup.TryDelete(updateSnapshot);
+                return ComponentOperationResult.Fail(ex.Message);
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 if (updateSnapshot is not null) FileCleanup.TryDelete(updateSnapshot);

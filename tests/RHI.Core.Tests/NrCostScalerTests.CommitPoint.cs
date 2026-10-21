@@ -108,4 +108,24 @@ public sealed partial class NrCostScalerTests
         Assert.True(install[^1].Success);
         Assert.Equal([false, true], removal.Select(r => r.Success));
     }
+    // w8 commit-point review, finding 3: the ledger cannot be read after the failed commit write, so nothing was undone and
+    // the next start decides; the message says so (it used to say the install "was rolled back").
+    [Fact]
+    [Trait("Category", "CommitPoint")]
+    public async Task Install_LedgerUnreadableAfterTheWrite_SaysNothingWasUndone()
+    {
+        var rig = Rig("undecided");
+        LandedLedgerWrite.Set(rig.Records, LandedShape.InsideWrite, () =>
+        {
+            File.WriteAllText(rig.Case.RecordsPath, "{ not json");
+            return new IOException(LandedLedgerWrite.FaultMessage);
+        });
+
+        var result = await rig.Service.InstallAsync(rig.Game);
+        LandedLedgerWrite.Disarm(rig.Records);
+
+        Assert.False(result.Success);
+        Assert.EndsWith(" " + DeploymentOperation.UndecidedNote, result.Message, StringComparison.Ordinal);
+        Assert.Single(CommitPointAgreement.JournalEntries(rig.Case));
+    }
 }

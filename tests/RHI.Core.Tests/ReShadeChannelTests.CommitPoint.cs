@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
@@ -124,5 +125,44 @@ public sealed partial class ReShadeChannelTests
         Assert.True(install[^1].Success);
         Assert.True(removal[^1].Success);
         Assert.False(removal[0].Success);
+    }
+    // w8 commit-point review, finding 2: ReShade opens its journal operation itself. While an earlier change to the game is
+    // undecided (the ledger cannot be read after its commit write), ReShade's install is refused with the plain message,
+    // not as a journal write failure, and nothing changes.
+    [Fact]
+    [Trait("Category", "CommitPoint")]
+    public async Task Install_WhileAnEarlierChangeToTheGameIsUndecided_IsRefusedWithThePlainMessage()
+    {
+        CommitPointCase? c = null;
+        string? other = null;
+        c = ReShadeCase("cp-rs-held-up", vulkan: false, (s, g, _) => InstallReShade(s, g, vulkan: false), async (_, g, _) =>
+        {
+            // Another component's change to this game: its commit write lands, then the ledger is damaged.
+            var (opened, refusal) = await DeploymentScope.BeginAsync(c!.Journal, "earlier change", g, ManagedComponentKind.OptiScaler, CancellationToken.None);
+            Assert.Null(refusal);
+            await using var scope = opened!;
+            other = Path.Combine(g.BinaryDirectory!, "earlier.dll");
+            await scope.PlaceBytesAsync(other, [1, 2, 3]);
+            LandedLedgerWrite.Set(c.Records, LandedShape.InsideWrite, () =>
+            {
+                File.WriteAllText(c.RecordsPath, "{ not json");
+                return new IOException(LandedLedgerWrite.FaultMessage);
+            });
+            Assert.ThrowsAny<IOException>(() => c.Records.Upsert(scope.Stamp(new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(g), GameName = g.Name, Component = ManagedComponentKind.OptiScaler,
+                BinaryDirectory = g.BinaryDirectory!, Files = [new LinuxDeployedFile { Path = other, Sha256 = FileHash.Sha256Hex(other) }]
+            })));
+            LandedLedgerWrite.Disarm(c.Records);
+            Assert.Equal(CommitDecision.Undecided, (await scope.RollbackAsync()).Decision);
+        }, out var arrange);
+        await arrange();
+        var before = CommitPointAgreement.Capture(c);
+
+        var result = await c.Act();
+
+        Assert.False(result.Success);
+        Assert.Equal(DeploymentJournal.EarlierChangeUndecidedMessage, result.Message);
+        Assert.Equal(before, CommitPointAgreement.Capture(c));
     }
 }

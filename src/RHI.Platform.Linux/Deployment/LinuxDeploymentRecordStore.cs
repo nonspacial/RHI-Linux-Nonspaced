@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Deployment;
@@ -125,6 +126,8 @@ public sealed class LinuxDeploymentRecordStore
             var before = File.Exists(_path) ? File.ReadAllBytes(_path) : null;
             var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
             EnsureWritable();
+            // Written by the caller's commit, outside SaveUnsafe: counted as landing now (the conservative side, #204).
+            CountLandedWrite();
             var after = File.Exists(_path) ? File.ReadAllBytes(_path) : null;
             if (!(before ?? []).AsSpan().SequenceEqual(after ?? []) || (before is null) != (after is null))
                 throw new IOException($"{_path} changed while it was being read. Nothing was changed; try again.");
@@ -331,39 +334,48 @@ public sealed class LinuxDeploymentRecordStore
         return records;
     }
 
-    /// <summary>Mark of a ledger file that does not exist (see <see cref="ReadFileFresh"/>).</summary>
-    internal const string MissingLedgerMark = "missing";
-
     /// <summary>
     /// The ledger as the FILE holds it now, read past the cache and without touching it (#204: after a save that failed,
     /// the commit decision must see a write that landed even when the save threw before the store took it in — a failed
-    /// directory fsync). <c>Records</c> is null when the file cannot be read or parsed; <c>Sha256</c> is the bytes' hash
-    /// (<see cref="MissingLedgerMark"/> for no file, null when it could not be read at all). Never throws.
+    /// directory fsync). Empty when there is no file; null when it cannot be read (permission, I/O error) or parsed.
+    /// Never throws.
     /// </summary>
-    internal (IReadOnlyList<LinuxDeploymentRecord>? Records, string? Sha256) ReadFileFresh()
+    internal IReadOnlyList<LinuxDeploymentRecord>? ReadFileFresh()
     {
         byte[] bytes;
         try
         {
-            if (!File.Exists(_path)) return ([], MissingLedgerMark);
+            if (!File.Exists(_path)) return [];
             bytes = File.ReadAllBytes(_path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (null, null);
+            return null;
         }
-        var sha = FileHash.Sha256HexOf(bytes);
         try
         {
             // Decoded as File.ReadAllText does (byte-order marks honoured), as the cached read sees it.
             using var reader = new StreamReader(new MemoryStream(bytes), detectEncodingFromByteOrderMarks: true);
-            return (Parse(reader.ReadToEnd()), sha);
+            return Parse(reader.ReadToEnd());
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException)
         {
-            return (null, sha);
+            return null;
         }
     }
+
+    // Per ledger file (full path), for every store of this process: how many writes of it reached the rename.
+    private static readonly ConcurrentDictionary<string, long> LandedWritesByPath = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// How many writes of this ledger file, by any store of this process, have been renamed into place (#204, review w8
+    /// finding 1). Only this process writes an operation's id into the ledger, so while this count has not moved since an
+    /// operation began, no write of that operation can be in the file — whatever made the file unreadable (damage,
+    /// permission, an I/O error): a save the store refused, or one that failed before its rename, changed nothing.
+    /// </summary>
+    internal long LandedWrites => LandedWritesByPath.GetValueOrDefault(Path.GetFullPath(_path));
+
+    private void CountLandedWrite() => LandedWritesByPath.AddOrUpdate(Path.GetFullPath(_path), 1, (_, n) => n + 1);
 
     private string? Quarantine()
     {
@@ -405,7 +417,7 @@ public sealed class LinuxDeploymentRecordStore
         if (SaveFaultForTesting?.Invoke() is { } fault) throw fault;
         // The store-file writer (#31, #57): unique temp, fsync, full verify, rename, directory fsync; a symlinked
         // deployments.json stays a link (its target is replaced) and keeps its mode, as every other store does.
-        AtomicFile.WriteStoreFile(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));
+        AtomicFile.WriteStoreFile(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions), mode: null, renamed: CountLandedWrite);
         if (SaveInsideWriteFaultForTesting?.Invoke() is { } inside) throw inside;
         _cached = records;
         var info = new FileInfo(_path);

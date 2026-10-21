@@ -526,6 +526,10 @@ public sealed class WaveOneMessageLocalizationTests
         yield return DeploymentScope.Landed("DLSS5 Feeder Full", removal: true).Message;
         yield return ReShadeDeploymentService.RemovalFailedPrefix + P + DeploymentScope.RollbackNote(
             new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
+        yield return DeploymentJournal.EarlierChangeUndecidedMessage;
+        yield return NrCostScalerService.FailedRolledBackPrefix + E + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
+        yield return $"{DeploymentScope.Landed("ShortFuse", removal: true).Message} {ShortFuseDeploymentService.UalKeptPrefix}{E}";
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must
