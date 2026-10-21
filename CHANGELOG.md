@@ -39,8 +39,9 @@ Components
   does, `Engine.ini` is made read-only while RHI's line is in it; turning the switch off or removing RenoDX takes only
   RHI's line out and gives the file back the lock it had. A line you already had is left alone and not locked, the file
   keeps its line endings and encoding, and RHI writes it only where the game has made its config folder (after its first
-  launch). When `Engine.ini` cannot be written (a link outside the prefix, an unreadable file) RenoDX still installs and
-  its line says why.
+  launch). When `Engine.ini` cannot be written (a link outside the prefix, an unreadable file, a read-only config folder)
+  RenoDX still installs and its line says why. If `Engine.ini` is no longer text RHI can edit, removing RenoDX still
+  finishes: RHI's line stays in the file, the line names it and the file so you can delete it, and RHI's lock comes off.
 - **UE-Extended RenoDX** (upstream's native HDR set-up): the HDR lines in `Engine.ini` and the native-HDR keys in
   ReShade.ini's `[renodx]` section are written as upstream's UE-Extended list says, and the ⚙ gets **Turn on the game's
   HDR output (UE-Extended)**. Switching UE-Extended off takes the HDR lines out again and removing RenoDX takes out every
@@ -60,8 +61,9 @@ Safety
 - A ReShade.ini linked to your shared file in `~/.config/ReShade` stays a link when a preset, Luma ⚙, peak brightness,
   RenoDX or DLSS5 Feeder change is undone, and the shared file gets its earlier content back. A read-only `Engine.ini`
   stays read-only when a Luma ⚙ change is undone.
-- When RHI's install records are saved but the save then reports an error, the change is kept and its line says so,
-  instead of being undone while the records say it is installed. If the records cannot be read at all afterwards,
+- When RHI's install records are saved but the save then reports an error, the change is kept and its line says so (also
+  for the Luma ⚙, peak brightness, the RenoDX ⚙ `Engine.ini` switches, the per-game Apply, the batch buttons and the
+  ReShade settings file Repair after move rewrites), instead of being undone while the records say it is installed. If the records cannot be read at all afterwards,
   nothing is undone: RHI decides at the next start, and until then refuses that game's next change with a plain reason.
 
 Interface

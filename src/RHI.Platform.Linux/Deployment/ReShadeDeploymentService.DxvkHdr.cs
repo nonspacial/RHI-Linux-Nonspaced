@@ -129,9 +129,9 @@ public sealed partial class ReShadeDeploymentService
         var record = LinuxDeploymentRecordStore.Clone(plan.Record);
         if (plan.NeedsIni)
         {
-            // #213 (w8 integration): the file the write replaces under the one ReShade.ini link rule — a dangling link to a
-            // shared ~/.config/ReShade file not made yet is tracked at its target, so a rollback deletes the new shared file
-            // and the link stays a link (tracking the link deleted it).
+            // #213 (w8 integration): the file the write replaces, under the one ReShade.ini link rule every writer follows.
+            // The audit's dangling-link case (a link to a shared ~/.config/ReShade file not made yet) never reaches here:
+            // .NET counts a dangling link as an existing file, so NeedsIni is false for it (w8 follow-up C15; UPSTREAM.md).
             var ini = ReShadeIniWriteTarget(game, ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!));
             await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
             var iniResult = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], IniDefaults?.Invoke(game, true), game.InstallPath);
