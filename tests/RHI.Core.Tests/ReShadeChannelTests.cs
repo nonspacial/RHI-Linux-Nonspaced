@@ -646,8 +646,8 @@ public sealed partial class ReShadeChannelTests : IDisposable
     [Fact]
     public async Task ShaderSelection_IsPerGameWithNoGlobalFallback()
     {
-        // Upstream 2.7.9 fixed a global shader "Off" overriding per-game picks. RHI-Linux has no
-        // global shader mode: each game's selection lives on its own record and deploys as-is.
+        // Upstream 2.7.9 fixed a global shader "Off" overriding per-game picks. Without the #179 shader-set store (a
+        // service built without it) each game's selection lives on its own record and deploys as-is.
         var (game, store) = CreateGame("per-game-shaders");
         var compiler = Path.Combine(_root, "per-game-native", "D3DCompiler_47.dll");
         WriteNativeD3DCompiler(compiler, 0x8664);

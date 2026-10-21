@@ -206,8 +206,9 @@ internal sealed class ViewModelFixture : IDisposable
         var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) }.Concat(detectors ?? []).ToArray());
         var deployment = new TransactionalFileDeploymentService();
         var wineOverrides = new WineDllOverrideService();
+        var shaderPacks = new ReShadeShaderPackService(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade", "shader-packs"), upstreamManifest); // w7/shader-sets (#179): the store reaches it
         var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, new ReShadeArchiveExtractor(), upstreamManifest: upstreamManifest,
-            dllNames: new DllNamePreferenceStore(Path.Combine(Path.GetDirectoryName(cacheDir)!, "config", "dll-names.json"))); // w3/dllnames: per fixture
+            dllNames: new DllNamePreferenceStore(Path.Combine(Path.GetDirectoryName(cacheDir)!, "config", "dll-names.json")), shaderPacks: shaderPacks); // w3/dllnames: per fixture
         var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
         var dlss = new DlssManagerService(http, deployment, cacheDir);
         var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
@@ -260,6 +261,8 @@ internal sealed class ViewModelFixture : IDisposable
         var nrCostScaler = new NrCostScalerService(http, records, new RHI.Core.Deployment.DeploymentJournal(Path.Combine(prefs, "nr-cost-scaler-journal")), Path.Combine(cacheDir, "nr-cost-scaler")); // #199
         // w7/reshade rows
         // w7/shader-sets rows
+        var shaderSets = new GlobalShaderAddonStore(records, Path.Combine(prefs, "shader-addon-sets.json")); // #179
+        shaderPacks.Sets = shaderSets;
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         var managed = new LinuxManagedComponentService(
@@ -284,6 +287,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             );
+        managed.ShaderSets = shaderSets; // w7/shader-sets (#179): after construction, as the app's composition does
         built(managed);
         return new MainWindowViewModel(scanner, launcher ?? new LinuxGameLauncher(), probe ?? new NoProbe(), dlss, managed,
             new GraphicsApiOverrideStore(Path.Combine(prefs, "api.json")), new OptiScalerVariantPreferenceStore(Path.Combine(prefs, "opti.json")),

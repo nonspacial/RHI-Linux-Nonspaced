@@ -69,7 +69,7 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 
 ### #20/#21 — Shaders and ReShade channel (2.7.9)
 
-- **Shaders (2.7.9):** upstream's global shader "Off" overriding per-game overrides does not apply: RHI Linux has no global shader mode or global selection fallback; each game's pack selection is stored on its own ReShade record. The custom-folder auto-tick fix is ported: dependency expansion never pulls in the local Custom Shaders pack; it deploys only when ticked explicitly.
+- **Shaders (2.7.9):** upstream's fix (a global shader "Off" no longer overrides a game's own Select) is ported with the global shader set in wave 7 (#179, see below): a game on its own list or None keeps it whatever the global set holds. The custom-folder auto-tick fix is ported: dependency expansion never pulls in the local Custom Shaders pack; it deploys only when ticked explicitly.
 - **ReShade (2.7.9):** the Custom-channel false update does not apply: the channel is stored on the ReShade record and rewritten by the apply that changes it, so the update check never sees a stale channel. Covered by tests.
 
 ### #22 — Launch working directory (2.7.9)
@@ -547,6 +547,49 @@ build.
 - Linux deviations: copies instead of upstream's symbolic links (a headless Wine check showed Wine and Proton load either the same way, but a journaled rollback restores a tracked path as a plain file, so RHI could not put a link back after a failure or crash; copies also survive a library move). Repair after move re-points the GAC copies with the game folder, and also when the prefix moved on its own or apart from the game folder (a custom, Heroic or Lutris prefix); until then the game counts as moved and installs are refused. A GAC `ReShade.ini` that changed since RHI copied it is kept on update and removal (never discard). Refused with a plain reason, nothing changed: a `d3d9.dll`/`ReShade.ini` RHI did not place in that folder (upstream deletes it), RHI's copy changed since, the prefix not set up or the folder missing ("start the game once"), a manifest path that would lead outside the game's prefix, Wine running for the prefix. Upstream needs Windows admin rights for the links; not on Linux. A native Linux build of a listed game gets no XNA path (Terraria's native Linux build is not XNA); its ReShade row says so.
 
 <!-- w7/shader-sets notes -->
+
+### #179 — Global shader and add-on sets, per game Global / Select / Off
+
+- Ported (upstream `SelectedShaderPacks`, `GlobalShadersOff`/`UseCustomShaders`, `EnabledGlobalAddons`,
+  `PerGameShaderMode`/`PerGameAddonMode`): a global shader set and global add-ons, and per game a choice for shaders and
+  for add-ons. Layout (owner's pick, B): no new controls in the game's panel; the game's **Shaders/Add-ons** dialog starts
+  each tab with **Use the global set / Choose for this game / None** (upstream Global / Select / Off), the list below can
+  be ticked only for Choose (it shows the global set, or nothing, otherwise); Settings → Shaders/Add-ons → **Global
+  shaders and add-ons…** opens the same dialog for the global set (Save global set). The add-on choice is not shown while
+  ReShade is the No Addons build (its add-ons are held). Upstream's global shader mode is the global list itself: nothing
+  ticked = Off, only "Custom Shaders (local)" ticked = Custom.
+- One answer per game: ReShade's install and update (the ReShade row, profile Apply, ReShade installed for another
+  component, Update All), the Shaders/Add-ons dialog, Update All's Addon Manager family (#194) and the start-up shader
+  prefetch (the global set's packs first) all read the game's effective set. Every one of those ReShade paths gets a
+  native D3DCompiler_47 for that set first (Protontricks/Winetricks, as profile Apply); when none can be had ReShade still
+  installs, without the packs, and says why. A ReShade install on a game that has no Addon Manager add-ons yet also
+  applies its effective add-ons (upstream deploys add-ons after ReShade); if that fails, ReShade stays installed and the
+  message says why.
+- A shader change (a game's choice, the global set) changes only the pack files, ReShade.ini's search paths and the
+  record's pack list, in one journaled operation on ReShade's record — never ReShade itself (upstream likewise only
+  re-copies shaders; review of decision 9). It is logged in the update history as "ReShade (reshade-shaders)". Add-on
+  changes go through one Addon Manager operation each.
+- Saving the global set brings every game with RHI's ReShade that uses it up to date, one game at a time; a game on its
+  own list or None is never touched, nor a game left out of Update All for ReShade (shaders) or the Addon Manager
+  (add-ons); a running game is skipped and named, Cancel stops between games, a game that fails keeps its files, and the
+  status line counts the outcomes. Save also catches up games a cancelled or skipped run left behind; the game's dialog
+  says when its files do not follow its choice yet.
+- Ticking a different list in a game's dialog (Choose), ReShade profile Apply or a preset with its shaders makes the
+  game use its own list (upstream); applying the list the game already gets keeps it on the global set.
+- Migration (owner decision): a game's saved shader packs (its ReShade record) and Addon Manager add-ons become its own
+  list ("Choose for this game") with exactly the same contents; a game without a saved selection uses the global set.
+  The Addon Manager's older-build copy is brought into the ledger first. Stored in
+  `~/.config/rhi-linux/shader-addon-sets.json` (keyed like the ledger, moved by Repair after move; unreadable = copied
+  aside, never saved over, and every install keeps what the records say; nothing is saved while the ledger itself is
+  unreadable).
+- Linux differences: the global set starts **empty** (upstream: Lilium). Under Wine/Proton every shader pack needs a
+  native D3DCompiler_47, so a Lilium default would make every ReShade install run Protontricks; a game without a saved
+  selection deploys what it did before (nothing). Upstream's per-game **Custom** mode is covered by Choose (tick "Custom
+  Shaders (local)"). Upstream re-syncs every game at each start; RHI Linux changes game files only when the user changes
+  a choice, installs or updates. Switching shaders to the global set forgets the game's own pack list (upstream);
+  switching add-ons keeps it for a later Choose (upstream).
+- Older builds ignore the new file and keep using the records as before; a selection an older build changes after the
+  migration is replaced by this build's saved choice at the next apply.
 
 <!-- w7/nvapi-launch notes -->
 

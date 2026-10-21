@@ -130,7 +130,8 @@ public sealed partial class ReShadeAddonManagerService
         if (record is null) return ComponentOperationResult.Fail($"{DisplayName} is not managed by RHI Linux.");
         if (record.Files.Any(file => file.Path.EndsWith(ReShadeAddonSwitch.OffSuffix, StringComparison.Ordinal)))
             return ComponentOperationResult.Fail(ReShadeAddonSwitch.HeldPrefix + DisplayName);
-        var selected = SelectedIdsOf(record);
+        // #179: the update re-applies the game's effective set (Global follows the global add-ons); without a store, the record's.
+        var selected = EffectiveSelectionFor(game) is { HeldByNoAddons: false } effective ? effective.Ids : SelectedIdsOf(record);
         var result = await ApplySelectionAsync(game, selected, cancellationToken).ConfigureAwait(false);
         return result.Success ? result with { Message = UpdatedPrefix + selected.Count } : result;
     }

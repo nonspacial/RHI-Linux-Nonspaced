@@ -107,6 +107,8 @@ public sealed partial class SettingsDialogView : UserControl
         // w7/smalls rows
         // w7/reshade rows
         // w7/shader-sets rows
+        var shaderSets = new ShaderSetsSettingsRows(vm, Show); // #179 global shader mode, set and add-ons (apply at once, not on Save)
+        Fill("ShaderSetsSlot", shaderSets.Control);
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
 

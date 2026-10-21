@@ -439,6 +439,16 @@ public sealed class WaveOneMessageLocalizationTests
         yield return XnaGacReShade.ForeignFilePrefix + P;
         yield return XnaGacReShade.ChangedCopyPrefix + P;
         // w7/shader-sets rows
+        yield return LinuxManagedComponentService.ShaderSetsUnreadableMessage;
+        yield return LinuxManagedComponentService.ShaderChoiceNotSavedPrefix + E;
+        yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetNotAppliedPrefix + E;
+        yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetAppliedNote;
+        yield return "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + LinuxManagedComponentService.ShaderPacksNotInstalledNote;
+        yield return ReShadeDeploymentService.ShaderSyncFailedPrefix + E;
+        yield return ReShadeDeploymentService.ShaderSyncNotInstalledMessage;
+        yield return ReShadeDeploymentService.ShaderSyncDonePrefix + "Lilium, Prod80";
+        yield return ReShadeDeploymentService.ShaderSyncNoneMessage;
+        yield return RHI.Platform.Linux.Settings.GlobalShaderAddonStore.LedgerUnreadableMessage;
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     }
