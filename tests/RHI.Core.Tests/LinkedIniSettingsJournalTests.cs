@@ -7,7 +7,7 @@ using RHI.Platform.Linux.Deployment;
 namespace RHI.Core.Tests;
 
 /// <summary>
-/// #213: the per-game settings that edit a linked ReShade.ini (presets, Luma ⚙ \"HDR on first boot\") or a linked
+/// #213: the per-game settings that edit a linked ReShade.ini (presets, Luma ⚙ "HDR on first boot") or a linked
 /// Engine.ini (Luma ⚙ TAA) journal the file a write through the link replaces — the shared file — never the link. A
 /// rollback (failed ledger write, or crash recovery at the next start) keeps the link a link and puts the shared file back
 /// byte for byte, so no other game linked to it keeps a line no record lists. Same shape as
