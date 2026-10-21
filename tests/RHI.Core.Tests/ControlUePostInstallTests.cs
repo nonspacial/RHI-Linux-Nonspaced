@@ -617,6 +617,36 @@ public sealed partial class ControlUePostInstallTests : IDisposable
         Assert.Empty(Directory.GetFiles(journalDir));
     }
 
+    // w8 follow-up C12: reshade.ini is gone by the time the key would go in (the "no reshade.ini" branch, before the commit
+    // write), and the ledger cannot be read while another save landed since the step began: nothing is undone now and the
+    // note says so (the undecided note), beside the plain "no reshade.ini" reason.
+    [Fact]
+    public async Task FrameGenerationHdrKey_IniGoneBeforeTheWrite_LedgerUndecided_TheNoteSaysNothingWasUndone()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var ini = Path.Combine(game.BinaryDirectory!, "reshade.ini");
+        File.WriteAllText(ini, "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n");
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        var ledger = Path.Combine(_root, "records.json");
+        var journalDir = Path.Combine(_root, "journal-no-ini");
+        var (journal, _) = SimulatedDeath.NewJournal(journalDir, store);
+        var frameGeneration = new ControlUeFrameGenerationService(null!, store, journal);
+        journal.OperationStartedForTesting = _ =>
+        {
+            File.Delete(ini);
+            store.Upsert(store.Find(game, ManagedComponentKind.RenoDX)!); // another save lands after the step began …
+            File.WriteAllText(ledger, "{ not json"); // … and then the ledger cannot be read
+        };
+
+        var note = await frameGeneration.SetHdrKeyAsync(game, useHdr: true);
+
+        journal.OperationStartedForTesting = null;
+        Assert.Equal(ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoIniMessage + " " + DeploymentOperation.UndecidedNote, note);
+        Assert.False(File.Exists(ini));
+        Assert.Single(Directory.GetFiles(journalDir, "*.json")); // the entry waits for the decision
+        AssertNotGenericInPortuguese(note);
+    }
+
     // w3 final review, finding 1: a reshade.ini link the writer's policy refuses (target outside the game's folders) is
     // refused before anything is copied: no rollback copy is written beside the outside target. The outside folder is
     // read-only, so a copy attempted there fails with a permission error instead of the link refusal.
