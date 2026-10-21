@@ -42,7 +42,7 @@ public sealed class ReShadeProfilePanelTests
         Assert.Equal(UiLocalizationService.Format("Ui.ReShadeGlobalDefault", OptionLists.ReShadeChannel.Display(settings.ReShadeChannel)),
             profile.ReShadeUpdateText);
         Assert.Equal(UiLocalizationService.Text("Vm.SelectGameDetermineCorrectD3DCompilerHelper"), profile.D3DCompilerToolHint);
-        Assert.Equal(UiLocalizationService.Text("Vm.SelectGameFirst"), profile.ApplyGlobalReShadeSettingsToSelectedGame(new LinuxAppSettings()));
+        Assert.Equal(UiLocalizationService.Text("Vm.SelectGameFirst"), await profile.ApplyGlobalReShadeSettingsToSelectedGameAsync(new LinuxAppSettings(), fx.Vm.IniPresets.Service));
     }
 
     [Fact]

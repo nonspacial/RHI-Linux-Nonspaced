@@ -183,6 +183,32 @@ public static class XnaGacReShade
     public const string MissingCopyAfterMovePrefix =
         "Nothing was changed: RHI's ReShade copy is no longer in the old prefix, and the .NET assembly folder of the prefix the game uses now has no d3d9.dll. Copy the game folder's d3d9.dll (RHI's ReShade) into that folder, then choose Repair after move again. Folder: ";
 
+    /// <summary>
+    /// #214: the note when RHI's GAC ReShade.ini copy changed since RHI placed it (kept as it is, so it still names the old
+    /// game folder): what to set, then the file and the new base path (PT-BR presentation pairs for the text and the
+    /// infix; built by <see cref="GacIniChangedAfterMove"/>).
+    /// </summary>
+    public const string GacIniChangedAfterMovePrefix =
+        "ReShade's settings file in the .NET assembly folder of the prefix changed since RHI placed it, so RHI left it as it is and it still names the game's old folder: open that file and set BasePath in it to the game's new folder. File: ";
+
+    /// <summary>#214 (review 6): between the file and the new base path in <see cref="GacIniChangedAfterMovePrefix"/>'s note.</summary>
+    public const string GacIniChangedAfterMoveBasePathInfix = " — new BasePath: ";
+
+    /// <summary>#214: the note while Wine runs for the prefix (PT-BR presentation pair).</summary>
+    public const string GacIniWineRunningAfterMoveMessage =
+        "Wine is running for this game's prefix, so ReShade's settings file in its .NET assembly folder still names the game's old folder: close the game, then use Apply / Update in the ReShade section once.";
+
+    /// <summary>#214: the note when that file could not be read or rewritten (rolled back; PT-BR pair, reason last).</summary>
+    public const string GacIniNotUpdatedAfterMovePrefix =
+        "ReShade's settings file in the .NET assembly folder of the prefix could not be updated and still names the game's old folder: use Apply / Update in the ReShade section once. Reason: ";
+
+    /// <summary>#214: between Repair after move's own line and a note (the service's message; the app shows the note apart).</summary>
+    public const string AfterMoveNoteSeparator = ". ";
+
+    /// <summary>#214: the note for a GAC ReShade.ini the user changed: what to set, the file, the new base path.</summary>
+    internal static string GacIniChangedAfterMove(string gacIni, string basePath)
+        => GacIniChangedAfterMovePrefix + gacIni + GacIniChangedAfterMoveBasePathInfix + basePath;
+
     /// <summary>The bitness the GAC folder declares (<c>GAC_32</c> = x86, <c>GAC_64</c> = x64), else the game's.</summary>
     internal static PeArchitecture ArchitectureOf(DetectedGame game)
     {

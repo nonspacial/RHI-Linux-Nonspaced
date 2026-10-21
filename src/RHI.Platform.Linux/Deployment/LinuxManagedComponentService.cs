@@ -1135,7 +1135,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// favourites/hidden/edits/HDR and the preference stores it owns). All or nothing.
     /// </summary>
     public RelocationRepairResult RepairAfterMove(DetectedGame game, IReadOnlyList<IGameStateStore>? libraryStores = null)
-        => _relocation.Repair(game, RepairStores(libraryStores), out _);
+        => ReShadeDeploymentService.AfterRepair(_reshade, game, _relocation.Repair(game, RepairStores(libraryStores), out _)); // w8/reshade-ini hook (#214)
 
     /// <summary>
     /// Every per-game store "Repair after move" rewrites: the ones this service owns plus <paramref name="libraryStores"/>.

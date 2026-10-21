@@ -25,6 +25,12 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
     /// <summary>ReShade record metadata: JSON list of <see cref="InstalledReShadePreset"/>.</summary>
     public const string MetadataKey = "ReShade.Presets";
 
+    /// <summary>
+    /// #206: ReShade record metadata: the file name of the preset RHI last selected in ReShade.ini (set by an install; no
+    /// longer counted once that preset is removed). A ReShade.ini RHI regenerates keeps it (<see cref="KeepingSelection"/>).
+    /// </summary>
+    public const string SelectedMetadataKey = "ReShade.PresetSelected";
+
     /// <summary>The largest preset RHI copies (presets are a few KiB).</summary>
     public const long MaxPresetBytes = 1024 * 1024;
 
@@ -161,6 +167,31 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
     public IReadOnlyList<InstalledReShadePreset> Installed(DetectedGame game)
         => Read(records.Find(game, ManagedComponentKind.ReShade));
 
+    /// <summary>The preset RHI selected in the game's ReShade.ini (still one RHI installed there), or null.</summary>
+    internal static string? Selected(LinuxDeploymentRecord? record)
+        => record?.Metadata.GetValueOrDefault(SelectedMetadataKey) is { Length: > 0 } name
+           && Read(record).Any(p => p.FileName.Equals(name, StringComparison.OrdinalIgnoreCase))
+            ? name
+            : null;
+
+    /// <summary>
+    /// #206: ReShade's install defaults plus RHI's preset selection. Recording a preset's <c>PresetPath</c> write as RHI's
+    /// lets ReShade's removal delete a ReShade.ini RHI created; the same rule makes an update (and a shader change)
+    /// regenerate that unchanged file from the template, so the regenerated file must get the selection back. Wraps
+    /// <c>ReShadeDeploymentService.IniDefaults</c> (the app wires it once, AppComposition).
+    /// </summary>
+    public static Func<DetectedGame, bool, ReShadeIniDefaults?> KeepingSelection(Func<DetectedGame, bool, ReShadeIniDefaults?>? defaults, LinuxDeploymentRecordStore records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        return (game, vulkan) =>
+        {
+            var inner = defaults?.Invoke(game, vulkan);
+            return Selected(records.Find(game, ManagedComponentKind.ReShade)) is { } selected
+                ? (inner ?? new ReShadeIniDefaults()) with { PresetFileName = selected }
+                : inner;
+        };
+    }
+
     internal static IReadOnlyList<InstalledReShadePreset> Read(LinuxDeploymentRecord? record)
     {
         if (record?.Metadata.GetValueOrDefault(MetadataKey) is not { Length: > 0 } json) return [];
@@ -208,6 +239,13 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             if (!ours && !same) return Refused(NameTakenPrefix + target);
         }
         if (XboxWriteGate.Refusal(target) is { } protectedFile) return Refused(protectedFile);
+        // #213: ReShade.ini may link to the user's shared file in ~/.config/ReShade (the one ReShade.ini link rule): the
+        // journal tracks the file the write replaces, never the link, so a rollback keeps the link and puts the shared
+        // file back. A link the rule refuses is refused here, before anything is written.
+        var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
+        string written;
+        try { written = ReShadeIniManager.ResolveWriteTarget(ini, game.BinaryDirectory, game.InstallPath); }
+        catch (IOException ex) { return Refused(ex.Message); }
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade preset: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return Refused(journalRefusal);
@@ -216,15 +254,19 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         {
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             var sha = await scope.PlaceBytesAsync(target, bytes, cancellationToken).ConfigureAwait(false);
-            var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
-            await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
+            await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+            var iniHashBefore = File.Exists(written) ? FileHash.Sha256Hex(written) : null;
             ReShadeIniManager.SetPresetPath(game.BinaryDirectory, fileName, game.InstallPath);
-            await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
+            await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
+            // #206: the PresetPath write is RHI's on ReShade's record (#203 rule), so ReShade's removal still deletes a
+            // ReShade.ini RHI created and nobody changed since.
+            ReShadeDeploymentService.RecordSettingsWrite(record, ini, written, iniHashBefore);
 
             installed.RemoveAll(p => p.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
             installed.Add(new InstalledReShadePreset(fileName, sha));
             // Find hands out a copy: changing it touches the ledger only through Upsert, after the files are in place.
             record.Metadata[MetadataKey] = JsonSerializer.Serialize(installed);
+            record.Metadata[SelectedMetadataKey] = fileName;
             records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -250,6 +292,12 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             return ComponentOperationResult.Fail(NotInstalledPrefix + fileName);
         var target = Path.Combine(game.BinaryDirectory, preset.FileName);
         var unchanged = File.Exists(target) && new FileInfo(target).LinkTarget is null && FileHash.HexEquals(FileHash.Sha256Hex(target), preset.Sha256);
+        // #213: the file a PresetPath edit replaces (a linked shared file, never the link). A link the rule refuses was
+        // made by the user since (RHI never writes through it): it is left as it is, and the preset still comes out.
+        var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
+        string? written;
+        try { written = ReShadeIniManager.ResolveWriteTarget(ini, game.BinaryDirectory, game.InstallPath); }
+        catch (IOException) { written = null; }
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade preset removal: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
@@ -258,12 +306,15 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         {
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             if (unchanged) await scope.DeleteAsync(target, cancellationToken).ConfigureAwait(false);
-            var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
-            if (File.Exists(ini))
+            if (written is not null && File.Exists(written))
             {
-                await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
+                await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+                var iniHashBefore = FileHash.Sha256Hex(written);
                 if (ReShadeIniManager.ClearPresetPath(game.BinaryDirectory, preset.FileName, game.InstallPath))
-                    await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
+                {
+                    await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
+                    ReShadeDeploymentService.RecordSettingsWrite(record, ini, written, iniHashBefore); // #206
+                }
             }
             installed.Remove(preset);
             if (installed.Count == 0) record.Metadata.Remove(MetadataKey);

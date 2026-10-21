@@ -115,7 +115,12 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
         OnPropertyChanged(nameof(IsReShadeCustom));
     }
 
-    public string ApplyGlobalReShadeSettingsToSelectedGame(LinuxAppSettings settings)
+    /// <summary>
+    /// Settings' "Apply to the selected game": the ReShade Settings values into the selected game's ReShade.ini through
+    /// the same service method as "Apply to all games" (#206: journaled and recorded on ReShade's record where RHI
+    /// installed ReShade).
+    /// </summary>
+    public async Task<string> ApplyGlobalReShadeSettingsToSelectedGameAsync(LinuxAppSettings settings, UserIniService service)
     {
         if (SelectedGame is null) return T("Vm.SelectGameFirst");
         if (IsBusy) return T("Vm.AnotherRHIOperationAlreadyRunning");
@@ -128,8 +133,13 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
             !probe.Components.Any(component => component.Kind == ManagedComponentKind.ReShade &&
                 component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable))
             return T("Vm.InstallDetectReShadeSelectedGameBefore");
-        var path = ReShadeGlobalSettingsApplier.ApplyToGame(settings, SelectedGame);
-        return TF("Vm.ReShadeCaptureHotkeyDefaultsAppliedAt", path);
+        var game = SelectedGame;
+        using var op = Host.Operations.TryBegin("reshade-settings", cancellable: false);
+        if (op is null) return T("Vm.AnotherRHIOperationAlreadyRunning");
+        var result = await Task.Run(() => service.ApplyReShadeSettingsAsync(game, settings, op.Token));
+        return result.Success
+            ? TF("Vm.ReShadeCaptureHotkeyDefaultsAppliedAt", result.ChangedFiles is [var path, ..] ? path : result.Message)
+            : UiLocalizationService.Present(result.Message);
     }
 
     [RelayCommand]

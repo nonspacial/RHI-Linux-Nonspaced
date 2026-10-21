@@ -323,6 +323,7 @@ internal sealed class AppComposition
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         // w8/reshade-ini rows
+        reshade.IniDefaults = ReShadePresetService.KeepingSelection(reshade.IniDefaults, records); // #206: a regenerated ReShade.ini keeps RHI's preset
         // w8/renodx rows
         // w8/commit-point rows
         return new AppComposition

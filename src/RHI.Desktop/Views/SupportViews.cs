@@ -71,7 +71,8 @@ internal static class ChangelogText
 
     /// <summary>
     /// The changelog as display blocks: headings (<c>#</c>, <c>##</c>) and paragraphs/list items, with markdown markers
-    /// (emphasis, inline code, link targets, admonition tags) taken out so it reads as plain text.
+    /// (emphasis, inline code, link targets, admonition tags) taken out so it reads as plain text. Blockquote markers (any
+    /// depth) are taken off; a fenced code block is one block with its lines as they are.
     /// </summary>
     public static IReadOnlyList<(int Level, string Text)> Blocks(string markdown)
     {
@@ -82,20 +83,48 @@ internal static class ChangelogText
             if (paragraph.Count > 0) blocks.Add((0, Plain(string.Join(" ", paragraph))));
             paragraph.Clear();
         }
+        // #219 review 5: a fenced code block (also inside a blockquote) is one block of its own, its lines kept as they are.
+        List<string>? code = null;
+        string fence = "";
+        var fenceDepth = 0;
+        void FlushCode()
+        {
+            if (code is { Count: > 0 }) blocks.Add((0, string.Join("\n", code)));
+            code = null;
+        }
+        var lastDepth = 0;
         foreach (var raw in markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
         {
             var line = raw.TrimEnd();
-            var trimmed = line.TrimStart();
-            if (trimmed.Length == 0) { Flush(); continue; }
-            if (trimmed.StartsWith('#'))
+            var (depth, content) = Unquote(line);
+            if (code is not null)
+            {
+                // The fence ends at its closing marker, or where its blockquote ends (a line of a lower quote depth).
+                if (depth >= fenceDepth && !IsClosingFence(content.TrimStart(), fence)) { code.Add(content); continue; }
+                var closed = depth >= fenceDepth;
+                FlushCode();
+                if (closed) { lastDepth = depth; continue; }
+            }
+            var trimmed = content.TrimStart();
+            // #219: a bare ">" (any depth) is Markdown's paragraph break inside a blockquote: it ends the paragraph or list item.
+            if (trimmed.Length == 0) { Flush(); lastDepth = depth; continue; }
+            // A quote opening (or a nested one) starts its own block; a line without ">" after a quote still joins (lazy continuation).
+            if (depth > 0 && depth != lastDepth) Flush();
+            lastDepth = depth;
+            if (OpeningFence(trimmed) is { } opening)
+            {
+                Flush();
+                (code, fence, fenceDepth) = (new List<string>(), opening, depth);
+                continue;
+            }
+            if (depth == 0 && trimmed.StartsWith('#'))
             {
                 Flush();
                 var level = trimmed.TakeWhile(c => c == '#').Count();
                 blocks.Add((level, Plain(trimmed[level..].Trim())));
                 continue;
             }
-            if (trimmed.StartsWith("> [!", StringComparison.Ordinal)) continue;
-            if (trimmed.StartsWith('>')) trimmed = trimmed.TrimStart('>').TrimStart();
+            if (depth > 0 && trimmed.StartsWith("[!", StringComparison.Ordinal)) continue;
             if (trimmed.StartsWith("- ", StringComparison.Ordinal) || trimmed.StartsWith("* ", StringComparison.Ordinal))
             {
                 Flush();
@@ -104,9 +133,36 @@ internal static class ChangelogText
             }
             paragraph.Add(trimmed);
         }
+        FlushCode();
         Flush();
         return blocks;
     }
+
+    // The blockquote depth of a line and its text after the markers: each ">" takes at most one following space, so a fenced
+    // code line inside a quote keeps its own indentation.
+    private static (int Depth, string Content) Unquote(string line)
+    {
+        var depth = 0;
+        var rest = line;
+        while (rest.TrimStart() is { Length: > 0 } t && t[0] == '>')
+        {
+            depth++;
+            rest = t[1..];
+            if (rest.StartsWith(' ')) rest = rest[1..];
+        }
+        return (depth, rest);
+    }
+
+    // "```" or "~~~" (three or more) opens a fence; the marker run is returned so only the same kind of run closes it.
+    private static string? OpeningFence(string trimmed)
+    {
+        if (trimmed.Length < 3 || (trimmed[0] != '`' && trimmed[0] != '~')) return null;
+        var run = trimmed.TakeWhile(c => c == trimmed[0]).Count();
+        return run >= 3 ? new string(trimmed[0], run) : null;
+    }
+
+    private static bool IsClosingFence(string trimmed, string fence)
+        => trimmed.StartsWith(fence, StringComparison.Ordinal) && trimmed.Trim().All(c => c == fence[0]);
 
     /// <summary>
     /// One block as the What's new dialog shows it. Only <c>#</c>/<c>##</c> headings get a brush of their own; every other

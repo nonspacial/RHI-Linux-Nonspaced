@@ -36,9 +36,13 @@ public sealed class LumaSettingsService(LinuxDeploymentRecordStore records, Depl
         {
             var ini = RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory!)
                       ?? throw new InvalidOperationException("ReShade.ini is required before enabling Luma Framework.");
-            await scope.TrackAsync(ini, token).ConfigureAwait(false);
+            // #213: the file the write replaces under the one ReShade.ini link rule (a shared ~/.config/ReShade file,
+            // never the link), so a rollback keeps the link and puts the shared file back. Throws the rule's refusal
+            // before anything is written.
+            var written = ReShadeIniManager.ResolveWriteTarget(ini, game.BinaryDirectory!, game.InstallPath);
+            await scope.TrackAsync(written, token).ConfigureAwait(false);
             var state = LumaIniOverrideManager.SetHdrMode(game.BinaryDirectory!, LumaIniOverrideManager.Deserialize(record.Metadata.GetValueOrDefault(LumaIniOverrideManager.MetadataKey)), mode, game.InstallPath);
-            await scope.DeclareWrittenContentAsync(ini, token).ConfigureAwait(false);
+            await scope.DeclareWrittenContentAsync(written, token).ConfigureAwait(false);
             record.Metadata[LumaIniOverrideManager.MetadataKey] = LumaIniOverrideManager.Serialize(state);
             return ini;
         }, cancellationToken);
@@ -49,9 +53,12 @@ public sealed class LumaSettingsService(LinuxDeploymentRecordStore records, Depl
             var previous = LumaEngineIniOverrideManager.Deserialize(record.Metadata.GetValueOrDefault(LumaEngineIniOverrideManager.MetadataKey));
             var ini = previous?.IniPath ?? LumaEngineIniOverrideManager.ResolveEngineIniPath(game)
                       ?? throw new InvalidOperationException(NoEngineIniPrefix + game.Name);
-            await scope.TrackAsync(ini, token).ConfigureAwait(false);
+            // #213: Engine.ini follows its own link rule (a file named Engine.ini in the same prefix or UE project):
+            // tracked at the file the write replaces, never the link.
+            var written = AtomicFile.ResolveUserFileTarget(ini, LumaEngineIniOverrideManager.LinkPolicy(ini));
+            await scope.TrackAsync(written, token).ConfigureAwait(false);
             var state = LumaEngineIniOverrideManager.SetTaa(ini, previous, on);
-            if (File.Exists(ini)) await scope.DeclareWrittenContentAsync(ini, token).ConfigureAwait(false);
+            if (File.Exists(written)) await scope.DeclareWrittenContentAsync(written, token).ConfigureAwait(false);
             record.Metadata[LumaEngineIniOverrideManager.MetadataKey] = state is null ? "" : LumaEngineIniOverrideManager.Serialize(state);
             return ini;
         }, cancellationToken);

@@ -54,6 +54,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         // w8/reshade-ini rows
+        , Func<string, bool>? wineRunning = null
         // w8/renodx rows
         // w8/commit-point rows
         )
@@ -87,6 +88,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             // w8/reshade-ini rows
+            , wineRunning
             // w8/renodx rows
             // w8/commit-point rows
             );
@@ -141,6 +143,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         // w8/reshade-ini rows
+        , Func<string, bool>? wineRunning = null
         // w8/renodx rows
         // w8/commit-point rows
         )
@@ -166,6 +169,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             // w8/reshade-ini rows
+            , wineRunning
             // w8/renodx rows
             // w8/commit-point rows
             );
@@ -236,6 +240,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         // w8/reshade-ini rows
+        , Func<string, bool>? wineRunning
         // w8/renodx rows
         // w8/commit-point rows
         )
@@ -244,7 +249,7 @@ internal sealed class ViewModelFixture : IDisposable
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) }.Concat(detectors ?? []).ToArray());
         var deployment = new TransactionalFileDeploymentService();
-        var wineOverrides = new WineDllOverrideService();
+        var wineOverrides = new WineDllOverrideService(wineRunning is null ? null : new WineRegistryEditor(wineRunning)); // w8/reshade-ini: a test says Wine runs (#214)
         var shaderPacks = new ReShadeShaderPackService(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade", "shader-packs"), upstreamManifest); // w7/shader-sets (#179): the store reaches it
         var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, new ReShadeArchiveExtractor(), upstreamManifest: upstreamManifest,
             dllNames: new DllNamePreferenceStore(Path.Combine(Path.GetDirectoryName(cacheDir)!, "config", "dll-names.json")), shaderPacks: shaderPacks); // w3/dllnames: per fixture

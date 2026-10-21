@@ -47,6 +47,14 @@ public sealed record ReShadeIniDefaults
 
     /// <summary><c>[OVERLAY] VariableListUseTabs</c>: true = Tabs, false = Tree.</summary>
     public bool? VariableListUseTabs { get; init; }
+
+    /// <summary>
+    /// #206: the preset RHI selected in this game (<c>[GENERAL] PresetPath=.\&lt;name&gt;</c>), written only into a NEW
+    /// ReShade.ini: an update or a shader change regenerates RHI's unchanged file from the template, and the regenerated
+    /// file keeps RHI's preset selection. Never written into an existing file (the user may have chosen another preset or
+    /// none). Set by <see cref="ReShadePresetService.KeepingSelection"/>.
+    /// </summary>
+    public string? PresetFileName { get; init; }
 }
 
 /// <summary>
@@ -93,6 +101,7 @@ internal static class ReShadeIniManager
                 "TutorialProgress=4"
             ];
             if (defaults is not null) ApplySettings(baseline, defaults);
+            SelectPresetInNewFile(baseline, defaults);
             Write(path, baseline, gameDirectory, gameRoot);
             return new(path, false, true, true, true, effectAdded, textureAdded, FileHash.Sha256Hex(path));
         }
@@ -107,6 +116,7 @@ internal static class ReShadeIniManager
             MergeTemplate(lines, IniLines.FromBytes(template), defaults.SkipPreprocessorDefinitions, effectAdded, textureAdded,
                 recordTemplatePaths: true, overwrite: defaults.TemplateKeysWin);
         if (defaults is not null) ApplySettings(lines, defaults);
+        if (!existed) SelectPresetInNewFile(lines, defaults);
         MergeSearchPath(lines, "GENERAL", EffectKey, effectPaths, effectAdded);
         MergeSearchPath(lines, "GENERAL", TextureKey, texturePaths, textureAdded);
         var effectKeyCreated = effectKeyWasMissing && IniLines.Get(lines, "GENERAL", EffectKey) is not null;
@@ -177,6 +187,13 @@ internal static class ReShadeIniManager
         if (defaults.OverlayHotkey is { Length: > 0 } overlay) IniLines.Set(lines, "INPUT", "KeyOverlay", overlay);
         if (defaults.ScreenshotHotkey is { Length: > 0 } screenshot) IniLines.Set(lines, "INPUT", "KeyScreenshot", screenshot);
         if (defaults.VariableListUseTabs is { } tabs) IniLines.Set(lines, "OVERLAY", "VariableListUseTabs", tabs ? "1" : "0");
+    }
+
+    // #206: a new file (RHI's regenerated one) gets RHI's preset selection back.
+    private static void SelectPresetInNewFile(List<string> lines, ReShadeIniDefaults? defaults)
+    {
+        if (defaults?.PresetFileName is { Length: > 0 } preset && Path.GetFileName(preset) == preset)
+            IniLines.Set(lines, "GENERAL", "PresetPath", @".\" + preset);
     }
 
     /// <summary>#180: points ReShade at a preset beside it (<c>[GENERAL] PresetPath=.\name.ini</c>); creates ReShade.ini if needed.</summary>
