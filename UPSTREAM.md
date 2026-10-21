@@ -69,7 +69,7 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 
 ### #20/#21 — Shaders and ReShade channel (2.7.9)
 
-- **Shaders (2.7.9):** upstream's fix (a global shader "Off" no longer overrides a game's own Select) is ported with the global shader set in wave 7 (#179, see below): a game on Select or Off keeps its own choice whatever the global mode. The custom-folder auto-tick fix is ported: dependency expansion never pulls in the local Custom Shaders pack; it deploys only when ticked explicitly.
+- **Shaders (2.7.9):** upstream's fix (a global shader "Off" no longer overrides a game's own Select) is ported with the global shader set in wave 7 (#179, see below): a game on its own list or None keeps it whatever the global set holds. The custom-folder auto-tick fix is ported: dependency expansion never pulls in the local Custom Shaders pack; it deploys only when ticked explicitly.
 - **ReShade (2.7.9):** the Custom-channel false update does not apply: the channel is stored on the ReShade record and rewritten by the apply that changes it, so the update check never sees a stale channel. Covered by tests.
 
 ### #22 — Launch working directory (2.7.9)
@@ -505,33 +505,43 @@ build.
 ### #179 — Global shader and add-on sets, per game Global / Select / Off
 
 - Ported (upstream `SelectedShaderPacks`, `GlobalShadersOff`/`UseCustomShaders`, `EnabledGlobalAddons`,
-  `PerGameShaderMode`/`PerGameAddonMode`): a global shader set, a global shader mode (Off / RHI managed / Custom) and
-  global add-ons (Settings → Shaders/Add-ons, beside the shader cache as upstream), and per game **Shaders: Global / Select / Off** and **Add-ons: Global / Select /
-  Off** in the ReShade section (shown only where RHI installed ReShade; the add-on choice is hidden on the No Addons
-  build). Global follows the global set (global Off = none, Custom = the local custom shader folder only); Select is the
-  game's own list (picked in the Shaders/Add-ons dialog); Off takes RHI's shader packs or Addon Manager add-ons out of the
-  game. A game's own Select or Off wins over the global mode, as upstream 2.7.9.
+  `PerGameShaderMode`/`PerGameAddonMode`): a global shader set and global add-ons, and per game a choice for shaders and
+  for add-ons. Layout (owner's pick, B): no new controls in the game's panel; the game's **Shaders/Add-ons** dialog starts
+  each tab with **Use the global set / Choose for this game / None** (upstream Global / Select / Off), the list below can
+  be ticked only for Choose (it shows the global set, or nothing, otherwise); Settings → Shaders/Add-ons → **Global
+  shaders and add-ons…** opens the same dialog for the global set (Save global set). The add-on choice is not shown while
+  ReShade is the No Addons build (its add-ons are held). Upstream's global shader mode is the global list itself: nothing
+  ticked = Off, only "Custom Shaders (local)" ticked = Custom.
 - One answer per game: ReShade's install and update (the ReShade row, profile Apply, ReShade installed for another
   component, Update All), the Shaders/Add-ons dialog, Update All's Addon Manager family (#194) and the start-up shader
-  prefetch (the global set's packs first) all read the game's effective set. A ReShade install on a game that has no
-  Addon Manager add-ons yet also applies its effective add-ons (upstream deploys add-ons after ReShade); if that fails,
-  ReShade stays installed and the message says why.
-- Changing the global set or mode brings every game with RHI's ReShade that follows Global up to date, one game at a
-  time through the existing journaled paths (ReShade's own install for the packs, one Addon Manager operation for the
-  add-ons); a Select or Off game is never touched, a running game is skipped and named, Cancel stops between games, a game
-  that fails keeps its files, and the status line counts the outcomes.
-- Choosing a different list in the Shaders/Add-ons dialog, ReShade profile Apply or a preset with its shaders makes the
-  game Select with exactly that list (upstream); applying the list the game already gets keeps it on Global.
-- Migration (owner decision): a game's saved shader packs (its ReShade record) and Addon Manager add-ons become **Select**
-  with exactly the same contents; a game without a saved selection is **Global**. Stored in
+  prefetch (the global set's packs first) all read the game's effective set. Every one of those ReShade paths gets a
+  native D3DCompiler_47 for that set first (Protontricks/Winetricks, as profile Apply); when none can be had ReShade still
+  installs, without the packs, and says why. A ReShade install on a game that has no Addon Manager add-ons yet also
+  applies its effective add-ons (upstream deploys add-ons after ReShade); if that fails, ReShade stays installed and the
+  message says why.
+- A shader change (a game's choice, the global set) changes only the pack files, ReShade.ini's search paths and the
+  record's pack list, in one journaled operation on ReShade's record — never ReShade itself (upstream likewise only
+  re-copies shaders; review of decision 9). It is logged in the update history as "ReShade (reshade-shaders)". Add-on
+  changes go through one Addon Manager operation each.
+- Saving the global set brings every game with RHI's ReShade that uses it up to date, one game at a time; a game on its
+  own list or None is never touched, nor a game left out of Update All for ReShade (shaders) or the Addon Manager
+  (add-ons); a running game is skipped and named, Cancel stops between games, a game that fails keeps its files, and the
+  status line counts the outcomes. Save also catches up games a cancelled or skipped run left behind; the game's dialog
+  says when its files do not follow its choice yet.
+- Ticking a different list in a game's dialog (Choose), ReShade profile Apply or a preset with its shaders makes the
+  game use its own list (upstream); applying the list the game already gets keeps it on the global set.
+- Migration (owner decision): a game's saved shader packs (its ReShade record) and Addon Manager add-ons become its own
+  list ("Choose for this game") with exactly the same contents; a game without a saved selection uses the global set.
+  The Addon Manager's older-build copy is brought into the ledger first. Stored in
   `~/.config/rhi-linux/shader-addon-sets.json` (keyed like the ledger, moved by Repair after move; unreadable = copied
-  aside, never saved over, and every install keeps what the records say).
+  aside, never saved over, and every install keeps what the records say; nothing is saved while the ledger itself is
+  unreadable).
 - Linux differences: the global set starts **empty** (upstream: Lilium). Under Wine/Proton every shader pack needs a
-  native D3DCompiler_47, so a Lilium default would make the plain ReShade button fail (or run Protontricks) on games
-  without it; a game without a saved selection deploys what it did before (nothing). Upstream's per-game **Custom** mode is
-  covered by Select (tick "Custom Shaders (local)"). Upstream re-syncs every game at each start; RHI Linux changes game
-  files only when the user changes a choice, installs or updates. Switching shaders to Global forgets the game's own pack
-  list (upstream); switching add-ons to Global keeps it for a later Select (upstream).
+  native D3DCompiler_47, so a Lilium default would make every ReShade install run Protontricks; a game without a saved
+  selection deploys what it did before (nothing). Upstream's per-game **Custom** mode is covered by Choose (tick "Custom
+  Shaders (local)"). Upstream re-syncs every game at each start; RHI Linux changes game files only when the user changes
+  a choice, installs or updates. Switching shaders to the global set forgets the game's own pack list (upstream);
+  switching add-ons keeps it for a later Choose (upstream).
 - Older builds ignore the new file and keep using the records as before; a selection an older build changes after the
   migration is replaced by this build's saved choice at the next apply.
 
