@@ -138,7 +138,7 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
         if (op is null) return T("Vm.AnotherRHIOperationAlreadyRunning");
         var result = await Task.Run(() => service.ApplyReShadeSettingsAsync(game, settings, op.Token));
         return result.Success
-            ? TF("Vm.ReShadeCaptureHotkeyDefaultsAppliedAt", result.ChangedFiles is [var path, ..] ? path : result.Message)
+            ? LandedLine.With(TF("Vm.ReShadeCaptureHotkeyDefaultsAppliedAt", result.ChangedFiles is [var path, ..] ? path : result.Message), result)
             : UiLocalizationService.Present(result.Message);
     }
 

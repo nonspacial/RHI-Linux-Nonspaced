@@ -47,7 +47,7 @@ public sealed class RenoDxEngineIniPresenter(MainWindowViewModel vm, LinuxManage
         var now = isOn();
         if (!result.Success) return (false, now, UiLocalizationService.Present(result.Message));
         // A line the game's Engine.ini had before RHI is never removed: say so when it still reads as on.
-        return (true, now, T(on ? onKey : now ? keptKey : offKey));
+        return (true, now, LandedLine.With(T(on ? onKey : now ? keptKey : offKey), result));
     }
 }
 

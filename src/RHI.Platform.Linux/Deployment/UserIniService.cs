@@ -9,6 +9,15 @@ namespace RHI.Platform.Linux.Deployment;
 public sealed record IniBatchResult(int Updated, int Refused, int Failed)
 {
     public int Total => Updated + Refused + Failed;
+
+    /// <summary>#204 (w8 follow-up C11): the games whose save reported an error after their change was written (counted as updated).</summary>
+    public IReadOnlyList<string> Landed { get; init; } = [];
+
+    // Equal by value, the landed games included (in order).
+    public bool Equals(IniBatchResult? other)
+        => other is not null && (Updated, Refused, Failed) == (other.Updated, other.Refused, other.Failed) && Landed.SequenceEqual(other.Landed);
+
+    public override int GetHashCode() => HashCode.Combine(Updated, Refused, Failed, Landed.Count);
 }
 
 /// <summary>
@@ -465,6 +474,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         CancellationToken cancellationToken)
     {
         int updated = 0, refused = 0, failed = 0;
+        var landed = new List<string>();
         foreach (var game in games)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -472,6 +482,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
             try
             {
                 var result = await Task.Run(() => perGame(game, unit.Token), CancellationToken.None).ConfigureAwait(false);
+                if (result.Landed) landed.Add(game.Name);
                 if (result.Success) updated++;
                 else
                 {
@@ -489,7 +500,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
                 AppLog.Warn(area, $"{game.Name}: {ex.Message}", ex);
             }
         }
-        return new IniBatchResult(updated, refused, failed);
+        return new IniBatchResult(updated, refused, failed) { Landed = landed };
     }
 
     private static string? ExistingCaseInsensitive(string directory, string fileName)

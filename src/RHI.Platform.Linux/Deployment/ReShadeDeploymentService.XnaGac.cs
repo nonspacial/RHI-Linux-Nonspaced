@@ -134,7 +134,9 @@ public sealed partial class ReShadeDeploymentService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (rollback.Committed) return ""; // #204: the copy and its hash landed; the save's error after it changes nothing
+            // #204: the copy and its hash landed; nothing is undone, and the repair's line says the save reported an error
+            // after the change was written (w8 follow-up C13).
+            if (rollback.Committed) return DeploymentScope.Landed("ReShade.ini").Message;
             return XnaGacReShade.GacIniNotUpdatedAfterMovePrefix + ex.Message + DeploymentScope.RollbackNote(rollback);
         }
         await scope.CommitAsync().ConfigureAwait(false);

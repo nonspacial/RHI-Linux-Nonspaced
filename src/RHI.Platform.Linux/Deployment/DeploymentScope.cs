@@ -245,7 +245,7 @@ public sealed class DeploymentScope : IAsyncDisposable
     /// <paramref name="component"/> (a product name) follows the fixed text.
     /// </summary>
     public static ComponentOperationResult Landed(string component, bool removal = false, params string[] changedFiles)
-        => ComponentOperationResult.Ok((removal ? LandedRemovalPrefix : LandedChangePrefix) + component, changedFiles);
+        => ComponentOperationResult.Ok((removal ? LandedRemovalPrefix : LandedChangePrefix) + component, changedFiles) with { Landed = true };
 
     /// <summary>Fixed text of <see cref="Landed"/> for an install, update or change; the component follows (PT-BR pair).</summary>
     public const string LandedChangePrefix =

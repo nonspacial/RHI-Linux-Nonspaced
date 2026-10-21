@@ -4,14 +4,15 @@ namespace RHI.Core.Tests;
 
 // w8 integration (#204 × #214): the GAC ReShade.ini rewrite after a repair, with its commit write (ReShade's stamped record
 // and the copy's new hash) landing and then throwing: finished as committed in both seam shapes — the copy names the new
-// folder, the record names its bytes, and no "not updated" note says otherwise — the same files and record a crash right
-// after that write leaves once the next start recovers.
+// folder, the record names its bytes, and the repair's line says the save reported an error after the change was written
+// (w8 follow-up C13; it used to say nothing) — the same files and record a crash right after that write leaves once the
+// next start recovers.
 public sealed partial class XnaGacIniAfterMoveTests
 {
     [Theory]
     [MemberData(nameof(LandedLedgerWrite.Shapes), MemberType = typeof(LandedLedgerWrite))]
     [Trait("Category", "CommitPoint")]
-    public async Task TheRewritesCommitWriteLandsThenThrows_TheNewCopyIsKept_NoNote_AndCrashRecoveryAgrees(LandedShape shape)
+    public async Task TheRewritesCommitWriteLandsThenThrows_TheNewCopyIsKept_TheLineSaysSo_AndCrashRecoveryAgrees(LandedShape shape)
     {
         var live = await InstalledAsync("cp-landed-" + shape);
         var before = File.ReadAllBytes(live.GacIni);
@@ -24,8 +25,10 @@ public sealed partial class XnaGacIniAfterMoveTests
         LandedLedgerWrite.Disarm(live.Records);
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal("", result.Note);
-        Assert.Equal(DeploymentRelocation.RepairDonePrefix + "1", result.Message);
+        var landed = DeploymentScope.Landed("ReShade.ini").Message;
+        Assert.Equal(landed, result.Note);
+        Assert.Equal(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.AfterMoveNoteSeparator + landed, result.Message);
+        Assert.DoesNotContain("reported an error", RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", result.Message));
         Assert.Equal(ReShadeIniManager.WithInstallBasePath(before, newBase), File.ReadAllBytes(moved.GacIni));
         AssertRecordMatchesTheCopy(live.LedgerPath, moved);
         Assert.Empty(Directory.GetFiles(live.JournalDir));

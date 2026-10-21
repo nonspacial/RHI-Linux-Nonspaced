@@ -357,6 +357,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         using var op = vm.Operations.TryBegin("reshade-preset-all");
         if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
         int updated = 0, refused = 0, failed = 0;
+        var landed = new List<string>();
         try
         {
             foreach (var game in targets)
@@ -377,13 +378,14 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
                 }
                 if (result.Success) updated++;
                 else { refused++; RHI.Core.Services.AppLog.Warn("reshade-preset", $"{game.Name}: {result.Message}"); }
+                if (result.Landed) landed.Add(game.Name);
             }
         }
         catch (OperationCanceledException)
         {
             return Report(MainWindowViewModel.OperationCancelledText());
         }
-        return Report(BatchSummary(what, new IniBatchResult(updated, refused, failed)));
+        return Report(BatchSummary(what, new IniBatchResult(updated, refused, failed) { Landed = landed }));
     }
 
     // The packs whose files hold the preset's effects (every pack's file list is read; a pack not downloaded yet is fetched).
@@ -436,7 +438,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
         var result = await Luma.SetHdrAsync(game, mode, op.Token);
         return Report(result.Success
-            ? UiLocalizationService.Format("Ini.LumaHdrSet", OptionLists.LumaHdrMode.Display(mode))
+            ? LandedLine.With(UiLocalizationService.Format("Ini.LumaHdrSet", OptionLists.LumaHdrMode.Display(mode)), result)
             : UiLocalizationService.Present(result.Message));
     }
 
@@ -450,7 +452,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         if (!result.Success) return Report(UiLocalizationService.Present(result.Message));
         // Keys the user had before RHI are never removed: say so when TAA still reads as on.
         var stillOn = !on && Luma.Read(game).TaaOn;
-        return Report(UiLocalizationService.Text(on ? "Ini.LumaTaaOn" : stillOn ? "Ini.LumaTaaOffKept" : "Ini.LumaTaaOff"));
+        return Report(LandedLine.With(UiLocalizationService.Text(on ? "Ini.LumaTaaOn" : stillOn ? "Ini.LumaTaaOffKept" : "Ini.LumaTaaOff"), result));
     }
 
     // ---- #182 peak brightness and the RenoDX ⚙ -------------------------------------------------------
@@ -484,7 +486,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         using var op = vm.Operations.TryBegin("renodx-peak-nits", cancellable: false);
         if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
         var result = await PeakNits.SetForGameAsync(game, nits, op.Token);
-        return Report(result.Success ? UiLocalizationService.Format("Ini.PeakGameSet", nits) : UiLocalizationService.Present(result.Message));
+        return Report(result.Success ? LandedLine.With(UiLocalizationService.Format("Ini.PeakGameSet", nits), result) : UiLocalizationService.Present(result.Message));
     }
 
     /// <summary>Whether the RenoDX ⚙ offers the UE-Extended switch for the selected game.</summary>
@@ -527,9 +529,9 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
 
     /// <summary>The status line for a batch, from its counts.</summary>
     public static string BatchSummary(string what, IniBatchResult result)
-        => result.Total == 0 ? UiLocalizationService.Format("Ini.BatchNone", what)
+        => LandedLine.With(result.Total == 0 ? UiLocalizationService.Format("Ini.BatchNone", what)
             : result.Refused + result.Failed == 0 ? UiLocalizationService.Format("Ini.BatchDone", what, result.Updated)
-            : UiLocalizationService.Format("Ini.BatchPartial", what, result.Updated, result.Refused, result.Failed);
+            : UiLocalizationService.Format("Ini.BatchPartial", what, result.Updated, result.Refused, result.Failed), result.Landed);
 
     private string Report(string line)
     {

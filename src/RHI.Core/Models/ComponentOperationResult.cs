@@ -9,7 +9,10 @@ public sealed record ComponentOperationResult(
     bool SourceUnavailable = false,
     // The change was applied from a cached copy because the remote source was unreachable
     // (e.g. ReShade during a reshade.me outage); callers that rewrite the message keep saying so.
-    bool FromCachedSource = false)
+    bool FromCachedSource = false,
+    // #204 (w8 follow-up C11): the operation's commit write landed and then the save reported an error; it finished as
+    // committed and Message is the note saying so. A caller that words its own success line appends that note.
+    bool Landed = false)
 {
     public static ComponentOperationResult Ok(string message, params string[] changedFiles)
         => new(true, message, changedFiles);
