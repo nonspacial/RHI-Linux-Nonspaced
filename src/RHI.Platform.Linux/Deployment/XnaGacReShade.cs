@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Detection.Launchers;
@@ -109,9 +110,13 @@ public static class XnaGacReShade
     /// the folder the game's prefix holds now, because the prefix moved on its own (a custom, Heroic or Lutris prefix).
     /// Null for any other record, an unlisted game, or a prefix whose GAC folder cannot be found (nothing to re-point to).
     /// <para>Re-review 1: the copies count as moved only when they really left: the recorded folder no longer holds RHI's
-    /// <c>d3d9.dll</c> and the current folder does, and the two folders differ after links are resolved. A game switched
-    /// to another prefix (the old one intact), a manifest naming another folder, or the same prefix reached through a
-    /// symlinked spelling is not moved: the records still describe where RHI's files are. Reads file existence only.</para>
+    /// <c>d3d9.dll</c> and the current folder holds it. A game switched to another prefix (the old one intact), a manifest
+    /// naming another folder, or the same prefix reached through a symlinked spelling is not moved: the records still
+    /// describe where RHI's files are. One folder cannot both lack and hold the file, so no path comparison is needed
+    /// (w7 final review 3).</para>
+    /// <para>W7 final review 2: "holds it" means RHI's bytes (the record's SHA-256), not just the name: a fresh prefix
+    /// with a <c>d3d9.dll</c> RHI did not place is not a move (Repair could only fail there). Hashes only in that rare
+    /// state (the recorded copy gone and the current folder holding the name).</para>
     /// </summary>
     internal static (string Old, string New)? MovedFolder(LinuxDeploymentRecord record, Func<string, string>? mapGameFolder, DetectedGame game)
     {
@@ -119,10 +124,48 @@ public static class XnaGacReShade
         var recorded = record.Metadata[FolderMetadataKey];
         if (mapGameFolder is not null) recorded = mapGameFolder(recorded);
         if (ResolveFolder(game).Folder is not { } current) return null;
-        if (PathIdentity.Canonicalize(recorded) == PathIdentity.Canonicalize(current)) return null;
-        if (File.Exists(Path.Combine(recorded, ProxyName)) || !File.Exists(Path.Combine(current, ProxyName))) return null;
+        if (File.Exists(Path.Combine(recorded, ProxyName)) || !HoldsRhisCopy(record, current)) return null;
         return (recorded, current);
     }
+
+    /// <summary>
+    /// W7 final review 2: the <c>d3d9.dll</c> in the GAC folder the game's prefix holds now when it is not RHI's copy (its
+    /// bytes differ from the record's), while <paramref name="file"/> is the record's GAC copy and Repair after move did not
+    /// find it at <paramref name="lookedAt"/>; else null. Repair then says how to hand the folder back to RHI.
+    /// </summary>
+    internal static string? ForeignCopyInCurrentFolder(LinuxDeploymentRecord record, DetectedGame game, LinuxDeployedFile file, string lookedAt)
+    {
+        if (!IsGacRecord(record) || !IsListed(game) || File.Exists(lookedAt)) return null;
+        if (!string.Equals(file.Path, Path.Combine(record.Metadata[FolderMetadataKey], ProxyName), StringComparison.Ordinal)) return null;
+        if (ResolveFolder(game).Folder is not { } current) return null;
+        var copy = Path.Combine(current, ProxyName);
+        return File.Exists(copy) && !HoldsRhisCopy(record, current) ? copy : null;
+    }
+
+    /// <summary>Whether <paramref name="folder"/>'s <c>d3d9.dll</c> has the bytes of the GAC copy <paramref name="record"/> placed.</summary>
+    private static bool HoldsRhisCopy(LinuxDeploymentRecord record, string folder)
+    {
+        var copy = Path.Combine(folder, ProxyName);
+        var placed = Path.Combine(record.Metadata[FolderMetadataKey], ProxyName);
+        if (!File.Exists(copy)
+            || record.Files.FirstOrDefault(file => string.Equals(file.Path, placed, StringComparison.Ordinal))?.Sha256 is not { Length: > 0 } sha256)
+            return false;
+        try
+        {
+            return FileHash.HexEquals(FileHash.Sha256Hex(copy), sha256);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// W7 final review 2: Repair after move refused because the prefix the game uses now holds a <c>d3d9.dll</c> RHI did not
+    /// place while RHI's copy is gone (PT-BR presentation pair; the file comes last).
+    /// </summary>
+    public const string ForeignCopyAfterMovePrefix =
+        "Nothing was changed: RHI's ReShade copy is no longer in the old prefix, and the .NET assembly folder of the prefix the game uses now holds a d3d9.dll RHI did not install. Move that file out of the folder, copy the game folder's d3d9.dll (RHI's ReShade) in its place, then choose Repair after move again. File: ";
 
     /// <summary>The bitness the GAC folder declares (<c>GAC_32</c> = x86, <c>GAC_64</c> = x64), else the game's.</summary>
     internal static PeArchitecture ArchitectureOf(DetectedGame game)

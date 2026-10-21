@@ -66,7 +66,8 @@ public sealed class DeploymentRelocation
             : null;
 
     /// <summary>
-    /// True when "Repair after move" has something to do for this game (cheap: no hashing): records left at its old
+    /// True when "Repair after move" has something to do for this game (cheap: no hashing, apart from an XNA ReShade
+    /// GAC copy that left its recorded folder, see <see cref="XnaGacReShade.MovedFolder"/>): records left at its old
     /// folder, or entries in <paramref name="stores"/> that still name it (<see cref="IGameStateStore.MovedPaths"/>).
     /// </summary>
     public bool NeedsRepair(DetectedGame game, IReadOnlyList<IGameStateStore>? stores = null)
@@ -187,7 +188,10 @@ public sealed class DeploymentRelocation
             {
                 var mapped = MapPath(NrCostScalerService.ContentPath(record, file, gameRecords));
                 if (!File.Exists(mapped))
-                    return new(false, 0, $"{RepairMissingPrefix}{mapped}");
+                    // W7 final review 2: RHI's XNA GAC copy is gone and the prefix in use holds a d3d9.dll RHI did not place.
+                    return new(false, 0, gac is null && XnaGacReShade.ForeignCopyInCurrentFolder(record, game, file, mapped) is { } foreign
+                        ? XnaGacReShade.ForeignCopyAfterMovePrefix + foreign
+                        : $"{RepairMissingPrefix}{mapped}");
                 if (!string.Equals(FileHash.Sha256Hex(mapped), file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return new(false, 0, $"{RepairChangedPrefix}{mapped}");
             }

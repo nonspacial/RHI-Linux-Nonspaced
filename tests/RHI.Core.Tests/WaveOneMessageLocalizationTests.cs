@@ -440,6 +440,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return XnaGacReShade.OutsidePrefixPrefix + @"D:\Jogos";
         yield return XnaGacReShade.ForeignFilePrefix + P;
         yield return XnaGacReShade.ChangedCopyPrefix + P;
+        yield return XnaGacReShade.ForeignCopyAfterMovePrefix + P; // w7 final review 2
         // w7/shader-sets rows
         yield return LinuxManagedComponentService.ShaderSetsUnreadableMessage;
         yield return LinuxManagedComponentService.ShaderChoiceNotSavedPrefix + E;
@@ -553,6 +554,8 @@ public sealed class WaveOneMessageLocalizationTests
         { RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DuplicateMemberPrefix + "normal/x64/d3d9.dll", "more than once" },
         { "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote, "takes effect with the ReShade profile" },
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
+        // w7 final review 2
+        { RHI.Platform.Linux.Deployment.XnaGacReShade.ForeignCopyAfterMovePrefix + P, "in its place" },
     };
 
     [Theory]

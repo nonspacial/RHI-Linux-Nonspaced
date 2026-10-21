@@ -1402,6 +1402,8 @@ public static class UiLocalizationService
             "O ReShade deste jogo XNA vai para a pasta de assemblies .NET do prefixo dele, que ainda não existe; inicie o jogo uma vez para preparar o prefixo e depois instale o ReShade. Pasta: "),
         (RHI.Platform.Linux.Deployment.XnaGacReShade.OutsidePrefixPrefix, "A pasta de assemblies XNA indicada pelo manifesto do RHI levaria para fora do prefixo deste jogo, então nada foi instalado: "),
         (RHI.Platform.Linux.Deployment.XnaGacReShade.ForeignFilePrefix, "Um arquivo que o RHI não instalou já está na pasta de assemblies XNA, então nada foi instalado: "),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.ForeignCopyAfterMovePrefix,
+            "Nada foi alterado: a cópia do ReShade do RHI não está mais no prefixo antigo, e a pasta de assemblies .NET do prefixo que o jogo usa agora tem um d3d9.dll que o RHI não instalou. Tire esse arquivo da pasta, copie o d3d9.dll da pasta do jogo (o ReShade do RHI) no lugar dele e escolha Reparar após mover de novo. Arquivo: "),
         (RHI.Platform.Linux.Deployment.XnaGacReShade.ChangedCopyPrefix, "A cópia do ReShade na pasta de assemblies XNA mudou desde que o RHI a colocou, então não foi substituída: "),
         (RHI.Platform.Linux.Deployment.XnaGacReShade.ModeSuffix, " (pasta do jogo e pasta de assemblies .NET do prefixo, para XNA)"),
         // w7/shader-sets rows
