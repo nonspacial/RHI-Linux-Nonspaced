@@ -350,6 +350,35 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         Assert.False(File.Exists(Path.Combine(fx.Managed.CustomAddonRoot, "Other.addon32")));
     }
 
+    // w7 integration (#195 × #179): a dropped add-on "ticked in the game's Shaders/Add-ons list" switches a game that used
+    // the global set to "Choose for this game" with the add-ons it already got plus the new one; the global set itself is
+    // never edited, and a later global edit no longer takes the dropped add-on out of that game.
+    [Fact]
+    public async Task ADroppedAddon_OnAGameUsingTheGlobalSet_BecomesItsOwnListWithTheGlobalAddons_AndTheGlobalSetIsUntouched()
+    {
+        var game = Game(Path.Combine(_root, "sets"), "Set Game", 0x8664);
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        game = fx.Vm.AllLibraryGames.Single(g => g.Name == "Set Game");
+        var sets = fx.Managed.ShaderSets!;
+        Assert.True(fx.Managed.ImportCustomAddonFile(Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "own")).FullName, "Other.addon64")).Success);
+        sets.SetGlobalAddonIds(["custom-Other"]);
+        Assert.Equal(RHI.Platform.Linux.Settings.ShaderAddonMode.Global, sets.ChoiceFor(game)!.AddonMode);
+        var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
+
+        var result = await fx.Managed.InstallDroppedAddonForGameAsync(game, dropped);
+
+        Assert.True(result.Success, result.Message);
+        var choice = sets.ChoiceFor(game)!;
+        Assert.Equal(RHI.Platform.Linux.Settings.ShaderAddonMode.Select, choice.AddonMode);
+        Assert.Equal(["custom-Other", "custom-ShaderToggler"], choice.AddonIds.Order(StringComparer.Ordinal));
+        Assert.Equal(["custom-Other"], sets.GlobalAddonIds);
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "Other.addon64")));
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "ShaderToggler.addon64")));
+
+        sets.SetGlobalAddonIds([]);
+        Assert.Equal(["custom-Other", "custom-ShaderToggler"], fx.Managed.EffectiveAddons(game)!.Ids.Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     public async Task FromTheShell_ItInstallsThroughTheGate_WithAHistoryEntry_AndAWatchedFileIsRemovedAfterwards()
     {

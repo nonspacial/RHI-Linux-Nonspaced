@@ -1639,9 +1639,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var imported = _addonManager.ImportCustomAddonFile(addonPath);
         if (!imported.Success || imported.ChangedFiles is not [var copy, ..]) return imported;
         var id = "custom-" + Path.GetFileNameWithoutExtension(copy);
-        var selected = (await _addonManager.GetSnapshotAsync(game, cancellationToken).ConfigureAwait(false)).SelectedIds;
-        var applied = await ApplyReShadeAddonSelectionAsync(game,
-            selected.Contains(id, StringComparer.OrdinalIgnoreCase) ? selected : [.. selected, id], cancellationToken).ConfigureAwait(false);
+        // w7 integration (#195 × #179): the add-ons the game gets now plus this one, saved as the game's own list ("Choose for
+        // this game") when that differs from what it gets, so a later global edit never takes the add-on out again and the
+        // global set itself is never edited. Without the shader-set store the recorded selection is the game's list.
+        var selected = EffectiveAddons(game) is { HeldByNoAddons: false } effective
+            ? effective.Ids
+            : (await _addonManager.GetSnapshotAsync(game, cancellationToken).ConfigureAwait(false)).SelectedIds;
+        IReadOnlyList<string> wanted = selected.Contains(id, StringComparer.OrdinalIgnoreCase) ? selected : [.. selected, id];
+        if (RecordExplicitAddonChoice(game, wanted) is { } notSaved) return ComponentOperationResult.Fail(notSaved);
+        var applied = await ApplyReShadeAddonSelectionAsync(game, wanted, cancellationToken).ConfigureAwait(false);
         var placed = Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!), Path.GetFileName(copy));
         return applied.Success ? ComponentOperationResult.Ok(DroppedAddonInstalledPrefix + placed, copy, placed) : applied;
     }
