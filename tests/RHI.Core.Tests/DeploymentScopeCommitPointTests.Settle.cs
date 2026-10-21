@@ -238,4 +238,26 @@ public sealed partial class DeploymentScopeCommitPointTests
         Assert.NotNull(new LinuxDeploymentRecordStore(Ledger).Find(Game, ManagedComponentKind.ReShade));
         Assert.Equal(After, File.ReadAllBytes(Payload));
     }
+    // An operation whose commit point is not a ledger record (a plain file transaction: no record probe) is never committed
+    // by the ledger, so an unreadable ledger leaves nothing to decide: rolled back at once, even after another save landed
+    // (left undecided it would wait with no game to tell, holding up every game's next operation).
+    [Fact]
+    public async Task PlainFileTransaction_LedgerUnreadableAfterAnotherSaveLanded_RollsBackAtOnce()
+    {
+        var (records, journal) = Rig();
+        var operation = await journal.BeginAsync("plain file transaction");
+        await operation.TrackFileAsync(Payload);
+        await operation.RecordWriteAsync(Payload, FileHash.Sha256HexOf(After));
+        File.WriteAllBytes(Payload, After);
+        records.Upsert(Record(ManagedComponentKind.OptiScaler)); // another component's save lands meanwhile
+        File.WriteAllText(Ledger, "{ not json");
+
+        var rollback = await operation.RollbackAsync();
+
+        Assert.Equal(CommitDecision.NotCommitted, rollback.Decision);
+        Assert.True(rollback.RolledBack);
+        Assert.Equal(Before, File.ReadAllBytes(Payload));
+        Assert.Empty(JournalEntries());
+        Assert.Empty(journal.WaitingForTesting);
+    }
 }
