@@ -103,6 +103,24 @@ public static class XnaGacReShade
         return (mapped, null);
     }
 
+    /// <summary>
+    /// Repair after move (review 3): the GAC folder <paramref name="record"/>'s copies must be re-pointed to — (recorded,
+    /// current) when the recorded folder, after <paramref name="mapGameFolder"/> (the game-folder move; null = none), is not
+    /// the folder the game's prefix holds now, because the prefix moved on its own (a custom, Heroic or Lutris prefix).
+    /// Null for any other record, an unlisted game, or a prefix whose GAC folder cannot be found (nothing to re-point to).
+    /// Reads folder existence only.
+    /// </summary>
+    internal static (string Old, string New)? MovedFolder(LinuxDeploymentRecord record, Func<string, string>? mapGameFolder, DetectedGame game)
+    {
+        if (!IsGacRecord(record) || !IsListed(game)) return null;
+        var recorded = record.Metadata[FolderMetadataKey];
+        if (mapGameFolder is not null) recorded = mapGameFolder(recorded);
+        if (ResolveFolder(game).Folder is not { } current) return null;
+        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(recorded)) == Path.TrimEndingDirectorySeparator(Path.GetFullPath(current))
+            ? null
+            : (recorded, current);
+    }
+
     /// <summary>The bitness the GAC folder declares (<c>GAC_32</c> = x86, <c>GAC_64</c> = x64), else the game's.</summary>
     internal static PeArchitecture ArchitectureOf(DetectedGame game)
     {

@@ -95,6 +95,57 @@ public sealed class XnaGacReShadeTests : IDisposable
         Assert.Empty(Directory.GetFileSystemEntries(fx.Gac));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RepairAfterMove_PrefixMovedApartFromTheGameFolder_RepointsTheGacCopies_AndRemovalLeavesTheMovedPrefixClean(bool gameFolderMovedToo)
+    {
+        // Review 3: a custom/Heroic/Lutris prefix can move on its own (or apart from the game folder). The record's GAC copy
+        // then names the old prefix: the game counts as moved (installs refused), and Repair after move re-points the copy
+        // to the GAC folder of the prefix the game uses now, so removal takes RHI's copy out of it.
+        var fx = Fixture(gameFolderMovedToo ? "repair-both" : "repair-prefix");
+        var userRegBefore = File.ReadAllBytes(fx.UserReg);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions())).Success);
+        var root = Path.Combine(_root, gameFolderMovedToo ? "repair-both" : "repair-prefix");
+        var newPrefix = Path.Combine(root, "prefixes", "terraria");
+        Directory.CreateDirectory(Path.GetDirectoryName(newPrefix)!);
+        Directory.Move(fx.Prefix, newPrefix);
+        var newBin = fx.Bin;
+        if (gameFolderMovedToo)
+        {
+            newBin = Path.Combine(root, "library2", "steamapps", "common", "Terraria");
+            Directory.CreateDirectory(Path.GetDirectoryName(newBin)!);
+            Directory.Move(fx.Bin, newBin);
+        }
+        var moved = new DetectedGame
+        {
+            Name = fx.Game.Name, InstallPath = newBin, BinaryDirectory = newBin, ExecutablePath = Path.Combine(newBin, "Terraria.exe"),
+            PrefixPath = newPrefix, Runner = fx.Game.Runner, GraphicsApi = fx.Game.GraphicsApi, Source = fx.Game.Source,
+            SteamAppId = fx.Game.SteamAppId, ManifestXnaGacFolder = fx.Game.ManifestXnaGacFolder
+        };
+        var newGac = fx.Gac.Replace(fx.Prefix, newPrefix, StringComparison.Ordinal);
+        var relocation = new DeploymentRelocation(fx.Records);
+
+        Assert.True(relocation.NeedsRepair(moved));
+        Assert.NotNull(relocation.Guard(moved));
+        var repair = relocation.Repair(moved, [], out _);
+
+        Assert.True(repair.Success, repair.Message);
+        var record = fx.Records.Find(moved, ManagedComponentKind.ReShade)!;
+        Assert.Equal(newGac, record.Metadata[XnaGacReShade.FolderMetadataKey]);
+        Assert.Contains(record.Files, file => file.Path == Path.Combine(newGac, "d3d9.dll"));
+        Assert.Contains(record.Files, file => file.Path == Path.Combine(newBin, "d3d9.dll"));
+        Assert.DoesNotContain(record.Files, file => file.Path.StartsWith(fx.Prefix + "/", StringComparison.Ordinal));
+        Assert.False(relocation.NeedsRepair(moved));
+
+        var removed = await fx.Service.RemoveAsync(moved);
+
+        Assert.True(removed.Success, removed.Message);
+        Assert.Empty(Directory.GetFileSystemEntries(newGac));
+        Assert.Equal(userRegBefore, File.ReadAllBytes(Path.Combine(newPrefix, "user.reg")));
+        Assert.Equal([Path.Combine(newBin, "Terraria.exe")], Directory.GetFiles(newBin));
+    }
+
     [Fact]
     public async Task Update_SwapsBothCopies_AndKeepsAGacIniTheUserChanged()
     {
