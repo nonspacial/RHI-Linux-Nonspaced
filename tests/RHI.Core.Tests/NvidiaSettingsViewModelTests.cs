@@ -343,6 +343,7 @@ public sealed class NvidiaSettingsViewModelTests : IDisposable
                 await analysed.Task.WaitAsync(HangGuard);
         }
         finally { fx.Vm.Session.Completed -= OnCompleted; }
+        await fx.WhenSelectionProbeIdleAsync(HangGuard); // Completed is raised before the session clears its busy flag
         Assert.False(fx.Vm.IsSelectionProbeBusy);
         return fx;
     }

@@ -168,6 +168,27 @@ internal sealed class ViewModelFixture : IDisposable
         return new DetectedGame { Name = name, InstallPath = dir, ExecutablePath = exe, BinaryDirectory = dir, Source = "Manual", Runner = "Manual Windows" };
     }
 
+    /// <summary>
+    /// Completes once the shell no longer shows a selection analysis running. The session raises <c>Completed</c> before
+    /// its <c>finally</c> clears the busy flag, so a test that awaited <c>Completed</c> and then read
+    /// <see cref="MainWindowViewModel.IsSelectionProbeBusy"/> raced that step (seen once in a full run): subscribed before the
+    /// read, so the change cannot be missed; the bound is only a hang guard.
+    /// </summary>
+    public async Task WhenSelectionProbeIdleAsync(TimeSpan hangGuard)
+    {
+        var idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.IsSelectionProbeBusy) && !Vm.IsSelectionProbeBusy) idle.TrySetResult();
+        }
+        Vm.PropertyChanged += OnChanged;
+        try
+        {
+            if (Vm.IsSelectionProbeBusy) await idle.Task.WaitAsync(hangGuard);
+        }
+        finally { Vm.PropertyChanged -= OnChanged; }
+    }
+
     public void Dispose()
     {
         // Detaches the view model from process-wide hooks (store quarantine notices) before its files go.
