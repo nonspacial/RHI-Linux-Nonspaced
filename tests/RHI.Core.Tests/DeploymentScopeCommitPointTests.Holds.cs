@@ -203,13 +203,16 @@ public sealed partial class DeploymentScopeCommitPointTests
         try
         {
             rollback = await operation.RollbackAsync();
+            Assert.False(rollback.Success);
+            Assert.Single(JournalEntries());
+
+            // Its undo still fails (the folder is still read-only): another game's change goes ahead all the same.
+            await InstallOtherGameAsync(records, journal);
         }
         finally
         {
             PermissionDenial.MakeWritable(P("game"));
         }
-        Assert.False(rollback.Success);
-        Assert.Single(JournalEntries());
 
         var (retry, _) = await InstallAsync(records, journal);
 
