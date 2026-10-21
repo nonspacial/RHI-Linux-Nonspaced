@@ -3,6 +3,7 @@ using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
@@ -197,5 +198,193 @@ public sealed partial class ReShadeChannelTests
         Assert.True(result.Success, result.Message);
         Assert.Equal(1, tool.Runs);
         Assert.True(File.Exists(PackFile(game)));
+    }
+
+    // ── Review major 3: a shaders-only change syncs only the pack files ─────────────────────────────────────────
+
+    private (ReShadeDeploymentService Service, MutableHandler Handler) VersionedService(LinuxDeploymentRecordStore store, string cache,
+        GlobalShaderAddonStore sets, string version = "6.1.0")
+    {
+        var handler = new MutableHandler { StableVersion = version };
+        var http = new HttpClient(handler);
+        var packs = new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")) { Sets = sets };
+        return (new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(), store, new WineDllOverrideService(), new FakeExtractor(), cache, packs), handler);
+    }
+
+    // The review's probe: an Off toggle no longer moves ReShade to the channel's newest build.
+    [Fact]
+    public async Task Review_R3_OffToggle_KeepsReShadeVersion()
+    {
+        var (game, store) = SetGame("r3");
+        var cache = Path.Combine(_root, "r3-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r3");
+        sets.SetGlobalShaderPackIds(["CrosireMaster"]);
+        var (service, handler) = VersionedService(store, cache, sets);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var before = store.Find(game, ManagedComponentKind.ReShade)!.Version;
+        handler.StableVersion = "6.2.0";
+        var managed = ManagedComponents(store, service);
+        managed.ShaderSets = sets;
+        sets.SetShaderMode(game, ShaderAddonMode.Off);
+
+        var off = await managed.ApplyShaderSetAsync(game);
+
+        Assert.Equal(ShaderSetOutcome.Changed, off.Outcome);
+        Assert.False(File.Exists(PackFile(game)));
+        Assert.Equal(before, store.Find(game, ManagedComponentKind.ReShade)!.Version);
+    }
+
+    // The sync touches only the pack folder, ReShade.ini's search paths and the record's pack list: ReShade's DLL bytes,
+    // version, channel and download stay; reshade.me is never asked; the INI gets the new pack's search paths.
+    [Fact]
+    public async Task Review_R3b_GlobalEdit_SyncsOnlyThePacks_ReShadeItselfAndTheSiteUntouched()
+    {
+        var (game, store) = SetGame("r3b");
+        var cache = Path.Combine(_root, "r3b-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r3b");
+        var (service, handler) = VersionedService(store, cache, sets);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var record = store.Find(game, ManagedComponentKind.ReShade)!;
+        var dll = ProxyPayloadLocator.ReShadePayload(record)!.Path;
+        var dllBytes = File.ReadAllBytes(dll);
+        var requests = handler.RequestCount;
+        handler.StableVersion = "6.2.0";
+        var managed = ManagedComponents(store, service);
+        managed.ShaderSets = sets;
+        sets.SetGlobalShaderPackIds(["CrosireMaster"]);
+
+        var result = await new ShaderAddonSetBatch(managed, new NotRunning()).ApplyAsync([game], ShaderAddonSetPart.Shaders, CancellationToken.None);
+
+        Assert.Equal(1, result.Changed);
+        Assert.True(File.Exists(PackFile(game)));
+        var after = store.Find(game, ManagedComponentKind.ReShade)!;
+        Assert.Equal((record.Version, record.SourceUrl, record.Metadata["ReShade.Channel"]), (after.Version, after.SourceUrl, after.Metadata["ReShade.Channel"]));
+        Assert.Equal(dllBytes, File.ReadAllBytes(dll));
+        Assert.Equal(requests, handler.RequestCount); // the seeded pack is staged; reshade.me is never asked
+        Assert.Equal(["CrosireMaster"], service.GetInstalledOptions(game).ShaderPackIds);
+        Assert.Contains("RHI", File.ReadAllText(ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!)));
+    }
+
+    // The change is in the update history (ReShade's version did not move, so a plain ledger diff would log nothing).
+    [Fact]
+    public async Task Review_R3c_PackChange_IsLoggedInTheUpdateHistory()
+    {
+        var (game, store) = SetGame("r3c");
+        var cache = Path.Combine(_root, "r3c-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r3c");
+        var (service, _) = VersionedService(store, cache, sets);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var log = new ComponentUpdateLogStore(Path.Combine(_root, "r3c-log.json"));
+        var managed = new LinuxManagedComponentService(store, reshade: service, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!,
+            updateLog: log) { ShaderSets = sets };
+        sets.SetShaderMode(game, ShaderAddonMode.Select, ["CrosireMaster"]);
+
+        Assert.Equal(ShaderSetOutcome.Changed, (await managed.ApplyShaderSetAsync(game)).Outcome);
+        Assert.Equal(ShaderSetOutcome.Unchanged, (await managed.ApplyShaderSetAsync(game)).Outcome); // nothing changed: nothing logged
+
+        var entry = Assert.Single(log.GetAll());
+        Assert.Equal((ManagedComponentKind.ReShade, "ReShade (reshade-shaders)", "\u2014", "CrosireMaster", true),
+            (entry.Component, entry.ComponentName, entry.FromVersion, entry.ToVersion, entry.Success));
+    }
+
+    // A global edit is a mass update: a game left out of Update All for ReShade keeps its packs (#177/#178).
+    [Fact]
+    public async Task Review_R3d_GlobalEdit_LeavesAGameLeftOutOfUpdateAll_AsItIs()
+    {
+        var (game, store) = SetGame("r3d");
+        var cache = Path.Combine(_root, "r3d-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r3d");
+        var (service, _) = VersionedService(store, cache, sets);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var inclusion = new UpdateInclusionStore(Path.Combine(_root, "r3d-inclusion.json"));
+        inclusion.SetExcluded(game, [ManagedComponentKind.ReShade], [ManagedComponentKind.ReShade]);
+        var managed = new LinuxManagedComponentService(store, reshade: service, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!,
+            updateInclusion: inclusion) { ShaderSets = sets };
+        var before = CancelAtWritePhase.Snapshot(game.InstallPath, game.PrefixPath!);
+        sets.SetGlobalShaderPackIds(["CrosireMaster"]);
+
+        var result = await new ShaderAddonSetBatch(managed, new NotRunning()).ApplyAsync([game], ShaderAddonSetPart.Shaders, CancellationToken.None);
+
+        Assert.Equal((0, 1), (result.Changed, result.Excluded));
+        CancelAtWritePhase.AssertUnchanged(before, game.InstallPath, game.PrefixPath!);
+        // The user's own choice for this game still applies (it is not a mass update).
+        sets.SetShaderMode(game, ShaderAddonMode.Select, ["CrosireMaster"]);
+        Assert.Equal(ShaderSetOutcome.Changed, (await managed.ApplyShaderSetAsync(game)).Outcome);
+    }
+
+    // Journaled: a crash after the packs were copied and before the record was saved puts the game folder back.
+    [Fact]
+    public async Task Review_R3e_CrashBeforeTheRecord_PutsThePacksAndTheIniBack()
+    {
+        var (game, store) = SetGame("r3e");
+        var cache = Path.Combine(_root, "r3e-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r3e");
+        var (plain, _) = VersionedService(store, cache, sets);
+        Assert.True((await plain.InstallAsync(game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var before = CancelAtWritePhase.Snapshot(game.BinaryDirectory!);
+        var journalDir = Path.Combine(_root, "r3e-journal");
+        var (journal, overrides) = SimulatedDeath.NewJournal(journalDir, store);
+        var http = new HttpClient(new MutableHandler());
+        var service = new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(journal), store, overrides, new FakeExtractor(), cache,
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")) { Sets = sets },
+            journal: journal);
+        using var death = new SimulatedDeath(journal);
+        store.SaveFaultForTesting = death.Die; // the sync's ledger write is its commit point
+
+        var (died, run) = await death.RunUntilDeathAsync(() => service.SyncShaderPacksAsync(game, ["CrosireMaster"]));
+        Assert.True(died, run.IsCompleted ? (await run).Message : "still running");
+        Assert.True(File.Exists(PackFile(game)));
+
+        var report = await SimulatedDeath.RecoverAsync(journalDir, Path.Combine(_root, "r3e", "records.json"));
+
+        Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+        CancelAtWritePhase.AssertUnchanged(before, game.BinaryDirectory!);
+    }
+
+    // The review's probe (passed before; kept): one game failing mid-batch keeps its files, the next game still runs.
+    [Fact]
+    public async Task Review_R4_OneGameFailsMidBatch_KeepsItsFiles_NextRuns()
+    {
+        var (first, store) = SetGame("r4-first", appId: 4001);
+        var (second, _) = SetGame("r4-second", store, 4002);
+        var cache = Path.Combine(_root, "r4-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r4");
+        var service = SetService(store, cache, sets);
+        foreach (var game in new[] { first, second })
+            Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var managed = ManagedComponents(store, service);
+        managed.ShaderSets = sets;
+        var firstBefore = CancelAtWritePhase.Snapshot(first.InstallPath, first.PrefixPath!);
+        var firstRecord = JsonSerializer.Serialize(store.Find(first, ManagedComponentKind.ReShade));
+        sets.SetGlobalShaderPackIds(["CrosireMaster"]);
+        var saves = 0;
+        store.SaveFaultForTesting = () => saves++ == 0 ? new IOException("disk full (review)") : null;
+        ShaderAddonSetBatchResult result;
+        try
+        {
+            result = await new ShaderAddonSetBatch(managed, new NotRunning()).ApplyAsync([first, second], ShaderAddonSetPart.Shaders, CancellationToken.None);
+        }
+        finally
+        {
+            store.SaveFaultForTesting = null;
+        }
+
+        Assert.Equal((1, 1, 0), (result.Changed, result.Failed, result.NotRun));
+        Assert.Equal(first.Name, result.Failures.Single().Game);
+        CancelAtWritePhase.AssertUnchanged(firstBefore, first.InstallPath, first.PrefixPath!);
+        Assert.Equal(firstRecord, JsonSerializer.Serialize(store.Find(first, ManagedComponentKind.ReShade)));
+        Assert.True(File.Exists(PackFile(second)));
     }
 }

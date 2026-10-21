@@ -619,6 +619,10 @@ public static class UiLocalizationService
         // w7/shader-sets rows
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderSetsUnreadableMessage,
             "As escolhas de shaders e add-ons não podem ser lidas; nada foi alterado."),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncNotInstalledMessage,
+            "O RHI não instalou o ReShade neste jogo, então ele não tem pacotes de shaders do RHI para alterar."),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncNoneMessage,
+            "Pacotes de shaders atualizados; o próprio ReShade não foi alterado. Os pacotes de shaders do RHI foram retirados do jogo."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     ];
@@ -1345,6 +1349,8 @@ public static class UiLocalizationService
             "Nada foi alterado: a escolha de shaders e add-ons do jogo não pôde ser salva: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.AddonSetNotAppliedPrefix, " Os add-ons do jogo não foram aplicados: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.AddonSetAppliedNote, " Os add-ons do jogo foram aplicados."),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncFailedPrefix, "Os pacotes de shaders não foram alterados: "),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncDonePrefix, "Pacotes de shaders atualizados; o próprio ReShade não foi alterado. Pacotes: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote,
             " Os pacotes de shaders do jogo não foram instalados: eles precisam de um D3DCompiler_47 nativo no prefixo Wine. Instale-o na linha D3DCompiler 47 da seção ReShade e depois use Aplicar em Shaders/Add-ons."),
         // w7/nvapi-launch rows

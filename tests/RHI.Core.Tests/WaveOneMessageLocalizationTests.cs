@@ -408,6 +408,10 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetNotAppliedPrefix + E;
         yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetAppliedNote;
         yield return "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + LinuxManagedComponentService.ShaderPacksNotInstalledNote;
+        yield return ReShadeDeploymentService.ShaderSyncFailedPrefix + E;
+        yield return ReShadeDeploymentService.ShaderSyncNotInstalledMessage;
+        yield return ReShadeDeploymentService.ShaderSyncDonePrefix + "Lilium, Prod80";
+        yield return ReShadeDeploymentService.ShaderSyncNoneMessage;
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     }

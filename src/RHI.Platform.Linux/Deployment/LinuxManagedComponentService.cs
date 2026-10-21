@@ -2773,29 +2773,41 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             .SetEquals(ReShadeShaderPackService.DeployedPackIds(b, _reshade.AvailableShaderPacks));
 
     /// <summary>
-    /// Brings the game's RHI shader packs to its effective set through ReShade's own journaled install (the installed
-    /// profile re-applied: <c>ApplySyncAsync</c> inside ReShade's operation, the record updated at its commit point). The
-    /// native D3DCompiler_47 is ensured first as profile Apply does. Nothing without RHI's ReShade or when the packs are
-    /// already the effective set.
+    /// Brings the game's RHI shader packs to its effective set WITHOUT re-running ReShade's install (review major 3:
+    /// <see cref="ReShadeDeploymentService.SyncShaderPacksAsync"/>, one journaled operation on ReShade's record; ReShade's
+    /// DLL and version stay). A native D3DCompiler_47 is got first when packs arrive, as profile Apply does. Logged in the
+    /// update history as ReShade (reshade-shaders) when the pack list changes. Nothing without RHI's ReShade or when the
+    /// packs are already the effective set.
     /// </summary>
     public async Task<ShaderSetApplyResult> ApplyShaderSetAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var record = _records.Find(game, ManagedComponentKind.ReShade);
         if (record is null) return new(ShaderSetOutcome.NotApplicable, "");
         if (EffectiveShaderPacks(game) is not { } packs) return new(ShaderSetOutcome.Failed, ShaderSetsUnreadableMessage);
-        var options = ReShadeRowOptions(game);
-        if (SamePacks(options.ShaderPackIds, packs)) return new(ShaderSetOutcome.Unchanged, "");
-        if (InstallGuard(game) is { } guard) return new(ShaderSetOutcome.Failed, guard.Message);
-        if (!options.VulkanLayer && packs.Count > 0 && string.IsNullOrWhiteSpace(options.D3DCompiler47Path)
+        if (SamePacks(ReShadeDeploymentService.RecordedShaderPacks(record), packs)) return new(ShaderSetOutcome.Unchanged, "");
+        if (PatchTargetGuard(game) is { } guard) return new(ShaderSetOutcome.Failed, guard.Message);
+        if (!ReShadeVulkanLayer.IsLayerRecord(record) && packs.Count > 0
+            && string.IsNullOrWhiteSpace(_reshade.GetInstalledOptions(game).D3DCompiler47Path)
             && await EnsureNativeD3DCompilerDependencyAsync(game, null, "ReShade shader packs", cancellationToken).ConfigureAwait(false) is { } compiler)
             return new(ShaderSetOutcome.Failed, compiler.Message);
-        var result = await _reshade.InstallAsync(game, options, cancellationToken).ConfigureAwait(false);
+        Task<ComponentOperationResult> Sync() => _reshade.SyncShaderPacksAsync(game, packs, cancellationToken);
+        var result = await (_history is null
+            ? Sync()
+            : _history.TrackOwnedFileAsync(game, ManagedComponentKind.ReShade, ShaderPackHistoryLabel, ShaderPackHistoryVersion, Sync)).ConfigureAwait(false);
         return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);
     }
 
+    /// <summary>The update history's name for ReShade's shader packs ("ReShade (reshade-shaders)"; the folder's own name).</summary>
+    internal const string ShaderPackHistoryLabel = "reshade-shaders";
+
+    // The "version" the history shows for a pack change: the deployed pack ids, or a dash for none.
+    private static string ShaderPackHistoryVersion(LinuxDeploymentRecord record)
+        => ReShadeDeploymentService.RecordedShaderPacks(record) is { Count: > 0 } ids ? string.Join(", ", ids) : "—";
+
     /// <summary>
-    /// Brings the game's Addon Manager add-ons to its effective set (one journaled Addon Manager operation). Held while
-    /// ReShade is the No Addons build; nothing without RHI's ReShade or when the add-ons already match.
+    /// Brings the game's Addon Manager add-ons to its effective set (one journaled Addon Manager operation, logged in the
+    /// update history like any Addon Manager change). Held while ReShade is the No Addons build; nothing without RHI's
+    /// ReShade or when the add-ons already match.
     /// </summary>
     public async Task<ShaderSetApplyResult> ApplyAddonSetAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
@@ -2804,7 +2816,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (effective.HeldByNoAddons) return new(ShaderSetOutcome.Held, ReShadeAddonSwitch.HeldPrefix + ReShadeAddonManagerService.DisplayName);
         if (SameIds(_addonManager.RecordedSelection(game), effective.Ids) && (effective.Ids.Count == 0 || _addonManager.HasRecord(game)))
             return new(ShaderSetOutcome.Unchanged, "");
-        var result = await ApplyReShadeAddonSelectionAsync(game, effective.Ids, cancellationToken).ConfigureAwait(false);
+        var result = await Track(game, ManagedComponentKind.ReShadeAddonManager, ComponentUpdateAction.Update,
+            () => ApplyReShadeAddonSelectionAsync(game, effective.Ids, cancellationToken)).ConfigureAwait(false);
         return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);
     }
 

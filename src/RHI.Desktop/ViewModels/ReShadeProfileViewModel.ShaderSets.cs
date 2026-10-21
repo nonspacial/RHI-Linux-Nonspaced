@@ -227,6 +227,7 @@ public sealed partial class ReShadeProfileViewModel
             parts.Add(TF("Sets.SumFailed", result.Failed,
                 string.Join("; ", result.Failures.Select(f => $"{f.Game} ({UiLocalizationService.Present(f.Reason).TrimEnd('.')})"))));
         if (result.NotRun > 0) parts.Add(TF("Sets.SumCancelled", result.NotRun));
+        if (result.Excluded > 0) parts.Add(TF("Sets.SumExcluded", result.Excluded));
         if (parts.Count == 0) parts.Add(T("Sets.SumNone"));
         return $"{T(part == ShaderAddonSetPart.Shaders ? "Win.ShaderPacks" : "Win.ReShadeAddOns")}: {string.Join("; ", parts)}.";
     }

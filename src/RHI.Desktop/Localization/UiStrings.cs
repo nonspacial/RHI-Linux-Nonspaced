@@ -1199,6 +1199,7 @@ internal static class UiStrings
         ("Sets.SumRunning", "{0} pulado(s) por estar(em) em execução: {1}", "{0} skipped while running: {1}"),
         ("Sets.SumFailed", "{0} com falha, arquivos mantidos: {1}", "{0} failed, files kept: {1}"),
         ("Sets.SumCancelled", "{0} sem alteração (cancelado)", "{0} not changed (cancelled)"),
+        ("Sets.SumExcluded", "{0} fora do Atualizar tudo, sem alteração", "{0} left out of Update all, not changed"),
         ("Sets.SumNone", "nenhum jogo com o ReShade do RHI usa Global", "no game with RHI's ReShade is set to Global"),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
