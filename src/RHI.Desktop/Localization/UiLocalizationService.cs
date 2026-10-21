@@ -627,6 +627,15 @@ public static class UiLocalizationService
             "Pacotes de shaders atualizados; o próprio ReShade não foi alterado. Os pacotes de shaders do RHI foram retirados do jogo."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w7 integration rows: older English-only platform lines the wave's new paths now reach (local RenoDX add-on,
+        // shaders-only sync, the OptiScaler chain removal).
+        ("Game executable was not detected.", "O executável do jogo não foi detectado."),
+        ("RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.",
+            "Os add-ons do RenoDX precisam da API de add-ons do ReShade para Windows e não são instalados em jogos nativos do Linux."),
+        ("Could not determine game bitness for the RenoDX add-on.", "Não foi possível saber se o jogo é de 32 ou 64 bits para o add-on do RenoDX."),
+        ("Could not determine whether the game executable is 32-bit or 64-bit.", "Não foi possível saber se o executável do jogo é de 32 ou 64 bits."),
+        ("Install ReShade with full add-on support first. RenoDX is a ReShade add-on.",
+            "Instale primeiro o ReShade com suporte completo a add-ons. O RenoDX é um add-on do ReShade."),
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1486,6 +1495,13 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DownloadSources.DxvkHdr.RefusalPrefix,
             "Download recusado: links do DXVK HDR devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // w7 integration rows
+        ("Wine/Proton prefix is not initialized; start the game once before enabling ReShade shader packs.",
+            "O prefixo Wine/Proton não está preparado; inicie o jogo uma vez antes de ativar os pacotes de shaders do ReShade."),
+        ("ReShade shader compiler compatibility check failed: ", "A verificação de compatibilidade do compilador de shaders do ReShade falhou: "),
+        ("OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: ",
+            "Os arquivos do OptiScaler foram removidos, mas o nome para o qual o ReShade64.dll volta está ocupado inesperadamente; o RHI não moveu o ReShade de volta por cima dele: "),
+        ("Foreign RenoDX protection: another RenoDX add-on already exists at ", "Proteção contra RenoDX de terceiros: já existe outro add-on do RenoDX em "),
+        (". RHI Linux will not overwrite or stack it automatically.", ". O RHI Linux não vai sobrescrevê-lo nem empilhá-lo automaticamente."),
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.XnaGameMessage,
             "Este é um jogo XNA: ele carrega o d3d9.dll apenas da pasta de assemblies .NET do prefixo Wine/Proton, nunca da pasta do jogo, então o DX9 HDR não funciona nele."),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeXnaGacMessage,

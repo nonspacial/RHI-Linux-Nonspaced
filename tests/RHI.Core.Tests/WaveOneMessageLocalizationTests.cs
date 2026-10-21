@@ -490,6 +490,17 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.XnaGameMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeXnaGacMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameMovedByDxvkHdrMessage;
+        // Older English-only lines the wave's new paths reach (local RenoDX add-on, shaders-only sync, chain removal).
+        yield return "Game executable was not detected.";
+        yield return "RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.";
+        yield return "Could not determine game bitness for the RenoDX add-on.";
+        yield return "Could not determine whether the game executable is 32-bit or 64-bit.";
+        yield return "Install ReShade with full add-on support first. RenoDX is a ReShade add-on.";
+        yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncFailedPrefix
+            + "Wine/Proton prefix is not initialized; start the game once before enabling ReShade shader packs.";
+        yield return "ReShade shader compiler compatibility check failed: " + P;
+        yield return "OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: " + P;
+        yield return "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.";
     }
 
     [Theory]
