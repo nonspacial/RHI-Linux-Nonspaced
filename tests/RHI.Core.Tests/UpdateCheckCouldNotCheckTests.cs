@@ -44,6 +44,15 @@ public sealed class UpdateCheckCouldNotCheckTests
         if (variant == "local-package") record.Metadata[LumaFrameworkDeploymentService.MetaLocalPackage] = "1";
         if (variant == "no-addons") record.Metadata["ReShade.Channel"] = nameof(ReShadeChannel.NoAddons);
         if (variant == "renodx-local-package") record.Metadata[RenoDxDeploymentService.LocalPackageMetadataKey] = "1";
+        if (kind == ManagedComponentKind.DxvkHdr)
+        {
+            // w7 follow-up B25: an installed DX9 HDR as it is on disk (a DirectX 9 game, its d3d9.dll still there); only the
+            // release lookup cannot answer. A deleted d3d9.dll or a game no longer DX9 is a failure, not "could not check".
+            game.GraphicsApi = GraphicsApi.DirectX9;
+            var d3d9 = Path.Combine(game.BinaryDirectory!, "d3d9.dll");
+            File.WriteAllBytes(d3d9, CacheForeignFileRejectionTests.Pe(0x8664, 4096, 9));
+            record.Files.Add(new LinuxDeployedFile { Path = d3d9, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(d3d9) });
+        }
         fx.Records.Upsert(record);
 
         var check = await fx.Managed.CheckManagedUpdateAsync(game, kind, []);

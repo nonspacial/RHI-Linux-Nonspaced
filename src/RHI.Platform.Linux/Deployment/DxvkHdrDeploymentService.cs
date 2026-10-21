@@ -154,7 +154,7 @@ public sealed partial class DxvkHdrDeploymentService
 
     /// <summary>Why DX9 HDR on <paramref name="game"/> (record <paramref name="record"/>) must not be updated, or null.</summary>
     private static string? UpdateRefusal(DetectedGame game, LinuxDeploymentRecord record)
-        => D3d9Missing(record) || OfferRefusal(game) is not null ? UpdateNeedsReinstallMessage : null;
+        => D3d9Missing(record) || XnaGacReShade.IsListed(game) || !ComponentProbe.IsDxvkHdrCandidate(game) ? UpdateNeedsReinstallMessage : null;
 
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
