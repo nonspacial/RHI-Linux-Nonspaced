@@ -369,6 +369,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _quarantineSubscription = JsonStoreQuarantine.Listen(notice => Dispatcher.UIThread.Post(() => ReportStoreQuarantined(notice)));
         _settings = _settingsStore.Load();
         _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
+        if (_managedComponents.DxvkHdr is { } dxvkHdr) dxvkHdr.HdrLaunchOn = game => DxvkHdrPresenter.HdrLaunchOn(_libraryState, game); // w7/dxvk-hdr hook (#200): the row reads the in-memory library (review nit 8)
         LibraryFilterMode = _libraryState.FilterMode;
         ViewMode = _settings.ViewMode;
         ReShadeProfile.ShowGlobalDefault();

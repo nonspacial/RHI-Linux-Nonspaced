@@ -152,8 +152,22 @@ public sealed class DxvkHdrDeploymentService
         _cacheDir = cacheDir ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "dxvk-hdr");
     }
 
-    /// <summary>Whether the game's HDR launch setting is on (set by the app from the per-game HDR control); null = unknown.</summary>
+    /// <summary>
+    /// Whether the game's HDR launch setting is on, read from the app's in-memory library (the view model sets it: the
+    /// same state its HDR controls and the ⚙ dialog read); null = unknown.
+    /// </summary>
     public Func<DetectedGame, bool>? HdrLaunchOn { get; set; }
+
+    /// <summary>
+    /// <see cref="HdrLaunchOn"/> for the row note. The selection analysis decorates rows off the UI thread while the HDR
+    /// control may change the library on it: a read that meets that write counts as unknown (no note) rather than failing
+    /// the analysis; the next selection reads it again.
+    /// </summary>
+    private bool? ReadHdrLaunchOn(DetectedGame game)
+    {
+        try { return HdrLaunchOn?.Invoke(game); }
+        catch (InvalidOperationException) { return null; }
+    }
 
     /// <summary>Test seam: runs inside the install right after d3d9.dll is placed (to fail or kill it mid-way).</summary>
     internal Action? AfterD3d9PlacedForTesting { get; set; }
@@ -191,7 +205,7 @@ public sealed class DxvkHdrDeploymentService
         if (record is not null && row.Availability is ComponentAvailability.Available or ComponentAvailability.Unsupported)
             row.Availability = ComponentAvailability.Installed;
         if (!game.HasConfirmedPatchTarget) return; // the service's patch-target note stays
-        var hdrOff = HdrLaunchOn?.Invoke(game) == false ? HdrLaunchOffNote : "";
+        var hdrOff = ReadHdrLaunchOn(game) == false ? HdrLaunchOffNote : "";
         if (row.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable)
         {
             row.ActionAllowed = record is not null;

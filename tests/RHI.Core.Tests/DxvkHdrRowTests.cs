@@ -136,17 +136,22 @@ public sealed class DxvkHdrRowTests
         Assert.False(new ComponentRowViewModel(row, null!).HasDxvkHdrSettings);
     }
 
+    // Review nit 8: the note reads the view model's in-memory library (what its HDR controls and the ⚙ dialog read),
+    // never a fresh read of the library file: a change kept in memory shows; one only on disk does not.
     [Fact]
     public async Task HdrLaunchOff_TheRowSaysSoAndNamesTheControl_OnTurnsTheLineOff()
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var game = Game(fx, "Hdr");
+        var key = RHI.Platform.Linux.Settings.LinuxGameLibraryStore.GameKey(game);
         Assert.EndsWith(DxvkHdrDeploymentService.HdrLaunchOffNote, Row(Decorated(fx, game))!.Note, StringComparison.Ordinal);
 
-        var state = fx.Library.Load();
-        state.HdrProfiles[RHI.Platform.Linux.Settings.LinuxGameLibraryStore.GameKey(game)] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.NativeWayland };
-        fx.Library.Save(state);
+        var onDisk = fx.Library.Load();
+        onDisk.HdrProfiles[key] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.NativeWayland };
+        fx.Library.Save(onDisk);
+        Assert.EndsWith(DxvkHdrDeploymentService.HdrLaunchOffNote, Row(Decorated(fx, game))!.Note, StringComparison.Ordinal);
 
+        ((IPanelHost)fx.Vm).LibraryState.HdrProfiles[key] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.NativeWayland };
         Assert.DoesNotContain(DxvkHdrDeploymentService.HdrLaunchOffNote, Row(Decorated(fx, game))!.Note, StringComparison.Ordinal);
     }
 

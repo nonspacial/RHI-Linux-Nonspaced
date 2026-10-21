@@ -262,7 +262,6 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         var dxvkHdr = new DxvkHdrDeploymentService(http, records, wineOverrides, reshade, cacheDir: Path.Combine(cacheDir, "dxvk-hdr")); // #200
-        dxvkHdr.HdrLaunchOn = game => DxvkHdrPresenter.HdrLaunchOn(libraryStore.Load(), game);
         var managed = new LinuxManagedComponentService(
             records, reshade, new ReShadeAddonManagerService(http, upstreamManifest, Path.Combine(cacheDir, "addons"), Path.Combine(prefs, "custom-addons"), Path.Combine(prefs, "addon-manager.json"), records), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
