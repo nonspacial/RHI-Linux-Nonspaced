@@ -215,8 +215,9 @@ internal static class ReShadeIniManager
     {
         if (!File.Exists(path)) return;
 
-        // If RHI created the file and it has not changed since our last write, remove it entirely.
-        if (createdByRhi && !string.IsNullOrWhiteSpace(lastManagedHash) &&
+        // If RHI created the file and it has not changed since our last write, remove it entirely. A link is never RHI's
+        // file (#207: the user's shared ReShade.ini stays linked); only RHI's own lines leave the file it points to.
+        if (createdByRhi && new FileInfo(path).LinkTarget is null && !string.IsNullOrWhiteSpace(lastManagedHash) &&
             string.Equals(FileHash.Sha256Hex(path), lastManagedHash, StringComparison.OrdinalIgnoreCase))
         {
             AtomicFile.Delete(path);

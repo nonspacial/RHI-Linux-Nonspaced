@@ -850,9 +850,11 @@ public sealed partial class ReShadeDeploymentService
             await _shaderPacks.CleanupAsync(binaryDirectory, scope.Operation).ConfigureAwait(false); // #169: tracked
             if (record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)) is { } managedIni)
             {
-                await scope.TrackAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
+                // #207: a linked ReShade.ini is tracked at the file the cleanup writes (the shared file), never the link.
+                var written = ReShadeIniWriteTarget(game, managedIni.Path);
+                await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
                 CleanupManagedIni(record, game.InstallPath); // w5/ini-presets hook (review 8)
-                await scope.DeclareWrittenContentAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
             }
 
             // #201: the GAC ReShade.ini copy goes while it still holds RHI's last copy (else it is the user's and stays).
@@ -1584,15 +1586,25 @@ public sealed partial class ReShadeDeploymentService
         return true;
     }
 
-    /// <summary>INI files an install or update may rewrite: ReShade.ini (old record's and current) and, when coexisting, OptiScaler.ini.</summary>
+    /// <summary>
+    /// INI files an install or update may rewrite: ReShade.ini (old record's and current) and, when coexisting, OptiScaler.ini.
+    /// A ReShade.ini is named by the file a write through it replaces (#207, <see cref="ReShadeIniManager.ResolveWriteTarget"/>):
+    /// a link to the user's shared <c>~/.config/ReShade</c> file is tracked at that file, so a rollback keeps the link and
+    /// puts the shared file's content back (tracking the link would replace it with a copy and leave RHI's lines in the
+    /// shared file). Throws the link rule's refusal for a link RHI does not write through, before anything changed.
+    /// </summary>
     private static IEnumerable<string> IniPathsTouchedByInstall(DetectedGame game, LinuxDeploymentRecord? existingRecord, bool coexist)
     {
-        var paths = new List<string> { ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!) };
+        var paths = new List<string> { ReShadeIniWriteTarget(game, ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!)) };
         if (existingRecord?.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)) is { } recorded)
-            paths.Add(recorded.Path);
+            paths.Add(ReShadeIniWriteTarget(game, recorded.Path));
         if (coexist) paths.Add(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini"));
         return paths.Distinct(StringComparer.Ordinal);
     }
+
+    // #207: the file a ReShade.ini write to <iniPath> replaces under the one ReShade.ini link rule (the journal tracks it).
+    private static string ReShadeIniWriteTarget(DetectedGame game, string iniPath)
+        => ReShadeIniManager.ResolveWriteTarget(iniPath, Path.GetDirectoryName(iniPath) ?? game.BinaryDirectory!, game.InstallPath);
 
     private async Task RefreshManagedOptiScalerIniHashAsync(DetectedGame game, CancellationToken cancellationToken)
     {
