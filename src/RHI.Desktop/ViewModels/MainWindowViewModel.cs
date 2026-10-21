@@ -169,6 +169,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
     public DxvkHdrPresenter DxvkHdr => new(this, _managedComponents); // #200: DX9 HDR ⚙ and its install confirmation
+    // w8 lane rows: shell hooks (one member each; logic lives in your presenter)
+    // w8/reshade-ini rows
+    // w8/renodx rows
+    // w8/commit-point rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1591,6 +1595,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
         return items;
     }
 

@@ -519,6 +519,9 @@ public sealed class WaveOneMessageLocalizationTests
             yield return "ReShade shader compiler compatibility check failed: " + refusal;
         yield return "OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: " + P;
         yield return "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.";
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must

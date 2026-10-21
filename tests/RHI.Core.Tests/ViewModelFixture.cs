@@ -53,6 +53,9 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
         )
     {
         _hang.When = hangWhen;
@@ -83,6 +86,9 @@ internal sealed class ViewModelFixture : IDisposable
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            // w8/reshade-ini rows
+            // w8/renodx rows
+            // w8/commit-point rows
             );
         // w3/scan Settings row (#90): the fixture's own "Xbox / Game Pass folders" list (w3 integration).
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
@@ -98,6 +104,9 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
@@ -131,6 +140,9 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -153,6 +165,9 @@ internal sealed class ViewModelFixture : IDisposable
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            // w8/reshade-ini rows
+            // w8/renodx rows
+            // w8/commit-point rows
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
@@ -220,6 +235,9 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
         )
     {
         var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse, hang));
@@ -287,6 +305,9 @@ internal sealed class ViewModelFixture : IDisposable
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         var dxvkHdr = new DxvkHdrDeploymentService(http, records, wineOverrides, reshade, cacheDir: Path.Combine(cacheDir, "dxvk-hdr")); // #200
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
         var managed = new LinuxManagedComponentService(
             records, reshade, new ReShadeAddonManagerService(http, upstreamManifest, Path.Combine(cacheDir, "addons"), Path.Combine(prefs, "custom-addons"), Path.Combine(prefs, "addon-manager.json"), records), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
@@ -309,6 +330,9 @@ internal sealed class ViewModelFixture : IDisposable
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             , dxvkHdr: dxvkHdr // #200
+            // w8/reshade-ini rows
+            // w8/renodx rows
+            // w8/commit-point rows
             );
         managed.ShaderSets = shaderSets; // w7/shader-sets (#179): after construction, as the app's composition does
         built(managed);

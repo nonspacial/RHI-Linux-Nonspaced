@@ -335,6 +335,9 @@ public static class OptionLists
         new(3, "Dxvk.Preset3", null, DxvkHdrPresets.For(3).Name),
         new(4, "Dxvk.Preset4", null, DxvkHdrPresets.For(4).Name),
         new(5, null, "Experimental", DxvkHdrPresets.For(5).Name)); // the same word in both languages
+    // w8/reshade-ini rows
+    // w8/renodx rows
+    // w8/commit-point rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>
     public static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");

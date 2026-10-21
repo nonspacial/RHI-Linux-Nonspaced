@@ -651,3 +651,11 @@ build.
   loaded. An XNA (GAC) ReShade is never moved to the Vulkan layer, even once the manifest no longer lists the game, and a
   listed XNA game's ReShade row keeps the GAC path beside an older DX9 HDR record. A ReShade DX9 HDR moved to its layer
   has no DLL name to change (#196): the locked dropdown says to remove DX9 HDR first.
+
+## Parity notes (wave 8: RenoDX Engine.ini parity, journaling follow-ups)
+
+<!-- w8/reshade-ini notes -->
+
+<!-- w8/renodx notes -->
+
+<!-- w8/commit-point notes -->

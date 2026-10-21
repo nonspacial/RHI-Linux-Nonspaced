@@ -71,6 +71,9 @@ internal sealed class AppComposition
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    // w8/reshade-ini rows
+    // w8/renodx rows
+    // w8/commit-point rows
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -242,6 +245,10 @@ internal sealed class AppComposition
         // w7/dxvk-hdr rows
         // #200 DX9 HDR: DXVK HDR beside DirectX 9 games (the view model points its row note at the in-memory library).
         var dxvkHdr = new DxvkHdrDeploymentService(http, records, wineOverrides, reshade, journal);
+        // w8 lane rows: services LinuxManagedComponentService takes (named args below)
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
@@ -262,6 +269,10 @@ internal sealed class AppComposition
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             , dxvkHdr: dxvkHdr // #200 DX9 HDR
+            // w8 lane rows: named arguments, each line starting with a comma
+            // w8/reshade-ini rows
+            // w8/renodx rows
+            // w8/commit-point rows
             );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
@@ -311,6 +322,9 @@ internal sealed class AppComposition
         managedComponents.ShaderSets = shaderSets; // #179 (the Addon Manager reads it through the managed service)
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -362,6 +376,9 @@ internal sealed class AppComposition
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            // w8/reshade-ini rows
+            // w8/renodx rows
+            // w8/commit-point rows
         };
     }
 }

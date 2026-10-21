@@ -188,5 +188,8 @@ internal static class PlatformMessageTranslations
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
     ];
 }

@@ -636,6 +636,9 @@ public static class UiLocalizationService
         ("Could not determine whether the game executable is 32-bit or 64-bit.", "Não foi possível saber se o executável do jogo é de 32 ou 64 bits."),
         ("Install ReShade with full add-on support first. RenoDX is a ReShade add-on.",
             "Instale primeiro o ReShade com suporte completo a add-ons. O RenoDX é um add-on do ReShade."),
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1536,6 +1539,9 @@ public static class UiLocalizationService
             "O ReShade deste jogo está instalado para XNA, que carrega o d3d9.dll apenas da pasta de assemblies .NET do prefixo, então o DX9 HDR não funciona junto dele e nada foi alterado."),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameMovedByDxvkHdrMessage,
             "O nome da DLL do ReShade não pode ser mudado enquanto o DX9 HDR estiver instalado neste jogo: o DX9 HDR moveu o ReShade para a camada Vulkan dele, que não tem nome de DLL. Remova primeiro o DX9 HDR na linha dele (o ReShade volta a ser d3d9.dll) e depois escolha o nome."),
+        // w8/reshade-ini rows
+        // w8/renodx rows
+        // w8/commit-point rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

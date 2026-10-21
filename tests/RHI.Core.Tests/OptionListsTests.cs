@@ -59,6 +59,9 @@ public sealed class OptionListsTests
             AssertRoundTrips(OptionLists.NvidiaTargetFrameRate);
             // w7/dxvk-hdr rows
             AssertRoundTrips(OptionLists.DxvkHdrPreset); // #200
+            // w8/reshade-ini rows
+            // w8/renodx rows
+            // w8/commit-point rows
         }
         finally
         {
