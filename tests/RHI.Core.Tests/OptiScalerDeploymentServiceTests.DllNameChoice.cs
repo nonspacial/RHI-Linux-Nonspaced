@@ -90,7 +90,7 @@ public sealed partial class OptiScalerDeploymentServiceTests
 
     // The dropdown (values, not wording: other test classes switch the UI language meanwhile).
     [Fact]
-    public async Task Dropdown_DefaultsToAutomatic_HidesHeldNames_FollowsTheChoice_AndLocksWhileInstalled()
+    public async Task Dropdown_DefaultsToAutomatic_HidesHeldNames_FollowsTheChoice_AndOffersRenamingWhileInstalled()
     {
         var (game, store) = CreateGame("choice-dropdown", GraphicsApi.DirectX12);
         var (managed, names) = ManagedWithChoice(store, CreatePackage("choice-dropdown-package"), "choice-dropdown");
@@ -117,10 +117,14 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Contains("d3d12.dll", chosen.Hint, StringComparison.Ordinal);
 
         Assert.True((await managed.InstallOptiScalerAsync(game, OptiScalerVariant.Stable, nightlyBuild: null)).Success);
+        // #196: installed, the dropdown keeps its name selected and offers the free names to rename it to in place.
         var installed = RHI.Desktop.ViewModels.OptiScalerDllNamePresenter.For(managed, game, busy: false);
-        Assert.Equal("d3d12.dll", Assert.Single(installed.Options).Value);
-        Assert.False(installed.CanChoose);
+        Assert.Equal("d3d12.dll", installed.Selected.Value);
+        Assert.Equal([null, "dxgi.dll", "d3d11.dll", "d3d12.dll", "dbghelp.dll", "version.dll", "wininet.dll", "winhttp.dll"], installed.Options.Select(o => o.Value));
+        Assert.True(installed.CanChoose);
+        Assert.False(RHI.Desktop.ViewModels.OptiScalerDllNamePresenter.For(managed, game, busy: true).CanChoose);
         Assert.Contains("d3d12.dll", installed.Hint, StringComparison.Ordinal);
+        Assert.Contains("rename it in place", installed.Hint, StringComparison.Ordinal);
     }
 
     // Review minor 3: a saved name another RHI component took since is skipped, and the install result says so plainly.

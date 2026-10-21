@@ -139,6 +139,7 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
             _acceptedDll = selectedDll = dllName.Selected;
             CanChooseDll = dllName.CanChoose;
             dllHint = dllName.Hint;
+            _installedDll = snapshot.ManagedByRhi;
         }
         // #166 (w6/fixes): the warning is shown once — above the settings, or as the one line in their place.
         var (noticeWarning, noticeMessage) = OptiScalerSettingsNotice.For(snapshot);
@@ -196,10 +197,35 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
     [ObservableProperty] private DllNameOption? selectedDll;
     [ObservableProperty] private string? dllHint;
 
+    /// <summary>The latest in-place rename the dropdown started (#196; test seam).</summary>
+    internal Task DllChanged { get; private set; } = Task.CompletedTask;
+
     partial void OnSelectedDllChanged(DllNameOption? value)
     {
         if (_revertingDll || value is null || ReferenceEquals(value, _acceptedDll)) return;
+        // #196: an installed OptiScaler is renamed in place; a refused or failed rename shows the name it keeps again.
+        if (_installedDll)
+        {
+            DllChanged = RenameDllAsync(value);
+            RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(DllChanged, "OptiScaler DLL rename");
+            return;
+        }
         if (_shell.SaveOptiScalerDllName(value.Value))
+        {
+            _acceptedDll = value;
+            if (_shell.OptiScalerDllName() is { } refreshed) DllHint = refreshed.Hint;
+            return;
+        }
+        _revertingDll = true;
+        try { SelectedDll = _acceptedDll; }
+        finally { _revertingDll = false; }
+    }
+
+    private bool _installedDll;
+
+    private async Task RenameDllAsync(DllNameOption value)
+    {
+        if (await _shell.RenameOptiScalerDllNameAsync(value.Value).ConfigureAwait(true))
         {
             _acceptedDll = value;
             if (_shell.OptiScalerDllName() is { } refreshed) DllHint = refreshed.Hint;

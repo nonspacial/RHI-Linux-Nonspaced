@@ -196,6 +196,7 @@ public sealed class UpstreamGameLibraryPolicyService(
         }
         // w7/smalls rows
         // w7/reshade rows
+        if (TryGet(policy.XnaGacFolders, canonical, out var xnaGac)) game.ManifestXnaGacFolder = xnaGac; // #201
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows

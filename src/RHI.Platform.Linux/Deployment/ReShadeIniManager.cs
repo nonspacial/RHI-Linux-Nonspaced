@@ -20,8 +20,18 @@ internal sealed record ReShadeIniApplyResult(
 /// </summary>
 public sealed record ReShadeIniDefaults
 {
-    /// <summary>The template's bytes (<see cref="UserIniTemplates"/>); its keys win over the game's (upstream).</summary>
+    /// <summary>
+    /// The template's bytes (<see cref="UserIniTemplates"/>). A new ReShade.ini starts as a copy of it; into an existing
+    /// file it only adds the keys the file lacks (#208, owner decision, unlike upstream's <c>MergeRsIni</c>), unless
+    /// <see cref="TemplateKeysWin"/> is set.
+    /// </summary>
     public byte[]? Template { get; init; }
+
+    /// <summary>
+    /// The template's keys overwrite the game's values (upstream's merge). Only the explicit ⚙ "Deploy ReShade.ini" sets
+    /// it: the user asked for the template to be written. ReShade's install and update leave it off (#208).
+    /// </summary>
+    public bool TemplateKeysWin { get; init; }
 
     /// <summary>Leave the template's <c>PreprocessorDefinitions</c> out (upstream strips the RDR2 template's Vulkan depth settings on DirectX installs).</summary>
     public bool SkipPreprocessorDefinitions { get; init; }
@@ -41,8 +51,9 @@ public sealed record ReShadeIniDefaults
 
 /// <summary>
 /// Conservative ReShade.ini editor. Existing user settings are preserved byte-for-byte except for RHI-owned shader
-/// search-path tokens and, when the caller passes <see cref="ReShadeIniDefaults"/>, the keys its template and settings
-/// name (#181). Every write goes through the one user-file path (atomic, a read-only file stays read-only).
+/// search-path tokens and, when the caller passes <see cref="ReShadeIniDefaults"/>, the template keys the file lacks
+/// (every template key for Deploy, #208) and the Settings values (#181). Every write goes through the one user-file path
+/// (atomic, a read-only file stays read-only).
 /// </summary>
 internal static class ReShadeIniManager
 {
@@ -93,7 +104,8 @@ internal static class ReShadeIniManager
         var effectKeyWasMissing = !existed || IniLines.Get(lines, "GENERAL", EffectKey) is null;
         var textureKeyWasMissing = !existed || IniLines.Get(lines, "GENERAL", TextureKey) is null;
         if (existed && defaults?.Template is { } template)
-            MergeTemplate(lines, IniLines.FromBytes(template), defaults.SkipPreprocessorDefinitions, effectAdded, textureAdded, recordTemplatePaths: true);
+            MergeTemplate(lines, IniLines.FromBytes(template), defaults.SkipPreprocessorDefinitions, effectAdded, textureAdded,
+                recordTemplatePaths: true, overwrite: defaults.TemplateKeysWin);
         if (defaults is not null) ApplySettings(lines, defaults);
         MergeSearchPath(lines, "GENERAL", EffectKey, effectPaths, effectAdded);
         MergeSearchPath(lines, "GENERAL", TextureKey, texturePaths, textureAdded);
@@ -105,6 +117,20 @@ internal static class ReShadeIniManager
         return new(path, existed, !existed, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, FileHash.Sha256Hex(path));
     }
 
+    /// <summary>
+    /// #201: <paramref name="ini"/>'s bytes with <c>[INSTALL] BasePath</c> set to <paramref name="basePath"/> (the folder
+    /// ReShade takes as its base when it runs from another folder: an XNA game's GAC copy). Only that copy, RHI's own file,
+    /// gets the key; the game folder's ReShade.ini (which may be a shared file every game reads) never does (review 2).
+    /// </summary>
+    internal static byte[] WithInstallBasePath(byte[] ini, string basePath)
+    {
+        var lines = IniLines.FromBytes(ini);
+        IniLines.Set(lines, "INSTALL", "BasePath", basePath);
+        var text = new StringBuilder();
+        foreach (var line in lines) text.Append(line).Append('\n');
+        return new UTF8Encoding(false).GetBytes(text.ToString());
+    }
+
     /// <summary>The template's lines for a new ReShade.ini (its <c>[GENERAL] PreprocessorDefinitions</c> dropped when asked).</summary>
     internal static List<string> TemplateLines(byte[] template, bool skipPreprocessorDefinitions)
     {
@@ -114,13 +140,15 @@ internal static class ReShadeIniManager
     }
 
     /// <summary>
-    /// Upstream's merge: every template key overwrites the game's value (keys the template does not name stay), except
-    /// the two search-path lists, whose template entries are added to the game's list (RHI owns those lists entry by
-    /// entry, so removal can take back exactly what it added). A template <c>PreprocessorDefinitions</c> is left out
-    /// when <paramref name="skipPreprocessorDefinitions"/> is set; the game's own line is never touched.
+    /// Merges the template into an existing file: a template key is added only where the game's file lacks that key in
+    /// that section (#208: the user's own values survive installs and updates); with <paramref name="overwrite"/> (the
+    /// explicit Deploy) every template key overwrites the game's value, as upstream. Keys the template does not name
+    /// always stay. The two search-path lists are merged entry by entry either way (RHI owns those lists entry by entry,
+    /// so removal can take back exactly what it added). A template <c>PreprocessorDefinitions</c> is left out when
+    /// <paramref name="skipPreprocessorDefinitions"/> is set; the game's own line is never touched.
     /// </summary>
     internal static void MergeTemplate(List<string> lines, IReadOnlyList<string> template, bool skipPreprocessorDefinitions,
-        List<string> effectAdded, List<string> textureAdded, bool recordTemplatePaths)
+        List<string> effectAdded, List<string> textureAdded, bool recordTemplatePaths, bool overwrite)
     {
         foreach (var (section, key, value) in IniLines.Entries(template))
         {
@@ -137,7 +165,8 @@ internal static class ReShadeIniManager
                     continue;
                 }
             }
-            IniLines.Set(lines, section, key, value);
+            if (overwrite || IniLines.Get(lines, section, key) is null)
+                IniLines.Set(lines, section, key, value);
         }
     }
 
@@ -186,8 +215,9 @@ internal static class ReShadeIniManager
     {
         if (!File.Exists(path)) return;
 
-        // If RHI created the file and it has not changed since our last write, remove it entirely.
-        if (createdByRhi && !string.IsNullOrWhiteSpace(lastManagedHash) &&
+        // If RHI created the file and it has not changed since our last write, remove it entirely. A link is never RHI's
+        // file (#207: the user's shared ReShade.ini stays linked); only RHI's own lines leave the file it points to.
+        if (createdByRhi && new FileInfo(path).LinkTarget is null && !string.IsNullOrWhiteSpace(lastManagedHash) &&
             string.Equals(FileHash.Sha256Hex(path), lastManagedHash, StringComparison.OrdinalIgnoreCase))
         {
             AtomicFile.Delete(path);

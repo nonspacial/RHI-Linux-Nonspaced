@@ -57,7 +57,10 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         // Find hands out a copy: the ledger changes only through the stamped Upsert below.
         if (records.Find(game, ManagedComponentKind.ReShade) is not { } record) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
         // w5 integration: a ReShade installed as the Vulkan layer (#92) gets the Vulkan template, as its install did.
-        var defaults = ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates, vulkan: ReShadeVulkanLayer.IsLayerRecord(record));
+        // #208: the explicit Deploy still writes every template key (the user asked for the template); install and update
+        // only fill in the keys the file lacks.
+        var defaults = ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates, vulkan: ReShadeVulkanLayer.IsLayerRecord(record))
+            with { TemplateKeysWin = true };
         var iniPath = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!);
         // The file the write replaces, as for DeployAddonIniAsync: a ReShade.ini linked to the user's ReShade folder is
         // tracked at its target, so a rollback puts that file's content back and the link stays a link (w6 review 1).

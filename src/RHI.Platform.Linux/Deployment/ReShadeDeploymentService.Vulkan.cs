@@ -168,7 +168,8 @@ public sealed partial class ReShadeDeploymentService
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            var ini = ReShadeIniManager.ResolveIniPath(binaryDirectory);
+            // #207: a linked ReShade.ini is tracked at the file a write through it replaces (the shared file), never the link.
+            var ini = ReShadeIniWriteTarget(game, ReShadeIniManager.ResolveIniPath(binaryDirectory));
             await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {

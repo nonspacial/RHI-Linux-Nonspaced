@@ -645,9 +645,13 @@ public sealed partial class OptiScalerDeploymentService
 
         var reShadeRecord = _records.Find(game, ManagedComponentKind.ReShade);
         var reShade64 = reShadeRecord?.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
-        // ReShade64.dll goes back to the name OptiScaler took from it (dxgi.dll unless OptiScaler sits elsewhere, #136).
+        // ReShade64.dll goes back to the name OptiScaler took from it (dxgi.dll unless OptiScaler sits elsewhere, #136), which
+        // is OptiScaler's own name unless OptiScaler was renamed in place since (#196 decision: ChainedReShadeName).
         var proxyName = GetProxyName(record);
         var dxgi = Path.Combine(record.BinaryDirectory, proxyName);
+        var reShadeName = ChainedReShadeName(reShadeRecord, record);
+        var reShadeBack = Path.Combine(record.BinaryDirectory, reShadeName);
+        var reShadeNameMoved = !reShadeName.Equals(proxyName, StringComparison.OrdinalIgnoreCase);
 
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
@@ -687,8 +691,12 @@ public sealed partial class OptiScalerDeploymentService
                 // No proxy record with dxgi.dll gone: an earlier, partly failed removal already deleted it.
                 if (proxyRecord is null && File.Exists(dxgi))
                     return ComponentOperationResult.Fail($"Cannot safely remove OptiScaler while ReShade depends on it: the managed proxy record is missing: {proxyName}");
-                if (proxyRecord is { ExistedBeforeInstall: true })
+                if (proxyRecord is { ExistedBeforeInstall: true } && !reShadeNameMoved)
                     return ComponentOperationResult.Fail($"Remove RHI-managed ReShade first. OptiScaler preserved a pre-existing DLL under its name, so ReShade64.dll cannot be moved back without overwriting that original: {proxyName}");
+                // OptiScaler was renamed since the chain was made: ReShade's own name must still be free.
+                if (reShadeNameMoved && (ReShadeDeploymentService.FindFileCaseInsensitive(record.BinaryDirectory, reShadeName) is not null
+                                         || File.Exists(reShadeBack + TransactionalFileDeploymentService.BackupExtension)))
+                    return ComponentOperationResult.Fail(ChainNameTakenPrefix + reShadeName);
                 moveReShadeBack = reShadeRecord is not null;
             }
         }
@@ -707,6 +715,7 @@ public sealed partial class OptiScalerDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
+        WineOverrideRecord? reShadeOverride = null;
         LinuxDeploymentRecord? reShadeAfter = null;
 
         // Cancel is honoured only up to here: the teardown runs to the end or rolls back.
@@ -732,16 +741,33 @@ public sealed partial class OptiScalerDeploymentService
 
             if (moveReShadeBack)
             {
-                if (File.Exists(dxgi))
-                    throw new IOException($"OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: {proxyName}");
+                if (File.Exists(reShadeBack))
+                    throw new IOException($"OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: {reShadeName}");
                 // The content is the ReShade64.dll the preflight just hash-checked, so its recorded hash stays valid.
                 await scope.TrackAsync(reShade64!.Path, cancellationToken).ConfigureAwait(false);
-                await scope.TrackAsync(dxgi, cancellationToken).ConfigureAwait(false);
-                await scope.DeclareWriteAsync(dxgi, scope.Files.Find(reShade64.Path)!.PreSha256!, cancellationToken).ConfigureAwait(false);
-                AtomicFile.Rename(reShade64.Path, dxgi);
+                await scope.TrackAsync(reShadeBack, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(reShadeBack, scope.Files.Find(reShade64.Path)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                AtomicFile.Rename(reShade64.Path, reShadeBack);
                 reShadeAfter = LinuxDeploymentRecordStore.Clone(reShadeRecord!);
-                reShadeAfter.Files.First(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase)).Path = dxgi;
-                reShadeAfter.WineOverride = record.WineOverride;
+                reShadeAfter.Files.First(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase)).Path = reShadeBack;
+                reShadeAfter.Metadata.Remove(ReShadeChainNameMetadataKey);
+                if (!reShadeNameMoved)
+                    reShadeAfter.WineOverride = record.WineOverride;
+                else
+                {
+                    // OptiScaler's name and ReShade's differ (#196 decision): OptiScaler's override goes back first, then
+                    // ReShade's name gets its own, as a rename moves it (ProxyRename), so user.reg ends as before the chain.
+                    if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
+                        overrideRestore = await _overrides.RestoreAsync(scope.Operation, prefix, record.WineOverride, cancellationToken).ConfigureAwait(false);
+                    if (ProxyDllNames.NeedsWineOverride(reShadeName))
+                    {
+                        if (game.PrefixPath is not { } reShadePrefix || !Directory.Exists(reShadePrefix))
+                            throw new InvalidOperationException(ProxyRename.NoPrefixMessage);
+                        reShadeOverride = await _overrides.EnsureNativeBuiltinAsync(
+                            scope.Operation, reShadePrefix, reShadeName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+                    }
+                    reShadeAfter.WineOverride = reShadeOverride;
+                }
             }
             else if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
             {
@@ -756,6 +782,8 @@ public sealed partial class OptiScalerDeploymentService
             // OptiScaler's record goes back (still stamped) with ReShade's as it was, before the files roll back.
             var rollback = await scope.RollbackRemovalAsync(
                 _records, game, record, "optiscaler", alongside: reShadeAfter is null ? null : [reShadeRecord!]).ConfigureAwait(false);
+            if (scope.Operation is null && reShadeOverride is not null && game.PrefixPath is { } reShadePrefix)
+                _overrides.TryRestore(reShadePrefix, reShadeOverride);
             if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             if (!rollback.Success)
@@ -766,10 +794,17 @@ public sealed partial class OptiScalerDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         CleanupDirectories(record.DirectoriesCreatedByRhi);
         return ComponentOperationResult.Ok((reShadeAfter is not null
-            ? $"RHI-managed OptiScaler removed; ReShade64.dll was moved back and retained its Wine override: {proxyName}"
+            ? $"RHI-managed OptiScaler removed; ReShade64.dll was moved back and retained its Wine override: {reShadeName}"
             : "RHI-managed OptiScaler removed; preserved game files and the Wine DLL override were restored.")
             + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
+
+    /// <summary>
+    /// Fixed text before the name RHI's chained ReShade goes back to when another file already uses it (OptiScaler was
+    /// renamed since the chain was made; #196 decision). PT-BR presentation pair.
+    /// </summary>
+    public const string ChainNameTakenPrefix =
+        "OptiScaler was not removed: RHI's ReShade (ReShade64.dll) goes back to its own name, but another file now uses it; remove ReShade first, or free that name. Name: ";
 
     /// <summary>Fixed text of a failed, rolled-back OptiScaler removal; the reason follows (PT-BR pair exists).</summary>
     public const string RemovalFailedPrefix = "OptiScaler removal failed and was rolled back; OptiScaler stays installed: ";

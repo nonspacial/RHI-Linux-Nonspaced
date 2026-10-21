@@ -167,7 +167,7 @@ public sealed class UserIniTests : IDisposable
     }
 
     [Fact]
-    public void Apply_ExistingFile_TemplateKeysWin_OtherLinesStay_PathsAreAddedAndTakenBackOnCleanup()
+    public void Apply_ExistingFile_TemplateFillsInOnlyMissingKeys_OtherLinesStay_PathsAreAddedAndTakenBackOnCleanup()
     {
         var game = Game();
         File.WriteAllText(Ini(game), "; user\n[ADDON]\nDisabledAddons=Generic Depth\nAddonPath=.\\addons\n[GENERAL]\nEffectSearchPaths=.\\user\\**\n[INPUT]\nKeyOverlay=50,0,0,0\n");
@@ -178,7 +178,8 @@ public sealed class UserIniTests : IDisposable
         var text = File.ReadAllText(Ini(game));
         Assert.Contains("; user", text);
         Assert.Contains("AddonPath=.\\addons", text);
-        Assert.Contains("DisabledAddons=Generic Depth,Effect Runtime Sync", text);
+        Assert.Contains("DisabledAddons=Generic Depth\n", text); // #208: the game's own value stays
+        Assert.DoesNotContain("Effect Runtime Sync", text);
         Assert.Contains(@"EffectSearchPaths=.\user\**,.\reshade-shaders\Shaders\**", text);
         Assert.Contains(@"TextureSearchPaths=.\reshade-shaders\Textures\**", text);
         Assert.Contains("VariableListUseTabs=1", text);
@@ -217,7 +218,8 @@ public sealed class UserIniTests : IDisposable
 
         ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], ReShadeGlobalSettingsApplier.InstallDefaults(new LinuxAppSettings(), game, Templates()));
 
-        Assert.Contains("TutorialProgress=4", File.ReadAllText(Ini(game)));
+        Assert.Contains("TutorialProgress=0", File.ReadAllText(Ini(game))); // #208: the game's value stays
+        Assert.Contains("VariableListUseTabs=1", File.ReadAllText(Ini(game))); // a missing template key is written
         Assert.False(File.GetUnixFileMode(Ini(game)).HasFlag(UnixFileMode.UserWrite));
     }
 

@@ -58,7 +58,9 @@ public sealed class RenoDxIniSafetyTests : IDisposable
     [Fact]
     public void Apply_LinkIntoTheUserReShadeConfigFolder_IsWrittenThrough()
     {
-        var shared = RenoDxIniOverrideManager.UserReShadeConfigDirectories[0];
+        // A folder of its own inside the user's ReShade folder: other tests keep their shared ReShade.ini files there too,
+        // and deleting the whole folder took theirs away mid-run (w7/reshade #207 flake).
+        var shared = Path.Combine(RenoDxIniOverrideManager.UserReShadeConfigDirectories[0], Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(shared);
         var real = Path.Combine(shared, "ReShade.ini");
         try

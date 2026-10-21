@@ -283,6 +283,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = notOffered is null;
                         component.Note = notOffered ?? ReShadeVulkanLayer.RowNote;
                     }
+                    else if (XnaGacReShade.IsListed(game)) // w7/reshade (#201): XNA games take the GAC path
+                    {
+                        var notOffered = XnaGacReShade.OfferRefusal(game);
+                        component.ActionAllowed = notOffered is null;
+                        component.Note = notOffered ?? XnaGacReShade.RowNote;
+                    }
                     else if (ReShadeDeploymentService.SelectProxyName(game.EffectiveGraphicsApi) is null)
                     {
                         component.ActionAllowed = false;
@@ -1747,6 +1753,118 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// <summary>The file name RHI's ReShade is installed under on <paramref name="game"/>, or null when RHI has not installed it.</summary>
     public string? InstalledReShadeProxyName(DetectedGame game)
         => ProxyPayloadLocator.ReShadePayload(_records.Find(game, ManagedComponentKind.ReShade)) is { } payload ? Path.GetFileName(payload.Path) : null;
+
+    // w7/reshade (#196): in-place DLL rename and Reset DLL names (upstream DllOverrideService, Reset DLL Names).
+    /// <summary>The name ReShade's "Automatic" stands for on <paramref name="game"/> (the saved choice left out), or null.</summary>
+    public string? ReShadeAutomaticProxyName(DetectedGame game) => _reshade.AutomaticProxyName(game);
+
+    /// <summary>
+    /// What the ReShade DLL-name dropdown offers while RHI's ReShade is installed (#196): the offered names it can be
+    /// renamed to now, or the refusal that keeps its name.
+    /// </summary>
+    public (IReadOnlyList<string> Targets, string? Refusal) ReShadeRenameOptions(DetectedGame game)
+        => _reshade.RenameOptions(game, ProxyDllNames.OfferedFor(GameArchitecture.Of(game) == PeArchitecture.X86));
+
+    /// <summary>What OptiScaler's DLL-name dropdown offers while RHI's OptiScaler is installed (#196).</summary>
+    public (IReadOnlyList<string> Targets, string? Refusal) OptiScalerRenameOptions(DetectedGame game)
+        => _optiscaler.RenameOptions(game, OptiScalerProxyNamesFor(game));
+
+    /// <summary>
+    /// Renames RHI's installed ReShade on <paramref name="game"/> to <paramref name="name"/> (null = Automatic) in place, in
+    /// one journaled operation with its Wine override, record and saved choice (#196).
+    /// </summary>
+    public async Task<ComponentOperationResult> RenameReShadeProxyAsync(DetectedGame game, string? name, CancellationToken cancellationToken = default)
+        => InstallGuard(game) ?? await _reshade.RenameProxyAsync(game, name, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Renames RHI's installed OptiScaler on <paramref name="game"/> to <paramref name="name"/> (null = Automatic,
+    /// <see cref="OptiScalerAutomaticProxyName"/>) in place (#196); the same name only saves the choice.
+    /// </summary>
+    public async Task<ComponentOperationResult> RenameOptiScalerProxyAsync(DetectedGame game, string? name, CancellationToken cancellationToken = default)
+    {
+        if (InstallGuard(game) is { } guard) return guard;
+        if (_optiscaler.RenameBlocker(game) is { } blocked) return ComponentOperationResult.Fail(blocked);
+        var installed = OptiScalerDeploymentService.GetProxyName(_records.Find(game, ManagedComponentKind.OptiScaler)!);
+        var target = name ?? OptiScalerAutomaticProxyName(game);
+        var choice = name is null ? null : target;
+        try
+        {
+            if (target.Equals(installed, StringComparison.OrdinalIgnoreCase))
+            {
+                _reshade?.DllNames.SetOptiScaler(game, choice);
+                return ComponentOperationResult.Ok(ProxyRename.NameKeptPrefix + installed);
+            }
+            var staged = _reshade?.DllNames.StageChoices(game, choices => choices.OptiScaler = choice);
+            return await _optiscaler.RenameProxyAsync(game, target, staged, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return ComponentOperationResult.Fail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Whether "Reset DLL names" has anything to do on <paramref name="game"/> (#196): a saved ReShade or OptiScaler name,
+    /// or RHI's ReShade / OptiScaler installed under another name than its automatic one that Reset can rename back. A name
+    /// another component decides (the OptiScaler chain's ReShade64.dll, ShortFuse, the DirectX 9 translation, an XNA GAC
+    /// install; review 1) is not Reset's to change, so it does not count. Reads the ledger and the choice file only.
+    /// </summary>
+    public bool HasDllNamesToReset(DetectedGame game)
+        => _reshade?.DllNames.HasReShadeOrOptiScalerChoice(game) == true
+           || ReShadeNameToReset(game) || OptiScalerNameToReset(game);
+
+    // RHI's ReShade sits under another name than its automatic one and nothing else decides its name (review 1).
+    private bool ReShadeNameToReset(DetectedGame game)
+        => _reshade is { } reShade && InstalledReShadeProxyName(game) is { } installed && reShade.AutomaticProxyName(game) is { } automatic
+           && !installed.Equals(automatic, StringComparison.OrdinalIgnoreCase)
+           && reShade.RenameBlocker(game) is null;
+
+    // RHI's OptiScaler sits under another name than its automatic one and may be renamed in place (review 1).
+    private bool OptiScalerNameToReset(DetectedGame game)
+        => _records.Find(game, ManagedComponentKind.OptiScaler) is { } optiScaler
+           && !OptiScalerDeploymentService.GetProxyName(optiScaler).Equals(OptiScalerAutomaticProxyName(game), StringComparison.OrdinalIgnoreCase)
+           && _optiscaler.RenameBlocker(game) is null;
+
+    /// <summary>
+    /// "Reset DLL names" (#196, upstream): every ReShade / OptiScaler DLL-name choice of <paramref name="game"/> goes back to
+    /// Automatic, and an installed one under another name is renamed back to its automatic name in place (OptiScaler first,
+    /// as upstream; each its own journaled rename). A rename that is refused keeps that component's name and choice; the
+    /// result says so, the other one still goes back.
+    /// </summary>
+    public async Task<ComponentOperationResult> ResetDllNamesAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (InstallGuard(game) is { } guard) return guard;
+        var renamed = new List<string>();
+        var refused = new List<string>();
+        async Task RenameAsync(Func<Task<ComponentOperationResult>> rename)
+        {
+            var result = await rename().ConfigureAwait(false);
+            (result.Success ? renamed : refused).Add(result.Message);
+        }
+        try
+        {
+            // A name another component decides stays; only the saved choice goes back to automatic (review 1).
+            if (OptiScalerNameToReset(game))
+                await RenameAsync(() => RenameOptiScalerProxyAsync(game, null, cancellationToken)).ConfigureAwait(false);
+            else _reshade?.DllNames.SetOptiScaler(game, null);
+            if (_reshade is { } reShadeService)
+            {
+                if (ReShadeNameToReset(game))
+                    await RenameAsync(() => reShadeService.RenameProxyAsync(game, null, cancellationToken)).ConfigureAwait(false);
+                else reShadeService.DllNames.SetReShade(game, null);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            refused.Add(ex.Message);
+        }
+        return refused.Count > 0
+            ? ComponentOperationResult.Fail(string.Join(" ", refused.Concat(renamed)))
+            : ComponentOperationResult.Ok(string.Join(" ", renamed.Prepend(DllNamesResetMessage)));
+    }
+
+    /// <summary>The line of a Reset DLL names that put everything back (PT-BR presentation pair); rename lines follow.</summary>
+    public const string DllNamesResetMessage = "Every DLL name of this game is back to automatic.";
 
     public ReShadeInstallOptions GetReShadeOptions(DetectedGame game) => _reshade.GetInstalledOptions(game);
 

@@ -84,7 +84,13 @@ public sealed class DeploymentRelocation
         foreach (var record in _records.FindAll(game))
         {
             if (string.IsNullOrWhiteSpace(record.BinaryDirectory)) continue;
-            if (anchors.Any(anchor => IsUnder(record.BinaryDirectory, anchor))) continue;
+            if (anchors.Any(anchor => IsUnder(record.BinaryDirectory, anchor)))
+            {
+                // w7/reshade (#201, review 3): an XNA ReShade record's GAC copies live in the prefix, which moved on its own.
+                if (XnaGacReShade.MovedFolder(record, null, game) is { } gac)
+                    result.Add(new RelocatedRecord(record, gac.Old, gac.New, Adopted: false));
+                continue;
+            }
             result.Add(TryMap(record, game, out var oldRoot, out var newRoot)
                 ? new RelocatedRecord(record, oldRoot, newRoot, Adopted: false)
                 : new RelocatedRecord(record, record.BinaryDirectory, "", Adopted: false));
@@ -161,11 +167,19 @@ public sealed class DeploymentRelocation
                 || current.Any(r => r.Component == record.Component && r.BinaryDirectory != record.BinaryDirectory))
                 return new(false, 0, $"{RepairDuplicatePrefix}{record.Component}");
 
+            // w7/reshade (#201, review 3): XNA ReShade's GAC copies follow the prefix when it moved apart from the game folder.
+            var gac = XnaGacReShade.MovedFolder(record, path => Map(path, candidate), game);
+            string MapPath(string value)
+            {
+                var mapped = Map(value, candidate);
+                return gac is { } moved && Path.IsPathRooted(mapped) && IsUnder(mapped, moved.Old) ? Rebase(mapped, moved.Old, moved.New) : mapped;
+            }
+
             // Every file RHI owns must be found, moved or not: a record left pointing at a missing
             // file would block its own update and removal later.
             foreach (var file in record.Files.Where(IsOwnedHashedFile))
             {
-                var mapped = Map(NrCostScalerService.ContentPath(record, file, gameRecords), candidate);
+                var mapped = MapPath(NrCostScalerService.ContentPath(record, file, gameRecords));
                 if (!File.Exists(mapped))
                     return new(false, 0, $"{RepairMissingPrefix}{mapped}");
                 if (!string.Equals(FileHash.Sha256Hex(mapped), file.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -174,21 +188,21 @@ public sealed class DeploymentRelocation
 
             // The old folder may still exist (an emptied leftover, or a backup copy). Only one
             // that still holds RHI's files unchanged is a live copy RHI cannot choose between.
-            if (Directory.Exists(record.BinaryDirectory) && StillHoldsOwnedFiles(record, candidate, gameRecords))
+            if (Directory.Exists(record.BinaryDirectory) && StillHoldsOwnedFiles(record, MapPath, gameRecords))
                 return new(false, 0, $"{RepairOldFolderExistsPrefix}{record.BinaryDirectory}{RepairOldFolderExistsSuffix}");
 
             var copy = LinuxDeploymentRecordStore.Clone(record);
             copy.GameKey = key;
-            copy.BinaryDirectory = Map(copy.BinaryDirectory, candidate);
-            foreach (var file in copy.Files) file.Path = Map(file.Path, candidate);
-            copy.DirectoriesCreatedByRhi = copy.DirectoriesCreatedByRhi.Select(d => Map(d, candidate)).ToList();
+            copy.BinaryDirectory = MapPath(copy.BinaryDirectory);
+            foreach (var file in copy.Files) file.Path = MapPath(file.Path);
+            copy.DirectoriesCreatedByRhi = copy.DirectoriesCreatedByRhi.Select(MapPath).ToList();
             foreach (var name in copy.Metadata.Keys.ToArray())
-                copy.Metadata[name] = Map(copy.Metadata[name], candidate);
+                copy.Metadata[name] = MapPath(copy.Metadata[name]);
             // The Control UE step's state is a JSON blob of paths (DLLs, renderer.ini, the user-kept list): rebase inside it,
             // or the next update applies the step again over the user's own DLL/preset in the new folder.
             if (copy.Metadata.TryGetValue(ControlUePostInstallService.MetadataKey, out var controlUe) && !string.IsNullOrWhiteSpace(controlUe))
             {
-                try { copy.Metadata[ControlUePostInstallService.MetadataKey] = ControlUePostInstallService.RebasePaths(controlUe, path => Map(path, candidate)); }
+                try { copy.Metadata[ControlUePostInstallService.MetadataKey] = ControlUePostInstallService.RebasePaths(controlUe, MapPath); }
                 catch (Exception ex) when (ex is JsonException or InvalidDataException)
                 {
                     return new(false, 0, $"{RepairNotSavedPrefix}{ex.Message}");
@@ -298,9 +312,9 @@ public sealed class DeploymentRelocation
     /// True when any owned file is still at its old (unmapped) path with its recorded hash; an NR runtime owner's content
     /// is read where it really is under an NR Cost Scaler (<see cref="NrCostScalerService.ContentPath"/>).
     /// </summary>
-    private static bool StillHoldsOwnedFiles(LinuxDeploymentRecord record, RelocatedRecord candidate, IReadOnlyList<LinuxDeploymentRecord> gameRecords)
+    private static bool StillHoldsOwnedFiles(LinuxDeploymentRecord record, Func<string, string> map, IReadOnlyList<LinuxDeploymentRecord> gameRecords)
         => record.Files.Where(IsOwnedHashedFile)
-            .Where(f => !string.Equals(Map(f.Path, candidate), f.Path, StringComparison.Ordinal))
+            .Where(f => !string.Equals(map(f.Path), f.Path, StringComparison.Ordinal))
             .Select(f => (Content: NrCostScalerService.ContentPath(record, f, gameRecords), f.Sha256))
             .Any(f => File.Exists(f.Content) && string.Equals(FileHash.Sha256Hex(f.Content), f.Sha256, StringComparison.OrdinalIgnoreCase));
 

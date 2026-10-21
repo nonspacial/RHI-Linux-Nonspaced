@@ -47,7 +47,8 @@ public sealed record DllNameChoices
 /// <summary>
 /// Per-game proxy DLL names chosen before ReShade (#120), OptiScaler (#172) or RTX Encore (#158) is installed
 /// (upstream's per-game DLL-name dropdowns). Only names each component offers are stored or handed out, so the file can
-/// never point a deployment at another folder. A name chosen while ReShade is installed is refused by the picker; the install keeps the recorded name.
+/// never point a deployment at another folder. An installed component keeps its recorded name on update; a new name for it
+/// is an in-place rename (#196, <c>ProxyRename</c>), which saves the choice with the component's record.
 /// </summary>
 public sealed class DllNamePreferenceStore : IGameStateStore
 {
@@ -162,14 +163,45 @@ public sealed class DllNamePreferenceStore : IGameStateStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            var choices = GameRecordIdentity.TryGet(entries, game, out var existing) && existing is not null
-                ? existing.Copy()
-                : new DllNameChoices();
-            change(choices);
-            if (choices.IsEmpty()) GameRecordIdentity.Remove(entries, game);
-            else GameRecordIdentity.Set(entries, game, choices);
+            Apply(entries, game, change);
             _file.Save(entries);
         }
+    }
+
+    /// <summary>
+    /// #196: the file write that applies <paramref name="change"/> to <paramref name="game"/>'s choices, staged for a
+    /// journaled operation (a rename saves the new choice with the component's record); null when nothing would change.
+    /// Nothing is written here. Throws <see cref="JsonStoreUnavailableException"/> when the file holds unreadable data.
+    /// </summary>
+    public StagedFileWrite? StageChoices(DetectedGame game, Action<DllNameChoices> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        lock (_gate)
+        {
+            var staged = _file.Stage(current =>
+            {
+                var entries = JsonStoreMaps.CaseInsensitive(current);
+                Apply(entries, game, change);
+                return current is null && entries.Count == 0 ? null : entries; // no file and nothing to keep: no write
+            });
+            return staged is null || (staged.Before is { } before && before.AsSpan().SequenceEqual(staged.After)) ? null : staged;
+        }
+    }
+
+    /// <summary>
+    /// #196 Reset DLL names: whether <paramref name="game"/> has a ReShade or OptiScaler name saved (another component's
+    /// choice, such as RTX Encore's, is not a DLL-name reset matter and stays).
+    /// </summary>
+    public bool HasReShadeOrOptiScalerChoice(DetectedGame game) => GetReShade(game) is not null || GetOptiScaler(game) is not null;
+
+    private static void Apply(Dictionary<string, DllNameChoices> entries, DetectedGame game, Action<DllNameChoices> change)
+    {
+        var choices = GameRecordIdentity.TryGet(entries, game, out var existing) && existing is not null
+            ? existing.Copy()
+            : new DllNameChoices();
+        change(choices);
+        if (choices.IsEmpty()) GameRecordIdentity.Remove(entries, game);
+        else GameRecordIdentity.Set(entries, game, choices);
     }
 
     /// <summary>"Repair after move": entries under the game's old folder key follow it (names hold no paths).</summary>
