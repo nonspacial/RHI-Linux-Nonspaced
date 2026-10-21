@@ -356,7 +356,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         IReadOnlyList<string> packs = [];
         if (withShaderPacks)
         {
-            var (resolved, _, error) = await ResolvePacksAsync(presetPath);
+            var (resolved, _, error) = await (ResolvePacksForTesting ?? ResolvePacksAsync)(presetPath);
             if (error is not null) return Report(error);
             packs = resolved;
         }
@@ -373,6 +373,9 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
                 op.Token.ThrowIfCancellationRequested();
                 using var unit = new RHI.Core.Deployment.OperationCancellation(op.Token);
                 var result = await Presets.InstallAsync(game, presetPath, unit.Token);
+                // #222 item 1: the preset's own landed save is kept apart from the pack install's result, so the game is
+                // named whether the packs then fail or go in without landing.
+                var presetLanded = result.Landed;
                 if (result.Success && packs.Count > 0)
                 {
                     var options = managed.GetReShadeOptions(game);
@@ -381,12 +384,18 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
                         options.ShaderPackIds = options.ShaderPackIds.Union(packs, StringComparer.OrdinalIgnoreCase).ToList();
                         using var packUnit = new RHI.Core.Deployment.OperationCancellation(op.Token);
                         result = await managed.ApplyReShadeAsync(game, options, packUnit.Token);
-                        if (!result.Success) { failed++; RHI.Core.Services.AppLog.Warn("reshade-preset", $"{game.Name}: {result.Message}"); continue; }
+                        if (!result.Success)
+                        {
+                            failed++;
+                            RHI.Core.Services.AppLog.Warn("reshade-preset", $"{game.Name}: {result.Message}");
+                            if (presetLanded) landed.Add(game.Name);
+                            continue;
+                        }
                     }
                 }
                 if (result.Success) updated++;
                 else { refused++; RHI.Core.Services.AppLog.Warn("reshade-preset", $"{game.Name}: {result.Message}"); }
-                if (result.Landed) landed.Add(game.Name);
+                if (presetLanded || result.Landed) landed.Add(game.Name);
             }
         }
         catch (OperationCanceledException)

@@ -10,7 +10,11 @@ namespace RHI.Core.Tests;
 // refused) before anything else changes that game in the same session.
 public sealed partial class DeploymentScopeCommitPointTests
 {
-    /// <summary>Makes the ledger unreadable by permission; false when this process reads it anyway (root).</summary>
+    /// <summary>
+    /// Makes the ledger unreadable by permission; false when this process reads it anyway (root). #222 item 5: the tests
+    /// that use it are <see cref="PermissionDenialFactAttribute"/>/<see cref="PermissionDenialTheoryAttribute"/> (skipped,
+    /// with the reason, where modes are not enforced) and assert it worked — never pass without checking.
+    /// </summary>
     private bool LockLedger()
     {
         File.SetUnixFileMode(Ledger, UnixFileMode.None);
@@ -34,7 +38,7 @@ public sealed partial class DeploymentScopeCommitPointTests
     // half-installed until the ledger was repaired).
     public enum Unreadable { AtBeginFreshStore, AtBeginStoreReadItBefore, BeforeTheCommitWrite }
 
-    [Theory]
+    [PermissionDenialTheory]
     [InlineData(Unreadable.AtBeginFreshStore)]
     [InlineData(Unreadable.AtBeginStoreReadItBefore)]
     [InlineData(Unreadable.BeforeTheCommitWrite)]
@@ -42,7 +46,7 @@ public sealed partial class DeploymentScopeCommitPointTests
     {
         var (records, journal) = Rig();
         records.Upsert(Record(ManagedComponentKind.OptiScaler));
-        if (when != Unreadable.BeforeTheCommitWrite && !LockLedger()) return;
+        if (when != Unreadable.BeforeTheCommitWrite) PermissionDenial.MakeUnreadable(Ledger);
         if (when == Unreadable.AtBeginFreshStore)
         {
             records = new LinuxDeploymentRecordStore(Ledger);
@@ -55,7 +59,7 @@ public sealed partial class DeploymentScopeCommitPointTests
         await using (var scope = opened!)
         {
             await scope.PlaceBytesAsync(Payload, After);
-            if (when == Unreadable.BeforeTheCommitWrite && !LockLedger()) return;
+            if (when == Unreadable.BeforeTheCommitWrite) PermissionDenial.MakeUnreadable(Ledger);
             var failure = Xunit.Record.Exception(() => records.Upsert(scope.Stamp(Record())));
             Assert.True(failure is InvalidOperationException or UnauthorizedAccessException or IOException, failure?.ToString());
             if (when == Unreadable.AtBeginFreshStore) Assert.IsType<InvalidOperationException>(failure); // refused by the store
@@ -72,7 +76,7 @@ public sealed partial class DeploymentScopeCommitPointTests
 
     // The other side of the same rule: a save that got past the ledger's checks and then left it unreadable (here by
     // permission) may have landed, so nothing is undone and the next start decides.
-    [Fact]
+    [PermissionDenialFact]
     public async Task Install_LedgerUnreadableByPermissionAfterTheWrite_UndoesNothing()
     {
         var (records, journal) = Rig();
@@ -85,7 +89,7 @@ public sealed partial class DeploymentScopeCommitPointTests
 
         var (rollback, _) = await InstallAsync(records, journal);
         LandedLedgerWrite.Disarm(records);
-        if (!locked) return;
+        Assert.True(locked, "Precondition: the ledger should refuse reads after the write (" + PermissionDenial.SkipReason + ")");
 
         Assert.Equal(CommitDecision.Undecided, rollback!.Decision);
         Assert.Equal(After, File.ReadAllBytes(Payload));
@@ -201,23 +205,15 @@ public sealed partial class DeploymentScopeCommitPointTests
     }
     // A settle whose rollback fails keeps its entry for the next start and keeps holding up the game; once the rollback can
     // run, the next attempt settles it and the retry goes ahead.
-    [Fact]
+    [PermissionDenialFact]
     public async Task Undecided_TheSettlingRollbackFails_TheGameStaysHeldUp_UntilItCanRollBack()
     {
         var (records, journal, _) = await UndecidedInstallAsync();
         File.Delete(Ledger); // reads again: not committed, so the settle rolls back
         var folder = P("game");
-        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         try
         {
-            try
-            {
-                File.WriteAllBytes(P("game", "probe"), []);
-                return; // the folder is writable anyway (root): nothing to prove here
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            PermissionDenial.MakeReadOnly(folder); // #222 item 5: asserted, never a silent pass (skipped as root)
             var (refused, refusal) = await DeploymentScope.BeginAsync(journal, "retry", Game, ManagedComponentKind.ReShade, CancellationToken.None);
 
             Assert.Null(refused);
@@ -245,24 +241,16 @@ public sealed partial class DeploymentScopeCommitPointTests
     // for the same game (the undecided one can still go either way; the failed undo's message would send the user to
     // the wrong fix). Here the undecided one is an entry another RHI works on now (its lock is taken), which a deferred
     // start-up hands over after the failed undo; it holds up every game (it has no record probe).
-    [Fact]
+    [PermissionDenialFact]
     public async Task AnUndecidedChange_WinsOverAFailedUndoSettledBeforeIt()
     {
         var (_, journal, _) = await UndecidedInstallAsync();
         File.Delete(Ledger); // reads again: not committed, so the settle rolls back, and fails below
         var folder = P("game");
-        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         DeploymentOperation? busy = null;
         try
         {
-            try
-            {
-                File.WriteAllBytes(P("game", "probe"), []);
-                return; // the folder is writable anyway (root): nothing to prove here
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            PermissionDenial.MakeReadOnly(folder); // #222 item 5: asserted, never a silent pass (skipped as root)
             busy = await journal.BeginAsync("another RHI's change"); // holds its entry's lock while it runs
             journal.WaitOnKeptEntries(); // waits after the failed undo's entry
 

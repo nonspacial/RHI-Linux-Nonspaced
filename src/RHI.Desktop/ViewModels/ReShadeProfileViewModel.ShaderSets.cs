@@ -107,8 +107,10 @@ public sealed partial class ReShadeProfileViewModel
             return ComponentOperationResult.Fail(ShowStatus(OutcomeText(op, false, shaders.Message)));
         StatusText = T("Vm.ApplyingReShadeAddSelection");
         var addons = await _components.ApplyAddonSetAsync(game, op.Token);
+        // #222 item 3: a landed pack change keeps its note when the add-ons then fail.
         if (addons.Outcome == ShaderSetOutcome.Failed)
-            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message))));
+            return ComponentOperationResult.Fail(ShowStatus(LandedLine.With(
+                TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message)), shaders)));
         var line = AppliedLine(game, fromCache: false);
         var landed = LandedLine.With(LandedLine.With(line, shaders), addons);
         if (landedNote is not null) landedNote.Value = landed[line.Length..];
@@ -132,8 +134,10 @@ public sealed partial class ReShadeProfileViewModel
         }
         StatusText = T("Vm.ApplyingReShadeAddSelection");
         var addons = await _components.ApplyAddonSetAsync(game, op.Token);
+        // #222 item 3: a landed ReShade install keeps its note when the add-ons then fail.
         if (addons.Outcome == ShaderSetOutcome.Failed)
-            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message))));
+            return ComponentOperationResult.Fail(ShowStatus(LandedLine.With(
+                TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message)), shaderResult)));
         return ComponentOperationResult.Ok(ShowStatus(LandedLine.With(LandedLine.With(AppliedLine(game, shaderResult.FromCachedSource), shaderResult), addons)));
     }
 

@@ -776,3 +776,11 @@ build.
 - A change whose undo of a Wine setting was deferred (Wine was running) also retries it before the game's next change;
   it is never refused for it (the next start finishes it, as before). A plain file change that names no game holds up no
   game.
+
+### #222 — The "saved, but the save reported an error" note on the last few lines
+- Fork-only (follows #204's landed note). A preset installed into every game together with its shader packs names a game
+  whose preset save reported an error after it was written, whether the packs then fail or go in. When ReShade's install
+  applies the game's add-ons after it (the ReShade row, Shaders/Add-ons Apply on a game where RHI does not manage ReShade
+  yet, a preset with its packs on such a game) and the add-ons' save reports such an error, the line says so too. A
+  "Shaders applied, but the add-ons failed" line keeps the note of a shader-pack change or ReShade install that was saved
+  with an error.

@@ -225,7 +225,8 @@ public sealed partial class LinuxManagedComponentService
     /// <summary>
     /// After a ReShade install (the ReShade row, profile Apply, or ReShade installed for another component): a game with
     /// no Addon Manager add-ons yet gets its effective add-ons, as upstream deploys the game's add-ons after ReShade. Its
-    /// own journaled operation; a failure leaves ReShade installed and is said after ReShade's message.
+    /// own journaled operation; a failure leaves ReShade installed and is said after ReShade's message. A landed add-on
+    /// save is carried on the returned result (#222 item 2).
     /// </summary>
     private async Task<ComponentOperationResult> ApplyAddonSetAfterReShadeAsync(DetectedGame game, ManagedComponentKind target,
         IReadOnlyCollection<ManagedComponentKind> installedThisAttempt, ComponentOperationResult result, CancellationToken cancellationToken)
@@ -242,7 +243,12 @@ public sealed partial class LinuxManagedComponentService
         {
             addons = ComponentOperationResult.Fail(ex is OperationCanceledException ? "cancelled." : ex.Message);
         }
-        return result with { Message = result.Message + (addons.Success ? AddonSetAppliedNote : AddonSetNotAppliedPrefix + addons.Message) };
+        if (!addons.Success) return result with { Message = result.Message + AddonSetNotAppliedPrefix + addons.Message };
+        // #222 item 2: the add-ons' save reported an error after their change was written: the result carries their note and
+        // Landed flag (a caller that words its own line appends the whole message as the note), as ReShade's own does.
+        return addons.Landed
+            ? result with { Message = result.Message + AddonSetAppliedNote + " " + addons.Message, Landed = true }
+            : result with { Message = result.Message + AddonSetAppliedNote };
     }
 }
 
