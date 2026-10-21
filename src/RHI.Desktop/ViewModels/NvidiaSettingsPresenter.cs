@@ -8,11 +8,12 @@ namespace RHI.Desktop.ViewModels;
 
 /// <summary>
 /// #211: the per-game NVIDIA settings (DLSS presets, render scale, RTX 50 frame generation, newest DLSS) shown in the
-/// DLSS section. The choice is saved with the game's launch profile (<see cref="LinuxHdrGameProfile.Nvidia"/>) through
+/// NVIDIA settings dialog the DLSS section opens. The choice is saved with the game's launch profile (<see cref="LinuxHdrGameProfile.Nvidia"/>) through
 /// <see cref="RuntimePanelViewModel"/>, which owns the profile and merges the variables into the launch plan; this
 /// presenter holds the controls and reads what to show from that plan (<see cref="NvidiaLaunchPlan"/>): hidden without
 /// an NVIDIA GPU, for native Linux games, for games without DLSS files and where the launcher takes no variables;
-/// frame generation only on an RTX 50 GPU with a frame-generation file.
+/// the Frame Generation preset only on an RTX 40 or newer, multi frame generation only on an RTX 50, both only with a
+/// frame-generation file.
 /// </summary>
 public sealed partial class NvidiaSettingsPresenter : ObservableObject
 {
@@ -81,8 +82,10 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
     public bool ShowSuperResolutionCustomScale => ShowSuperResolution && SelectedSuperResolutionScale?.Value == OptionLists.NvidiaCustom;
     public bool ShowRayReconstructionCustomScale => ShowRayReconstruction && SelectedRayReconstructionScale?.Value == OptionLists.NvidiaCustom;
 
-    public bool ShowFixedFrameCount => NvidiaFrameGenerationModes.Normalize(SelectedFrameGenerationMode?.Value) == NvidiaFrameGenerationModes.Fixed;
-    public bool ShowDynamicFrameCount => NvidiaFrameGenerationModes.Normalize(SelectedFrameGenerationMode?.Value) == NvidiaFrameGenerationModes.Dynamic;
+    public bool ShowFixedFrameCount => ShowFrameGeneration && NvidiaFrameGenerationModes.Normalize(SelectedFrameGenerationMode?.Value) == NvidiaFrameGenerationModes.Fixed;
+    public bool ShowDynamicFrameCount => ShowFrameGeneration && NvidiaFrameGenerationModes.Normalize(SelectedFrameGenerationMode?.Value) == NvidiaFrameGenerationModes.Dynamic;
+    /// <summary>The frame count row (its list is the fixed or the dynamic one).</summary>
+    public bool ShowFrameCount => ShowFixedFrameCount || ShowDynamicFrameCount;
     public bool ShowTargetFrameRate => ShowDynamicFrameCount;
     public bool ShowCustomTargetFrameRate => ShowTargetFrameRate && SelectedTargetFrameRate?.Value == OptionLists.NvidiaCustom;
 
@@ -97,28 +100,12 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
 
     public string LaunchOptions => HdrPlan.LaunchOptions;
 
+    /// <summary>The DLSS section's button that opens the NVIDIA settings dialog (relabelled on a language switch).</summary>
+    public string ButtonText => UiLocalizationService.Text("Nv.SettingsButton");
+    public string ButtonTip => UiLocalizationService.Text("Nv.SettingsButtonTip") + "\n" + UiLocalizationService.Text("Nv.TitleTip");
+
     /// <summary>Something is chosen for this game (Restore all in the DLSS section sets it back to Default).</summary>
     public bool HasChoices => !_shown.IsDefault();
-
-    /// <summary>The frame-generation button's summary ("Default", "Fixed · 3×", "Dynamic · up to 4× · 138 FPS · 144 Hz VRR").</summary>
-    public string FrameGenerationSummary
-    {
-        get
-        {
-            var mode = NvidiaFrameGenerationModes.Normalize(_shown.FrameGenerationMode);
-            var parts = new List<string> { OptionLists.NvidiaFrameGenerationMode.Display(mode) };
-            if (mode == NvidiaFrameGenerationModes.Fixed && _shown.FrameCount != 0) parts.Add(OptionLists.NvidiaFixedFrameCount.Display(_shown.FrameCount));
-            if (mode == NvidiaFrameGenerationModes.Dynamic)
-            {
-                if (_shown.DynamicMaxFrameCount != 0) parts.Add(OptionLists.NvidiaDynamicFrameCount.Display(_shown.DynamicMaxFrameCount));
-                if (_shown.DynamicTargetFrameRate != 0)
-                    parts.Add(OptionLists.NvidiaTargetFrameRate.Values.Contains(_shown.DynamicTargetFrameRate)
-                        ? OptionLists.NvidiaTargetFrameRate.Display(_shown.DynamicTargetFrameRate)
-                        : $"{_shown.DynamicTargetFrameRate} FPS");
-            }
-            return string.Join(" · ", parts);
-        }
-    }
 
     /// <summary>The selected game's saved settings (null = none): the controls show them; nothing is saved.</summary>
     internal void Load(NvidiaGameSettings? saved)
@@ -139,14 +126,26 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
         OnPropertyChanged(nameof(ShowRayReconstruction));
         OnPropertyChanged(nameof(ShowFrameGenerationPreset));
         OnPropertyChanged(nameof(ShowFrameGeneration));
-        OnPropertyChanged(nameof(ShowSuperResolutionCustomScale));
-        OnPropertyChanged(nameof(ShowRayReconstructionCustomScale));
+        RaiseRows();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(Hint));
         OnPropertyChanged(nameof(ShowLaunchOptions));
         OnPropertyChanged(nameof(LaunchOptions));
-        OnPropertyChanged(nameof(FrameGenerationSummary));
         OnPropertyChanged(nameof(HasChoices));
+        OnPropertyChanged(nameof(ButtonText));
+        OnPropertyChanged(nameof(ButtonTip));
+    }
+
+    /// <summary>The rows that follow a control's value (custom boxes, the frame-generation mode's rows).</summary>
+    private void RaiseRows()
+    {
+        OnPropertyChanged(nameof(ShowSuperResolutionCustomScale));
+        OnPropertyChanged(nameof(ShowRayReconstructionCustomScale));
+        OnPropertyChanged(nameof(ShowFixedFrameCount));
+        OnPropertyChanged(nameof(ShowDynamicFrameCount));
+        OnPropertyChanged(nameof(ShowFrameCount));
+        OnPropertyChanged(nameof(ShowTargetFrameRate));
+        OnPropertyChanged(nameof(ShowCustomTargetFrameRate));
     }
 
     /// <summary>The UI language changed: labels follow, selections stay.</summary>
@@ -242,14 +241,8 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
         next.Normalize();
         _shown = next;
         _runtime.SaveNvidiaSettings(apply);
+        RaiseRows();
         OnPropertyChanged(nameof(HasChoices));
-        OnPropertyChanged(nameof(ShowSuperResolutionCustomScale));
-        OnPropertyChanged(nameof(ShowRayReconstructionCustomScale));
-        OnPropertyChanged(nameof(ShowFixedFrameCount));
-        OnPropertyChanged(nameof(ShowDynamicFrameCount));
-        OnPropertyChanged(nameof(ShowTargetFrameRate));
-        OnPropertyChanged(nameof(ShowCustomTargetFrameRate));
-        OnPropertyChanged(nameof(FrameGenerationSummary));
     }
 
     partial void OnSelectedSuperResolutionPresetChanged(OptionItem<uint> value)

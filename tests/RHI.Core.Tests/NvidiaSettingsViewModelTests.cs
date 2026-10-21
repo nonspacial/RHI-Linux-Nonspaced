@@ -145,7 +145,8 @@ public sealed class NvidiaSettingsViewModelTests : IDisposable
         nv.SelectedFrameGenerationMode = nv.FrameGenerationModeOptions.For(NvidiaFrameGenerationModes.Fixed);
         nv.SelectedFixedFrameCount = nv.FixedFrameCountOptions.For(3);
         Assert.True(nv.ShowFixedFrameCount);
-        Assert.Equal("Fixed · 4×", nv.FrameGenerationSummary);
+        Assert.True(nv.ShowFrameCount);
+        Assert.False(nv.ShowTargetFrameRate);
 
         nv.SelectedFrameGenerationMode = nv.FrameGenerationModeOptions.For(NvidiaFrameGenerationModes.Dynamic);
         nv.SelectedTargetFrameRate = nv.TargetFrameRateOptions.For(OptionLists.NvidiaCustom);
@@ -154,7 +155,9 @@ public sealed class NvidiaSettingsViewModelTests : IDisposable
         var saved = fx.Library.Load().HdrProfiles[key].Nvidia!;
         Assert.Equal(("Dynamic", 0u, 90u), (saved.FrameGenerationMode, saved.FrameCount, saved.DynamicTargetFrameRate));
         Assert.Equal(0u, nv.SelectedFixedFrameCount.Value);
-        Assert.Equal("Dynamic · 90 FPS", nv.FrameGenerationSummary);
+        Assert.True(nv.ShowDynamicFrameCount);
+        Assert.False(nv.ShowFixedFrameCount);
+        Assert.True(nv.ShowCustomTargetFrameRate);
         Assert.Equal("90", fx.Vm.Runtime.SelectedHdrPlan.Environment["DXVK_NVAPI_DRS_NGX_DLSSG_DYNAMIC_TARGET_FRAME_RATE"]);
     }
 
@@ -292,6 +295,30 @@ public sealed class NvidiaSettingsViewModelTests : IDisposable
         Assert.Contains("DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_RENDER_PRESET_SELECTION=11", hint, StringComparison.Ordinal);
         Assert.DoesNotContain("ENABLE_HDR_WSI", hint, StringComparison.Ordinal);
         Assert.DoesNotContain("ENABLE_HDR_WSI", plan.LaunchOptions, StringComparison.Ordinal);
+    }
+
+    // ---- the one NVIDIA settings dialog (owner layout B; nits 8, 9) ------------------------------------------------
+
+    [Fact]
+    public async Task TheDialog_BindsTheGamesSettings_KeepsProvenanceInTooltips_AndCloseOnlyCloses()
+    {
+        using var fx = await StartAsync(Game("Dialog Quest", "Manual", "umu-run Quest.exe", dlss: ["nvngx_dlss.dll"]), Gpu(rtx50: false));
+        var dialog = new NvidiaSettingsDialogViewModel(fx.Vm.Dlss.Nvidia);
+        var closed = 0;
+        dialog.CloseRequested += () => closed++;
+
+        Assert.Same(fx.Vm.Dlss.Nvidia, dialog.Settings);
+        Assert.Equal("NVIDIA settings", dialog.WindowTitle);
+        Assert.Contains("Proton's NVIDIA layer", dialog.SrPresetTip, StringComparison.Ordinal);
+        Assert.Contains("Proton 10 or newer", dialog.SrPresetTip, StringComparison.Ordinal);
+        Assert.Contains("Some games may fail to start with it on", dialog.NewestDlssTip, StringComparison.Ordinal);
+        Assert.DoesNotContain("Proton", UiLocalizationService.Text("Nv.DialogIntro"), StringComparison.Ordinal); // provenance only in tooltips
+        Assert.DoesNotContain("disk", UiLocalizationService.Text("Nv.DialogIntro"), StringComparison.OrdinalIgnoreCase);
+
+        dialog.CloseCommand.Execute(null);
+
+        Assert.Equal(1, closed);
+        Assert.False(fx.Vm.Dlss.Nvidia.HasChoices); // nothing saved by closing
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------------

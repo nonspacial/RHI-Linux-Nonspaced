@@ -345,19 +345,21 @@
                     </views:ResponsiveRow>
                   </StackPanel>
 
-                  <!-- w7/nvapi-launch (#211): per-game NVIDIA settings (DLSS presets, render scale, RTX 50 frame generation). -->
-                  <views:NvidiaSettingsBlock DataContext="{Binding Nvidia}"/>
-
                   <TextBlock Text="{DynamicResource Ui.StreamlineUpdateNote}" Classes="muted" TextWrapping="Wrap"/>
 
-                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                  <!-- w7/nvapi-launch (#211): a ResponsiveRow (was a Grid) so the third button, NVIDIA settings…, moves under the
+                       summary when narrow; shown only where the NVIDIA settings apply. -->
+                  <views:ResponsiveRow Columns="*,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="1" MinStarWidth="160">
                     <TextBlock Text="{Binding DlssDefaultsSummary}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     <Button Grid.Column="1" Classes="rhi" Content="{DynamicResource Ui.ApplyDefaults}" Command="{Binding QuickApplyDlssDefaultsCommand}"
                             IsEnabled="{Binding CanQuickApplyDlssDefaults}" Padding="12,6"
                             ToolTip.Tip="{DynamicResource Ui.ApplyDefaultsTip}"/>
                     <Button Grid.Column="2" Classes="rhi" Content="{DynamicResource Ui.RestoreAll}" Command="{Binding RestoreAllDlssCommand}"
                             IsEnabled="{Binding CanRestoreAllDlss}" Padding="12,6"/>
-                  </Grid>
+                    <Button Grid.Column="3" x:Name="NvidiaSettingsButton" Classes="rhi" Content="{Binding Nvidia.ButtonText}" Padding="12,6"
+                            IsVisible="{Binding Nvidia.IsShown}" Click="NvidiaSettings_Click"
+                            ToolTip.Tip="{Binding Nvidia.ButtonTip}" ToolTip.ShowDelay="2000"/>
+                  </views:ResponsiveRow>
 
                   <TextBlock Text="{DynamicResource Ui.DlssNote}" Classes="muted" TextWrapping="Wrap"/>
                 </StackPanel>

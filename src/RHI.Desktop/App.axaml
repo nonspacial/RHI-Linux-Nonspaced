@@ -84,6 +84,10 @@
     <DataTemplate DataType="vm:SettingsDialogViewModel">
       <dialogs:SettingsDialogView/>
     </DataTemplate>
+    <!-- w7/nvapi-launch (#211): the NVIDIA settings dialog. -->
+    <DataTemplate DataType="vm:NvidiaSettingsDialogViewModel">
+      <dialogs:NvidiaSettingsDialogView/>
+    </DataTemplate>
   </Application.DataTemplates>
 
   <Application.Styles>
