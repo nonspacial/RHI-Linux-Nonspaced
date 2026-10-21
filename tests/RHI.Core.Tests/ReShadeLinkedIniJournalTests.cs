@@ -89,6 +89,41 @@ public sealed class ReShadeLinkedIniJournalTests : IDisposable
         Assert.False(File.Exists(Path.Combine(fx.Bin, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx")));
     }
 
+    // Shader-sets re-review RR7: the user re-linked ReShade.ini to a file outside the allowed folders after the install.
+    // The sync refuses with a failed RESULT that says the packs were not changed (never an exception), changes nothing
+    // and leaves no journal entry.
+    [Fact]
+    public async Task ShaderSync_LinkOutsideTheAllowedFolders_IsAFailedResult_AndNothingChanges()
+    {
+        var fx = Fixture("sync-outside", link: false);
+        var root = Path.GetDirectoryName(Path.GetDirectoryName(fx.Bin))!;
+        ReShadeChannelTests.SeedShaderCache(Path.Combine(root, "cache"), "CrosireMaster");
+        ReShadeChannelTests.WriteNativeD3DCompiler(Path.Combine(fx.Game.PrefixPath!, "drive_c", "windows", "system32", "d3dcompiler_47.dll"), 0x8664);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var ini = Path.Combine(fx.Bin, "ReShade.ini");
+        var outside = Path.Combine(Directory.CreateDirectory(Path.Combine(root, "outside")).FullName, "ReShade.ini");
+        File.Copy(ini, outside);
+        File.Delete(ini);
+        File.CreateSymbolicLink(ini, outside);
+        var outsideBefore = File.ReadAllBytes(outside);
+        var before = CancelAtWritePhase.Snapshot(fx.Bin);
+        var recordBefore = System.Text.Json.JsonSerializer.Serialize(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade));
+
+        ComponentOperationResult? result = null;
+        Exception? thrown = null;
+        try { result = await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"]); }
+        catch (Exception ex) { thrown = ex; }
+
+        Assert.True(thrown is null, $"threw {thrown?.GetType().Name}: {thrown?.Message}");
+        Assert.False(result!.Success);
+        Assert.StartsWith(ReShadeDeploymentService.ShaderSyncFailedPrefix, result.Message, StringComparison.Ordinal);
+        Assert.Equal(outsideBefore, File.ReadAllBytes(outside));
+        Assert.Equal(outside, new FileInfo(ini).LinkTarget);
+        CancelAtWritePhase.AssertUnchanged(before, fx.Bin);
+        Assert.Empty(Directory.GetFiles(fx.JournalDir));
+        Assert.Equal(recordBefore, System.Text.Json.JsonSerializer.Serialize(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade)));
+    }
+
     [Fact]
     public async Task ShaderSync_WritesTheSearchPathsIntoTheSharedFile_ThroughTheLink()
     {

@@ -91,12 +91,15 @@ public sealed partial class ReShadeDeploymentService
         await using var scope = opened!;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var oldPacks = RecordedShaderPacks(record);
-        var inis = IniPathsTouchedByInstall(game, record, coexist: false).ToArray();
+        string[] inis = [];
         WineOverrideRecord? compilerOverride = null;
         var compilerOverrideCreated = false;
         ReShadeShaderSyncResult shaderResult;
         try
         {
+            // Inside the try (as ReShade's install does): #207's link-aware target refuses a ReShade.ini linked outside the
+            // allowed folders by throwing, which must come back as a failed result that says the packs were not changed.
+            inis = IniPathsTouchedByInstall(game, record, coexist: false).ToArray();
             await scope.TrackAllAsync(inis, cancellationToken).ConfigureAwait(false);
             CleanupManagedIni(record, game.InstallPath);
             foreach (var ini in inis) await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);

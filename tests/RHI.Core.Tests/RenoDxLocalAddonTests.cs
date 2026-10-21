@@ -362,6 +362,7 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         var sets = fx.Managed.ShaderSets!;
         Assert.True(fx.Managed.ImportCustomAddonFile(Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "own")).FullName, "Other.addon64")).Success);
         sets.SetGlobalAddonIds(["custom-Other"]);
+        Assert.True(sets.Pin(game)); // a saved choice, as start-up's adoption leaves every game (an unsaved one re-adopts from the ledger)
         Assert.Equal(RHI.Platform.Linux.Settings.ShaderAddonMode.Global, sets.ChoiceFor(game)!.AddonMode);
         var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
 
