@@ -237,4 +237,153 @@ public sealed partial class ReShadeChannelTests
             Assert.False(ReShadeVulkanLayer.IsLayerRecord(fresh.Find(rig.Game, ManagedComponentKind.ReShade)));
         }
     }
+
+    // Review minor 4 (R2, before extraction): the archive lists its d3d9.dll over the 64 MiB cap: refused before 7-Zip
+    // extracts anything; nothing is cached, placed or recorded. Exactly 64 MiB is accepted.
+    [Theory]
+    [InlineData(64L * 1024 * 1024 + 1, false)]
+    [InlineData(64L * 1024 * 1024, true)]
+    public async Task DxvkHdr_ListedD3d9OverTheCap_IsRefusedBeforeExtraction(long size, bool accepted)
+    {
+        var rig = Rig("dxvk-cap-listed-" + accepted);
+        rig.Builds.Grow64(size);
+        var before = CancelAtWritePhase.Snapshot(rig.Bin);
+
+        var result = await rig.Dxvk.InstallAsync(rig.Game);
+
+        if (accepted)
+        {
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(size, new FileInfo(rig.D3d9).Length);
+            return;
+        }
+        Assert.False(result.Success);
+        Assert.Equal(DxvkHdrDeploymentService.DownloadFailedPrefix + DxvkHdrDeploymentService.D3d9TooLargePrefix + "normal/x64/d3d9.dll", result.Message);
+        Assert.Equal(0, rig.Builds.Extractions);
+        CancelAtWritePhase.AssertUnchanged(before, rig.Bin);
+        Assert.Null(rig.Dxvk.GetRecord(rig.Game));
+    }
+
+    // Review minor 4 (R2, after extraction): the listing claims a small d3d9.dll but 7-Zip writes one over the cap (a
+    // header that lies): refused once written, never cached or placed.
+    [Fact]
+    public async Task DxvkHdr_ExtractedD3d9OverTheCap_IsRefusedAndNeverCached()
+    {
+        var rig = Rig("dxvk-cap-extracted");
+        rig.Builds.Grow64(64L * 1024 * 1024 + 1);
+        rig.Builds.Declare64(8192);
+        var before = CancelAtWritePhase.Snapshot(rig.Bin);
+
+        var result = await rig.Dxvk.InstallAsync(rig.Game);
+
+        Assert.False(result.Success);
+        Assert.Equal(DxvkHdrDeploymentService.DownloadFailedPrefix + DxvkHdrDeploymentService.D3d9TooLargePrefix + "normal/x64/d3d9.dll", result.Message);
+        Assert.Equal(1, rig.Builds.Extractions);
+        CancelAtWritePhase.AssertUnchanged(before, rig.Bin);
+        Assert.False(File.Exists(CachedD3d9(rig, DxvkVersion)));
+        Assert.Null(rig.Dxvk.GetRecord(rig.Game));
+    }
+
+    private string CachedD3d9(DxvkRig rig, string version, string arch = "x64")
+        => Path.Combine(_root, Path.GetFileName(Path.GetDirectoryName(rig.Ledger))! + "-cache", "dxvk-hdr", version, arch, "d3d9.dll");
+
+    // Review minor 4 (R4): Update never replaces a d3d9.dll changed outside RHI (it keeps the marker and the size): refused
+    // before any download, file and record as they were.
+    [Fact]
+    public async Task DxvkHdr_Update_RefusesAD3d9ChangedOutsideRhi_BeforeAnyDownload()
+    {
+        var rig = Rig("dxvk-update-changed");
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        File.WriteAllBytes(rig.D3d9, DxvkHdrDll(0x8664, "user"));
+        var changed = File.ReadAllBytes(rig.D3d9);
+        rig.Handler.Tag = "v10.0-HDR-mod-v1.0.0";
+        rig.Handler.Archive = [.. rig.Handler.Archive, 42];
+        rig.Builds.Set("b");
+        var requests = (rig.Handler.ApiRequests, rig.Handler.ArchiveRequests);
+
+        var updated = await rig.Dxvk.UpdateAsync(rig.Game);
+
+        Assert.False(updated.Success);
+        Assert.Equal(DxvkHdrDeploymentService.ModifiedFilePrefix + rig.D3d9, updated.Message);
+        Assert.Equal(changed, File.ReadAllBytes(rig.D3d9));
+        Assert.Equal(DxvkVersion, rig.Dxvk.GetRecord(rig.Game)!.Version);
+        Assert.Equal(requests, (rig.Handler.ApiRequests, rig.Handler.ArchiveRequests));
+    }
+
+    // Review minor 4 (R5): the extracted d3d9.dll is reused only while bound to the archive it came from. A foreign file
+    // in its place (header, size and marker kept) is extracted again, never placed.
+    [Fact]
+    public async Task DxvkHdr_ATamperedCachedBuild_IsExtractedAgain_NeverPlaced()
+    {
+        var rig = Rig("dxvk-cache-tie");
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        Assert.True((await rig.Dxvk.RemoveAsync(rig.Game)).Success);
+        var cached = CachedD3d9(rig, DxvkVersion);
+        var foreign = DxvkHdrDll(0x8664, "x");
+        Assert.Equal(new FileInfo(cached).Length, foreign.Length);
+        File.WriteAllBytes(cached, foreign);
+
+        var again = await rig.Dxvk.InstallAsync(rig.Game);
+
+        Assert.True(again.Success, again.Message);
+        Assert.Equal(rig.Builds.Bytes(false), File.ReadAllBytes(rig.D3d9));
+        Assert.Equal(2, rig.Builds.Extractions);
+    }
+
+    // The listing parser against what the host tools really print for the release (7-Zip 26.04 `l -slt`, bsdtar 3.8
+    // `-tvf` on dxvk_v3.1-HDR-mod-v0.3.4.7z): the archive's own block (its Path and Physical Size) is never taken for
+    // the member, and a member the archive does not hold is null.
+    [Theory]
+    [InlineData(ExternalArchiveToolKind.SevenZip, "normal/x32/d3d9.dll", 7884814L)]
+    [InlineData(ExternalArchiveToolKind.BsdTar, "normal/x32/d3d9.dll", 7884814L)]
+    [InlineData(ExternalArchiveToolKind.SevenZip, "normal/x64/d3d9.dll", null)]
+    [InlineData(ExternalArchiveToolKind.BsdTar, "normal/x64/d3d9.dll", null)]
+    public async Task DxvkHdr_ListedSize_ReadsWhatTheHostToolsPrint(ExternalArchiveToolKind kind, string member, long? expected)
+    {
+        const string sevenZip = """
+
+            7-Zip 26.04 (x64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-10-05
+             64-bit locale=en_GB.UTF-8 Threads:36 OPEN_MAX:1048576, ASM
+
+            Scanning the drive for archives:
+            1 file, 6198716 bytes (6054 KiB)
+
+            Listing archive: dxvk_v3.1-HDR-mod-v0.3.4.7z
+
+            --
+            Path = dxvk_v3.1-HDR-mod-v0.3.4.7z
+            Type = 7z
+            Physical Size = 6198716
+            Headers Size = 666
+            Method = LZMA2:48m LZMA:20 BCJ2
+            Solid = +
+            Blocks = 2
+
+            ----------
+            Path = normal/x32/d3d9.dll
+            Size = 7884814
+            Packed Size = 
+            Modified = 2026-09-07 11:45:22.2239379
+            Attributes = A -rwxr-xr-x
+            CRC = 66C70630
+            Encrypted = -
+            Method = BCJ2 LZMA2:48m LZMA:20:lc0:lp2 LZMA:20:lc0:lp2
+            Block = 1
+
+            """;
+        const string bsdtar = "-rwxr-xr-x  0 0      0     7884814 Sep  7 11:45 normal/x32/d3d9.dll\n";
+        var folder = Path.Combine(_root, "listing-" + kind + "-" + Path.GetFileName(Path.GetDirectoryName(member)));
+        Directory.CreateDirectory(folder);
+        var output = Path.Combine(folder, "output.txt");
+        File.WriteAllText(output, kind == ExternalArchiveToolKind.SevenZip ? sevenZip : bsdtar);
+        var tool = Path.Combine(folder, "tool");
+        File.WriteAllText(tool, $"#!/bin/sh\ncat '{output}'\n");
+        File.SetUnixFileMode(tool, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var archive = Path.Combine(folder, "dxvk_v3.1-HDR-mod-v0.3.4.7z");
+        File.WriteAllBytes(archive, [0]);
+
+        var size = await DxvkHdrDeploymentService.ListedSizeAsync(new ExternalArchiveTool(tool, kind), archive, member, CancellationToken.None);
+
+        Assert.Equal(expected, size);
+    }
 }

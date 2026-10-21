@@ -416,6 +416,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UntrustedAssetPrefix + "https://github.com/x/dxvk/releases/download/v1/a.7z";
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.PackageIncompletePrefix + "normal/x32/d3d9.dll";
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotDxvkHdrPrefix + "normal/x64/d3d9.dll";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.D3d9TooLargePrefix + "normal/x64/d3d9.dll";
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.InstalledPrefix + "3.1-HDR-mod-v0.3.4" + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ReShadeMovedNote;
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UpdatedPrefix + "3.1-HDR-mod-v0.3.4";
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.AlreadyCurrentPrefix + "3.1-HDR-mod-v0.3.4";

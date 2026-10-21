@@ -36,7 +36,11 @@ public sealed partial class ReShadeChannelTests
         return bytes;
     }
 
-    /// <summary>The fixture's DXVK HDR builds and a fake 7-Zip that hands them out (7z e &lt;archive&gt; &lt;member&gt; -o&lt;out&gt; -y).</summary>
+    /// <summary>
+    /// The fixture's DXVK HDR builds and a fake 7-Zip that lists them (7z l -slt &lt;archive&gt; &lt;member&gt;: the
+    /// build's size, or the one <see cref="Declare64"/> set) and hands them out (7z e &lt;archive&gt; &lt;member&gt;
+    /// -o&lt;out&gt; -y), noting each extraction in <c>extracted.log</c>.
+    /// </summary>
     private sealed class DxvkHdrBuilds
     {
         public DxvkHdrBuilds(string root)
@@ -47,6 +51,17 @@ public sealed partial class ReShadeChannelTests
             Tool = Path.Combine(Folder, "fake-7z");
             File.WriteAllText(Tool, $$"""
                 #!/bin/sh
+                if [ "$1" = l ]; then
+                  case "$4" in
+                    normal/x64/d3d9.dll) f=x64 ;;
+                    normal/x32/d3d9.dll) f=x32 ;;
+                    *) exit 0 ;;
+                  esac
+                  size=$(cat "{{Folder}}/$f.declared" 2>/dev/null || stat -c %s "{{Folder}}/$f.dll")
+                  echo "Path = $3"; echo "Type = 7z"; echo; echo "----------"; echo "Path = $4"; echo "Size = $size"; echo
+                  exit 0
+                fi
+                echo "$3" >> "{{Folder}}/extracted.log"
                 out="${4#-o}"
                 case "$3" in
                   normal/x64/d3d9.dll) cp "{{Folder}}/x64.dll" "$out/d3d9.dll" ;;
@@ -67,6 +82,19 @@ public sealed partial class ReShadeChannelTests
             File.WriteAllBytes(Path.Combine(Folder, "x64.dll"), DxvkHdrDll(0x8664, variant));
             File.WriteAllBytes(Path.Combine(Folder, "x32.dll"), DxvkHdrDll(0x014c, variant));
         }
+
+        /// <summary>The 64-bit build grows to <paramref name="length"/> bytes (sparse; still a DXVK HDR PE).</summary>
+        public void Grow64(long length)
+        {
+            using var stream = new FileStream(Path.Combine(Folder, "x64.dll"), FileMode.Open, FileAccess.Write);
+            stream.SetLength(length);
+        }
+
+        /// <summary>The size the archive listing claims for the 64-bit build (a header that differs from the bytes).</summary>
+        public void Declare64(long size) => File.WriteAllText(Path.Combine(Folder, "x64.declared"), size.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        /// <summary>How many extractions the fake 7-Zip ran.</summary>
+        public int Extractions => File.Exists(Path.Combine(Folder, "extracted.log")) ? File.ReadAllLines(Path.Combine(Folder, "extracted.log")).Length : 0;
     }
 
     /// <summary>GitHub for EndlesslyFlowering/dxvk: the latest release (a gplasync decoy first, then the .7z) and its archive.</summary>

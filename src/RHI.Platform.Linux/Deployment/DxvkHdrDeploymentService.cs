@@ -114,6 +114,7 @@ public sealed class DxvkHdrDeploymentService
     public const string UntrustedAssetPrefix = "The DXVK HDR release link is not in EndlesslyFlowering's dxvk releases, so it was not downloaded: ";
     public const string PackageIncompletePrefix = "The DXVK HDR release does not hold the d3d9.dll this game needs: ";
     public const string NotDxvkHdrPrefix = "The d3d9.dll in the DXVK HDR release is not a DXVK HDR build for this game: ";
+    public const string D3d9TooLargePrefix = "The d3d9.dll in the DXVK HDR release is larger than RHI accepts (64 MiB), so it was not used: ";
     public const string InstalledPrefix = "DX9 HDR installed (d3d9.dll and dxvk.conf beside the game). Version: ";
     public const string ReShadeMovedNote = " ReShade moved to its Vulkan layer for this game; removing DX9 HDR puts it back as d3d9.dll.";
     public const string UpdatedPrefix = "DX9 HDR updated. Version: ";
@@ -533,14 +534,20 @@ public sealed class DxvkHdrDeploymentService
             return new Staged(d3d9, await FileHash.Sha256HexAsync(d3d9, cancellationToken).ConfigureAwait(false), release.Version, release.AssetUrl, download);
 
         CacheStamp.Invalidate(d3d9);
+        var tool = ExternalArchiveRunner.FindTool() ?? throw new InvalidOperationException(ExternalArchiveRunner.NoToolPrefix + Path.GetFileName(archive));
+        // The size cap holds before anything is extracted (review minor 4): the member's size as the archive lists it
+        // (7-Zip and bsdtar write exactly that many bytes), and once more on what was written.
+        var declared = await ListedSizeAsync(tool, archive, member, cancellationToken).ConfigureAwait(false)
+                       ?? throw new InvalidDataException(PackageIncompletePrefix + member);
+        if (declared > D3d9MaxBytes) throw new InvalidDataException(D3d9TooLargePrefix + member);
         var extract = Path.Combine(folder, "extract-" + Guid.NewGuid().ToString("N"));
         try
         {
-            await ExternalArchiveRunner.ExtractAsync(archive, extract, cancellationToken, members: [member]).ConfigureAwait(false);
+            await ExternalArchiveRunner.ExtractAsync(archive, extract, cancellationToken, members: [member], tool: tool).ConfigureAwait(false);
             // 7-Zip extracts the member flat (e); bsdtar keeps its path.
             var found = new[] { Path.Combine(extract, D3d9FileName), Path.Combine(extract, "normal", arch, D3d9FileName) }.FirstOrDefault(File.Exists)
                         ?? throw new InvalidDataException(PackageIncompletePrefix + member);
-            if (new FileInfo(found).Length > D3d9MaxBytes) throw new InvalidDataException(PackageIncompletePrefix + member);
+            if (new FileInfo(found).Length > D3d9MaxBytes) throw new InvalidDataException(D3d9TooLargePrefix + member);
             if (!IsDxvkHdrPe(found, architecture)) throw new InvalidDataException(NotDxvkHdrPrefix + member);
             Directory.CreateDirectory(Path.GetDirectoryName(d3d9)!);
             var sha = AtomicFile.Copy(found, d3d9);
@@ -559,6 +566,45 @@ public sealed class DxvkHdrDeploymentService
 
     private static bool IsDxvkHdrPe(string path, PeArchitecture architecture)
         => PeArchitectureDetector.Detect(path) == architecture && ComponentProbe.IsDxvkHdrBuild(path);
+
+    /// <summary>
+    /// The size <paramref name="member"/> has in <paramref name="archive"/> as the host tool lists it (7-Zip
+    /// <c>l -slt</c>, bsdtar <c>-tvf</c>), through <see cref="ExternalProcess"/> (time limit, tree kill); null when the
+    /// archive does not list it.
+    /// </summary>
+    internal static async Task<long?> ListedSizeAsync(ExternalArchiveTool tool, string archive, string member, CancellationToken cancellationToken)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo(tool.Command) { WorkingDirectory = Path.GetDirectoryName(archive)! };
+        foreach (var argument in tool.Kind == ExternalArchiveToolKind.SevenZip ? new[] { "l", "-slt", archive, member } : ["-tvf", archive, member])
+            start.ArgumentList.Add(argument);
+        var result = await ExternalProcess.RunAsync(start, ExternalArchiveRunner.DefaultTimeout, cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode != 0)
+            throw new InvalidOperationException($"{ExternalArchiveRunner.FailedPrefix}{Path.GetFileName(tool.Command)} ({result.ExitCode}): {result.LastMeaningfulLine()}");
+        var lines = result.StandardOutput.Split('\n', StringSplitOptions.TrimEntries);
+        if (tool.Kind == ExternalArchiveToolKind.SevenZip)
+        {
+            // Entries follow the "----------" line as "Key = value" blocks; the archive's own block comes before it.
+            var entries = lines.SkipWhile(line => !line.StartsWith("----------", StringComparison.Ordinal)).ToArray();
+            for (var i = 0; i < entries.Length; i++)
+            {
+                if (!entries[i].StartsWith("Path = ", StringComparison.Ordinal)
+                    || !entries[i]["Path = ".Length..].Replace('\\', '/').Equals(member, StringComparison.Ordinal)) continue;
+                for (var j = i + 1; j < entries.Length && entries[j].Length > 0; j++)
+                    if (entries[j].StartsWith("Size = ", StringComparison.Ordinal))
+                        return long.TryParse(entries[j]["Size = ".Length..], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var size) ? size : null;
+            }
+            return null;
+        }
+        // bsdtar -tv: "-rwxr-xr-x  0 0      0     7311374 Sep  7 11:44 normal/x64/d3d9.dll" (size is the fifth field).
+        foreach (var line in lines)
+        {
+            var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length >= 9 && fields[^1].Equals(member, StringComparison.Ordinal)
+                && long.TryParse(fields[4], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var size))
+                return size;
+        }
+        return null;
+    }
 
     private static string Safe(string value) => string.Concat(value.Select(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_'));
 }

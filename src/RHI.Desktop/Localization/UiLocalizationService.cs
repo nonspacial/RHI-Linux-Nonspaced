@@ -1365,6 +1365,8 @@ public static class UiLocalizationService
             "A versão do DXVK HDR não contém o d3d9.dll de que este jogo precisa: "),
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotDxvkHdrPrefix,
             "O d3d9.dll da versão do DXVK HDR não é uma build DXVK HDR para este jogo: "),
+        (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.D3d9TooLargePrefix,
+            "O d3d9.dll da versão do DXVK HDR é maior do que o RHI aceita (64 MiB), então não foi usado: "),
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.InstalledPrefix,
             "DX9 HDR instalado (d3d9.dll e dxvk.conf ao lado do jogo). Versão: "),
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ReShadeMovedNote,
