@@ -597,6 +597,7 @@ public sealed class WaveOneMessageLocalizationTests
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
         // w8 follow-up C8/C9 (#221 replaced C9's fragment: the note now says to restart RHI)
         { DeploymentJournal.EarlierUndoFailedMessage, "could not finish undoing" },
+        { DeploymentJournal.EarlierUndoFailedMessage, "Restart RHI to finish it" }, // #220
         { DeploymentOperation.UndecidedNote, "Restart RHI to finish it" },
         // #221: the unreadable-ledger refusal, and the note appended to a prefixed refusal
         { DeploymentJournal.EarlierChangeUndecidedMessage, "Restart RHI to finish it" },

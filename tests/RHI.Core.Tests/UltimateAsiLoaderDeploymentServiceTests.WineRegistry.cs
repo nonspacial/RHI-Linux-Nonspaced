@@ -209,7 +209,10 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
         Volatile.Write(ref running, false);
         var second = await service.InstallAsync(fixture.Game, "version.dll");
         Assert.True(second.Success, second.Message);
-        Assert.False(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.WineOverride!.ChangedByRhi);
+        // #220: the kept entry waits, so the reinstall first finishes the deferred undo (Wine has stopped) and then sets the
+        // override itself: the new record owns it straight away (before #220 it found RHI's value and the next start
+        // handed it the ownership; the end state below is the same).
+        Assert.True(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.WineOverride!.ChangedByRhi);
 
         // Next start.
         var restarted = new LinuxDeploymentRecordStore(ledger);

@@ -162,6 +162,37 @@ public sealed class DeploymentJournal
         }
     }
 
+    /// <summary>
+    /// #220: the undo of operation <paramref name="id"/> (commit probe <paramref name="probe"/>) failed and its entry is
+    /// kept, in process or at start-up: it waits as an undecided operation does, so its game's next operation retries the
+    /// undo first and is refused while it still fails (<see cref="EarlierUndoFailedMessage"/>); the hold lifts once the
+    /// undo succeeds. Only an entry that names a game holds (<see cref="IDeploymentCommitCheck.HoldsUp"/> of its own probe):
+    /// a plain file transaction holds up no game. No-op without a <see cref="CommitCheck"/>.
+    /// </summary>
+    internal void HoldAfterFailedUndo(string id, string? probe, string? mark)
+    {
+        if (CommitCheck is not { } check || !check.HoldsUp(probe, probe)) return;
+        Wait(id, mark);
+    }
+
+    /// <summary>
+    /// #220: start-up recovery ran and could not undo some entries (<see cref="JournalRecoveryOutcome.RollbackFailed"/>):
+    /// each one still on disk holds its game as an in-process failed undo does (<see cref="HoldAfterFailedUndo"/>), so a
+    /// retry before the undo succeeds is refused instead of being undone by the start that finally finishes it. An entry
+    /// whose probe cannot be read now holds up every game (fail closed, as a deferred start-up's kept entries do).
+    /// </summary>
+    public void HoldFailedUndos(JournalRecoveryReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        foreach (var entry in report.Entries.Where(entry => entry.Outcome == JournalRecoveryOutcome.RollbackFailed))
+        {
+            var entryPath = EntryPath(entry.Id);
+            if (!File.Exists(entryPath)) continue;
+            if (TryReadProbe(entryPath, out var probe)) HoldAfterFailedUndo(entry.Id, probe, mark: null);
+            else if (CommitCheck is not null) Wait(entry.Id, mark: null);
+        }
+    }
+
     /// <summary>Ids of the entries waiting to be settled (tests).</summary>
     internal IReadOnlyCollection<string> WaitingForTesting
     {
@@ -174,7 +205,8 @@ public sealed class DeploymentJournal
     /// mode (a file changed since keeps its change). One that still cannot be decided (or whose rollback failed) keeps
     /// waiting; returns the refusal when such an entry holds up an operation with <paramref name="newProbe"/> (same game):
     /// <see cref="EarlierChangeUndecidedMessage"/> while one is still undecided, else <see cref="EarlierUndoFailedMessage"/>
-    /// (w8 follow-up C8: the ledger reads, the undo failed). Null: nothing holds it up.
+    /// (w8 follow-up C8: the ledger reads, the undo failed; #220: also an entry whose undo failed in process or at start-up).
+    /// Null: nothing holds it up.
     /// </summary>
     private async Task<string?> SettleWaitingAsync(string? newProbe)
     {
@@ -262,15 +294,21 @@ public sealed class DeploymentJournal
     }
 
     /// <summary>The commit probe of the entry at <paramref name="entryPath"/>, or null when it cannot be read.</summary>
-    private static string? ProbeOf(string entryPath)
+    private static string? ProbeOf(string entryPath) => TryReadProbe(entryPath, out var probe) ? probe : null;
+
+    /// <summary>Reads the commit probe of the entry at <paramref name="entryPath"/> (null for a plain operation); false when the entry cannot be read.</summary>
+    private static bool TryReadProbe(string entryPath, out string? probe)
     {
+        probe = null;
         try
         {
-            return JsonSerializer.Deserialize<JournalDocument>(File.ReadAllBytes(entryPath), JsonOptions)?.CommitProbe;
+            if (JsonSerializer.Deserialize<JournalDocument>(File.ReadAllBytes(entryPath), JsonOptions) is not { } document) return false;
+            probe = document.CommitProbe;
+            return true;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            return null;
+            return false;
         }
     }
 
@@ -460,10 +498,11 @@ public sealed class DeploymentJournal
 
     /// <summary>
     /// w8 follow-up C8: fixed text of the refusal while the undo of an earlier change to this game failed (PT-BR pair): the
-    /// ledger reads, so it is not the ledger the user has to look at, but the game's files.
+    /// ledger reads, so it is not the ledger the user has to look at, but the game's files. #220 (owner wording rule): says
+    /// plainly that RHI has to be restarted to finish the undo (the game's next change still retries it first).
     /// </summary>
     public const string EarlierUndoFailedMessage =
-        "RHI could not finish undoing an earlier change to this game, so it makes no new change here yet. Nothing was changed. Check that RHI can write to the game's folders and files (rhi.log names the file that failed), then try again: RHI tries the undo again first.";
+        "RHI could not finish undoing an earlier change to this game, so it makes no new change here. Nothing was changed. Restart RHI to finish it (first check that RHI can write to the game's folders and files; rhi.log names the file that failed), then try again.";
 
     internal string EntryPath(string id) => Path.Combine(Directory, id + EntryExtension);
 
@@ -552,7 +591,8 @@ public sealed class DeploymentOperation : IAsyncDisposable
 
     /// <summary>
     /// Rolls back every tracked file and compensation. On success the entry is removed; on failure it
-    /// is kept (and the lock released) so the next start retries, and the failures are returned.
+    /// is kept (and the lock released) so the next start retries, and the failures are returned. #220: a kept entry holds
+    /// its game until the undo succeeds (<see cref="DeploymentJournal.HoldAfterFailedUndo"/>).
     /// <para>#204: first reads the commit point again (<see cref="SettleAfterFailureAsync"/>): a commit write that landed
     /// and then reported an error is finished as committed (nothing undone), and one that cannot be told is left for
     /// the next start; the returned <see cref="OwnedFileSetRollback.Decision"/> says which.</para>
@@ -583,6 +623,9 @@ public sealed class DeploymentOperation : IAsyncDisposable
             }
         }
         ReleaseLock(deleteLockFile: failures.Count == 0);
+        // #220: the entry is kept for the next start; until its undo succeeds it holds its game (after the lock is gone, so
+        // the next operation's settle can take it and retry the undo).
+        if (failures.Count > 0) _journal.HoldAfterFailedUndo(Id, CommitProbe, CommitMark);
         return new(failures, outcome.Kept);
     }
 

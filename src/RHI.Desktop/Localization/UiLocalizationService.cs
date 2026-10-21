@@ -1583,9 +1583,9 @@ public static class UiLocalizationService
         // (#221: both texts say plainly to restart RHI).
         (RHI.Core.Deployment.DeploymentJournal.EarlierChangeUndecidedMessage,
             "O RHI ainda não concluiu nem desfez uma alteração anterior neste jogo, porque o registro de implantações não pode ser lido. Nada foi alterado. Reinicie o RHI para concluir e tente novamente."),
-        // w8 follow-up C8: the undo of that earlier change failed (the ledger reads).
+        // w8 follow-up C8: the undo of that earlier change failed (the ledger reads); #220: in process or at start-up too.
         (RHI.Core.Deployment.DeploymentJournal.EarlierUndoFailedMessage,
-            "O RHI não conseguiu terminar de desfazer uma alteração anterior neste jogo, então ainda não faz nenhuma alteração nova aqui. Nada foi alterado. Verifique se o RHI pode gravar nas pastas e nos arquivos do jogo (o rhi.log indica o arquivo que falhou) e tente novamente: o RHI tenta desfazer a alteração primeiro."),
+            "O RHI não conseguiu terminar de desfazer uma alteração anterior neste jogo, então não faz nenhuma alteração nova aqui. Nada foi alterado. Reinicie o RHI para concluir (antes, verifique se o RHI pode gravar nas pastas e nos arquivos do jogo; o rhi.log indica o arquivo que falhou) e tente novamente."),
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows

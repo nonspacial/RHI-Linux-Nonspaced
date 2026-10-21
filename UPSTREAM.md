@@ -762,3 +762,17 @@ build.
   that game's next change is still refused and other games carry on. The refusal now leads with the restart — "…Nothing
   was changed. Restart RHI to finish it, then try again." — and the note a failed change adds says "…so nothing was undone
   now. Restart RHI to finish it." (PT-BR: "Reinicie o RHI para concluir."). The old "Repair the ledger" advice is gone.
+
+### #220 — A game whose undo could not be finished is held until the undo succeeds
+- Fork-only crash safety. When RHI cannot finish undoing a failed or interrupted change (the game's folder or a file is
+  not writable, say), the journal entry is kept for the next start as before, and now that game is held: in the same
+  session (the failed undo of a change that just failed) and after every start (start-up recovery's undo failed), the
+  game's next install, update or removal first tries the undo again; while it still fails the change is refused before
+  anything changes — "RHI could not finish undoing an earlier change to this game, so it makes no new change here.
+  Nothing was changed. Restart RHI to finish it (first check that RHI can write to the game's folders and files; rhi.log
+  names the file that failed), then try again." Other games carry on. The hold lifts as soon as the undo succeeds (at
+  that next change or at a restart). A retry used to go ahead and commit, and the start that finally finished the old
+  undo then put the files back under the retry's record.
+- A change whose undo of a Wine setting was deferred (Wine was running) also retries it before the game's next change;
+  it is never refused for it (the next start finishes it, as before). A plain file change that names no game holds up no
+  game.

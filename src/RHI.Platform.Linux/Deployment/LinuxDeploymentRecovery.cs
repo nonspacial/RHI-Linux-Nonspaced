@@ -455,6 +455,8 @@ public static class LinuxDeploymentRecovery
                 // game's next operation (a retry would otherwise be undone by the start that finally recovers it).
                 journal.WaitOnKeptEntries();
             }
+            // #220: on every start, an entry whose undo failed holds its game until the undo succeeds (same reason).
+            else journal.HoldFailedUndos(recovery);
         }
         catch (Exception ex)
         {
