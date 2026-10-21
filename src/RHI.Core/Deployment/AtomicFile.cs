@@ -656,8 +656,38 @@ public static class AtomicFile
         }
     }
 
+    /// <summary>
+    /// Whether this process may create, rename and delete files in <paramref name="directory"/> (<c>access(W_OK | X_OK)</c>:
+    /// the kernel's answer, ACLs and read-only mounts included; nothing is written). True outside Linux or without a C
+    /// library to ask (the write itself then reports).
+    /// </summary>
+    public static bool CanCreateFilesIn(string directory)
+    {
+        if (!OperatingSystem.IsLinux()) return true;
+        const int WriteAndSearch = 2 | 1; // W_OK | X_OK
+        try
+        {
+            return Libc.access(directory, WriteAndSearch) == 0;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            // "libc" does not resolve everywhere; glibc's soname always does.
+        }
+        try
+        {
+            return Glibc.access(directory, WriteAndSearch) == 0;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return true;
+        }
+    }
+
     private static class Libc
     {
+        [DllImport("libc", SetLastError = true)]
+        public static extern int access([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int mode);
+
         [DllImport("libc", SetLastError = true)]
         public static extern int open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
 
@@ -673,6 +703,9 @@ public static class AtomicFile
 
     private static class Glibc
     {
+        [DllImport("libc.so.6", SetLastError = true)]
+        public static extern int access([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int mode);
+
         [DllImport("libc.so.6", SetLastError = true)]
         public static extern int open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
 

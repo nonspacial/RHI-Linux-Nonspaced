@@ -652,6 +652,21 @@ public sealed class RenoDxDeploymentService
     /// <summary>Why the keys were not written when Engine.ini is not text RHI can edit byte for byte (PT-BR pair).</summary>
     public const string EngineIniNotTextMessage = "Engine.ini is not UTF-8 or UTF-16 text, so RHI does not edit it.";
 
+    /// <summary>w8 follow-up C5: why the keys were not written when Engine.ini's folder cannot be written to (PT-BR pair); the folder follows.</summary>
+    public const string EngineIniFolderNotWritablePrefix = "RHI cannot write to the folder Engine.ini is in: ";
+
+    /// <summary>w8 follow-up C4: the ⚙ Off refused for an Engine.ini that is not text says what to do (PT-BR pair); follows <see cref="EngineIniNotTextMessage"/>.</summary>
+    public const string EngineIniNotTextOffHint = " Save it as UTF-8 text and try again, or delete RHI's lines from it yourself: ";
+
+    /// <summary>w8 follow-up C4: RenoDX removed while its Engine.ini lines had to stay (PT-BR pair): file, then the lines, then why.</summary>
+    public const string EngineIniLinesLeftPrefix = "RenoDX's lines stay in Engine.ini because RHI cannot edit that file; delete them yourself if you no longer want them: ";
+
+    /// <summary>Infix of <see cref="EngineIniLinesLeftPrefix"/> before the lines (PT-BR pair).</summary>
+    public const string EngineIniLinesLeftLinesInfix = " — lines: ";
+
+    /// <summary>Infix of <see cref="EngineIniLinesLeftPrefix"/> before the reason (PT-BR pair).</summary>
+    public const string EngineIniLinesLeftReasonInfix = " — reason: ";
+
     /// <summary>A fresh record keeps the ⚙'s Engine.ini choices of the one it replaces, and the keys RHI owns now.</summary>
     private static void CarryEngineIniKeys(LinuxDeploymentRecord? existing, LinuxDeploymentRecord record, RenoDxEngineIniState? state)
     {
@@ -721,6 +736,13 @@ public sealed class RenoDxDeploymentService
         if (record is null) return ComponentOperationResult.Fail(EngineIniNotManagedPrefix + game.Name);
         if (!applies || RenoDxEngineIni.ResolvePath(game) is not { } ini) return ComponentOperationResult.Fail(EngineIniNotOfferedPrefix + game.Name);
         var state = RenoDxEngineIni.Read(record);
+        // w8 follow-up C4: Off on a file that is not text is refused before anything starts, saying what the user can do.
+        if (!on && RenoDxEngineIni.CannotEdit(ini) == EngineIniNotTextMessage)
+        {
+            var owned = state?.Entries.Where(entry => entry.Group == group).Select(entry => $"{entry.Key}={entry.AppliedValue}").ToList() ?? [];
+            var lines = owned.Count > 0 ? owned : keys.Select(key => $"{key.Key}={key.Value}").ToList();
+            return ComponentOperationResult.Fail(EngineIniNotTextMessage + EngineIniNotTextOffHint + string.Join(", ", lines));
+        }
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RenoDX Engine.ini setting: " + game.Name, game, ManagedComponentKind.RenoDX, cancellationToken).ConfigureAwait(false);
@@ -1156,6 +1178,7 @@ public sealed class RenoDxDeploymentService
         // Cancel is honoured only up to here: the removal never stops half-way.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var controlSummary = "";
+        string? engineKeysLeft = null;
         var inControlStep = false;
         try
         {
@@ -1192,15 +1215,30 @@ public sealed class RenoDxDeploymentService
             if (engineIniState?.IniPath is { Length: > 0 } engineIni && File.Exists(engineIni))
                 await inis.TrackEngineIniAsync(engineIni, cancellationToken).ConfigureAwait(false);
             var engineKeysState = RenoDxEngineIni.Read(record); // #217
+            // w8 follow-up C4: an Engine.ini RHI can no longer edit (not text, unreadable, a refused link, a read-only folder)
+            // does not hold RenoDX's removal up: RHI's lines stay, the result names them and the file, and only the lock RHI
+            // added comes off a file that is still readable.
+            var releaseLockOnly = false;
             if (engineKeysState?.IniPath is { Length: > 0 } keysIni && File.Exists(keysIni))
-                await inis.TrackEngineIniAsync(keysIni, cancellationToken).ConfigureAwait(false);
+            {
+                if (RenoDxEngineIni.CannotEdit(keysIni) is { } keysRefusal)
+                {
+                    engineKeysLeft = EngineIniLinesLeftPrefix + keysIni + EngineIniLinesLeftLinesInfix + RenoDxEngineIni.OwnedLines(engineKeysState)
+                                     + EngineIniLinesLeftReasonInfix + keysRefusal;
+                    releaseLockOnly = keysRefusal == EngineIniNotTextMessage && engineKeysState.LockedByRhi;
+                    AppLog.Warn("renodx-engine-ini", $"RenoDX removal leaves RHI's Engine.ini lines in {keysIni}: {keysRefusal}");
+                }
+                if (engineKeysLeft is null || releaseLockOnly)
+                    await inis.TrackEngineIniAsync(keysIni, cancellationToken).ConfigureAwait(false);
+            }
 
             RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
             RenoDxIniOverrideManager.Cleanup(nativeState, gameRoot: game.InstallPath); // #218: after the manifest's values, as installed before them
             RenoDxIniOverrideManager.Cleanup(fgHdrState, gameRoot: game.InstallPath);
             RenoDxPeakNits.Cleanup(peakStates, game.InstallPath); // #182
             UpstreamEngineIniFileManager.Cleanup(engineIniState);
-            RenoDxEngineIni.Cleanup(engineKeysState); // #217: only RHI's keys come out, the earlier lock state goes back
+            if (engineKeysLeft is null) RenoDxEngineIni.Cleanup(engineKeysState); // #217: only RHI's keys come out, the earlier lock state goes back
+            else if (releaseLockOnly) RenoDxEngineIni.ReleaseLock(engineKeysState);
             await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
             foreach (var file in record.Files)
                 if (File.Exists(file.Path)) await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
@@ -1217,7 +1255,8 @@ public sealed class RenoDxDeploymentService
                 $"{(inControlStep ? ControlUeRestoreIncompletePrefix : "RenoDX removal failed: ")}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok("RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored." + controlSummary);
+        return ComponentOperationResult.Ok("RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored." + controlSummary
+                                           + (engineKeysLeft is null ? "" : " · " + engineKeysLeft));
     }
 
     public static string ResolveAddonDeployPath(string binaryDirectory)

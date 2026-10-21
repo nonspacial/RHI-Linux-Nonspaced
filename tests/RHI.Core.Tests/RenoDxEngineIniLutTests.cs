@@ -369,25 +369,34 @@ public sealed partial class RenoDxEngineIniLutTests : IDisposable
         var recordBefore = RenoDxJournalTests.Describe(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX));
         var moved = Path.Combine(fx.Game.PrefixPath!, "drive_c", "users", "steamuser", "AppData", "Local", "MovedProject", "Saved", "Config", "Windows");
         Directory.CreateDirectory(moved);
-        File.SetUnixFileMode(moved, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         fx.Game.EngineIniProjectOverride = "MovedProject";
+        // The new folder turns read-only after the up-front check (w8 follow-up C5 refuses a read-only folder before the
+        // operation starts): the write itself fails once the old file already changed.
+        using var operation = new OperationCancellation();
+        OperationCancellation.WritePhaseObserverForTesting = _ => File.SetUnixFileMode(moved, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         try
         {
-            var updated = await fx.Service.UpdateAsync(fx.Game, fx.Files);
+            var updated = await fx.Service.UpdateAsync(fx.Game, fx.Files, cancellationToken: operation.Token);
+            OperationCancellation.WritePhaseObserverForTesting = null;
 
             Assert.False(updated.Success, updated.Message);
             Assert.Equal(oldBytes, File.ReadAllBytes(fx.EngineIni));
             Assert.Equal(oldMode, File.GetUnixFileMode(fx.EngineIni));
             Assert.Equal(recordBefore, RenoDxJournalTests.Describe(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)));
         }
-        finally { File.SetUnixFileMode(moved, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+        finally
+        {
+            OperationCancellation.WritePhaseObserverForTesting = null;
+            File.SetUnixFileMode(moved, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
     }
 
     // Review 3: removal and the ⚙ Off give the file back byte for byte — a header or blank line the user had stays, and the
     // file's line endings, encoding, byte order mark and missing final newline are kept.
     public static TheoryData<string> UserFiles => new()
     {
-        "header-already-there", "crlf", "no-final-newline", "trailing-blank-lines", "utf8-bom", "utf16-crlf", "empty-header-last-crlf", "empty"
+        "header-already-there", "crlf", "no-final-newline", "trailing-blank-lines", "utf8-bom", "utf16-crlf", "empty-header-last-crlf", "empty",
+        "lone-cr-last", "lone-cr-only" // w8 follow-up C6
     };
 
     private static byte[] UserFile(string name) => name switch
@@ -399,6 +408,8 @@ public sealed partial class RenoDxEngineIniLutTests : IDisposable
         "utf8-bom" => [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes("[SystemSettings]\nUserKeep=42\n")],
         "utf16-crlf" => [0xFF, 0xFE, .. Encoding.Unicode.GetBytes("[SystemSettings]\r\nUserKeep=Ação\r\n")],
         "empty-header-last-crlf" => Encoding.UTF8.GetBytes("[SystemSettings]\r\nUserKeep=42\r\n[/Script/Engine.RendererSettings]\r\n"),
+        "lone-cr-last" => Encoding.UTF8.GetBytes("[SystemSettings]\nUserKeep=42\r"),
+        "lone-cr-only" => Encoding.UTF8.GetBytes("[A]\rX=1\r"),
         _ => []
     };
 
@@ -455,6 +466,114 @@ public sealed partial class RenoDxEngineIniLutTests : IDisposable
         File.SetUnixFileMode(owned.EngineIni, UnixFileMode.None);
         Assert.True(owned.Service.OffersEngineIniLut(owned.Game));
         Assert.True(owned.Service.EngineIniLutIsOn(owned.Game));
+    }
+
+    // ── w8 follow-up C4, C5, C7 ────────────────────────────────────────────────────────────────────────────────
+
+    // C4: an Engine.ini that stopped being text (a Latin-1 byte) after RHI's line went in: Off says what to do and changes
+    // nothing; removal finishes RenoDX, leaves the file's bytes as they are, names RHI's line and the file, and takes RHI's lock off.
+    [Fact]
+    public async Task NonTextEngineIni_OffSaysWhatToDo_RemovalFinishes_LeavesTheLine_AndTakesRhisLockOff()
+    {
+        var fx = Fixture("not-text");
+        File.WriteAllText(fx.EngineIni, Before);
+        File.SetUnixFileMode(fx.EngineIni, Open);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+        Assert.Equal(Locked, File.GetUnixFileMode(fx.EngineIni));
+        File.SetUnixFileMode(fx.EngineIni, Open);
+        using (var stream = new FileStream(fx.EngineIni, FileMode.Append)) stream.Write([(byte)';', 0xE9, (byte)'\n']);
+        File.SetUnixFileMode(fx.EngineIni, Locked);
+        var bytes = File.ReadAllBytes(fx.EngineIni);
+
+        var off = await fx.Service.SetEngineIniLutAsync(fx.Game, on: false);
+
+        Assert.False(off.Success, off.Message);
+        Assert.Equal(RenoDxDeploymentService.EngineIniNotTextMessage + RenoDxDeploymentService.EngineIniNotTextOffHint + Line, off.Message);
+        Assert.Equal(bytes, File.ReadAllBytes(fx.EngineIni));
+        Assert.DoesNotContain("Save it as", UiLocalizationService.PresentFor("pt-BR", off.Message));
+
+        var removed = await fx.Service.RemoveAsync(fx.Game);
+
+        Assert.True(removed.Success, removed.Message);
+        Assert.EndsWith(" · " + RenoDxDeploymentService.EngineIniLinesLeftPrefix + fx.EngineIni + RenoDxDeploymentService.EngineIniLinesLeftLinesInfix
+                        + Line + RenoDxDeploymentService.EngineIniLinesLeftReasonInfix + RenoDxDeploymentService.EngineIniNotTextMessage, removed.Message);
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX));
+        Assert.Equal(bytes, File.ReadAllBytes(fx.EngineIni));
+        Assert.Equal(Open, File.GetUnixFileMode(fx.EngineIni)); // RHI's lock comes off: the game can save its settings again
+        Assert.DoesNotContain("stay in Engine.ini", UiLocalizationService.PresentFor("pt-BR", removed.Message));
+    }
+
+    // C5: an existing Engine.ini in a config folder RHI cannot write to: install and update go on without the key and say
+    // why (the journal's copy and every write need that folder), and the file is left as it was.
+    [Fact]
+    public async Task ExistingEngineIni_InAReadOnlyFolder_InstallAndUpdateGoOn_WithoutTheKey_AndSayWhy()
+    {
+        var fx = Fixture("existing-folder-read-only");
+        File.WriteAllText(fx.EngineIni, Before);
+        File.SetUnixFileMode(fx.EngineIni, Open);
+        var folder = Path.GetDirectoryName(fx.EngineIni)!;
+        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            var installed = await fx.Service.InstallAsync(fx.Game, fx.Files);
+            var updated = await fx.Service.UpdateAsync(fx.Game, fx.Files);
+
+            foreach (var result in new[] { installed, updated })
+            {
+                Assert.True(result.Success, result.Message);
+                Assert.Contains(" · " + RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + RenoDxDeploymentService.EngineIniFolderNotWritablePrefix + folder,
+                    result.Message);
+                Assert.DoesNotContain("cannot write to the folder", UiLocalizationService.PresentFor("pt-BR", result.Message));
+            }
+            Assert.Equal(Before, File.ReadAllText(fx.EngineIni));
+            Assert.Equal(Open, File.GetUnixFileMode(fx.EngineIni));
+            Assert.Single(Directory.GetFileSystemEntries(folder));
+            Assert.False(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxEngineIni.StateMetadataKey));
+        }
+        finally { File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    // C7 (i): the game's config moved and the OLD Engine.ini (where RHI's line is) cannot be read: the update goes on without
+    // the key step, says why, and RHI's line stays owned in the old file.
+    [Fact]
+    public async Task EngineIniMoved_OldOneUnreadable_UpdateGoesOn_WithoutTheKeyStep_AndSaysWhy()
+    {
+        var fx = Fixture("moved-old-unreadable");
+        File.WriteAllText(fx.EngineIni, Before);
+        File.SetUnixFileMode(fx.EngineIni, Open);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+        var moved = Path.Combine(fx.Game.PrefixPath!, "drive_c", "users", "steamuser", "AppData", "Local", "MovedProject", "Saved", "Config", "Windows");
+        Directory.CreateDirectory(moved);
+        fx.Game.EngineIniProjectOverride = "MovedProject";
+        File.SetUnixFileMode(fx.EngineIni, UnixFileMode.None);
+
+        var updated = await fx.Service.UpdateAsync(fx.Game, fx.Files);
+
+        Assert.True(updated.Success, updated.Message);
+        Assert.Contains(" · " + RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + "Access to the path", updated.Message);
+        Assert.False(File.Exists(Path.Combine(moved, "Engine.ini")));
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(fx.EngineIni));
+        var state = RenoDxEngineIni.Read(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX))!;
+        Assert.Equal(fx.EngineIni, state.IniPath);
+        Assert.Single(state.Entries);
+    }
+
+    // C7 (iii): a UTF-8 byte order mark before the section RHI writes to: the key goes into that section (no second one),
+    // and the mark stays.
+    [Fact]
+    public async Task Utf8BomBeforeTheRendererSection_TheKeyGoesIntoIt_NoSecondSection()
+    {
+        var fx = Fixture("bom-renderer-first");
+        byte[] bom = [0xEF, 0xBB, 0xBF];
+        var before = bom.Concat(Encoding.UTF8.GetBytes("[/Script/Engine.RendererSettings]\nUserKeep=42\n")).ToArray();
+        File.WriteAllBytes(fx.EngineIni, before);
+
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+
+        Assert.Equal(bom.Concat(Encoding.UTF8.GetBytes("[/Script/Engine.RendererSettings]\nUserKeep=42\n" + Line + "\n")).ToArray(),
+            File.ReadAllBytes(fx.EngineIni));
+        Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
+        Assert.Equal(before, File.ReadAllBytes(fx.EngineIni));
     }
 
     private static string ProjectFolder(LutFixture fx)

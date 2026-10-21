@@ -533,6 +533,12 @@ public sealed class WaveOneMessageLocalizationTests
             + "Access to the path '" + P + "' is denied."; // #217 review 2
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalInstalledPrefix + P + " · "
             + RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotTextMessage;
+        // w8 follow-up C4/C5
+        yield return "RenoDX installed: Lut → " + P + " · " + RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + RenoDxDeploymentService.EngineIniFolderNotWritablePrefix + P;
+        yield return RenoDxDeploymentService.EngineIniNotTextMessage + RenoDxDeploymentService.EngineIniNotTextOffHint + "r.LUT.UpdateEveryFrame=1";
+        yield return "RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored. · " + RenoDxDeploymentService.EngineIniLinesLeftPrefix + P
+                     + RenoDxDeploymentService.EngineIniLinesLeftLinesInfix + "r.LUT.UpdateEveryFrame=1" + RenoDxDeploymentService.EngineIniLinesLeftReasonInfix
+                     + RenoDxDeploymentService.EngineIniNotTextMessage;
         // w8/commit-point rows
         yield return DeploymentScope.Landed("ReShade").Message;
         yield return DeploymentScope.Landed("DLSS5 Feeder Full", removal: true).Message;
@@ -585,6 +591,13 @@ public sealed class WaveOneMessageLocalizationTests
         { RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DuplicateMemberPrefix + "normal/x64/d3d9.dll", "more than once" },
         { "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote, "takes effect with the ReShade profile" },
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
+        // w8 follow-up C4/C5
+        { RenoDxDeploymentService.EngineIniFolderNotWritablePrefix + P, "cannot write to the folder" },
+        { RenoDxDeploymentService.EngineIniNotTextMessage + RenoDxDeploymentService.EngineIniNotTextOffHint + "r.LUT.UpdateEveryFrame=1", "try again, or delete" },
+        { RenoDxDeploymentService.EngineIniLinesLeftPrefix + P + RenoDxDeploymentService.EngineIniLinesLeftLinesInfix + "x=1"
+          + RenoDxDeploymentService.EngineIniLinesLeftReasonInfix + RenoDxDeploymentService.EngineIniNotTextMessage, "lines stay in" },
+        { RenoDxDeploymentService.EngineIniLinesLeftPrefix + P + RenoDxDeploymentService.EngineIniLinesLeftLinesInfix + "x=1"
+          + RenoDxDeploymentService.EngineIniLinesLeftReasonInfix + RenoDxDeploymentService.EngineIniNotTextMessage, " — reason: " },
         // w7 final review 2
         { RHI.Platform.Linux.Deployment.XnaGacReShade.ForeignCopyAfterMovePrefix + P, "in its place" },
         { RHI.Platform.Linux.Deployment.XnaGacReShade.MissingCopyAfterMovePrefix + P, "has no d3d9.dll" },

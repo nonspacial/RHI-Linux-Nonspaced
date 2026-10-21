@@ -1556,6 +1556,17 @@ public static class UiLocalizationService
             "As linhas de gradação de cor/HDR do Unreal do RenoDX não foram gravadas no Engine.ini: "),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotTextMessage,
             "O Engine.ini não é texto UTF-8 nem UTF-16, então o RHI não o edita."),
+        // w8 follow-up C4/C5
+        ("RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored.",
+            "Add-on do RenoDX gerenciado pelo RHI removido; as alterações do manifesto no ReShade.ini/Engine.ini foram desfeitas."),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniFolderNotWritablePrefix,
+            "O RHI não consegue gravar na pasta em que o Engine.ini está: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotTextOffHint,
+            " Salve-o como texto UTF-8 e tente de novo, ou apague você mesmo as linhas do RHI nele: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniLinesLeftPrefix,
+            "As linhas do RenoDX continuam no Engine.ini porque o RHI não consegue editar esse arquivo; apague-as você mesmo se não as quiser mais: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniLinesLeftLinesInfix, " — linhas: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniLinesLeftReasonInfix, " — motivo: "),
         // w8/commit-point rows
         // #204: a ledger write that landed and then reported an error (finished as committed), or a ledger that could not be
         // read again after the error (nothing undone; decided at the next start).

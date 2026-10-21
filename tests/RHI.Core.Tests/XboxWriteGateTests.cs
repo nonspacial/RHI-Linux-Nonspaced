@@ -376,6 +376,7 @@ public sealed class XboxWriteGateTests : IDisposable
         string[] notGameWriters =
         [
             "TempPathFor", "ResolveUserFileTarget", "FsyncDirectoryOf", "FsyncDirectory", "CreateDirectoryDurable",
+            "CanCreateFilesIn", // asks access(2); writes nothing
             "WriteStoreFile", "WriteNew", // RHI's own store files and quarantine copies
             "WriteAllTextAsync", "ReplaceUserFileLines" // delegate to WriteAllBytesAsync / ReplaceUserFile
         ];

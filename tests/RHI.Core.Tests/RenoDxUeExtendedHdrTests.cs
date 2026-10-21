@@ -213,6 +213,24 @@ public sealed partial class RenoDxUeExtendedHdrTests : IDisposable
         Assert.False(fx.Service.OffersEngineIniLut(fx.Game));
     }
 
+    // C7 (ii): the HDR row hides on an Engine.ini RHI cannot read, unless RHI owns HDR keys there (Off can still be asked for).
+    [Fact]
+    public async Task HdrRow_UnreadableEngineIni_IsHidden_UnlessRhiOwnsTheHdrKeys()
+    {
+        var fx = Fixture("hdr-row-unreadable");
+        File.WriteAllText(fx.EngineIni, EngineIniBefore.Replace("UserKeep=42\n", "UserKeep=42\n" + string.Join("\n", HdrLines) + "\n")); // the user's own
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files, ueExtendedChoice: "on")).Success);
+        Assert.True(fx.Service.OffersEngineIniHdr(fx.Game));
+        File.SetUnixFileMode(fx.EngineIni, UnixFileMode.None);
+
+        Assert.False(fx.Service.OffersEngineIniHdr(fx.Game));
+
+        var owned = Fixture("hdr-row-unreadable-owned");
+        Assert.True((await owned.Service.InstallAsync(owned.Game, owned.Files, ueExtendedChoice: "on")).Success);
+        File.SetUnixFileMode(owned.EngineIni, UnixFileMode.None);
+        Assert.True(owned.Service.OffersEngineIniHdr(owned.Game));
+    }
+
     // Review 3: an empty [SystemSettings] the user had, CRLF endings and no final newline all come back byte for byte.
     [Fact]
     public async Task HdrKeys_IntoAnEmptySectionTheUserHad_RemovalAndOff_GiveTheFileBackByteForByte()

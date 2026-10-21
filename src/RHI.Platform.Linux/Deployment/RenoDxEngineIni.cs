@@ -135,8 +135,10 @@ internal static class RenoDxEngineIni
 
     /// <summary>
     /// Why RenoDX's Engine.ini step cannot edit <paramref name="iniPath"/> (null: it can): a link to a file outside the game's
-    /// prefix or project folder, a file RHI cannot read, or one that is not text. Checked before the file is tracked, so an
-    /// install, update or drop goes on without the key and says why (upstream logs the failure and carries on).
+    /// prefix or project folder, a file RHI cannot read, one that is not text, or a folder RHI cannot write to (w8 follow-up
+    /// C5: the journal keeps its copy of an existing file beside it, and every write replaces the file through a temporary
+    /// file there). Checked before the file is tracked, so an install, update or drop goes on without the key and says why
+    /// (upstream logs the failure and carries on).
     /// </summary>
     public static string? CannotEdit(string iniPath)
     {
@@ -144,6 +146,9 @@ internal static class RenoDxEngineIni
         {
             var target = LumaEngineIniOverrideManager.ResolveWriteTarget(iniPath);
             if (File.Exists(target)) IniText.Parse(File.ReadAllBytes(target));
+            if (Path.GetDirectoryName(Path.GetFullPath(target)) is { Length: > 0 } folder && Directory.Exists(folder)
+                && !AtomicFile.CanCreateFilesIn(folder))
+                return RenoDxDeploymentService.EngineIniFolderNotWritablePrefix + folder;
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -318,6 +323,21 @@ internal static class RenoDxEngineIni
             state.Entries.Select(entry => entry.Group).ToHashSet(StringComparer.Ordinal), state);
     }
 
+    /// <summary>
+    /// w8 follow-up C4: RenoDX's removal when Engine.ini can no longer be edited as text: RHI's lines stay (the result says
+    /// so), and only the lock RHI added comes off again (a mode change, no bytes), so the game can save its settings there.
+    /// </summary>
+    public static void ReleaseLock(RenoDxEngineIniState? state)
+    {
+        if (state is not { LockedByRhi: true } || !File.Exists(state.IniPath) || OperatingSystem.IsWindows()) return;
+        File.SetUnixFileMode(LumaEngineIniOverrideManager.ResolveWriteTarget(state.IniPath),
+            state.ModeBefore is { } mode ? (UnixFileMode)mode : DefaultMode);
+    }
+
+    /// <summary>The lines RHI owns in <paramref name="state"/>'s file, as written (the result names them when they stay).</summary>
+    public static string OwnedLines(RenoDxEngineIniState state)
+        => string.Join(", ", state.Entries.Select(entry => $"{entry.Key}={entry.AppliedValue}"));
+
     private static void WriteOrDelete(string iniPath, IniText text, bool createdByRhi)
     {
         if (createdByRhi && text.Lines.Count == 0 && new FileInfo(iniPath).LinkTarget is null)
@@ -426,7 +446,14 @@ internal static class RenoDxEngineIni
             for (var start = 0; start < content.Length;)
             {
                 var newline = content.IndexOf('\n', start);
-                if (newline < 0) { text.Lines.Add(new IniLine(content[start..], "")); break; }
+                if (newline < 0)
+                {
+                    // w8 follow-up C6: a last line ending in a lone CR (a file cut between CR and LF, old-Mac endings) keeps
+                    // that CR as its ending, so a line RHI appends and takes out again leaves the same bytes.
+                    var last = content[start..];
+                    text.Lines.Add(last.EndsWith('\r') ? new IniLine(last[..^1], "\r") : new IniLine(last, ""));
+                    break;
+                }
                 var crlf = newline > start && content[newline - 1] == '\r';
                 var eol = crlf ? "\r\n" : "\n";
                 text.Lines.Add(new IniLine(content[start..(crlf ? newline - 1 : newline)], eol));
@@ -443,26 +470,32 @@ internal static class RenoDxEngineIni
             return [.. _preamble, .. _encoding.GetBytes(builder.ToString())];
         }
 
-        /// <summary>Inserts a line in the file's own line ending; at the end of a file without a final newline, the new
-        /// line takes over that (so taking it out again gives the same bytes).</summary>
+        /// <summary>Inserts a line in the file's own line ending; at the end of a file without a final newline (or ending in a
+        /// lone CR), the new line takes over that last ending and the line before it gets a full one (so taking it out again
+        /// gives the same bytes).</summary>
         public void Insert(int index, string line)
         {
-            if (index == Lines.Count && index > 0 && Lines[index - 1].Eol.Length == 0)
+            if (index == Lines.Count && index > 0 && IsOpenEnding(Lines[index - 1].Eol))
             {
-                Lines[index - 1].Eol = _newLine;
-                Lines.Add(new IniLine(line, ""));
+                var open = Lines[index - 1].Eol;
+                Lines[index - 1].Eol = open == "\r" ? "\r\n" : _newLine;
+                Lines.Add(new IniLine(line, open));
                 return;
             }
             Lines.Insert(index, new IniLine(line, _newLine));
         }
 
-        /// <summary>Takes a line out; a last line without a final newline hands that back to the line before it.</summary>
+        /// <summary>Takes a line out; a last line without a final newline (or ending in a lone CR) hands that ending back to
+        /// the line before it.</summary>
         public void RemoveAt(int index)
         {
             var removed = Lines[index];
             Lines.RemoveAt(index);
-            if (removed.Eol.Length == 0 && index == Lines.Count && index > 0) Lines[index - 1].Eol = "";
+            if (IsOpenEnding(removed.Eol) && index == Lines.Count && index > 0) Lines[index - 1].Eol = removed.Eol;
         }
+
+        // The ending of a file's last line that is not a full newline: none, or a lone CR.
+        private static bool IsOpenEnding(string eol) => eol.Length == 0 || eol == "\r";
 
         /// <summary>Adds <c>[section]</c> at the end, after a blank line when the file's last line is not blank; returns
         /// whether that blank line was added.</summary>
