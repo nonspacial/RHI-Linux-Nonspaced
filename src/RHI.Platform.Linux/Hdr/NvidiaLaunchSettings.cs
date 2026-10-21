@@ -161,6 +161,9 @@ public sealed record NvidiaLaunchPlan(
     NvidiaDlssFamilies Families,
     bool FrameGenerationOffered)
 {
+    /// <summary>The Frame Generation preset: a frame-generation file and a GPU that runs DLSS Frame Generation (RTX 40 or newer).</summary>
+    public bool FrameGenerationPresetOffered { get; init; }
+
     public static NvidiaLaunchPlan Hidden(NvidiaPlanReason reason)
         => new(reason, new Dictionary<string, string>(StringComparer.Ordinal), new NvidiaDlssFamilies(false, false, false), false);
 
@@ -179,6 +182,27 @@ public static class NvidiaLaunchSettings
 {
     public const string DrsPrefix = "DXVK_NVAPI_DRS_";
     public const string NgxUpdater = "PROTON_ENABLE_NGX_UPDATER";
+
+    /// <summary>dxvk-nvapi's numeric form (<c>0x&lt;id&gt;=&lt;value&gt;,…</c>), read by every build that reads DRS variables.</summary>
+    public const string DrsSettings = "DXVK_NVAPI_DRS_SETTINGS";
+
+    /// <summary>
+    /// Settings whose <c>DXVK_NVAPI_DRS_&lt;NAME&gt;</c> variable older dxvk-nvapi builds do not know (their
+    /// <c>src/util/util_drs.h</c> table lacks the name, and <c>enrichwithenv</c> reads only names in that table): v0.9.0,
+    /// the first build with DRS variables, lacks the two scaling ratios; Proton 10's build (0ea2317) lacks the Frame
+    /// Generation preset and the frame-generation mode / dynamic settings. These ids are also written in the numeric
+    /// <see cref="DrsSettings"/> form (same value), which every build since v0.9.0 reads. Ids per NVIDIA's
+    /// <c>NvApiDriverSettings.h</c>.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, uint> NumericIds = new Dictionary<string, uint>(StringComparer.Ordinal)
+    {
+        ["NGX_DLSS_SR_OVERRIDE_SCALING_RATIO"] = 0x10E41DF5,
+        ["NGX_DLSS_RR_OVERRIDE_SCALING_RATIO"] = 0x10C7D4A2,
+        ["NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION"] = 0x10E41DF1,
+        ["NGX_DLSSG_MODE"] = 0x10308298,
+        ["NGX_DLSSG_DYNAMIC_MULTI_FRAME_COUNT_MAX"] = 0x10562D0F,
+        ["NGX_DLSSG_DYNAMIC_TARGET_FRAME_RATE"] = 0x10CF4125,
+    };
 
     // NGX custom performance mode (NGX_DLSS_SR_MODE / NGX_DLSS_RR_MODE = CUSTOM) that makes the scaling ratio apply.
     private const uint CustomMode = 6;
@@ -207,17 +231,24 @@ public static class NvidiaLaunchSettings
 
         var known = families ?? NvidiaDlssFamilies.All;
         var frameGeneration = host.Gpu.Rtx50 && known.FrameGeneration;
-        var env = Environment((settings ?? new NvidiaGameSettings()).Copy().Normalize(), known, frameGeneration);
+        var frameGenerationPreset = host.Gpu.FrameGeneration && known.FrameGeneration;
+        var env = Environment((settings ?? new NvidiaGameSettings()).Copy().Normalize(), known, frameGeneration, frameGenerationPreset);
         // Not offered while the files are unknown (the section would flash in and out); a saved choice still applies.
-        return new NvidiaLaunchPlan(families is null ? NvidiaPlanReason.FilesNotKnownYet : NvidiaPlanReason.Ready, env, known, frameGeneration);
+        return new NvidiaLaunchPlan(families is null ? NvidiaPlanReason.FilesNotKnownYet : NvidiaPlanReason.Ready, env, known, frameGeneration)
+        {
+            FrameGenerationPresetOffered = frameGenerationPreset
+        };
     }
 
     /// <summary>
     /// The variables for <paramref name="settings"/> (normalised) in a game shipping <paramref name="families"/>;
-    /// multi frame generation only with <paramref name="frameGeneration"/> (an RTX 50 GPU and a frame-generation file).
-    /// "Default" adds nothing.
+    /// multi frame generation only with <paramref name="frameGeneration"/> (an RTX 50 GPU and a frame-generation file),
+    /// the Frame Generation preset only with <paramref name="frameGenerationPreset"/> (a GPU that runs DLSS Frame
+    /// Generation). "Default" adds nothing. Ids older dxvk-nvapi builds know by number only are also written in the
+    /// numeric <see cref="DrsSettings"/> form (<see cref="NumericIds"/>).
     /// </summary>
-    public static IReadOnlyDictionary<string, string> Environment(NvidiaGameSettings settings, NvidiaDlssFamilies families, bool frameGeneration)
+    public static IReadOnlyDictionary<string, string> Environment(NvidiaGameSettings settings, NvidiaDlssFamilies families, bool frameGeneration,
+        bool frameGenerationPreset = true)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(families);
@@ -244,7 +275,7 @@ public static class NvidiaLaunchSettings
         }
         if (families.FrameGeneration)
         {
-            if (settings.FrameGenerationPreset != 0) Set("NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION", settings.FrameGenerationPreset);
+            if (frameGenerationPreset && settings.FrameGenerationPreset != 0) Set("NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION", settings.FrameGenerationPreset);
             if (frameGeneration)
             {
                 switch (NvidiaFrameGenerationModes.Normalize(settings.FrameGenerationMode))
@@ -268,8 +299,21 @@ public static class NvidiaLaunchSettings
             if (families.RayReconstruction) Set("NGX_DLSS_RR_OVERRIDE", 1);
             if (families.FrameGeneration) Set("NGX_DLSS_FG_OVERRIDE", 1);
         }
+        var numeric = NumericIds
+            .Where(pair => env.ContainsKey(DrsPrefix + pair.Key))
+            .OrderBy(pair => pair.Value)
+            .Select(pair => $"0x{pair.Value:x}={env[DrsPrefix + pair.Key]}")
+            .ToList();
+        if (numeric.Count > 0) env[DrsSettings] = string.Join(",", numeric);
         return env;
     }
+
+    /// <summary>
+    /// A direct launch keeps the user's own <see cref="DrsSettings"/> (from RHI's environment): RHI's entries are added
+    /// after it, so for the same id RHI's value wins (dxvk-nvapi keeps the last one).
+    /// </summary>
+    public static string MergeDrsSettings(string? inherited, string ours)
+        => string.IsNullOrWhiteSpace(inherited) ? ours : inherited.Trim().TrimEnd(',') + "," + ours;
 
     /// <summary>Small values in decimal, the driver's sentinel values (0xFFFFFF, 0x1000000) in hex; dxvk-nvapi reads both.</summary>
     public static string Format(uint value) => value >= 0x100000 ? $"0x{value:x}" : value.ToString(System.Globalization.CultureInfo.InvariantCulture);

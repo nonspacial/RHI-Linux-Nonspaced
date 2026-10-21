@@ -9,12 +9,20 @@ namespace RHI.Platform.Linux.Hdr;
 public sealed record NvidiaGpuFacts(bool Present, bool Rtx50, string? Model = null)
 {
     public static NvidiaGpuFacts None { get; } = new(false, false);
+
+    /// <summary>
+    /// DLSS Frame Generation runs here (RTX 40 or newer): false only for a model known to be older (RTX 20/30, GTX,
+    /// Quadro, TITAN, RTX A-series); an unknown model keeps it.
+    /// </summary>
+    public bool FrameGeneration => Present && (Rtx50 || !NvidiaGpuProbe.IsBeforeFrameGeneration(Model));
 }
 
 /// <summary>
 /// #211: a read-only look at the GPUs: the NVIDIA driver's <c>/proc/driver/nvidia/gpus/*/information</c> (model
-/// names), else a PCI display device of vendor 0x10de under <c>/sys/bus/pci/devices</c> (no model; RTX 50 then
-/// unknown, so frame-generation options stay hidden). Never runs <c>nvidia-smi</c> and never opens a GPU device.
+/// names), else — only while NVIDIA's own driver is loaded (<c>/proc/driver/nvidia/version</c>) — a PCI display device
+/// of vendor 0x10de under <c>/sys/bus/pci/devices</c> (no model; RTX 50 then unknown, so multi frame generation stays
+/// hidden). An NVIDIA card on nouveau/NVK counts as none: DLSS needs NVIDIA's driver. Never runs <c>nvidia-smi</c> and
+/// never opens a GPU device.
 /// </summary>
 public static partial class NvidiaGpuProbe
 {
@@ -31,8 +39,17 @@ public static partial class NvidiaGpuProbe
             var rtx50 = models.FirstOrDefault(IsRtx50);
             return new NvidiaGpuFacts(true, rtx50 is not null, rtx50 ?? models[0]);
         }
+        // Without NVIDIA's driver (nouveau/NVK) there is no DLSS: the PCI device alone is not enough.
+        if (!File.Exists(Path.Combine(procRoot, "driver", "nvidia", "version"))) return NvidiaGpuFacts.None;
         return HasPciNvidiaDisplay(sysRoot) ? new NvidiaGpuFacts(true, false) : NvidiaGpuFacts.None;
     }
+
+    /// <summary>
+    /// A model known to predate DLSS Frame Generation (RTX 20/30, GTX, Quadro, TITAN, RTX A-series). Ada and Blackwell
+    /// workstation cards ("RTX 2000 Ada", "RTX PRO 6000 Blackwell") are not; "Quadro RTX 4000" (Turing) is.
+    /// </summary>
+    public static bool IsBeforeFrameGeneration(string? model)
+        => !string.IsNullOrWhiteSpace(model) && !AdaOrNewerRegex().IsMatch(model) && BeforeAdaRegex().IsMatch(model);
 
     /// <summary>An RTX 50-series (Blackwell) model name: "NVIDIA GeForce RTX 5080", "… RTX 5070 Ti Laptop GPU", "RTX PRO 6000 Blackwell …".</summary>
     public static bool IsRtx50(string? model)
@@ -104,4 +121,10 @@ public static partial class NvidiaGpuProbe
 
     [GeneratedRegex(@"\bRTX\s*50[0-9]{2}\b|\bBlackwell\b", RegexOptions.IgnoreCase)]
     private static partial Regex Rtx50Regex();
+
+    [GeneratedRegex(@"\bAda\b|\bBlackwell\b", RegexOptions.IgnoreCase)]
+    private static partial Regex AdaOrNewerRegex();
+
+    [GeneratedRegex(@"\bRTX\s*[23]0[0-9]{2}\b|\bRTX\s*A[0-9]{3,4}\b|\bGTX\b|\bQuadro\b|\bTITAN\b", RegexOptions.IgnoreCase)]
+    private static partial Regex BeforeAdaRegex();
 }

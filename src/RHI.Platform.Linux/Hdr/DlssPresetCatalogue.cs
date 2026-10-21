@@ -63,24 +63,17 @@ public static class DlssPresetCatalogue
     /// <summary>The lists before (or without) a manifest: the built-in lists merged with <see cref="SyncedManifest"/>.</summary>
     public static DlssPresetLists Fallback { get; } = Merge(BuiltIn, SyncedManifest);
 
-    private static DlssPresetLists? _current;
-    private static UpstreamDlssPresetsDefinition? _observed;
+    /// <summary>The app's one source (the library scan feeds it; the NVIDIA settings read it).</summary>
+    internal static DlssPresetSource Shared { get; } = new();
 
     /// <summary>The lists from the newest manifest read, else <see cref="Fallback"/>.</summary>
-    public static DlssPresetLists Current => Volatile.Read(ref _current) ?? Fallback;
+    public static DlssPresetLists Current => Shared.Current;
 
     /// <summary>
     /// The library scan read <paramref name="policy"/>: its <c>dlssPresets</c> (if any) become <see cref="Current"/>.
     /// Cheap for every game of one scan (the same snapshot object is skipped).
     /// </summary>
-    public static void Observe(UpstreamLibraryPolicySnapshot policy)
-    {
-        ArgumentNullException.ThrowIfNull(policy);
-        var presets = policy.DlssPresets;
-        if (presets is null || ReferenceEquals(presets, Volatile.Read(ref _observed))) return;
-        Volatile.Write(ref _current, Merge(BuiltIn, presets));
-        Volatile.Write(ref _observed, presets);
-    }
+    public static void Observe(UpstreamLibraryPolicySnapshot policy) => Shared.Observe(policy);
 
     /// <summary>Upstream's <c>MergePresets</c> per list.</summary>
     public static DlssPresetLists Merge(DlssPresetLists lists, UpstreamDlssPresetsDefinition? manifest)
@@ -159,4 +152,25 @@ internal sealed class UpstreamManifestDlssPresetEntry
 
     [JsonPropertyName("disabled")]
     public bool? Disabled { get; set; }
+}
+
+/// <summary>
+/// #211: the DLSS preset lists one manifest reader last saw. The app uses <see cref="DlssPresetCatalogue.Shared"/>;
+/// tests use their own instance, so a test never changes the lists other tests read.
+/// </summary>
+internal sealed class DlssPresetSource
+{
+    private DlssPresetLists? _current;
+    private UpstreamDlssPresetsDefinition? _observed;
+
+    public DlssPresetLists Current => Volatile.Read(ref _current) ?? DlssPresetCatalogue.Fallback;
+
+    public void Observe(UpstreamLibraryPolicySnapshot policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        var presets = policy.DlssPresets;
+        if (presets is null || ReferenceEquals(presets, Volatile.Read(ref _observed))) return;
+        Volatile.Write(ref _current, DlssPresetCatalogue.Merge(DlssPresetCatalogue.BuiltIn, presets));
+        Volatile.Write(ref _observed, presets);
+    }
 }

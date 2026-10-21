@@ -47,7 +47,10 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
 
         var env = NvidiaLaunchSettings.Environment(settings.Normalize(), AllFiles, frameGeneration: false);
 
-        Assert.Equal(new Dictionary<string, string> { [variable] = expected }, env);
+        // The Frame Generation preset is unknown by name to Proton 10's dxvk-nvapi: also in the numeric form.
+        var wanted = new Dictionary<string, string> { [variable] = expected };
+        if (family == "FG") wanted["DXVK_NVAPI_DRS_SETTINGS"] = "0x10e41df1=" + expected;
+        Assert.Equal(wanted, env);
     }
 
     [Fact]
@@ -62,6 +65,8 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
             ["DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_SCALING_RATIO"] = "67",
             ["DXVK_NVAPI_DRS_NGX_DLSS_RR_MODE"] = "6",
             ["DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE_SCALING_RATIO"] = "100",
+            // dxvk-nvapi v0.9.0 has no name for either ratio: also in the numeric form.
+            ["DXVK_NVAPI_DRS_SETTINGS"] = "0x10c7d4a2=100,0x10e41df5=67",
         }, env);
     }
 
@@ -86,6 +91,7 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
         {
             ["DXVK_NVAPI_DRS_NGX_DLSSG_MODE"] = "2",
             ["DXVK_NVAPI_DRS_NGX_DLSSG_MULTI_FRAME_COUNT"] = "3",
+            ["DXVK_NVAPI_DRS_SETTINGS"] = "0x10308298=2", // the mode is unknown by name to Proton 10's dxvk-nvapi
         }, env);
     }
 
@@ -103,6 +109,7 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
             ["DXVK_NVAPI_DRS_NGX_DLSSG_MODE"] = "4",
             ["DXVK_NVAPI_DRS_NGX_DLSSG_DYNAMIC_MULTI_FRAME_COUNT_MAX"] = "5",
             ["DXVK_NVAPI_DRS_NGX_DLSSG_DYNAMIC_TARGET_FRAME_RATE"] = "0x1000000",
+            ["DXVK_NVAPI_DRS_SETTINGS"] = "0x10308298=4,0x10562d0f=5,0x10cf4125=0x1000000",
         }, env);
     }
 
@@ -129,7 +136,70 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
 
         var env = NvidiaLaunchSettings.Environment(settings, AllFiles, frameGeneration: false);
 
-        Assert.Equal(new Dictionary<string, string> { ["DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION"] = "2" }, env);
+        Assert.Equal(new Dictionary<string, string>
+        {
+            ["DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION"] = "2",
+            ["DXVK_NVAPI_DRS_SETTINGS"] = "0x10e41df1=2",
+        }, env);
+    }
+
+    // ---- Proton 10 (finding 3): names its dxvk-nvapi lacks are also written by number --------------------------------
+
+    [Fact]
+    public void NamesOlderDxvkNvapiBuildsLack_AreAlsoWrittenByNumber_InIdOrder_AndKnownNamesAreNot()
+    {
+        var env = NvidiaLaunchSettings.Environment(new NvidiaGameSettings
+        {
+            SuperResolutionPreset = 11, SuperResolutionRenderScale = 67, RayReconstructionPreset = 5, FrameGenerationPreset = 3,
+            FrameGenerationMode = NvidiaFrameGenerationModes.Dynamic, DynamicMaxFrameCount = 3, DynamicTargetFrameRate = 138, NewestDlss = true
+        }.Normalize(), AllFiles, frameGeneration: true);
+
+        // Ids per NvApiDriverSettings.h; names per dxvk-nvapi util_drs.h at v0.9.0 (no ratios) and Proton 10's 0ea2317
+        // (no FG preset, no DLSSG mode/dynamic names). Presets SR/RR, SR mode, overrides and the NGX updater stay by name only.
+        Assert.Equal("0x10308298=4,0x10562d0f=3,0x10cf4125=138,0x10e41df1=3,0x10e41df5=67", env["DXVK_NVAPI_DRS_SETTINGS"]);
+        Assert.Equal("11", env["DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_RENDER_PRESET_SELECTION"]);
+        Assert.Equal("3", env["DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION"]);
+        Assert.Equal("4", env["DXVK_NVAPI_DRS_NGX_DLSSG_MODE"]);
+    }
+
+    [Fact]
+    public void ADirectLaunch_KeepsTheUsersOwnDrsSettingsInFront_AndAHandoffLineHoldsOnlyRhis()
+    {
+        var settings = new NvidiaGameSettings { FrameGenerationPreset = 2 };
+        var service = new LinuxHdrLaunchProfileService(
+            environment: name => name == "DXVK_NVAPI_DRS_SETTINGS" ? "0x10e41df1=1,0x1234=5" : null,
+            commandExists: _ => false, nvidiaVersion: () => null, nvidiaGpu: () => Rtx40.Gpu);
+
+        var direct = service.BuildPlan(Direct(), Profile(LinuxHdrModes.Off, settings), Rtx40, AllFiles);
+        var steam = service.BuildPlan(Steam(), Profile(LinuxHdrModes.Off, settings), Rtx40, AllFiles);
+
+        // dxvk-nvapi keeps the last value for an id: RHI's 2 wins over the user's 1, the user's 0x1234 stays.
+        Assert.Equal("0x10e41df1=1,0x1234=5,0x10e41df1=2", direct.Environment["DXVK_NVAPI_DRS_SETTINGS"]);
+        Assert.Equal("0x10e41df1=2", steam.Environment["DXVK_NVAPI_DRS_SETTINGS"]);
+        Assert.Equal("DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION=2 DXVK_NVAPI_DRS_SETTINGS='0x10e41df1=2' %command%", steam.LaunchOptions);
+    }
+
+    // ---- the Frame Generation preset needs an RTX 40 or newer (finding 5) ---------------------------------------------
+
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 3080", false)]
+    [InlineData("NVIDIA GeForce RTX 2060 SUPER", false)]
+    [InlineData("NVIDIA GeForce GTX 1660 Ti", false)]
+    [InlineData("Quadro RTX 4000", false)]
+    [InlineData("NVIDIA RTX A4000", false)]
+    [InlineData("NVIDIA GeForce RTX 4060 Laptop GPU", true)]
+    [InlineData("NVIDIA RTX 2000 Ada Generation", true)]
+    [InlineData("NVIDIA GeForce RTX 5090", true)]
+    [InlineData(null, true)] // model unknown (PCI fallback): kept
+    public void TheFrameGenerationPreset_IsOfferedAndWrittenOnlyOnAGpuThatRunsFrameGeneration(string? model, bool offered)
+    {
+        var host = Host(new NvidiaGpuFacts(true, NvidiaGpuProbe.IsRtx50(model), model));
+
+        var plan = NvidiaLaunchSettings.Plan(Direct(), new NvidiaGameSettings { FrameGenerationPreset = 2 }, host, AllFiles);
+
+        Assert.Equal(offered, plan.FrameGenerationPresetOffered);
+        Assert.Equal(offered, plan.Environment.ContainsKey("DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE_RENDER_PRESET_SELECTION"));
+        Assert.Equal(offered, plan.Environment.ContainsKey("DXVK_NVAPI_DRS_SETTINGS"));
     }
 
     [Fact]
@@ -166,8 +236,8 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
             RayReconstructionRenderScale = 50, FrameGenerationMode = "Dynamic", DynamicMaxFrameCount = 3, DynamicTargetFrameRate = 138, NewestDlss = true
         }.Normalize(), AllFiles, true);
         Assert.DoesNotContain("DXVK_NVAPI_SET_NGX_DEBUG_OPTIONS", all.Keys);
-        Assert.DoesNotContain("DXVK_NVAPI_DRS_SETTINGS", all.Keys);
-        Assert.All(all.Keys, key => Assert.True(key.StartsWith("DXVK_NVAPI_DRS_NGX_", StringComparison.Ordinal) || key == "PROTON_ENABLE_NGX_UPDATER", key));
+        Assert.All(all.Keys, key => Assert.True(key.StartsWith("DXVK_NVAPI_DRS_NGX_", StringComparison.Ordinal)
+                                                || key is "PROTON_ENABLE_NGX_UPDATER" or "DXVK_NVAPI_DRS_SETTINGS", key));
     }
 
     // ---- the launch plan --------------------------------------------------------------------------------------------
@@ -203,8 +273,8 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
         Assert.Equal("1", plan.Environment["ENABLE_HDR_WSI"]);
         Assert.Equal("75", plan.Environment["DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_SCALING_RATIO"]);
         Assert.Equal("gamescope --hdr-enabled --", plan.CommandPrefix);
-        Assert.Equal("DXVK_NVAPI_DRS_NGX_DLSS_SR_MODE=6 DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_SCALING_RATIO=75 ENABLE_HDR_WSI=1 gamescope --hdr-enabled -- %command%",
-            plan.LaunchOptions);
+        Assert.Equal("DXVK_NVAPI_DRS_NGX_DLSS_SR_MODE=6 DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_SCALING_RATIO=75 DXVK_NVAPI_DRS_SETTINGS='0x10e41df5=75' "
+                     + "ENABLE_HDR_WSI=1 gamescope --hdr-enabled -- %command%", plan.LaunchOptions);
     }
 
     [Fact]
@@ -330,16 +400,32 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
     [InlineData("0x10de", "0x030000", true)]
     [InlineData("0x10de", "0x040300", false)] // the card's audio function only
     [InlineData("0x1002", "0x030000", false)] // AMD
-    public void GpuProbe_WithoutTheNvidiaDriver_FallsBackToAPciDisplayDevice_WithoutRtx50(string vendor, string pciClass, bool present)
+    public void GpuProbe_WithNvidiasDriverButNoModel_FallsBackToAPciDisplayDevice_WithoutRtx50(string vendor, string pciClass, bool present)
     {
         var device = Directory.CreateDirectory(Path.Combine(_root, "sys", "bus", "pci", "devices", "0000:65:00.0")).FullName;
         File.WriteAllText(Path.Combine(device, "vendor"), vendor + "\n");
         File.WriteAllText(Path.Combine(device, "class"), pciClass + "\n");
+        var driver = Directory.CreateDirectory(Path.Combine(_root, "proc", "driver", "nvidia")).FullName;
+        File.WriteAllText(Path.Combine(driver, "version"), "NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  610.57.04\n");
 
         var facts = NvidiaGpuProbe.Read(Path.Combine(_root, "proc"), Path.Combine(_root, "sys"));
 
         Assert.Equal(present, facts.Present);
         Assert.False(facts.Rtx50);
+    }
+
+    [Fact]
+    public void GpuProbe_WithoutTheNvidiaDriver_ANouveauOrNvkCardIsNone()
+    {
+        // An NVIDIA display device but no /proc/driver/nvidia (nouveau/NVK): no NGX/DLSS, so the settings stay hidden.
+        var device = Directory.CreateDirectory(Path.Combine(_root, "sys", "bus", "pci", "devices", "0000:01:00.0")).FullName;
+        File.WriteAllText(Path.Combine(device, "vendor"), "0x10de\n");
+        File.WriteAllText(Path.Combine(device, "class"), "0x030000\n");
+
+        var facts = NvidiaGpuProbe.Read(Path.Combine(_root, "proc"), Path.Combine(_root, "sys"));
+
+        Assert.False(facts.Present);
+        Assert.False(NvidiaLaunchSettings.Plan(Direct(), new NvidiaGameSettings { SuperResolutionPreset = 11 }, Host(facts), AllFiles).Shown);
     }
 
     // ---- stored with the per-game launch profile ----------------------------------------------------------------
@@ -429,9 +515,13 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
         Assert.Equal(["F - CNN", "J - TF1"], policy.DlssPresets!.SuperResolution.Select(e => e.Name));
         Assert.True(policy.DlssPresets.SuperResolution[1].Disabled);
         Assert.Equal(3, Assert.Single(policy.DlssPresets.FrameGeneration).Value);
-        DlssPresetCatalogue.Observe(policy);
-        Assert.DoesNotContain(DlssPresetCatalogue.Current.SuperResolution, p => p.Name == "J - TF1");
-        DlssPresetCatalogue.Observe(new UpstreamLibraryPolicySnapshot { DlssPresets = DlssPresetCatalogue.SyncedManifest }); // back to the usual lists
+        // A source of its own: the app's shared lists (read by view-model tests running in parallel) stay as they are.
+        var source = new DlssPresetSource();
+        var shared = DlssPresetCatalogue.Current;
+        source.Observe(policy);
+        Assert.Same(shared, DlssPresetCatalogue.Current);
+        Assert.DoesNotContain(source.Current.SuperResolution, p => p.Name == "J - TF1");
+        Assert.Contains(source.Current.SuperResolution, p => p.Name == "F - CNN");
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------------

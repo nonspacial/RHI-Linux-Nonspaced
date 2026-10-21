@@ -124,9 +124,11 @@ public static class HdrLaunchText
     private static string Settings(LinuxHdrLaunchPlan plan, string wrapperKey)
     {
         var parts = new List<string>();
+        // #211: "; " between variables once a value holds commas of its own (DXVK_NVAPI_DRS_SETTINGS).
+        var separator = plan.Environment.Values.Any(value => value.Contains(',', StringComparison.Ordinal)) ? "; " : ", ";
         if (plan.Environment.Count > 0)
             parts.Add(TF("Hdr.EnvironmentVariables",
-                string.Join(", ", plan.Environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={pair.Value}"))));
+                string.Join(separator, plan.Environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={pair.Value}"))));
         if (!string.IsNullOrWhiteSpace(plan.CommandPrefix)) parts.Add(TF(wrapperKey, plan.CommandPrefix.Trim()));
         return string.Join("; ", parts);
     }

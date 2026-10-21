@@ -224,7 +224,25 @@ public sealed partial class LinuxHdrLaunchProfileService
             plan = profile.Mode == LinuxHdrModes.NativeWayland
                 ? BuildNativeWayland(game, profile, host)
                 : BuildGamescope(game, profile, host);
-        return WithNvidia(plan, nvidia) with { Handoff = handoff };
+        plan = WithNvidia(plan, nvidia) with { Handoff = handoff };
+        return handoff == LaunchHandoff.None ? KeepingInheritedDrsSettings(plan) : plan;
+    }
+
+    /// <summary>
+    /// #211: a direct launch replaces the game's <see cref="NvidiaLaunchSettings.DrsSettings"/> with the plan's, so the
+    /// user's own value (in RHI's environment) is kept in front of RHI's entries. A store hand-off line is pasted over
+    /// the user's launch options anyway and stays RHI's alone.
+    /// </summary>
+    private LinuxHdrLaunchPlan KeepingInheritedDrsSettings(LinuxHdrLaunchPlan plan)
+    {
+        if (!plan.Environment.TryGetValue(NvidiaLaunchSettings.DrsSettings, out var ours)) return plan;
+        var inherited = _environment(NvidiaLaunchSettings.DrsSettings);
+        if (string.IsNullOrWhiteSpace(inherited)) return plan;
+        var env = new Dictionary<string, string>(plan.Environment, StringComparer.Ordinal)
+        {
+            [NvidiaLaunchSettings.DrsSettings] = NvidiaLaunchSettings.MergeDrsSettings(inherited, ours)
+        };
+        return plan with { Environment = env };
     }
 
     /// <summary>
