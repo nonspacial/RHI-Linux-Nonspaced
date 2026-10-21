@@ -102,6 +102,8 @@ public sealed partial class LinuxDlssDefaultsServiceTests
             LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, Rtx40)); // no nvngx_dlssd.dll: no RR row
         Assert.Equal(NvidiaPresetRowState.NotShown, LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, Rtx30).FrameGeneration); // FG preset: RTX 40+
         Assert.Equal(NvidiaPresetRows.None, LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, Rtx40 with { Gpu = NvidiaGpuFacts.None }));
+        // The game's files not known yet (its analysis still runs): the dialog offers no row, so nothing is copied.
+        Assert.Equal(NvidiaPresetRows.None, NvidiaLaunchSettings.Plan(game, null, Rtx40, families: null).PresetRows);
 
         var noFg = PresetGame("rows-no-fg", sr: "");
         Assert.Equal(NvidiaPresetRowState.NotShown, LinuxDlssDefaultsService.NvidiaPresetRowsFor(noFg, Detection(noFg), Rtx40).FrameGeneration);
