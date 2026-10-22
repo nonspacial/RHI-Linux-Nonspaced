@@ -101,11 +101,19 @@ public sealed partial class LinuxManagedComponentService
         // outside RHI") and fail that game on every Update All, so it is "could not check" instead (review finding 1).
         // Hashed only here, when a move is planned, never on every check — and not while the NR Cost Scaler wraps the
         // runtime: the move is then held, never attempted, and the check says so (HeldByLayer).
+        // w11 integration (the toolkit rule since w10 D15): on a game held after a failed undo the file may be RHI's own
+        // half-undone copy, never "changed outside RHI": the move goes ahead and its swap answers with the hold's restart text.
+        // (Asking settles the hold first; an undo that now finishes puts RHI's file back, so the file is checked again.)
         if (NrCostScalerService.OwnerChangeRefusal(_records, game, owner) is null
+            && !await OwnerFileMatchesRecordAsync(game, record, cancellationToken).ConfigureAwait(false)
+            && await DeploymentScope.HoldRefusalAsync(OwnerJournal(owner), game, owner).ConfigureAwait(false) is null
             && !await OwnerFileMatchesRecordAsync(game, record, cancellationToken).ConfigureAwait(false))
             return new(NrMoveKind.ChangedOutsideRhi, installed.Version, latest);
         return new(NrMoveKind.Move, installed.Version, latest);
     }
+
+    private DeploymentJournal? OwnerJournal(ManagedComponentKind owner)
+        => owner == ManagedComponentKind.ShortFuse ? _shortFuse?.Journal : _dlss5Feeder?.Journal;
 
     // The owner's NR content (behind the NR Cost Scaler: nvngx_dlssnr_real.dll) still has the record's SHA-256. A record
     // without a hash cannot show it is unchanged: not moved (safe side; RHI writes a hash for every file it places).

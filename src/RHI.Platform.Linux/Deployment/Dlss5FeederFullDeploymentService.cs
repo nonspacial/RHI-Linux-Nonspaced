@@ -173,6 +173,9 @@ public sealed class Dlss5FeederFullDeploymentService
     /// <summary>w11/nr-gpu: the DLSS service this stack stages from (the NR seam points its card at the host's).</summary>
     internal DlssManagerService Dlss => _dlss;
 
+    /// <summary>w11 integration: the journal its swaps run on (Update All's NR move asks it for a hold first).</summary>
+    internal DeploymentJournal? Journal => _journal;
+
     /// <summary>Swaps the Feeder-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
     public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
         => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken, _journal);

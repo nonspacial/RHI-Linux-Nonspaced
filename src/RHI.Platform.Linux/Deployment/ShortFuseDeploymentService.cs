@@ -55,6 +55,9 @@ public sealed class ShortFuseDeploymentService
 
     /// <summary>w11/nr-gpu: the DLSS service this stack stages from (the NR seam points its card at the host's).</summary>
     internal DlssManagerService Dlss => _dlss;
+
+    /// <summary>w11 integration: the journal its swaps run on (Update All's NR move asks it for a hold first).</summary>
+    internal DeploymentJournal? Journal => _journal;
     private readonly string _cacheRoot;
     private readonly DeploymentJournal? _journal;
 

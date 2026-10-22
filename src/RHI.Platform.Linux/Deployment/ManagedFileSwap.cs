@@ -38,6 +38,11 @@ public static class ManagedFileSwap
         DetectedGame? game = null)
     {
         var updated = LinuxDeploymentRecordStore.Clone(record);
+        // w11 integration (the toolkit rule since w10 D15): a game held after a failed undo gets the hold's restart text
+        // before the hash check below, which would take RHI's own half-undone file for a change made outside RHI.
+        if (journal is not null && game is not null
+            && await DeploymentScope.HoldRefusalAsync(journal, game, record.Component).ConfigureAwait(false) is { } held)
+            throw new IOException(held);
 
         // Verify everything before touching anything.
         var plan = new List<(LinuxDeployedFile File, string Source, string NewHash, string? OldHash)>();

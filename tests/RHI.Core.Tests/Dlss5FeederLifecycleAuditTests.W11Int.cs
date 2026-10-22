@@ -103,4 +103,73 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         Assert.Equal(proxyBefore, File.ReadAllBytes(proxy));
         Assert.Equal("MZ xess 20261004", File.ReadAllText(xess));
     }
+
+    // Integration item 5 (the toolkit rule since w10 D15, on nr-gpu's new Update All path): a game held because the undo
+    // of its own earlier Feeder change could not finish (RHI's half-undone NR DLL sits in a game folder that turned
+    // read-only). Update All's move and a swap by hand both get the hold's restart text — not "changed outside RHI"
+    // (could not check) or "modified outside RHI", which took RHI's own half-undone file for the user's change.
+    [PermissionDenialTheory]
+    [InlineData("en-US", true)]
+    [InlineData("pt-BR", true)]
+    [InlineData("en-US", false)]
+    [InlineData("pt-BR", false)]
+    public async Task W11Int_NrMove_OnAGameHeldByItsOwnFeederUndo_GetsTheRestartText(string language, bool viaUpdateAll)
+    {
+        using var f = await LegacyLatestOn50xxAsync(journaled: true);
+        var managed = Managed(f, RtxGeneration.Rtx40, out _, out _);
+        var halfUndone = Dll(Old50);
+        var (opened, refusal) = await DeploymentScope.BeginAsync(f.Journal!, "earlier Feeder change", f.Game, ManagedComponentKind.Dlss5Feeder,
+            CancellationToken.None);
+        Assert.Null(refusal);
+        await using (var scope = opened!)
+        {
+            await scope.PlaceBytesAsync(NrPath(f), halfUndone);
+            f.Records.SaveFaultForTesting = () =>
+            {
+                PermissionDenial.MakeReadOnly(f.Bin);
+                return new IOException("Simulated write failure: deployments.json");
+            };
+            try
+            {
+                Assert.NotNull(Record.Exception(() => f.Records.Upsert(scope.Stamp(f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)!))));
+            }
+            finally
+            {
+                f.Records.SaveFaultForTesting = null;
+            }
+            Assert.False((await scope.RollbackAsync()).Success); // held: RHI's NR DLL cannot be put back
+        }
+        try
+        {
+            var recordBefore = JsonSerializer.Serialize(f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder));
+            string message;
+            if (viaUpdateAll)
+            {
+                var all = await new LinuxUpdateAllService(f.Records, managed, new NeverRunning()).RunAsync([f.Game], _ => [], LinuxUpdateRunMode.Manual);
+                var item = Assert.Single(all.Items, i => i.Component == ManagedComponentKind.Dlss5Feeder);
+                Assert.False(item.Success);
+                Assert.False(item.Unchecked);
+                message = item.Message;
+            }
+            else
+            {
+                var swap = await f.Service.SwapNeuralRenderingDllAsync(f.Game, ForAll);
+                Assert.False(swap.Success);
+                message = swap.Message;
+            }
+
+            Assert.Contains(DeploymentJournal.EarlierUndoFailedMessage, message, StringComparison.Ordinal);
+            Assert.DoesNotContain(LinuxManagedComponentService.NrChangedOutsideMessage, message, StringComparison.Ordinal);
+            Assert.DoesNotContain("modified outside RHI", message, StringComparison.Ordinal);
+            var line = UiLocalizationService.PresentFor(language, message);
+            Assert.Contains(language == "pt-BR" ? "Reinicie o RHI para concluir" : "Restart RHI to finish it", line, StringComparison.Ordinal);
+            Assert.DoesNotContain(UiLocalizationService.UnlocalizedFallbackFor(language), line, StringComparison.Ordinal);
+            Assert.Equal(halfUndone, File.ReadAllBytes(NrPath(f)));
+            Assert.Equal(recordBefore, JsonSerializer.Serialize(f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)));
+        }
+        finally
+        {
+            PermissionDenial.MakeWritable(f.Bin);
+        }
+    }
 }
