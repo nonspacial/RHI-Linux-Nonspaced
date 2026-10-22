@@ -294,25 +294,21 @@ public sealed partial class MainWindow
     private async Task HandleWatchedCandidateAsync(LinuxWatchedFileCandidate candidate)
     {
         if (DataContext is not MainWindowViewModel vm || !vm.AddonWatcherEnabled || !_addonWatcher.IsRunning) return;
-        if (candidate.Kind == LinuxWatchedFileKind.Addon)
+        switch (DroppedRenoDxPresenter.RouteFor(candidate))
         {
-            if (LinuxDroppedFileClassifier.IsLikelyLumaAddon(candidate.Path))
+            case WatchedFileRoute.LumaAddonPrompt:
                 await PromptInstallLumaAddonAsync(candidate.Path, T("Win.LumaAddDetectedByWatcher"));
-            else if (DroppedRenoDxPresenter.Handles(candidate.Path, watched: true)) // w7/smalls (#195)
+                break;
+            case WatchedFileRoute.DropDialog: // w7/smalls (#195)
                 await PromptInstallDroppedRenoDxAsync(candidate.Path, _addonWatcher.CurrentPath);
-            else
+                break;
+            case WatchedFileRoute.CustomAddonsImport:
                 await PromptImportCustomAddonAsync(candidate.Path, T("Win.AddDetectedByWatcher"));
-            return;
+                break;
+            case WatchedFileRoute.ArchiveOffer: // #216
+                await PromptInstallDroppedArchiveAsync(candidate.Path, _addonWatcher.CurrentPath);
+                break;
         }
-
-        if (candidate.Kind == LinuxWatchedFileKind.Archive && LinuxDroppedFileClassifier.IsLikelyLumaPackage(candidate.Path))
-        {
-            await PromptInstallLumaAddonAsync(candidate.Path, T("Win.LumaPackageDetectedByWatcher"));
-            return;
-        }
-
-        // #216: a .zip/.7z/.rar named for RenoDX or Luma (the watcher raises no other archive): the add-on inside is offered.
-        await PromptInstallDroppedArchiveAsync(candidate.Path, _addonWatcher.CurrentPath);
     }
 
     private async Task PromptInstallLumaAddonAsync(string path, string title)

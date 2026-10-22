@@ -77,6 +77,29 @@ public sealed class DroppedArchiveExtractorTests : IDisposable
         throw new InvalidOperationException("no central directory entry " + name);
     }
 
+    /// <summary>
+    /// A gzip stream of <paramref name="realBytes"/> zeros named <paramref name="member"/>, its trailer patched to say
+    /// <paramref name="listedBytes"/>: 7-Zip opens it under any name, lists the trailer's size and writes every byte (a
+    /// listing that lies, a few KiB on disk).
+    /// </summary>
+    internal static string LyingGzip(string path, string member, int realBytes, uint listedBytes)
+    {
+        using (var file = File.Create(path))
+        {
+            // gzip header with FNAME, then a raw deflate stream, then CRC-32 and ISIZE.
+            file.Write([0x1f, 0x8b, 8, 0x08, 0, 0, 0, 0, 0, 0xff]);
+            file.Write(Encoding.Latin1.GetBytes(member + "\0"));
+            var zeros = new byte[realBytes];
+            using (var deflate = new System.IO.Compression.DeflateStream(file, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+                deflate.Write(zeros);
+            var trailer = new byte[8];
+            // CRC-32 left 0: 7-Zip writes everything before it checks the trailer (and fails on it).
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(trailer.AsSpan(4), listedBytes);
+            file.Write(trailer);
+        }
+        return path;
+    }
+
     internal static string? SevenZip() => RHI.Platform.Linux.Deployment.ExternalProcess.FindOnPath("7zz", "7z", "7za");
     internal static string? BsdTar() => RHI.Platform.Linux.Deployment.ExternalProcess.FindOnPath("bsdtar");
 
@@ -184,9 +207,8 @@ public sealed class DroppedArchiveExtractorTests : IDisposable
         {
             using var archive = (await DroppedArchiveExtractor.InspectAsync(archivePath, Scratch)).Archive!;
             Assert.False(archive.IsZip);
-            Assert.Equal(["renodx-foogame.addon64"], archive.Addons.Select(a => a.FileName));
-            Assert.Equal(["Luma-Foo.addon64"], archive.LumaOutsideZip.Select(a => a.FileName)); // the Luma package install takes a .zip
-            var extracted = await archive.ExtractAsync(archive.Addons[0], CancellationToken.None);
+            Assert.Equal(["Luma-Foo.addon64", "renodx-foogame.addon64"], archive.Addons.Select(a => a.FileName).Order(StringComparer.Ordinal)); // decision 2: Luma in a .7z too
+            var extracted = await archive.ExtractAsync(archive.Addons.Single(a => a.Kind == DroppedArchiveAddonKind.RenoDx), CancellationToken.None);
             Assert.Equal(addon, File.ReadAllBytes(extracted));
         }
         finally
@@ -449,7 +471,7 @@ public sealed class DroppedArchiveExtractorTests : IDisposable
 
     [Theory]
     [InlineData("true")]                                                                                       // nothing came out
-    [InlineData("head -c 2048 /dev/zero > \"$OUT/renodx-foogame.addon64\"; head -c 2048 /dev/zero > \"$OUT/other.addon64\"")] // two files
+    [InlineData("head -c 1024 /dev/zero > \"$OUT/renodx-foogame.addon64\"; head -c 1024 /dev/zero > \"$OUT/other.addon64\"")] // two files (within the listed size together)
     [InlineData("mkfifo \"$OUT/renodx-foogame.addon64\"")]                                                     // not a plain file
     public async Task AToolThatGivesBackNoneTwoOrNoPlainFile_IsRefused(string extract)
     {

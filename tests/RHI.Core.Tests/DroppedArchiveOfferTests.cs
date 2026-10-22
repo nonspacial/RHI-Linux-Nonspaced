@@ -226,28 +226,95 @@ public sealed class DroppedArchiveOfferTests(ITestOutputHelper output) : IDispos
     }
 
     [Theory]
-    [InlineData("en-US")]
-    [InlineData("pt-BR")]
-    public async Task ALumaAddonInA7z_IsRefusedPlainly_NothingIsLeft(string language)
+    [InlineData(ExternalArchiveToolKind.SevenZip)]
+    [InlineData(ExternalArchiveToolKind.BsdTar)]
+    public async Task ALumaAddonInA7z_IsTakenOutWhole_ZippedAgainInRhisFolder_AndGivenToTheLumaInstall(ExternalArchiveToolKind kind)
     {
-        if (SevenZip() is not { } sevenZip) { output.WriteLine("SKIP: no 7z on PATH"); return; }
-        var (fx, game) = await StartAsync(language);
+        if (SevenZip() is not { } sevenZip || BsdTar() is not { } bsdtar) { output.WriteLine("SKIP: needs 7z and bsdtar on PATH"); return; }
+        var (fx, game) = await StartAsync();
         using var _ = fx;
-        var archivePath = SevenZipArchive(sevenZip, Path.Combine(Folder(fx, "Downloads"), "luma-foo.7z"), ("Luma-Foo.addon64", AddonBytes()));
+        var watch = Folder(fx, "watch");
+        var files = new (string Name, byte[] Data)[]
+        {
+            ("Luma/Luma-Foo.addon64", AddonBytes()), ("Luma/shaders/a.hlsl", "shader a"u8.ToArray()), ("Luma/readme.txt", "r"u8.ToArray()),
+        };
+        var archivePath = SevenZipArchive(sevenZip, Path.Combine(watch, "luma-foo.7z"), files);
+        var userBytes = File.ReadAllBytes(archivePath);
+        (string Path, UnixFileMode FolderMode, UnixFileMode FileMode, Dictionary<string, byte[]> Entries, int Planned)? called = null;
+        fx.Managed.ArchiveLumaInstallForTesting = async (target, path, ct) =>
+        {
+            Assert.Same(game, target);
+            using (var zip = System.IO.Compression.ZipFile.OpenRead(path))
+                called = (path, File.GetUnixFileMode(Path.GetDirectoryName(path)!), File.GetUnixFileMode(path),
+                    zip.Entries.ToDictionary(e => e.FullName, e => { using var r = e.Open(); using var m = new MemoryStream(); r.CopyTo(m); return m.ToArray(); }), 0);
+            // The Luma install's own reader takes it: every file planned, the add-on beside ReShade.
+            var staging = Directory.CreateDirectory(Path.Combine(fx.Root, "luma-staging")).FullName;
+            var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(path, game.BinaryDirectory!, staging, ct);
+            called = called!.Value with { Planned = plan.Count };
+            return ComponentOperationResult.Ok("Luma Framework installed.");
+        };
+        ExternalArchiveRunner.FindToolForTesting.Value = () => new ExternalArchiveTool(kind == ExternalArchiveToolKind.SevenZip ? sevenZip : bsdtar, kind);
+        bool installed;
+        try
+        {
+            var offer = (await fx.Vm.DroppedRenoDx.OfferForArchiveAsync(fx.Vm, archivePath, watch)).Offer!.AddOns.Single();
+            Assert.True(offer.IsLuma);
+            Assert.Equal("Install the Luma package luma-foo.7z (it holds Luma-Foo.addon64) into this game:", offer.Intro);
+            installed = await fx.Vm.DroppedRenoDx.InstallAsync(fx.Vm, offer, game);
+        }
+        finally
+        {
+            ExternalArchiveRunner.FindToolForTesting.Value = null;
+        }
 
-        var found = await fx.Vm.DroppedRenoDx.OfferForArchiveAsync(fx.Vm, archivePath);
-
-        Assert.Null(found.Offer);
-        Assert.Equal(language == "pt-BR"
-            ? "luma-foo.7z contém um add-on do Luma, mas o RHI instala pacotes Luma somente de arquivos .zip; nada foi instalado."
-            : "luma-foo.7z holds a Luma add-on, but RHI installs Luma packages from .zip files only; nothing was installed.", found.Line);
+        Assert.True(installed, fx.Vm.StatusText);
+        var (package, folderMode, fileMode, entries, planned) = called!.Value;
+        Assert.Equal("luma-foo.zip", Path.GetFileName(package));
+        Assert.StartsWith(Scratch(fx) + Path.DirectorySeparatorChar, package, StringComparison.Ordinal); // RHI's private folder, never beside the user's file
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, folderMode);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, fileMode);
+        Assert.Equal(files.Select(f => f.Name).Order(StringComparer.Ordinal), entries.Keys.Order(StringComparer.Ordinal)); // every file
+        foreach (var (name, data) in files) Assert.Equal(data, entries[name]);
+        Assert.Equal(files.Length, planned);
+        Assert.False(File.Exists(archivePath)); // watched, unchanged, installed: removed (decision 3)
         Assert.True(ScratchIsEmpty(fx));
+        Assert.NotEmpty(userBytes);
+    }
+
+    [Fact]
+    public async Task ALumaPackageThatUnpacksToMoreThanItLists_IsStoppedAtTheListedSize_AndNeverReachesTheLumaInstall()
+    {
+        if (SevenZip() is null) { output.WriteLine("SKIP: no 7z on PATH"); return; }
+        var (fx, game) = await StartAsync();
+        using var _ = fx;
+        // A gzip stream behind a .7z name: 7-Zip lists the size its trailer gives (1 KiB) and writes all 8 MiB.
+        var archivePath = LyingGzip(Path.Combine(Folder(fx, "Downloads"), "luma-foo.7z"), "Luma-Foo.addon64", 8 << 20, 1024);
+        var called = false;
+        fx.Managed.ArchiveLumaInstallForTesting = (_, _, _) => { called = true; return Task.FromResult(ComponentOperationResult.Ok("x")); };
+        using var archive = (await fx.Managed.InspectDroppedArchiveAsync(archivePath)).Archive!;
+        Assert.Equal(1024, archive.Addons.Single().Size);
+        long largest = 0;
+        using var watch = new CancellationTokenSource();
+        var sampler = Task.Run(async () =>
+        {
+            while (!watch.IsCancellationRequested)
+            {
+                foreach (var file in Directory.EnumerateFiles(archive.Folder, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith(".7z", StringComparison.Ordinal)))
+                    try { largest = Math.Max(largest, new FileInfo(file).Length); } catch (IOException) { }
+                await Task.Delay(1);
+            }
+        });
+
+        var result = await fx.Managed.InstallArchivedAddonAsync(game, archive, archive.Addons.Single());
+        watch.Cancel();
+        await sampler;
+
+        Assert.False(result.Success);
+        Assert.Equal(LinuxManagedComponentService.ArchiveExtractFailedPrefix + DroppedArchiveExtractor.PackageMismatchRefusal + "luma-foo.7z", result.Message);
+        Assert.False(called);
+        Assert.InRange(largest, 0, 1024 + 512); // the kernel's file-size bound: never past the listed size (plus a block)
+        Assert.Equal(["archive"], Directory.EnumerateFileSystemEntries(archive.Folder).Select(Path.GetFileName));
         Assert.True(File.Exists(archivePath));
-        // The service refuses it too, before anything is read.
-        var inspection = await fx.Managed.InspectDroppedArchiveAsync(archivePath);
-        using var archive = inspection.Archive!;
-        var refused = await fx.Managed.InstallArchivedAddonAsync(game, archive, archive.LumaOutsideZip[0]);
-        Assert.Equal(LinuxManagedComponentService.ArchiveLumaNeedsZipPrefix + "luma-foo.7z", refused.Message);
     }
 
     [Theory]
@@ -434,7 +501,9 @@ public sealed class DroppedArchiveOfferTests(ITestOutputHelper output) : IDispos
         { DroppedArchiveExtractor.SizeMismatchRefusal + "x", "different size" },
         { DroppedArchiveExtractor.NotExtractedRefusal + "x", "did not give back" },
         { LinuxManagedComponentService.ArchiveExtractFailedPrefix + DroppedArchiveExtractor.SizeMismatchRefusal + "x", "taken out of the archive" },
-        { LinuxManagedComponentService.ArchiveLumaNeedsZipPrefix + "x.7z", "from a .zip file only" },
+        { DroppedArchiveExtractor.ChangedWhileReadRefusal + "x.zip", "changed while RHI read it" },
+        { DroppedArchiveExtractor.PackageMismatchRefusal + "x.7z", "unpack differently" },
+        { ReShadeArchiveExtractor.ArchiveRefusedPrefix + ExternalArchiveRunner.OutputLimitRefusal + "1024", "the archive tool was stopped" },
     };
 
     // The English marker list does not know every word: the fixed English text itself must be gone from the PT-BR

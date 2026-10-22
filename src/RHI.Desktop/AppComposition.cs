@@ -340,6 +340,8 @@ internal sealed class AppComposition
         // w8/commit-point rows
         // w10/dlss-presets rows
         // w10/archives rows
+        // #216: archive folders a closed (crashed or killed) RHI left in the cache go at start (another running RHI's stay).
+        DroppedArchiveExtractor.SweepLeftovers(managedComponents.DroppedArchiveRoot);
         // w10/journal-holds rows
         return new AppComposition
         {

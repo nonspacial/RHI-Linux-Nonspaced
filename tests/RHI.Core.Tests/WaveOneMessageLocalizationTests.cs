@@ -569,7 +569,9 @@ public sealed class WaveOneMessageLocalizationTests
                  })
             yield return reason + "renodx-exemplo.addon64";
         yield return LinuxManagedComponentService.ArchiveExtractFailedPrefix + DroppedArchiveExtractor.SizeMismatchRefusal + "renodx-exemplo.addon64";
-        yield return LinuxManagedComponentService.ArchiveLumaNeedsZipPrefix + "luma-exemplo.7z";
+        yield return DroppedArchiveExtractor.ChangedWhileReadRefusal + "renodx-exemplo.zip";
+        yield return LinuxManagedComponentService.ArchiveExtractFailedPrefix + DroppedArchiveExtractor.PackageMismatchRefusal + "luma-exemplo.7z";
+        yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + ExternalArchiveRunner.OutputLimitRefusal + "1048576";
         // w10/journal-holds rows
     }
 

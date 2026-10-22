@@ -1604,7 +1604,9 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.SizeMismatchRefusal, "um add-on interno tem tamanho diferente do que o arquivo compactado lista: "),
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.NotExtractedRefusal, "a ferramenta de arquivos não devolveu o add-on: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ArchiveExtractFailedPrefix, "Não foi possível tirar o add-on do arquivo compactado, então nada foi instalado: "),
-        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ArchiveLumaNeedsZipPrefix, "O RHI instala um pacote Luma somente de um arquivo .zip, então nada foi instalado: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.ChangedWhileReadRefusal, "ele mudou enquanto o RHI o lia (ainda está sendo salvo?): "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.PackageMismatchRefusal, "os arquivos internos saem diferentes do que o arquivo compactado lista: "),
+        (RHI.Platform.Linux.Deployment.ExternalArchiveRunner.OutputLimitRefusal, "ele se expande para mais do que lista, então a ferramenta de arquivos foi parada; limite em bytes: "),
         // w10/journal-holds rows
     ];
 

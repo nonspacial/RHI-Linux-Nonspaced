@@ -37,7 +37,7 @@ public sealed record DroppedArchiveInspection(DroppedArchive? Archive, string? R
 public sealed class DroppedArchive : IDisposable
 {
     internal DroppedArchive(string sourcePath, string folder, string snapshotPath, string sha256, bool isZip, ExternalArchiveTool? tool,
-        IReadOnlyList<DroppedArchiveAddon> addons, IReadOnlyList<DroppedArchiveAddon> lumaOutsideZip)
+        IReadOnlyList<DroppedArchiveAddon> addons, IReadOnlyList<(string Path, long Size)> files)
     {
         SourcePath = sourcePath;
         Folder = folder;
@@ -46,7 +46,7 @@ public sealed class DroppedArchive : IDisposable
         IsZip = isZip;
         Tool = tool;
         Addons = addons;
-        LumaOutsideZip = lumaOutsideZip;
+        Files = files;
     }
 
     /// <summary>The user's archive (never changed by RHI; a watched one may be removed after a successful install).</summary>
@@ -62,8 +62,8 @@ public sealed class DroppedArchive : IDisposable
     internal ExternalArchiveTool? Tool { get; }
     /// <summary>The add-ons RHI offers, in archive order (one Luma entry at most).</summary>
     public IReadOnlyList<DroppedArchiveAddon> Addons { get; }
-    /// <summary>Luma add-ons inside a <c>.7z</c>/<c>.rar</c>: not offered (the Luma package install takes <c>.zip</c> files).</summary>
-    public IReadOnlyList<DroppedArchiveAddon> LumaOutsideZip { get; }
+    /// <summary>Every plain file the listing gives (normalised path, listed size), in archive order.</summary>
+    internal IReadOnlyList<(string Path, long Size)> Files { get; }
 
     /// <summary>
     /// Takes <paramref name="addon"/> out of RHI's copy into a fresh folder of its own (inside <see cref="Folder"/>) and
@@ -72,6 +72,15 @@ public sealed class DroppedArchive : IDisposable
     /// </summary>
     public Task<string> ExtractAsync(DroppedArchiveAddon addon, CancellationToken cancellationToken)
         => DroppedArchiveExtractor.ExtractAsync(this, addon, cancellationToken);
+
+    /// <summary>
+    /// The whole archive as a <c>.zip</c> the Luma package install reads: RHI's copy itself for a <c>.zip</c>; for a
+    /// <c>.7z</c>/<c>.rar</c>, every file taken out of RHI's copy (bounded by the sizes the listing gives, each checked)
+    /// and zipped again inside a fresh folder of its own in <see cref="Folder"/>, named after the archive. Throws as
+    /// <see cref="ExtractAsync"/>; nothing of it is left when it throws.
+    /// </summary>
+    public Task<string> PackageAsZipAsync(CancellationToken cancellationToken)
+        => IsZip ? Task.FromResult(SnapshotPath) : DroppedArchiveExtractor.RezipAsync(this, cancellationToken);
 
     /// <summary>Whether the user's file still holds the bytes RHI read (false when it is gone or unreadable).</summary>
     public async Task<bool> SourceStillMatchesAsync()
@@ -130,17 +139,27 @@ public static class DroppedArchiveExtractor
     public const string RatioRefusal = "it unpacks to more than 100 times its own size: ";
     public const string SizeMismatchRefusal = "an add-on inside holds a different size than the archive lists: ";
     public const string NotExtractedRefusal = "the archive tool did not give back the add-on: ";
+    /// <summary>The user's file changed while RHI copied it (a download still being written); the archive follows.</summary>
+    public const string ChangedWhileReadRefusal = "it changed while RHI read it (is it still being saved?): ";
+    /// <summary>What the tool gave back for a whole package is not what the archive lists; the archive follows.</summary>
+    public const string PackageMismatchRefusal = "its files unpack differently from what the archive lists: ";
 
     private const UnixFileMode PrivateFolderMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
     private const UnixFileMode PrivateFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
+    /// <summary>Where dropped and watched archives get their private folders: RHI's cache.</summary>
+    public static string DefaultRoot => Path.Combine(RHI.Platform.Linux.Paths.LinuxPaths.CacheHome, "rhi-linux", "dropped-archives");
+
     /// <summary>Test seam: runs once the add-on's own folder exists, right before the tool or the zip reader fills it.</summary>
     internal static readonly AsyncLocal<Action?> BeforeExtractForTesting = new();
+
+    /// <summary>Test seam: runs right after the user's file was copied, before RHI checks it did not change meanwhile.</summary>
+    internal static readonly AsyncLocal<Action?> AfterCopyForTesting = new();
 
     /// <summary>
     /// Copies, lists and checks <paramref name="archivePath"/> in a new private folder under <paramref name="scratchRoot"/>.
     /// Returns the archive (the caller disposes it) or a refusal (the folder is already gone). Cancellation throws, after
-    /// the folder is removed.
+    /// the folder is removed. Folders a crashed RHI left there go first (<see cref="SweepLeftovers"/>).
     /// </summary>
     public static async Task<DroppedArchiveInspection> InspectAsync(string archivePath, string scratchRoot, CancellationToken cancellationToken = default)
     {
@@ -148,7 +167,10 @@ public static class DroppedArchiveExtractor
         // A FIFO or a device would block or never end the copy; a link to a plain file is the user's own choice.
         if (FileKind.IsRegularFile(archivePath) != true) return Refused(NotAFileRefusal + name);
         // Before any copy; the copy is capped too (a file still growing).
-        if (new FileInfo(archivePath).Length > MaxArchiveBytes) return Refused(ArchiveTooLargeRefusal + name);
+        var before = new FileInfo(archivePath);
+        if (before.Length > MaxArchiveBytes) return Refused(ArchiveTooLargeRefusal + name);
+        var changedBefore = FileChangeTime.TryGetUtc(archivePath, followLinks: true);
+        SweepLeftovers(scratchRoot);
         var folder = CreatePrivateFolder(scratchRoot);
         try
         {
@@ -164,6 +186,12 @@ public static class DroppedArchiveExtractor
             {
                 return Fail(folder, ArchiveTooLargeRefusal + name);
             }
+            AfterCopyForTesting.Value?.Invoke();
+            // A download still being written: what RHI read is not the file the user will have. Offered later, when the
+            // watcher sees it settle (or the user drops it again).
+            if (staged.Length != before.Length || new FileInfo(archivePath).Length != before.Length
+                || FileChangeTime.TryGetUtc(archivePath, followLinks: true) != changedBefore)
+                return Fail(folder, ChangedWhileReadRefusal + name);
             AtomicFile.MoveIntoPlace(staged.Path, snapshot);
 
             var isZip = Path.GetExtension(name).Equals(".zip", StringComparison.OrdinalIgnoreCase);
@@ -178,17 +206,16 @@ public static class DroppedArchiveExtractor
 
             if (Check(members, staged.Length, name, out var files) is { } refusal) return Fail(folder, refusal);
             var addons = new List<DroppedArchiveAddon>();
-            var lumaOutsideZip = new List<DroppedArchiveAddon>();
             foreach (var (member, path) in files)
             {
                 var leaf = path[(path.LastIndexOf('/') + 1)..];
                 if (LinuxDroppedFileClassifier.ArchiveAddonKind(leaf) is not { } kind) continue;
                 var addon = new DroppedArchiveAddon(member.Name, leaf, member.Size ?? 0, kind);
                 if (kind != DroppedArchiveAddonKind.Luma) addons.Add(addon);
-                else if (!isZip) lumaOutsideZip.Add(addon);
                 else if (!addons.Any(other => other.Kind == DroppedArchiveAddonKind.Luma)) addons.Add(addon); // the whole archive installs once
             }
-            return new DroppedArchiveInspection(new DroppedArchive(archivePath, folder, snapshot, staged.Sha256, isZip, tool, addons, lumaOutsideZip), null);
+            return new DroppedArchiveInspection(new DroppedArchive(archivePath, folder, snapshot, staged.Sha256, isZip, tool, addons,
+                files.Select(file => (file.Path, file.Member.Size ?? 0)).ToArray()), null);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or TimeoutException or IOException or UnauthorizedAccessException)
         {
@@ -439,8 +466,17 @@ public static class DroppedArchiveExtractor
             }
             else
             {
-                await ExternalArchiveRunner.ExtractAsync(archive.SnapshotPath, raw, cancellationToken, members: [addon.Member],
-                    tool: archive.Tool, literalMembers: true).ConfigureAwait(false);
+                // The listed size bounds what the tool may write: a header that lies (a gzip stream behind a .7z name lists
+                // its own trailer's size) is stopped there, not after it filled the disk.
+                try
+                {
+                    await ExternalArchiveRunner.ExtractAsync(archive.SnapshotPath, raw, cancellationToken, members: [addon.Member],
+                        tool: archive.Tool, literalMembers: true, limit: new ExtractionLimit(addon.Size, addon.Size)).ConfigureAwait(false);
+                }
+                catch (InvalidDataException ex) when (ExternalArchiveRunner.IsOverLimit(ex))
+                {
+                    throw new InvalidDataException(SizeMismatchRefusal + addon.FileName, ex);
+                }
             }
             // 7-Zip extracts flat (a backslash name stays one file name), bsdtar keeps the path: either way one file.
             var produced = SafeFileEnumeration.Files(raw).ToList();
@@ -458,11 +494,145 @@ public static class DroppedArchiveExtractor
         }
     }
 
-    /// <summary>A new mode-0700 folder under <paramref name="root"/> (itself created 0700 when missing).</summary>
+    /// <summary>
+    /// <see cref="DroppedArchive.PackageAsZipAsync"/> for a <c>.7z</c>/<c>.rar</c>: the whole archive is taken out of RHI's
+    /// copy into <c>&lt;folder&gt;/package-&lt;n&gt;/raw</c>, the tool bounded by the sizes the listing gives (all files
+    /// together, and the largest one); what came out must be exactly the listed files, each a plain file of its listed size
+    /// (7-Zip writes a backslash name as one file name, read back as folders as the listing was); then zipped again as
+    /// <c>&lt;folder&gt;/package-&lt;n&gt;/&lt;archive name&gt;.zip</c> and the extracted files removed.
+    /// </summary>
+    internal static async Task<string> RezipAsync(DroppedArchive archive, CancellationToken cancellationToken)
+    {
+        var folder = Directory.CreateDirectory(Path.Combine(archive.Folder, "package-" + Guid.NewGuid().ToString("N")), PrivateFolderMode).FullName;
+        try
+        {
+            var raw = Directory.CreateDirectory(Path.Combine(folder, "raw"), PrivateFolderMode).FullName;
+            BeforeExtractForTesting.Value?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            var listed = archive.Files.ToDictionary(file => file.Path, file => file.Size, StringComparer.Ordinal);
+            var limit = new ExtractionLimit(archive.Files.Sum(file => file.Size), archive.Files.Select(file => file.Size).DefaultIfEmpty(0).Max());
+            try
+            {
+                await ExternalArchiveRunner.ExtractAsync(archive.SnapshotPath, raw, cancellationToken, tool: archive.Tool, limit: limit).ConfigureAwait(false);
+            }
+            catch (InvalidDataException ex) when (ExternalArchiveRunner.IsOverLimit(ex))
+            {
+                throw new InvalidDataException(PackageMismatchRefusal + archive.ArchiveName, ex);
+            }
+
+            var produced = new Dictionary<string, string>(StringComparer.Ordinal); // normalised path → file on disk
+            foreach (var entry in new DirectoryInfo(raw).EnumerateFileSystemInfos("*", new EnumerationOptions
+                     { AttributesToSkip = 0, RecurseSubdirectories = true, IgnoreInaccessible = false }))
+            {
+                if (entry is DirectoryInfo && entry.LinkTarget is null) continue;
+                var relative = Path.GetRelativePath(raw, entry.FullName);
+                if (entry.LinkTarget is not null || FileKind.IsRegularFile(entry.FullName) != true
+                    || Normalize(relative) is not { Path: { Length: > 0 } path } || !produced.TryAdd(path, entry.FullName)
+                    || !listed.TryGetValue(path, out var size) || new FileInfo(entry.FullName).Length != size)
+                    throw new InvalidDataException(PackageMismatchRefusal + archive.ArchiveName);
+            }
+            if (produced.Count != listed.Count) throw new InvalidDataException(PackageMismatchRefusal + archive.ArchiveName);
+
+            var zipPath = Path.Combine(folder, Path.GetFileNameWithoutExtension(archive.ArchiveName) + ".zip");
+            var output = new FileStream(zipPath, new FileStreamOptions
+                { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None, UnixCreateMode = PrivateFileMode, Options = FileOptions.Asynchronous });
+            await using (output.ConfigureAwait(false))
+            using (var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var (path, _) in archive.Files) // archive order
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var entry = zip.CreateEntry(path, CompressionLevel.Fastest);
+                    entry.LastWriteTime = ZipTime(File.GetLastWriteTimeUtc(produced[path]));
+                    var source = new FileStream(produced[path], FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
+                    await using (source.ConfigureAwait(false))
+                    {
+                        var target = entry.Open();
+                        await using (target.ConfigureAwait(false))
+                            await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            DeleteFolder(raw); // the zip holds them now
+            return zipPath;
+        }
+        catch
+        {
+            DeleteFolder(folder);
+            throw;
+        }
+    }
+
+    /// <summary>A file time a zip entry can hold (1980 to 2107).</summary>
+    private static DateTimeOffset ZipTime(DateTime utc)
+    {
+        var low = new DateTime(1980, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+        var high = new DateTime(2107, 12, 30, 0, 0, 0, DateTimeKind.Utc);
+        return new DateTimeOffset(utc < low ? low : utc > high ? high : utc);
+    }
+
+    /// <summary>
+    /// A new mode-0700 folder under <paramref name="root"/> (created 0700 when missing, set back to 0700 when it is not),
+    /// named for this process (<c>&lt;pid&gt;-&lt;start time&gt;-&lt;id&gt;</c>) so <see cref="SweepLeftovers"/> can tell
+    /// a crashed RHI's folder from a running one's.
+    /// </summary>
     internal static string CreatePrivateFolder(string root)
     {
         Directory.CreateDirectory(root, PrivateFolderMode);
-        return Directory.CreateDirectory(Path.Combine(root, Guid.NewGuid().ToString("N")), PrivateFolderMode).FullName;
+        File.SetUnixFileMode(root, PrivateFolderMode); // RHI's own folder: nobody else lists or reads what it holds
+        return Directory.CreateDirectory(Path.Combine(root, $"{OwnerTag(Environment.ProcessId)}-{Guid.NewGuid():N}"), PrivateFolderMode).FullName;
+    }
+
+    private static readonly Regex OwnedFolderName = new(@"^(?<pid>\d{1,10})-(?<start>\d{1,20})-[0-9a-f]{32}$", RegexOptions.CultureInvariant);
+    private static readonly Regex UnownedFolderName = new(@"^[0-9a-f]{32}$", RegexOptions.CultureInvariant); // before owner tags
+
+    /// <summary>
+    /// Removes the folders under <paramref name="root"/> whose RHI is gone (a crash or a kill left them): a folder names
+    /// its process and that process's start time, so a folder of another RHI that is still running — or of this one — is
+    /// kept, and a later process that got the same id is not mistaken for its owner. Only RHI's own folder names are
+    /// touched. Runs at start-up and before each archive is read. Never throws; returns how many folders went.
+    /// </summary>
+    public static int SweepLeftovers(string root)
+    {
+        if (!Directory.Exists(root)) return 0;
+        var removed = 0;
+        try
+        {
+            foreach (var entry in new DirectoryInfo(root).EnumerateDirectories("*", new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false }))
+            {
+                if (entry.LinkTarget is not null) continue;
+                var match = OwnedFolderName.Match(entry.Name);
+                var leftover = match.Success
+                    ? !int.TryParse(match.Groups["pid"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var pid)
+                      || OwnerTag(pid) != $"{pid}-{match.Groups["start"].Value}"
+                    : UnownedFolderName.IsMatch(entry.Name);
+                if (leftover && DeleteFolder(entry.FullName)) removed++;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("dropped-archive", $"Could not look for leftover archive folders in {root}", ex);
+        }
+        if (removed > 0) AppLog.Warn("dropped-archive", $"Removed {removed} archive folder(s) a closed RHI left in {root}");
+        return removed;
+    }
+
+    /// <summary>
+    /// <c>&lt;pid&gt;-&lt;start time&gt;</c> of a live process (start time in clock ticks since boot, <c>/proc/&lt;pid&gt;/stat</c>
+    /// field 22), or <c>&lt;pid&gt;-gone</c> when there is no such process.
+    /// </summary>
+    internal static string OwnerTag(int pid)
+    {
+        try
+        {
+            var stat = File.ReadAllText($"/proc/{pid}/stat");
+            var fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' '); // the name in parentheses may hold spaces
+            return $"{pid}-{fields[19]}"; // field 22 overall: 3 is the first after the name
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or IndexOutOfRangeException or ArgumentOutOfRangeException)
+        {
+            return $"{pid}-gone";
+        }
     }
 
     /// <summary>

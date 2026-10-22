@@ -93,7 +93,7 @@ public sealed partial class LinuxManagedComponentService
     }
 
     /// <summary>#216: where dropped and watched archives get their private folders (RHI's cache; tests point it elsewhere).</summary>
-    public string DroppedArchiveRoot { get; set; } = Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "dropped-archives");
+    public string DroppedArchiveRoot { get; set; } = DroppedArchiveExtractor.DefaultRoot;
 
     /// <summary>#216: a dropped or watched archive copied, listed and checked (<see cref="DroppedArchiveExtractor"/>).</summary>
     public Task<DroppedArchiveInspection> InspectDroppedArchiveAsync(string archivePath, CancellationToken cancellationToken = default)
@@ -102,9 +102,6 @@ public sealed partial class LinuxManagedComponentService
     /// <summary>Fixed start of an add-on RHI could not take out of an archive (PT-BR pair); the reason follows.</summary>
     public const string ArchiveExtractFailedPrefix = "The add-on could not be taken out of the archive, so nothing was installed: ";
 
-    /// <summary>A Luma add-on inside a .7z or .rar (PT-BR pair); the archive name follows.</summary>
-    public const string ArchiveLumaNeedsZipPrefix = "RHI installs a Luma package from a .zip file only, so nothing was installed: ";
-
     /// <summary>Test seam: stands in for the Luma package install an archive's Luma add-on takes.</summary>
     internal Func<DetectedGame, string, CancellationToken, Task<ComponentOperationResult>>? ArchiveLumaInstallForTesting { get; set; }
 
@@ -112,17 +109,37 @@ public sealed partial class LinuxManagedComponentService
     /// #216 (upstream <c>ProcessDroppedArchive</c>): installs <paramref name="addon"/> from an inspected archive exactly as
     /// the same file dropped on RHI. A RenoDX add-on → <see cref="InstallLocalRenoDxAddonAsync"/>, another add-on →
     /// <see cref="InstallDroppedAddonForGameAsync"/>, with their refusals (asked again here before anything is extracted);
-    /// a Luma add-on → the whole archive (RHI's copy) to <see cref="InstallLocalLumaPackageAsync"/>. The add-on is taken out
-    /// before the install's first game write (Cancel still stops it) and its folder is removed afterwards, whatever
-    /// happened. The install's own result is returned unchanged (its landed note included).
+    /// a Luma add-on → the whole package to <see cref="InstallLocalLumaPackageAsync"/>: RHI's copy of a <c>.zip</c>, or a
+    /// <c>.7z</c>/<c>.rar</c> taken out whole (bounded, checked) and zipped again in RHI's private folder
+    /// (<see cref="DroppedArchive.PackageAsZipAsync"/>; the Luma install reads a <c>.zip</c>). The user's file is never
+    /// read again. Everything is taken out before the install's first game write (Cancel still stops it) and removed
+    /// afterwards, whatever happened. The install's own result is returned unchanged (its landed note included).
     /// </summary>
     public async Task<ComponentOperationResult> InstallArchivedAddonAsync(DetectedGame game, DroppedArchive archive, DroppedArchiveAddon addon,
         CancellationToken cancellationToken = default)
     {
         if (addon.Kind == DroppedArchiveAddonKind.Luma)
-            return archive.IsZip
-                ? await (ArchiveLumaInstallForTesting ?? InstallLocalLumaPackageAsync)(game, archive.SnapshotPath, cancellationToken).ConfigureAwait(false)
-                : ComponentOperationResult.Fail(ArchiveLumaNeedsZipPrefix + archive.ArchiveName);
+        {
+            if (InstallGuard(game) is { } lumaGuard) return lumaGuard; // before anything is taken out
+            string package;
+            try
+            {
+                package = await archive.PackageAsZipAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or TimeoutException or IOException or UnauthorizedAccessException)
+            {
+                RHI.Core.Services.AppLog.Warn("dropped-archive", $"Could not take the Luma package out of {archive.ArchiveName}", ex);
+                return ComponentOperationResult.Fail(ArchiveExtractFailedPrefix + ex.Message);
+            }
+            try
+            {
+                return await (ArchiveLumaInstallForTesting ?? InstallLocalLumaPackageAsync)(game, package, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (!archive.IsZip) DroppedArchiveExtractor.DeleteFolder(Path.GetDirectoryName(package)!);
+            }
+        }
         var refusal = addon.Kind == DroppedArchiveAddonKind.RenoDx
             ? InstallGuard(game) ?? AddonOffGuard(game, ManagedComponentKind.RenoDX)
             : InstallGuard(game) ?? (DroppedAddonRefusal(game) is { } noReShade ? ComponentOperationResult.Fail(noReShade) : null);
