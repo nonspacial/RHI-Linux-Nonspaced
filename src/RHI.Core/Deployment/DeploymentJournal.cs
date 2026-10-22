@@ -111,15 +111,21 @@ public sealed class DeploymentJournal
 
     /// <summary>Starts an operation: takes its lock and writes an empty pending entry.</summary>
     /// <param name="commitProbe">Opaque marker handed to the recovery's <c>isCommitted</c> check (e.g. the record that commits it).</param>
+    /// <param name="gameFolders">
+    /// w10 final review 3: the folders the operation's game lives in (install folder, Wine prefix), kept in the entry so an
+    /// undo can tell a sub-folder deleted from a game folder that is there (copy gone) from a game folder that is not
+    /// there (drive offline: held); none for a plain file transaction.
+    /// </param>
     /// <exception cref="DeploymentDecisionPendingException">An earlier operation on the same game is still undecided.</exception>
-    public async Task<DeploymentOperation> BeginAsync(string description, string? commitProbe = null, CancellationToken cancellationToken = default)
+    public async Task<DeploymentOperation> BeginAsync(string description, string? commitProbe = null, CancellationToken cancellationToken = default,
+        IReadOnlyList<string>? gameFolders = null)
     {
         if (await SettleWaitingAsync(commitProbe).ConfigureAwait(false) is { } heldUp)
             throw new DeploymentDecisionPendingException(heldUp);
         AtomicFile.CreateDirectoryDurable(Directory);
         var id = Guid.NewGuid().ToString("N");
         var lockStream = new FileStream(LockPath(id), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-        var operation = new DeploymentOperation(this, id, description, commitProbe, lockStream);
+        var operation = new DeploymentOperation(this, id, description, commitProbe, lockStream, gameFolders);
         try
         {
             // Before the first write of the operation (the entry itself is not part of the commit store).
@@ -219,7 +225,7 @@ public sealed class DeploymentJournal
     internal void ReportCopiesGone(JournalRecoveryEntry entry)
     {
         RHI.Core.Services.AppLog.Warn("deployment-journal",
-            $"An undo could not put back every file, because RHI's copy of them is gone; the change was closed: {entry.Description} [{entry.Id}] {string.Join(", ", entry.CopiesGone)}");
+            $"An undo could not put back every file, because RHI's copy of them is gone; those files were dropped from the change{(entry.Outcome == JournalRecoveryOutcome.UnknownStep ? " (kept only for a newer build's step)" : " and it was closed")}: {entry.Description} [{entry.Id}] {string.Join(", ", entry.CopiesGone)}");
         try
         {
             CopiesGoneInSession?.Invoke(entry);
@@ -357,8 +363,10 @@ public sealed class DeploymentJournal
                 RHI.Core.Services.AppLog.Warn("deployment-journal",
                     $"Earlier undecided operation settled before the next one: {outcome.Outcome}: {outcome.Description} [{id}]"
                     + (outcome.Problems.Count > 0 ? " " + string.Join("; ", outcome.Problems) : ""));
-                // w10 review finding 1: an undo no retry can finish (RHI's copy gone) is closed and said once.
-                if (outcome.Outcome == JournalRecoveryOutcome.CopiesGone) ReportCopiesGone(outcome);
+                // w10 review finding 1: an undo no retry can finish (RHI's copy gone) is closed and said once. w10 final
+                // review 4: so is a gone copy of an entry kept only for a newer build's step (its files dropped with it).
+                if (outcome.Outcome == JournalRecoveryOutcome.CopiesGone
+                    || (outcome.Outcome == JournalRecoveryOutcome.UnknownStep && outcome.CopiesGone.Count > 0)) ReportCopiesGone(outcome);
                 // A rollback that failed keeps its entry for the next start, and keeps holding up its game meanwhile.
                 return (outcome.Outcome == JournalRecoveryOutcome.RollbackFailed ? WaitState.UndoFailed : WaitState.Settled, probe);
             }
@@ -480,7 +488,7 @@ public sealed class DeploymentJournal
             return (new(id, "", JournalRecoveryOutcome.Unreadable, [$"Unreadable journal entry kept at {kept}: {ex.Message}"], []), null);
         }
 
-        var set = new OwnedFileSet(id, document.Files);
+        var set = new OwnedFileSet(id, document.Files) { GameFolders = document.GameFolders ?? [] };
         var paths = document.Files.Select(file => file.Path).ToArray();
         var info = new JournalEntryInfo(id, document.Description, document.CommitProbe, document.Committed, paths);
         var decision = document.Committed ? CommitDecision.Committed : decide(info);
@@ -656,15 +664,19 @@ public sealed class DeploymentOperation : IAsyncDisposable
     private bool _completed;
     private bool _committed;
 
-    internal DeploymentOperation(DeploymentJournal journal, string id, string description, string? commitProbe, FileStream lockStream)
+    internal DeploymentOperation(DeploymentJournal journal, string id, string description, string? commitProbe, FileStream lockStream,
+        IReadOnlyList<string>? gameFolders = null)
     {
         _journal = journal;
         Id = id;
         Description = description;
         CommitProbe = commitProbe;
         _lock = lockStream;
-        Files = new OwnedFileSet(id, PersistAsync);
+        _gameFolders = gameFolders is { Count: > 0 } ? [.. gameFolders] : null;
+        Files = new OwnedFileSet(id, PersistAsync) { GameFolders = _gameFolders ?? [] };
     }
+
+    private readonly List<string>? _gameFolders;
 
     public string Id { get; }
     public string Description { get; }
@@ -862,6 +874,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
         Id = Id,
         Description = Description,
         CommitProbe = CommitProbe,
+        GameFolders = _gameFolders,
         CreatedUtc = _createdUtc,
         Committed = _committed,
         Files = Files.Files.ToList(),
@@ -894,6 +907,13 @@ internal sealed class JournalDocument
     public string Id { get; set; } = "";
     public string Description { get; set; } = "";
     public string? CommitProbe { get; set; }
+    /// <summary>
+    /// w10 final review 3: the game's folders (<see cref="OwnedFileSet.GameFolders"/>); absent for a plain file
+    /// transaction. An older build ignores it (and drops it if it rewrites the entry); without it the undo only takes a
+    /// copy for gone when the copy's own folder lists without it.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? GameFolders { get; set; }
     public DateTime CreatedUtc { get; set; }
     public bool Committed { get; set; }
     public List<OwnedFileState> Files { get; set; } = [];

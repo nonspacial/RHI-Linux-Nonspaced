@@ -354,7 +354,7 @@ public static class LinuxDeploymentRecovery
         DeploymentOperation operation;
         try
         {
-            operation = await journal.BeginAsync(description, RecordRemovalProbe(game, component), cancellationToken).ConfigureAwait(false);
+            operation = await journal.BeginAsync(description, RecordRemovalProbe(game, component), cancellationToken, GameFolders(game)).ConfigureAwait(false);
         }
         catch (DeploymentDecisionPendingException ex)
         {
@@ -396,13 +396,31 @@ public static class LinuxDeploymentRecovery
     /// save). No journal (tests, tools): no operation and no refusal. A journal that cannot be written refuses before
     /// anything changes.
     /// </summary>
+    /// <summary>
+    /// Whether <paramref name="entry"/>'s gone copies go into the notice now: it closed for them, or (w10 final review 4)
+    /// it is kept only for a newer build's step and dropped them with its files.
+    /// </summary>
+    public static bool NamesCopiesGone(JournalRecoveryEntry entry)
+        => entry.Outcome is JournalRecoveryOutcome.CopiesGone or JournalRecoveryOutcome.UnknownStep && entry.CopiesGone.Count > 0;
+
+    /// <summary>
+    /// w10 final review 3: the folders <paramref name="game"/> lives in — its install folder and Wine prefix — kept in a
+    /// journal entry, so an undo tells a sub-folder deleted from a game folder that is there (copy gone, entry closed)
+    /// from a game folder that is not there (drive offline: held).
+    /// </summary>
+    public static IReadOnlyList<string> GameFolders(DetectedGame game)
+        => new[] { game.InstallPath, game.PrefixPath }
+            .Where(folder => !string.IsNullOrWhiteSpace(folder) && Path.IsPathFullyQualified(folder))
+            .Select(folder => Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder!)))
+            .Distinct(StringComparer.Ordinal).ToArray();
+
     public static async Task<(DeploymentOperation? Operation, string? Refusal)> BeginRecordOperationAsync(
         DeploymentJournal? journal, string description, DetectedGame game, ManagedComponentKind component, CancellationToken cancellationToken)
     {
         if (journal is null) return (null, null);
         try
         {
-            return (await journal.BeginAsync(description, RecordCommitProbe(game, component), cancellationToken).ConfigureAwait(false), null);
+            return (await journal.BeginAsync(description, RecordCommitProbe(game, component), cancellationToken, GameFolders(game)).ConfigureAwait(false), null);
         }
         catch (DeploymentDecisionPendingException ex)
         {
@@ -563,8 +581,10 @@ public static class LinuxDeploymentRecovery
             recovery?.KeptLaterChanges ?? 0)
         {
             // w10 follow-up D9: named by the entry that closed for it (once); an entry still held (a retry can finish the
-            // rest) names its gone copies when it closes, not at every start meanwhile.
-            CopiesGone = recovery?.Entries.Where(entry => entry.Outcome == JournalRecoveryOutcome.CopiesGone)
+            // rest) names its gone copies when it closes, not at every start meanwhile. w10 final review 4: an entry kept
+            // for a newer build's step names them too — its files are final then and dropped from the entry (narrowed to
+            // that step), so this is the one start that knows them; they are never named again.
+            CopiesGone = recovery?.Entries.Where(NamesCopiesGone)
                 .SelectMany(entry => entry.CopiesGone).Distinct(StringComparer.Ordinal).ToArray() ?? []
         };
     }

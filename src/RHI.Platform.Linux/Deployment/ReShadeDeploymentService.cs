@@ -498,7 +498,7 @@ public sealed partial class ReShadeDeploymentService
                 journaled = await _journal.BeginAsync(
                     $"ReShade {(isUpdate ? "update" : "install")}: {game.Name}",
                     LinuxDeploymentRecovery.RecordCommitProbe(game, ManagedComponentKind.ReShade),
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken, LinuxDeploymentRecovery.GameFolders(game)).ConfigureAwait(false);
             }
             catch (DeploymentDecisionPendingException ex)
             {

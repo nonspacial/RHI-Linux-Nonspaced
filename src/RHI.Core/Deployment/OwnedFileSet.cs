@@ -50,6 +50,13 @@ public sealed class OwnedFileSet
 
     public string Id { get; }
 
+    /// <summary>
+    /// w10 final review 3: the folders the operation's game lives in (its install folder and Wine prefix), as the journal
+    /// entry names them; empty for a plain file transaction or an entry an older build wrote. A copy under one of them
+    /// whose folder is missing while that game folder is there counts as gone (see <see cref="ProvedAbsent(string, IReadOnlyList{string})"/>).
+    /// </summary>
+    public IReadOnlyList<string> GameFolders { get; init; } = [];
+
     public IReadOnlyCollection<OwnedFileState> Files => _files.Values;
 
     public string SnapshotPathOf(string path) => path + SnapshotMarker + Id;
@@ -195,22 +202,51 @@ public sealed class OwnedFileSet
     /// follow-up D6): a game folder on a drive that is not mounted yet or was unplugged looks exactly like that, and the
     /// copy is back once the drive is; climbing to a parent that exists would prove nothing about it. A folder wiped and
     /// made again (a store reinstall) exists and lists without the copy: gone.
+    /// <para>w10 final review 3 (coordinator decision: a game is never held for good by something a restart cannot fix):
+    /// a missing folder INSIDE one of <paramref name="gameFolders"/> is climbed, as long as each missing folder lies inside
+    /// that game folder; the path is proved absent when the nearest folder that exists lists without the next one. That
+    /// folder is the game folder itself or inside it, so the game's drive is mounted and only a sub-folder was deleted.
+    /// A game folder that is missing itself (its drive offline) still proves nothing, as does a path outside every game
+    /// folder whose own folder is missing.</para>
     /// </summary>
-    internal static bool ProvedAbsent(string path)
+    internal static bool ProvedAbsent(string path, IReadOnlyList<string>? gameFolders = null)
     {
         var name = System.IO.Path.GetFileName(path);
         var folder = System.IO.Path.GetDirectoryName(path);
-        if (string.IsNullOrEmpty(folder)) return false;
-        try
+        while (!string.IsNullOrEmpty(folder))
         {
-            foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(folder))
-                if (string.Equals(System.IO.Path.GetFileName(entry), name, StringComparison.Ordinal)) return false;
-            return true;
+            try
+            {
+                foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(folder))
+                    if (string.Equals(System.IO.Path.GetFileName(entry), name, StringComparison.Ordinal)) return false;
+                return true;
+            }
+            catch (DirectoryNotFoundException) when (IsStrictlyInsideAGameFolder(folder, gameFolders))
+            {
+                name = System.IO.Path.GetFileName(folder);
+                folder = System.IO.Path.GetDirectoryName(folder);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return false; // missing (outside a game folder, or the game folder itself), refused or unreadable: retryable
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        return false;
+    }
+
+    private static bool IsStrictlyInsideAGameFolder(string folder, IReadOnlyList<string>? gameFolders)
+    {
+        if (gameFolders is null || gameFolders.Count == 0) return false;
+        var full = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(folder));
+        foreach (var gameFolder in gameFolders)
         {
-            return false; // missing (DirectoryNotFoundException), refused or unreadable: not proved, retryable
+            if (string.IsNullOrWhiteSpace(gameFolder)) continue;
+            var root = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(gameFolder));
+            if (root.Length == 0 || root == System.IO.Path.GetPathRoot(root)) continue; // never the file system's root
+            if (full.Length > root.Length + 1 && full.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                return true;
         }
+        return false;
     }
 
     /// <param name="lost">
@@ -281,7 +317,7 @@ public sealed class OwnedFileSet
                     // be fixed (w10 follow-up D6).
                     var seen = true;
                     foreach (var candidate in candidates)
-                        if (candidate != path && await HashOf(candidate).ConfigureAwait(false) is null && !ProvedAbsent(candidate)) seen = false;
+                        if (candidate != path && await HashOf(candidate).ConfigureAwait(false) is null && !ProvedAbsent(candidate, GameFolders)) seen = false;
                     if (!seen)
                         return $"{path}: RHI could not look for its copy with the pre-operation content ({sha}), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept.";
                     lost.Add(path);
