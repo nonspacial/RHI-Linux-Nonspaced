@@ -582,6 +582,10 @@ public sealed class WaveOneMessageLocalizationTests
         yield return LinuxManagedComponentService.NrUnknownMessage;
         yield return LinuxManagedComponentService.NrPinOtherGenerationPrefix + "310.8.3 (50xx)";
         yield return LinuxManagedComponentService.NrStageFailedPrefix + "HTTP 503";
+        yield return OptiScalerF5DriverPolicy.FaultingNrDllNotePrefix + "310.8.0 (50xx)"; // #231
+        yield return OptiScalerPackageProvider.F5ForwarderNotPeMessage;
+        yield return OptiScalerPackageProvider.F5BackendMissingMessage;
+        yield return "Could not obtain the official OptiScaler F5 DLSSNR package: " + OptiScalerPackageProvider.F5BackendMissingMessage;
         // w11/nightly-switch rows
         // w11/nr-check rows
     }
@@ -650,6 +654,10 @@ public sealed class WaveOneMessageLocalizationTests
         { LinuxManagedComponentService.NrUnknownMessage, "could not tell which Neural Rendering DLL" },
         { LinuxManagedComponentService.NrPinOtherGenerationPrefix + "310.8.3 (50xx)", "leaves it as picked" },
         { LinuxManagedComponentService.NrStageFailedPrefix + "HTTP 503", "could not be downloaded" },
+        { OptiScalerF5DriverPolicy.FaultingNrDllNotePrefix + "310.8.0 (50xx)", "crashes on NVIDIA drivers" }, // #231
+        { OptiScalerPackageProvider.F5ForwarderNotPeMessage, "is not a Windows DLL" },
+        { OptiScalerPackageProvider.F5BackendMissingMessage, "with its helper files" },
+        { "Could not obtain the official OptiScaler F5 DLSSNR package: " + OptiScalerPackageProvider.F5BackendMissingMessage, "Could not obtain" },
     };
 
     [Theory]

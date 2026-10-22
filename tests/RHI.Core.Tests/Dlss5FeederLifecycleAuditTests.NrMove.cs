@@ -211,6 +211,24 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
     }
 
     [Fact]
+    public async Task NrMove_UnknownCard_NeverMovesAnOlderLatestInstallToANewerEntry()
+    {
+        using var f = await LegacyLatestOn50xxAsync();
+        var record = f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)!;
+        File.WriteAllBytes(NrPath(f), Dll(ForAll)); // placed as "Latest" back when 310.8.2 was the newest entry
+        ManagedFileSwap.FindFile(record, "nvngx_dlssnr.dll")!.Sha256 = FileHash.Sha256Hex(NrPath(f));
+        record.Metadata[NeuralRenderingDllSwap.MetaDllVersion] = ForAll;
+        f.Records.Upsert(record);
+        var managed = Managed(f, RtxGeneration.Unknown, out _, out _);
+
+        var check = await managed.CheckManagedUpdateAsync(f.Game, ManagedComponentKind.Dlss5Feeder, []);
+        await managed.UpdateManagedAsync(f.Game, ManagedComponentKind.Dlss5Feeder, []);
+
+        Assert.False(check.UpdateAvailable, check.Message);
+        Assert.Equal(Dll(ForAll), File.ReadAllBytes(NrPath(f)));
+    }
+
+    [Fact]
     public async Task NrMove_UnderTheNrCostScaler_IsHeld_NeverAFailure()
     {
         using var f = await LegacyLatestOn50xxAsync();

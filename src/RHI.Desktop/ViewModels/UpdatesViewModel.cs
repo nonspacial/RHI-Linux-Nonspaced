@@ -71,7 +71,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             // Always re-analyse the selected game: dropping its cached analysis without one wedged every component
             // action on "wait for analysis" (Refs #72).
             await InvalidateAllAndReprobeSelectedAsync();
-            StatusText = UiLocalizationService.UpdateAllSummary(result);
+            StatusText = UiLocalizationService.UpdateAllSummary(result) + Shell.F5Driver.UpdateAllNote(games, result); // w11/nr-gpu hook (#231)
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
@@ -155,7 +155,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             if (result.ChangedCount > 0)
             {
                 await InvalidateAllAndReprobeSelectedAsync();
-                StatusText = UiLocalizationService.UpdateAllSummary(result) + T("Vm.Background");
+                StatusText = UiLocalizationService.UpdateAllSummary(result) + Shell.F5Driver.UpdateAllNote(games, result) + T("Vm.Background"); // w11/nr-gpu hook (#231)
             }
         }
         catch (OperationCanceledException) when (op.CancelRequested)

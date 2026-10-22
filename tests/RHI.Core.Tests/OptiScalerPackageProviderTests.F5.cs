@@ -31,6 +31,10 @@ public sealed partial class OptiScalerPackageProviderTests
             {
                 var bytes = new byte[300_000];
                 bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
+                // #231: a real PE header (the F5 forwarder must be a Windows DLL, not just start with MZ).
+                BitConverter.GetBytes(0x80).CopyTo(bytes, 0x3C);
+                "PE\0\0"u8.ToArray().CopyTo(bytes, 0x80);
+                BitConverter.GetBytes((ushort)0x8664).CopyTo(bytes, 0x84);
                 Encoding.ASCII.GetBytes("optiscaler/OptiScaler " + name).CopyTo(bytes, 512);
                 File.WriteAllBytes(Path.Combine(outputDirectory, name), name.EndsWith(".ini", StringComparison.Ordinal) ? Encoding.ASCII.GetBytes("[Plugins]\n") : bytes);
             }

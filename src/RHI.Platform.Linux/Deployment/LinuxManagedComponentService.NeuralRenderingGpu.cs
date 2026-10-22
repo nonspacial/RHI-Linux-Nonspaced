@@ -178,5 +178,43 @@ public sealed partial class LinuxManagedComponentService
 
     /// <summary>The component rows' Neural Rendering notes (w11/nr-gpu), added after every other note.</summary>
     private void DecorateNeuralRenderingRows(DetectedGame game, IReadOnlyList<ManagedComponent> components)
-        => _rows.DecorateNeuralRendering(components, _neuralVersionPins.GetNeuralRenderingDllVersion(game), CardGeneration);
+        => _rows.DecorateNeuralRendering(game, components, _neuralVersionPins.GetNeuralRenderingDllVersion(game), CardGeneration, _nvidiaGpu().DriverVersion,
+            record => InstalledNeuralRenderingVersion(game, record).Version);
+
+    // ---- #231: OptiScaler F5 DLSSNR driver advice (warn and confirm, never refuse) ----------------------------------
+
+    /// <summary>
+    /// #231: the NR DLL F5 will load — "Latest" made for this card, the one its install stages: the cached DLL's PE version
+    /// when RHI has it, else the manifest label. Null when RHI cannot tell (no manifest). Never downloads the DLL.
+    /// </summary>
+    public async Task<string?> F5NeuralRenderingDllVersionAsync(CancellationToken cancellationToken = default)
+    {
+        if (NrDlss is not { } dlss) return null;
+        try
+        {
+            if (dlss.Manifest is null) await dlss.FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("nr-gpu", "The DLSS manifest could not be read for the F5 DLSSNR driver check", ex);
+            return null;
+        }
+        var latest = dlss.LatestVersion(DlssComponentKind.NeuralRendering);
+        if (latest is null) return null;
+        return dlss.CachedDllPath(DlssComponentKind.NeuralRendering, latest) is { } cached && DlssAutoFollowService.PeFileVersion(cached) is { } pe
+            ? pe
+            : latest;
+    }
+
+    /// <summary>#231: what to tell the user before an F5 install on this host (driver below 615.71.09 / unreadable, a 310.8.0.x NR DLL on R615+).</summary>
+    public async Task<F5DriverAdvice> F5DriverAdviceAsync(CancellationToken cancellationToken = default)
+        => OptiScalerF5DriverPolicy.Advise(_nvidiaGpu().DriverVersion, await F5NeuralRenderingDllVersionAsync(cancellationToken).ConfigureAwait(false));
+
+    /// <summary>#231: the driver advice without the NR DLL part (Update All's line: no manifest read, no I/O beyond /proc).</summary>
+    public F5DriverAdvice F5DriverAdvice() => OptiScalerF5DriverPolicy.Advise(_nvidiaGpu().DriverVersion, null);
+
+    /// <summary>#231: the game's RHI OptiScaler is the F5 DLSSNR channel.</summary>
+    public bool HasOptiScalerF5(DetectedGame game)
+        => _records.Find(game, ManagedComponentKind.OptiScaler) is { } record
+           && OptiScalerDeploymentService.GetInstalledVariant(record) == OptiScalerVariant.F5;
 }

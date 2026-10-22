@@ -198,6 +198,9 @@ build.
 - The F5 zip is made on Windows and names entries with backslashes (`OptiScaler\libxess.dll`); 7-Zip and bsdtar on Linux extract those as flat file names. RHI moves them to the folders the names mean, as Windows extracts them. A name with `..`, an empty part, or one that collides with another entry refuses the archive (checked on the real 0.1.30 zip: 70 entries).
 - Package files copied into the game now follow upstream's install step: top-level `.bat .sh .ps1 .txt .md .exe .pdb`, `LICENSE`, `!!…`, and the `docs/` and `redist/` folders stay out of the game folder; DLLs, INIs, `OptiScaler/` and `D3D12_Optiscaler/` are copied. This applies to every channel (Stable used to copy its `!! README … .txt`; F5 would otherwise copy its docs).
 - Not ported: upstream's three `OptiScaler_f5.*.ini` templates (Linux deploys the package's own `OptiScaler.ini`) and the info/version links to the fork (PAR-D97).
+- Since #231 (w11): before an F5 install RHI checks the NVIDIA driver and the NR DLL F5 will load, and asks to confirm
+  below Linux driver 615.71.09 or with a 310.8.0.x NR DLL on a 615+ driver (never a refusal); the package must also hold a
+  real Windows-DLL forwarder and its `OptiScaler/` folder. Upstream RankFTW 2.8.7 does not check either.
 
 **`nvngx_dlssnr.dll` sharing rule** (`NeuralRenderingRuntimeOwnership`; the NR Cost Scaler #96 and RTX Encore #158 adopt it):
 1. One owner per game: ShortFuse, DLSS5 Feeder (any record), OptiScaler DLSS NR or OptiScaler F5 DLSSNR. OptiScaler Stable/Nightly are no owners.
@@ -912,6 +915,29 @@ build.
   Unknown card: nothing moves because of the card. Update All exclusions, the NR Cost Scaler hold ("held", never a
   failure), ReShade No Addons holds, journal holds and the "modified outside RHI" refusal of the swap all still apply.
 - The NR DLL swap (by hand or by Update All) now says so when its record save reported an error after the write landed.
+
+### #231 — OptiScaler F5 DLSSNR: warn and ask below Linux driver 615.71.09 or with a 310.8.0 NR DLL; two package checks
+- Source: wizardkof/RHI-Linux v0.9.25.0-beta.1 (`26e5259`: `OptiScalerF5DriverPolicy`, a hard refusal below 616.56 read
+  through `nvidia-smi`; `OptiScalerPackageProvider.ValidatePackageRoot`). Re-implemented under the owner's decision of
+  2026-10-22: warn and ask to confirm, never refuse.
+- Threshold: Linux NVIDIA driver **615.71.09**, the first Linux driver of NVIDIA's R615 branch and the Linux equivalent of
+  F5's Windows minimum **616.56** (coordinator decision 2026-10-22 from `reviews/nvidia-driver-numbering.md`): Linux and
+  Windows share the branch, not the minor numbers, so wizardkof's literal 616.56 would refuse every Linux driver released
+  so far (the owner's 615.78.08 included); 610.57.04's NGX core has no DLSSNR, 615.71.09's has. Compared number by number
+  (`major.minor.patch`). The version comes from `/proc/driver/nvidia/version` (one reader, `NvidiaGpuProbe`), never
+  `nvidia-smi`.
+- Every user-started F5 install (a reinstall too) shows the existing confirm dialog when the driver is below 615.71.09,
+  unreadable, or NVIDIA's driver is not loaded — naming both numbers ("615.71.09 or newer on Linux (616.56 on Windows)") and
+  the version found — with "Install anyway" and Cancel; at or above it there is no dialog. Declined: nothing changes and the
+  status line says the install was cancelled. Other OptiScaler channels never ask.
+- Second warning, same dialog: the `nvngx_dlssnr.dll` F5 will stage is 310.8.0.x on a 615-or-newer driver (it crashes
+  there; 310.8.2 or newer is needed) — read from the cached DLL's version resource, else the manifest label. The same note
+  shows on the row of any NR owner (ShortFuse, DLSS5 Feeder, OptiScaler DLSS NR / F5) whose installed NR DLL is 310.8.0.x
+  on such a driver.
+- Update All (manual and background) never asks and never refuses; when it took an F5 install in while the driver is below
+  615.71.09 or unreadable, its status line says so.
+- F5 package checks: `nvngx.dll_dlssnr.dll` must be a Windows DLL (MZ and a PE header), and the package must hold its
+  `OptiScaler/` helper folder (after the backslash names are rebuilt); otherwise it is refused before any game file changes.
 
 <!-- w11/nightly-switch notes -->
 
