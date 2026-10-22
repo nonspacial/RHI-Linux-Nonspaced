@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:views="using:RHI.Desktop.Views"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.NeuralRenderingCheckDialogView"
+             x:DataType="vm:NeuralRenderingCheckDialogViewModel">
+  <!-- #234 (owner pick: both entry points open this page): read only. Sections GPU · NR DLL · Recommended method ·
+       Anti-cheat folders · Log findings as label/value rows (below the row's minimum the value moves under its label),
+       amber for warnings, smaller detail/fix lines, provenance only in ~2 s tooltips; Close only. -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.nrc-detail">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Opacity" Value="0.76"/>
+    </Style>
+    <Style Selector="TextBlock.nrc-warning">
+      <Setter Property="Foreground" Value="#D4A856"/>
+    </Style>
+    <Style Selector="TextBlock.nrc-warning.nrc-detail">
+      <Setter Property="Opacity" Value="0.92"/>
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer x:Name="NrcScroll" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="12" Margin="18,18,18,8">
+        <TextBlock Text="{l:T Nrc.Title}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock x:Name="NrcIntro" Text="{Binding Intro}" TextWrapping="Wrap" Opacity="0.76" Margin="0,0,0,4"/>
+        <ItemsControl x:Name="NrcSections" ItemsSource="{Binding Sections}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="14"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:NrCheckSection">
+              <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160" Tag="{Binding Id}">
+                <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding Lines}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Spacing="3"/>
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:NrCheckLine">
+                      <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                 Classes.nrc-warning="{Binding IsWarning}" Classes.nrc-detail="{Binding IsDetail}"
+                                 ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </views:ResponsiveRow>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+    <views:ResponsiveRow Grid.Row="1" Columns="*,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="1" MinStarWidth="120" Margin="18,4,18,16">
+      <TextBlock x:Name="NrcFooter" Text="{Binding Footer}" TextWrapping="Wrap" Opacity="0.72" VerticalAlignment="Center"/>
+      <Button Grid.Column="1" x:Name="NrcClose" Classes="rhi" Padding="14,6" Content="{l:T Win.Close}" Command="{Binding CloseCommand}"/>
+    </views:ResponsiveRow>
+  </Grid>
+</UserControl>

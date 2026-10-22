@@ -185,6 +185,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public F5DriverConfirmPresenter F5Driver => new(this, _managedComponents);
     // w11/nightly-switch rows
     // w11/nr-check rows
+    public NeuralRenderingCheckPresenter NrCheck => NeuralRenderingCheckPresenter.For(this, _managedComponents); // #234: Check Neural Rendering (panel button + card menu)
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1619,6 +1620,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
+        if (NrCheck.MenuItemFor(game) is { } nrCheck) items.Add(nrCheck); // #234: last item, only where the page has something to show
         return items;
     }
 

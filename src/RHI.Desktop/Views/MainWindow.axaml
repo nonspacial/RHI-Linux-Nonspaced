@@ -259,7 +259,14 @@
                   </StackPanel>
 
                   <TextBlock Grid.Row="10" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
-                  <TextBlock Grid.Row="10" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap"/>
+                  <!-- w11/nr-check (#234, owner pick A'): "Check…" right after the recommendation text, wrapping under it when the
+                       line is too narrow; hidden where the page would have nothing to show. -->
+                  <WrapPanel Grid.Row="10" Grid.Column="1" Orientation="Horizontal" ItemSpacing="12" LineSpacing="6">
+                    <TextBlock DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <Button x:Name="NeuralRenderingCheckButton" Classes="rhi" Padding="12,4" VerticalAlignment="Center"
+                            Content="{Binding NrCheck.ButtonText}" Command="{Binding NrCheck.OpenCommand}" IsVisible="{Binding NrCheck.IsAvailable}"
+                            ToolTip.Tip="{Binding NrCheck.ButtonTip}" ToolTip.ShowDelay="2000"/>
+                  </WrapPanel>
 
                   <TextBlock Grid.Row="11" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
                   <TextBlock Grid.Row="11" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="#A0AABB" TextWrapping="Wrap"/>

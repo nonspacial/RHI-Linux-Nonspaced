@@ -1023,3 +1023,33 @@ Source: wizardkof v0.9.25.0-beta.1 (`26e5259`) "Apply selected build now" (inven
   move and the switch never touch each other's files.
 
 <!-- w11/nr-check notes -->
+
+### #234 — Check Neural Rendering: a read-only page per game
+
+Source: wizardkof v0.9.25.0-beta.1 (`26e5259`) DLSS5 trial advisor (`Dlss5TrialAdvisor.cs`, `MainWindow.Dlss5Trial.cs`;
+inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavioural port; no code taken.
+
+- Owner pick (2026-10-22): **both** entry points open one page — a **Check…** button right after the detail panel's
+  Neural rendering recommendation (it wraps under the text when the line is narrow) and **Check Neural Rendering…** as
+  the card menu's last item. Both are hidden where the page has nothing to show: no NVIDIA card, a native Linux game, no
+  confirmed executable, or neither a Neural Rendering DLL nor a Neural Rendering method (ShortFuse, DLSS5 Feeder, DLSS5
+  DX11 Bridge, OptiScaler DLSS NR / F5 DLSSNR, RTX Encore with its NR file) in the game.
+- The page (label/value rows, amber warnings, Close only): **Graphics card** (model and RTX generation from #229's
+  `NvidiaGpuProbe` facts), **Neural Rendering DLL** (its manifest version through #230's one helper,
+  `NeuralRenderingInstalledVersion`, so it agrees with Update All; whether #229's policy says it is made for this card; who
+  put it there; a version picked by hand; the 310.8.0.x-on-R615 crash note of #231; "Latest" made for this card and where
+  to choose it), **Recommended method** (`RecommendedNeuralRenderingMethod`, as on the panel) and the methods in use,
+  **Anti-cheat folders** (wizardkof's list, information only — never a block), **Log findings** from `ReShade.log`,
+  `OptiScaler.log` and `dlss5-feed.log` beside the executable: wizardkof's signatures (the RenoDX NR skip, `0xBAD00001`
+  FeatureNotSupported, HLSL `E5017`/`E5005`/`fastopt`, `0xC0000005`/device lost) plus two the DLSS5 Feeder add-on itself
+  names (`error X3506` for a compiler too old for `cs_5_1`, "device was removed"); short codes match as whole words. Each
+  finding names the log, the line and a fix that points at a real control (the NR DLL list under NR versions, the DLSS
+  section's Neural rendering line with Apply, the D3DCompiler 47 line's Protontricks / Winetricks / Browse, a component
+  row's Remove); paths and the matching text sit in ~2 s tooltips.
+- Reads only, never writes (game folder, prefix, RHI's data — a test snapshots all three byte for byte) and never
+  fetches the DLSS manifest. Logs: one non-blocking open of a regular file, refused when a link on the path leaves the
+  game folder or its prefix, at most the last 2 MiB (line numbers only when the whole file was read); a FIFO, a folder or
+  an unreadable file is a line on the page, never an error.
+- Not ported: wizardkof's "Install recommended setup (trial)" button (owner decision: read-only page, no install
+  wording), its CUDA-fatbin model check (passes the wrong DLL on real files; #229 judges by the manifest label) and its
+  `nvidia-smi` compute-capability query (the fork never runs `nvidia-smi`).
