@@ -51,7 +51,9 @@ public sealed record LinuxDlssBatchItemResult(
     bool Changed,
     bool Deferred,
     bool Skipped,
-    string Message);
+    string Message,
+    // #229: a Neural Rendering default/batch choice made for another card generation, skipped before any file changed.
+    bool NotForThisCard = false);
 
 public sealed record LinuxDlssBatchResult(IReadOnlyList<LinuxDlssBatchItemResult> Items)
 {
@@ -359,6 +361,13 @@ public sealed class LinuxDlssDefaultsService
                 $"{Display(batchComponent)} not present; skipped without creating a target."));
             return;
         }
+        // #229 (built default; wizardkof refuses the whole game): a saved NR default or batch choice not made for this
+        // card is skipped for this game before anything changes; the SR/RR/FG/Streamline steps still run.
+        if (kind == DlssComponentKind.NeuralRendering && NeuralRenderingGpuPolicy.MadeForAnotherGeneration(version, _dlss.CardGeneration()))
+        {
+            results.Add(new(game.Name, batchComponent, true, false, false, true, NotMadeForThisCardPrefix + version, NotForThisCard: true));
+            return;
+        }
 
         if (kind == DlssComponentKind.SuperResolution && targets.Any(DlssAutoFollowService.IsDlss1xFile))
         {
@@ -497,6 +506,9 @@ public sealed class LinuxDlssDefaultsService
 
     private static string BuildDetectionSummary(DlssDetectionResult detection)
         => $"SR {detection.DlssPaths.Count} · RR {detection.DlssdPaths.Count} · FG {detection.DlssgPaths.Count} · NR {detection.DlssnrPaths.Count} · Streamline {detection.StreamlineFolders.Count}";
+
+    /// <summary>#229: fixed text of the skipped NR step; the version follows.</summary>
+    public const string NotMadeForThisCardPrefix = "Neural Rendering skipped: the chosen DLL is made for another graphics card generation, so no file was changed. DLL: ";
 
     private static string Display(LinuxDlssBatchComponent component) => component switch
     {

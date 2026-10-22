@@ -1622,6 +1622,9 @@ public static class UiLocalizationService
         ("), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept.", "), porque uma pasta não pode ser lida ou não está lá (o disco dela está montado?); todas as cópias foram mantidas."),
         // w11/download-idle rows
         // w11/nr-gpu rows
+        // #229: the Neural Rendering step of Quick Apply / the DLSS batch skipped for a DLL made for another card; the DLL follows.
+        (RHI.Platform.Linux.Deployment.LinuxDlssDefaultsService.NotMadeForThisCardPrefix,
+            "Neural Rendering ignorado: a DLL escolhida é feita para outra geração de placa de vídeo, então nenhum arquivo foi alterado. DLL: "),
         // w11/nightly-switch rows
         // w11/nr-check rows
     ];

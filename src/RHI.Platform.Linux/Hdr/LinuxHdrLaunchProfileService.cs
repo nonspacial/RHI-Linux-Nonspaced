@@ -171,7 +171,7 @@ public sealed partial class LinuxHdrLaunchProfileService
     {
         _environment = environment ?? Environment.GetEnvironmentVariable;
         _commandExists = commandExists ?? CommandExists;
-        _nvidiaVersion = nvidiaVersion ?? ReadNvidiaVersion;
+        _nvidiaVersion = nvidiaVersion ?? NvidiaGpuProbe.ReadDriverVersion; // #231: one reader (moved to the probe)
         _nvidiaGpu = nvidiaGpu ?? NvidiaGpuProbe.Read;
     }
 
@@ -396,23 +396,6 @@ public sealed partial class LinuxHdrLaunchProfileService
             .Any(dir => File.Exists(Path.Combine(dir, command)));
     }
 
-    private static string? ReadNvidiaVersion()
-    {
-        try
-        {
-            const string path = "/proc/driver/nvidia/version";
-            if (!File.Exists(path)) return null;
-            var match = NvidiaVersionRegex().Match(File.ReadAllText(path));
-            return match.Success ? match.Groups[1].Value : null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Unknown driver version: the legacy-WSI hint is simply not offered.
-            AppLog.Warn("hdr", "NVIDIA driver version unreadable", ex);
-            return null;
-        }
-    }
-
     private static bool TryParseMajor(string? value, out int major)
     {
         major = 0;
@@ -420,7 +403,4 @@ public sealed partial class LinuxHdrLaunchProfileService
         var first = value.Split('.', 2)[0];
         return int.TryParse(first, out major);
     }
-
-    [GeneratedRegex(@"(?:Kernel Module\s+|NVIDIA[^0-9]*)([0-9]{3,}(?:\.[0-9]+)+)", RegexOptions.IgnoreCase)]
-    private static partial Regex NvidiaVersionRegex();
 }

@@ -93,7 +93,16 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             SelectedNeuralRenderingDllVersion = nrDllSelected ?? LatestDisplay();
         }
         finally { _rebuildingOptionLists = false; }
+        OnPropertyChanged(nameof(NeuralRenderingDllVersionsTip));
     }
+
+    /// <summary>
+    /// #229: the NR DLL dropdown's ~2 s tooltip. RHI lists only the DLLs made for the user's card; when it could not tell
+    /// the card it lists every version and says so here. Null (no tooltip) when the card is known.
+    /// </summary>
+    public string? NeuralRenderingDllVersionsTip => _managedComponents.CardGeneration == RtxGeneration.Unknown
+        ? UiLocalizationService.Text("Ng.UnknownCardTip")
+        : null;
 
     /// <summary>The UI language changed: “Latest” labels and the latest-version lines are rebuilt, pins kept.</summary>
     internal void RefreshLocalized()
@@ -114,6 +123,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             SelectedDlss5BridgeVersion = bridgePin ?? LatestDisplay();
             SelectedShortFuseVersion = shortFusePin ?? LatestDisplay();
             SelectedNeuralRenderingDllVersion = nrDllPin ?? LatestDisplay();
+            OnPropertyChanged(nameof(NeuralRenderingDllVersionsTip)); // #229
 
             if (SelectedGame is { } game)
             {

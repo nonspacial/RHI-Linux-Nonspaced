@@ -52,6 +52,9 @@ public sealed class ShortFuseDeploymentService
 
     /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
     internal Settings.IGameStateStore GameState => _settings;
+
+    /// <summary>w11/nr-gpu: the DLSS service this stack stages from (the NR seam points its card at the host's).</summary>
+    internal DlssManagerService Dlss => _dlss;
     private readonly string _cacheRoot;
     private readonly DeploymentJournal? _journal;
 

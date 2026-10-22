@@ -209,7 +209,9 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
 
         /// <param name="x86">A 32-bit game: the Feeder deploys its host64 helper with a 64-bit ReShade from reshade.me.</param>
         /// <param name="journaled">#169: the app's journal (Wine never running) for the simulated-crash tests.</param>
-        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false, bool x86 = false, bool journaled = false)
+        /// <param name="liveNr">w11/nr-gpu: the live manifest's three NR entries (310.8.3 (50xx) first) instead of one unlabelled one.</param>
+        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false, bool x86 = false, bool journaled = false,
+            bool liveNr = false)
         {
             Bin = Path.Combine(_root, "game");
             var prefix = Path.Combine(_root, "prefix");
@@ -272,6 +274,13 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
                 ["https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline"] = lumenite,
                 ["https://github.com/crosire/reshade-shaders/archive/refs/heads/slim.zip"] = headers
             };
+            if (liveNr)
+            {
+                responses[DlssManagerService.ManifestUrl] = Encoding.UTF8.GetBytes(NrGpuTestKit.ManifestJson());
+                responses[NrGpuTestKit.SrUrl] = NrGpuTestKit.Zip("nvngx_dlss.dll", NrGpuTestKit.SrDll);
+                foreach (var version in NrGpuTestKit.LiveVersions)
+                    responses[NrGpuTestKit.UrlOf(version)] = NrGpuTestKit.Zip("nvngx_dlssnr.dll", NrGpuTestKit.Dll(version));
+            }
             var dgVoodooZip = Zip(("MS/x64/D3D9.dll", Pe(128 * 1024)), ("MS/x86/D3D9.dll", Pe(128 * 1024)));
             const string dgVoodooUrl = "https://github.com/dege-diosg/dgVoodoo2/releases/download/v2.86/dgVoodoo2_86.zip";
             responses["https://api.github.com/repos/dege-diosg/dgVoodoo2/releases/latest"]
@@ -283,7 +292,7 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             responses["https://reshade.me/downloads/ReShade_Setup_9.9.9_Addon.exe"] = Pe(600_000);
             Watch = new GateWatchingHandler(new FixtureHandler(responses, Requests));
             _http = new HttpClient(Watch);
-            var dlss = new DlssManagerService(_http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
+            var dlss = Dlss = new DlssManagerService(_http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
             var manifest = new UpstreamRhiManifestService(_http, "https://github.com/rhi-tests/unused-manifest");
             var legacy = new UpstreamRhiAddonDeploymentService(_http, Records, manifest, new UpstreamRhiAddonDeploymentOptions(
                 ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://github.com/rhi-tests/unused-release", 64 * 1024,
@@ -299,6 +308,10 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         }
 
         public DeploymentJournal? Journal { get; }
+        /// <summary>w11/nr-gpu: the fixture's DLSS service (tests set its card).</summary>
+        public DlssManagerService Dlss { get; }
+        public HttpClient Http => _http;
+        public string Root => _root;
         public string JournalDirectory => Path.Combine(_root, "journal");
 
         public Task<ComponentOperationResult> Install(Dlss5FeederConsumer consumer, CancellationToken cancellationToken = default)

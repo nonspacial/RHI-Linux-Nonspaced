@@ -577,6 +577,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept."; // review finding 1
         // w11/download-idle rows
         // w11/nr-gpu rows
+        yield return LinuxDlssDefaultsService.NotMadeForThisCardPrefix + "310.8.3 (50xx)"; // #229
         // w11/nightly-switch rows
         // w11/nr-check rows
     }
@@ -639,6 +640,8 @@ public sealed class WaveOneMessageLocalizationTests
         // w7 final review 2
         { RHI.Platform.Linux.Deployment.XnaGacReShade.ForeignCopyAfterMovePrefix + P, "in its place" },
         { RHI.Platform.Linux.Deployment.XnaGacReShade.MissingCopyAfterMovePrefix + P, "has no d3d9.dll" },
+        // w11/nr-gpu rows
+        { LinuxDlssDefaultsService.NotMadeForThisCardPrefix + "310.8.3 (50xx)", "made for another graphics card generation" }, // #229
     };
 
     [Theory]

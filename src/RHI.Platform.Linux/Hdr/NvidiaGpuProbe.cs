@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Hdr;
 
@@ -9,6 +10,16 @@ namespace RHI.Platform.Linux.Hdr;
 public sealed record NvidiaGpuFacts(bool Present, bool Rtx50, string? Model = null)
 {
     public static NvidiaGpuFacts None { get; } = new(false, false);
+
+    /// <summary>
+    /// #229: the card generation Neural Rendering builds are labelled for: with several NVIDIA cards the NEWEST
+    /// generation present; unknown without NVIDIA's driver, without a model name, or for a model RHI does not know
+    /// (a card from before RTX included: NR cannot run there, and RHI never blocks the mod).
+    /// </summary>
+    public RtxGeneration Generation { get; init; } = RtxGeneration.Unknown;
+
+    /// <summary>#231: the loaded NVIDIA kernel module's version (<c>615.78.08</c>); null when not loaded or unreadable.</summary>
+    public string? DriverVersion { get; init; }
 
     /// <summary>
     /// DLSS Frame Generation runs here (RTX 40 or newer): false only for a model known to be older (RTX 20/30, GTX,
@@ -33,17 +44,92 @@ public static partial class NvidiaGpuProbe
     /// <summary>The probe over another root (tests point it at a scratch tree shaped like /proc and /sys).</summary>
     public static NvidiaGpuFacts Read(string procRoot, string sysRoot)
     {
+        var driver = ReadDriverVersion(procRoot);
         var models = ProcModels(procRoot);
         if (models.Count > 0)
         {
             // Re-review 5: with several GPUs, any RTX 50 decides, then any model that runs frame generation — never the
             // enumeration order (an RTX 30 listed before an RTX 40 hid the FG preset).
             var rtx50 = models.FirstOrDefault(IsRtx50);
-            return new NvidiaGpuFacts(true, rtx50 is not null, rtx50 ?? models.FirstOrDefault(model => !IsBeforeFrameGeneration(model)) ?? models[0]);
+            return new NvidiaGpuFacts(true, rtx50 is not null, rtx50 ?? models.FirstOrDefault(model => !IsBeforeFrameGeneration(model)) ?? models[0])
+            {
+                // #229: several cards = the newest generation present, never the enumeration order.
+                Generation = models.Select(GenerationOf).Max(),
+                DriverVersion = driver
+            };
         }
         // Without NVIDIA's driver (nouveau/NVK) there is no DLSS: the PCI device alone is not enough.
         if (!File.Exists(Path.Combine(procRoot, "driver", "nvidia", "version"))) return NvidiaGpuFacts.None;
-        return HasPciNvidiaDisplay(sysRoot) ? new NvidiaGpuFacts(true, false) : NvidiaGpuFacts.None;
+        return HasPciNvidiaDisplay(sysRoot) ? new NvidiaGpuFacts(true, false) { DriverVersion = driver } : NvidiaGpuFacts.None with { DriverVersion = driver };
+    }
+
+    /// <summary>
+    /// #229: the RTX generation of one model name. GeForce by number (<c>RTX 4090</c>, <c>RTX 3060 Ti Laptop GPU</c>);
+    /// workstation cards by family: Blackwell = 50, Ada = 40, Ampere <c>RTX A4000</c> = 30, Turing <c>Quadro RTX 5000</c> /
+    /// <c>TITAN RTX</c> = 20 — never <c>RTX\s*50\d\d</c> alone (it matches Quadro RTX 5000 and RTX 5000 Ada). Anything
+    /// else (GTX, TITAN X, Tesla, an unknown name) is unknown.
+    /// </summary>
+    public static RtxGeneration GenerationOf(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model)) return RtxGeneration.Unknown;
+        if (BlackwellRegex().IsMatch(model)) return RtxGeneration.Rtx50;
+        if (AdaRegex().IsMatch(model)) return RtxGeneration.Rtx40;
+        if (AmpereWorkstationRegex().IsMatch(model)) return RtxGeneration.Rtx30;
+        if (TuringWorkstationRegex().IsMatch(model)) return RtxGeneration.Rtx20;
+        var geforce = GeForceRtxRegex().Match(model);
+        return geforce.Success
+            ? geforce.Groups[1].Value switch
+            {
+                "2" => RtxGeneration.Rtx20,
+                "3" => RtxGeneration.Rtx30,
+                "4" => RtxGeneration.Rtx40,
+                "5" => RtxGeneration.Rtx50,
+                _ => RtxGeneration.Unknown
+            }
+            : RtxGeneration.Unknown;
+    }
+
+    /// <summary>
+    /// #231 (moved here from <c>LinuxHdrLaunchProfileService</c>, one reader): the loaded NVIDIA kernel module's version
+    /// from <c>/proc/driver/nvidia/version</c>, read-only; null when NVIDIA's driver is not loaded or the file cannot be
+    /// read. Never <c>nvidia-smi</c>, never a GPU device.
+    /// </summary>
+    public static string? ReadDriverVersion() => ReadDriverVersion("/proc");
+
+    /// <summary>The driver version under another root (tests point it at a scratch tree shaped like /proc).</summary>
+    public static string? ReadDriverVersion(string procRoot)
+    {
+        try
+        {
+            var path = Path.Combine(procRoot, "driver", "nvidia", "version");
+            if (!File.Exists(path)) return null;
+            using var reader = new StreamReader(path);
+            var buffer = new char[4096];
+            var read = reader.ReadBlock(buffer, 0, buffer.Length);
+            return ParseDriverVersion(new string(buffer, 0, read));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RHI.Core.Services.AppLog.Warn("nvidia", "NVIDIA driver version unreadable", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The version on the <c>NVRM version:</c> line of <c>/proc/driver/nvidia/version</c>: the proprietary module
+    /// (<c>NVIDIA UNIX x86_64 Kernel Module  550.54.14  Thu …</c>) and the open one
+    /// (<c>NVIDIA UNIX Open Kernel Module for x86_64  615.78.08  Release Build …</c>, which the old pattern missed).
+    /// </summary>
+    public static string? ParseDriverVersion(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        foreach (var line in text.Split('\n'))
+        {
+            if (!line.TrimStart().StartsWith("NVRM version:", StringComparison.OrdinalIgnoreCase)) continue;
+            var match = DriverVersionRegex().Match(line);
+            return match.Success ? match.Groups[1].Value : null;
+        }
+        return null;
     }
 
     /// <summary>
@@ -124,6 +210,26 @@ public static partial class NvidiaGpuProbe
             return null;
         }
     }
+
+    // A dotted version of a 3+ digit branch standing on its own (not x86_64's "86", not a date).
+    [GeneratedRegex(@"(?<![\w.])([0-9]{3,}\.[0-9]{1,4}(?:\.[0-9]{1,4})?)(?![\w.])")]
+    private static partial Regex DriverVersionRegex();
+
+    [GeneratedRegex(@"\bBlackwell\b", RegexOptions.IgnoreCase)]
+    private static partial Regex BlackwellRegex();
+
+    [GeneratedRegex(@"\bAda\b", RegexOptions.IgnoreCase)]
+    private static partial Regex AdaRegex();
+
+    [GeneratedRegex(@"\bRTX\s*A[0-9]{3,4}\b", RegexOptions.IgnoreCase)]
+    private static partial Regex AmpereWorkstationRegex();
+
+    [GeneratedRegex(@"\bQuadro\s+RTX\b|\bTITAN\s+RTX\b", RegexOptions.IgnoreCase)]
+    private static partial Regex TuringWorkstationRegex();
+
+    // GeForce RTX x050–x090 (with Ti/Super/Laptop/D after it); the workstation "RTX 4000"/"RTX 5000" names never match.
+    [GeneratedRegex(@"\bRTX\s*([2-5])0[5-9]0\b", RegexOptions.IgnoreCase)]
+    private static partial Regex GeForceRtxRegex();
 
     [GeneratedRegex(@"\bRTX\s*50[5-9]0\b|\bBlackwell\b", RegexOptions.IgnoreCase)]
     private static partial Regex Rtx50Regex();

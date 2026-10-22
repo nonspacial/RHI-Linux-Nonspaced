@@ -512,6 +512,7 @@
                         <TextBlock Text="NR DLL" Classes="muted" VerticalAlignment="Center"/>
                         <ComboBox Grid.Column="1" ItemsSource="{Binding NeuralRenderingDllVersionOptions}"
                                   SelectedItem="{Binding SelectedNeuralRenderingDllVersion, Mode=TwoWay}"
+                                  ToolTip.Tip="{Binding NeuralRenderingDllVersionsTip}" ToolTip.ShowDelay="2000"
                                   IsEnabled="{Binding CanConfigureNeuralRenderingDllVersion}"/>
                         <TextBlock Grid.Column="2" Text="{DynamicResource Ui.NrDllVersionNote}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
                       </Grid>

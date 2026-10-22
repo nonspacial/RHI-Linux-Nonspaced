@@ -1350,6 +1350,9 @@ internal static class UiStrings
         ("Jh.CopiesGoneNotice", "O RHI não conseguiu restaurar {0} depois de uma alteração interrompida: a cópia que ele guardou do arquivo anterior não existe mais (foi apagada ou o jogo foi reinstalado), então reiniciar não a traz de volta. Confira os mods desse jogo: use Remover e depois Instalar de novo nos que não funcionarem. Detalhes: {1}", "RHI could not put back {0} after an interrupted change: its saved copy of the earlier file is gone (deleted, or the game was reinstalled), so a restart cannot bring it back. Check that game's mods: use Remove and then Install again on any that do not work. Details: {1}"),
         // w11/download-idle rows
         // w11/nr-gpu rows
+        // #229 "Latest" Neural Rendering DLL per card generation
+        ("Ng.UnknownCardTip", "O RHI não conseguiu identificar a sua placa de vídeo, então todas as versões estão listadas.", "RHI could not tell your graphics card, so every version is listed."),
+        ("Ng.NrSkippedNotForCard", "O Neural Rendering {0} não foi aplicado em {1}: essa DLL é feita para outra geração de placa de vídeo.", "Neural Rendering {0} was not applied to {1}: that DLL is made for another graphics card generation."),
         // w11/nightly-switch rows
         // w11/nr-check rows
     ];

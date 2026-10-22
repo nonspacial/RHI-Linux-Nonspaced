@@ -495,7 +495,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         {
             var manifest = await _dlss.FetchManifestAsync();
             Dlss.ApplyManifest(manifest);
-            Extras.ApplyNrDllVersions(manifest.Dlssnr.Select(x => x.Version));
+            Extras.ApplyNrDllVersions(_dlss.Versions(DlssComponentKind.NeuralRendering)); // #229: the NR DLLs made for this card (all for an unknown card)
             NotifyDlss();
         }
         catch (Exception ex)

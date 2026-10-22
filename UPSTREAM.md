@@ -874,6 +874,28 @@ build.
 
 <!-- w11/nr-gpu notes -->
 
+### #229 — "Latest" Neural Rendering DLL = the newest one made for your card generation
+- Source: wizardkof/RHI-Linux v0.9.25.0-beta.1 (`26e5259`, `DlssNrGpuPackagePolicy`), re-implemented under the owner's
+  decision of 2026-10-22; upstream RankFTW 2.8.7 always takes the manifest's first NR entry.
+- RHI reads the card from the NVIDIA driver's model names under `/proc/driver/nvidia/gpus/*/information` (read-only):
+  GeForce RTX by number, workstation cards by family (Turing "Quadro RTX"/"TITAN RTX" = 20, Ampere "RTX A…" = 30, "Ada"
+  = 40, "Blackwell" = 50). With several NVIDIA cards the newest generation counts. No NVIDIA driver, no model, a card
+  from before RTX or a name RHI does not know = unknown. Never `nvidia-smi` (wizardkof) and never the DLL's CUDA fatbin
+  list (the real `310.8.3 (50xx)` DLL lists sm_75/86/89/120, so a fatbin check passes the wrong file).
+- A manifest NR entry fits the generations its label names (`(50xx)`, `(20/30/40/50)`, `(RTX 40 Series)`…); an entry
+  without a label RHI can read fits every card (it cannot be judged, so it is never hidden — wizardkof never offers it).
+  "Latest" = the first fitting entry in manifest order (the manifest lists NR newest first).
+- Every NR list shows only the fitting entries: the NR DLL dropdown, the DLSS panel's NR swap list, Settings → DLSS
+  defaults, the DLSS batch. Every "Latest" install follows it: OptiScaler DLSS NR / F5, ShortFuse, DLSS5 Feeder, the NR
+  DLL swap with no pin, and a pin no longer published. An unknown card lists everything, newest first, as upstream (never
+  blocked, unlike wizardkof), and the NR DLL dropdown's tooltip says RHI could not tell the card.
+- A hand-picked per-game NR pin stays selected and is installed as chosen even when hidden from the list (#230 adds its
+  row note). A saved NR default (Settings) or a DLSS batch NR choice made for another card is skipped for that game with
+  a line, before any file changes; its other DLSS steps still run (wizardkof refuses the whole game).
+- RTX Encore keeps its own fixed 310.8.0 runtime whatever the card.
+- The NVIDIA driver version is now read by the same probe (moved from the HDR service); it also reads the open kernel
+  module's line (`NVIDIA UNIX Open Kernel Module for x86_64  615.78.08 …`), which the old pattern missed.
+
 <!-- w11/nightly-switch notes -->
 
 <!-- w11/nr-check notes -->

@@ -125,7 +125,7 @@ public sealed partial class OptiScalerDeploymentService
             if (NeuralRenderingRuntimeOwnership.OptiScalerVariantOwnsRuntime(variant) && _dlss is not null)
             {
                 await _dlss.FetchManifestAsync(cancellationToken).ConfigureAwait(false);
-                var latestNr = _dlss.Versions(DlssComponentKind.NeuralRendering).FirstOrDefault();
+                var latestNr = _dlss.LatestVersion(DlssComponentKind.NeuralRendering); // #229: "Latest" made for this card
                 var installedNr = record.Metadata.GetValueOrDefault(DlssNrRuntimeVersionMetadataKey);
                 if (!string.IsNullOrWhiteSpace(latestNr) && !string.Equals(latestNr, installedNr, StringComparison.OrdinalIgnoreCase))
                     update = true;
@@ -632,11 +632,12 @@ public sealed partial class OptiScalerDeploymentService
         if (!NeuralRenderingRuntimeOwnership.OptiScalerVariantOwnsRuntime(variant)) return (null, null);
         if (_dlss is null)
             throw new InvalidOperationException($"OptiScaler {VariantLabel(variant)} requires the DLSS runtime service so nvngx_dlssnr.dll can be staged safely.");
-        var path = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.NeuralRendering, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        // #229: "Latest" = the newest NR DLL made for this card (the version actually staged is recorded, never the
+        // manifest's first entry).
+        var cached = await _dlss.EnsureCachedVersionAsync(DlssComponentKind.NeuralRendering, null, cancellationToken).ConfigureAwait(false);
+        if (cached is not { } staged || string.IsNullOrWhiteSpace(staged.Path) || !File.Exists(staged.Path))
             throw new InvalidOperationException($"The current DLSS manifest did not provide nvngx_dlssnr.dll for the {VariantLabel(variant)} variant.");
-        var version = _dlss.Manifest?.Dlssnr?.FirstOrDefault()?.Version;
-        return (path, version);
+        return (staged.Path, staged.Version);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)

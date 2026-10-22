@@ -374,14 +374,46 @@ public sealed class DlssManagerService
 
     public IReadOnlyList<string> Versions(DlssComponentKind kind)
     {
-        var entries = Entries(kind);
+        var entries = OfferedEntries(kind);
         return entries.Select(x => x.Version).ToArray();
     }
 
     /// <summary>
+    /// #229: the card generation Neural Rendering lists and "Latest" follow (composition: <c>NvidiaGpuProbe</c>'s answer
+    /// from /proc; tests: a fake). Default unknown = every entry, newest first, as before.
+    /// </summary>
+    public Func<RtxGeneration> CardGeneration { get; set; } = static () => RtxGeneration.Unknown;
+
+    /// <summary>
+    /// Every version the manifest publishes for <paramref name="kind"/>, card or not (RTX Encore's fixed 310.8.0 runtime,
+    /// identifying an installed DLL, a hand-picked pin). Lists shown to the user and "Latest" use <see cref="Versions"/>.
+    /// </summary>
+    public IReadOnlyList<string> PublishedVersions(DlssComponentKind kind)
+        => Entries(kind).Select(x => x.Version).ToArray();
+
+    /// <summary>"Latest" for <paramref name="kind"/>: the newest entry offered (#229: made for this card for NR); null without a manifest.</summary>
+    public string? LatestVersion(DlssComponentKind kind) => OfferedEntries(kind).FirstOrDefault()?.Version;
+
+    /// <summary>
+    /// The cached DLL of one published version when RHI's stamp for it is valid (no download, no manifest fetch); null
+    /// otherwise. #231 reads the version resource of the NR DLL F5 is about to stage through it.
+    /// </summary>
+    public string? CachedDllPath(DlssComponentKind kind, string version)
+    {
+        var entry = Entries(kind).FirstOrDefault(x => string.Equals(x.Version, version, StringComparison.OrdinalIgnoreCase));
+        if (entry is null) return null;
+        var path = Path.Combine(_cacheRoot, CacheSubdir(kind), SanitizeVersion(entry.Version), DllName(kind));
+        return File.Exists(path) && CacheStamp.IsValid(path, entry.Url, entry.Version, entry.Sha256) ? path : null;
+    }
+
+    /// <summary>The cache folder of one NR/DLSS version (stamped entries of it are matched by #230's identification).</summary>
+    internal string CacheFolder(DlssComponentKind kind) => Path.Combine(_cacheRoot, CacheSubdir(kind));
+
+    /// <summary>
     /// Ensures the newest payload for one DLSS component is cached and returns its readable DLL path.
     /// Unlike SwapAsync this does not require an existing game target and is used by orchestrated
-    /// workflows such as DLSS5 Feeder that intentionally create a complete private stack.
+    /// workflows such as DLSS5 Feeder that intentionally create a complete private stack. #229: for Neural Rendering
+    /// "newest" is the newest DLL made for this card.
     /// </summary>
     public async Task<string?> EnsureNewestCachedAsync(
         DlssComponentKind kind,
@@ -389,7 +421,7 @@ public sealed class DlssManagerService
     {
         if (_manifest is null)
             await FetchManifestAsync(cancellationToken).ConfigureAwait(false);
-        var entry = Entries(kind).FirstOrDefault();
+        var entry = OfferedEntries(kind).FirstOrDefault();
         if (entry is null) return null;
         return await DownloadDllAsync(entry, DllName(kind), CacheSubdir(kind), cancellationToken).ConfigureAwait(false);
     }
@@ -406,7 +438,9 @@ public sealed class DlssManagerService
 
     /// <summary>
     /// As <see cref="EnsureCachedAsync"/>, but also returns the manifest version actually cached,
-    /// which differs from <paramref name="version"/> when that version is no longer published.
+    /// which differs from <paramref name="version"/> when that version is no longer published. #229: a version asked
+    /// for by name is any published one (a hand-picked pin stays as chosen); null or no longer published falls back to
+    /// "Latest" for this card.
     /// </summary>
     public async Task<(string Path, string Version)?> EnsureCachedVersionAsync(
         DlssComponentKind kind,
@@ -415,9 +449,8 @@ public sealed class DlssManagerService
     {
         if (_manifest is null)
             await FetchManifestAsync(cancellationToken).ConfigureAwait(false);
-        var entries = Entries(kind);
-        var entry = entries.FirstOrDefault(x => string.Equals(x.Version, version, StringComparison.OrdinalIgnoreCase))
-                    ?? entries.FirstOrDefault();
+        var entry = Entries(kind).FirstOrDefault(x => string.Equals(x.Version, version, StringComparison.OrdinalIgnoreCase))
+                    ?? OfferedEntries(kind).FirstOrDefault();
         if (entry is null) return null;
         var path = await DownloadDllAsync(entry, DllName(kind), CacheSubdir(kind), cancellationToken).ConfigureAwait(false);
         return (path, entry.Version);
@@ -552,6 +585,13 @@ public sealed class DlssManagerService
         DlssComponentKind.NeuralRendering => _manifest?.Dlssnr ?? [],
         _ => []
     };
+
+    // #229: what RHI offers and calls "Latest": Neural Rendering entries made for this card (NeuralRenderingGpuPolicy);
+    // every other family as published.
+    private IReadOnlyList<DlssManifestEntry> OfferedEntries(DlssComponentKind kind)
+        => kind == DlssComponentKind.NeuralRendering
+            ? NeuralRenderingGpuPolicy.ForCard(Entries(kind), static entry => entry.Version, CardGeneration())
+            : Entries(kind);
 
     private static string DllName(DlssComponentKind kind) => kind switch
     {
