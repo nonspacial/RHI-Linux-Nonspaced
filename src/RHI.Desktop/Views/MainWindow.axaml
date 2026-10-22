@@ -298,8 +298,8 @@
 
                 <StackPanel x:Name="DlssStreamlineSectionBody" Spacing="10">
                   <!-- One Grid-identical row per component; the controls wrap under the status when it would get < 220 px. -->
-                  <!-- The version dropdown is at least 160 px and grows to its whole selected label (e.g. "310.8.2 (20/30/40/50)"):
-                       a closed ComboBox clips a long label with no ellipsis. -->
+                  <!-- The version dropdowns are 190 px, wide enough for "310.8.2 (20/30/40/50)" so the five rows stay aligned, and
+                       grow to a longer selected label: a closed ComboBox clips a long label with no ellipsis. -->
                   <StackPanel Spacing="7">
                     <views:ResponsiveRow Columns="170,*,145,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
                       <TextBlock Text="{DynamicResource Ui.SuperResolution}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -307,7 +307,7 @@
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssSrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
-                      <ComboBox Grid.Column="3" MinWidth="160" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding CanSwapDlssSr}"/>
+                      <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding CanSwapDlssSr}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding CanSwapDlssSr}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrRestoreAvailable}"/>
                     </views:ResponsiveRow>
@@ -317,7 +317,7 @@
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssRrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
-                      <ComboBox Grid.Column="3" MinWidth="160" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding CanSwapDlssRr}"/>
+                      <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding CanSwapDlssRr}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding CanSwapDlssRr}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrRestoreAvailable}"/>
                     </views:ResponsiveRow>
@@ -327,7 +327,7 @@
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssFgDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
-                      <ComboBox Grid.Column="3" MinWidth="160" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding CanSwapDlssFg}"/>
+                      <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding CanSwapDlssFg}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding CanSwapDlssFg}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgRestoreAvailable}"/>
                     </views:ResponsiveRow>
@@ -337,7 +337,7 @@
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssNrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
-                      <ComboBox Grid.Column="3" MinWidth="160" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding CanSwapDlssNr}"/>
+                      <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding CanSwapDlssNr}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding CanSwapDlssNr}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrRestoreAvailable}"/>
                     </views:ResponsiveRow>
@@ -348,7 +348,7 @@
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding StreamlineDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
-                      <ComboBox Grid.Column="3" MinWidth="160" ItemsSource="{Binding StreamlineVersions}" SelectedItem="{Binding SelectedStreamlineVersion}" IsEnabled="{Binding CanSwapStreamline}"/>
+                      <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding StreamlineVersions}" SelectedItem="{Binding SelectedStreamlineVersion}" IsEnabled="{Binding CanSwapStreamline}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapStreamlineCommand}" IsEnabled="{Binding CanSwapStreamline}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreStreamlineCommand}" IsEnabled="{Binding StreamlineRestoreAvailable}"/>
                     </views:ResponsiveRow>
