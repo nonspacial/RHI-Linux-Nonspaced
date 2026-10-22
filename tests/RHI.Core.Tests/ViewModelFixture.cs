@@ -63,6 +63,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/archives rows
         // w10/journal-holds rows
         // w11/download-idle rows
+        , bool gitHubCache = false
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
@@ -106,6 +107,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w10/archives rows
             // w10/journal-holds rows
             // w11/download-idle rows
+            , gitHubCache
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
@@ -177,6 +179,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/archives rows
         // w10/journal-holds rows
         // w11/download-idle rows
+        , bool gitHubCache = false
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
@@ -212,6 +215,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w10/archives rows
             // w10/journal-holds rows
             // w11/download-idle rows
+            , gitHubCache
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
@@ -292,12 +296,13 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/archives rows
         // w10/journal-holds rows
         // w11/download-idle rows
+        , bool gitHubCache
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
         )
     {
-        var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse, hang));
+        var http = new HttpClient(gitHubCache ? new GitHubConditionalCacheHandler(new OfflineHandler(httpFailure, httpResponse, hang)) : new OfflineHandler(httpFailure, httpResponse, hang)); // w11/download-idle: the app's GitHub API cache in front (#233)
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) }.Concat(detectors ?? []).ToArray());
         var deployment = new TransactionalFileDeploymentService();

@@ -1621,6 +1621,12 @@ public static class UiLocalizationService
         (": RHI could not look for its copy with the pre-operation content (", ": o RHI não conseguiu procurar a cópia com o conteúdo anterior à operação ("),
         ("), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept.", "), porque uma pasta não pode ser lida ou não está lá (o disco dela está montado?); todas as cópias foram mantidas."),
         // w11/download-idle rows
+        // #233: a download that sent no data for the idle limit (seconds and the source's name follow).
+        (RHI.Core.Deployment.DownloadStalledException.MessagePrefix, "O download parou: nenhum dado chegou durante "),
+        (RHI.Core.Deployment.DownloadStalledException.MessageMiddle, " segundos. Origem: "),
+        (RHI.Core.Deployment.DownloadStalledException.MessageMiddleOneSecond, " segundo. Origem: "),
+        // #233 correction: HttpClient's own timeout ran out (seconds and the source's name follow).
+        (RHI.Core.Deployment.DownloadTimedOutException.MessagePrefix, "O servidor demorou demais para responder: o RHI parou de esperar após "),
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows

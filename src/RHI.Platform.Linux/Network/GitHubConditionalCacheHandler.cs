@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
+using RHI.Core.Deployment;
 using RHI.Core.Services;
+using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Platform.Linux.Network;
 
@@ -78,16 +80,94 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
         if (etag is null && lastModified is null) return response;
         if (response.Content.Headers.ContentLength is long announced && announced > MaxCachedBodyBytes) return response;
 
-        var body = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        // #233: this read happens inside SendAsync, before any caller can wrap the body, so it runs under the idle limit
+        // itself (per gap, never a total deadline): a GitHub answer that stops sending data ends with
+        // DownloadStalledException, not after the whole HttpClient.Timeout. At most MaxCachedBodyBytes + 1 bytes are held.
         var contentType = response.Content.Headers.ContentType;
-        if (body.Length <= MaxCachedBodyBytes)
-            Store(key, new Entry(body, contentType, etag, lastModified, _now()));
-        // The body was read; hand the caller an equivalent buffered response.
-        var replacement = new ByteArrayContent(body);
+        var body = IdleTimeoutStream.Wrap(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), DownloadSources.GitHubApi.Name);
+        byte[] read;
+        try
+        {
+            read = await ReadUpToAsync(body, MaxCachedBodyBytes + 1, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await body.DisposeAsync().ConfigureAwait(false);
+            response.Dispose();
+            throw;
+        }
+
+        HttpContent replacement;
+        if (read.Length <= MaxCachedBodyBytes)
+        {
+            await body.DisposeAsync().ConfigureAwait(false);
+            Store(key, new Entry(read, contentType, etag, lastModified, _now()));
+            // The body was read; hand the caller an equivalent buffered response.
+            replacement = new ByteArrayContent(read);
+        }
+        else
+        {
+            // Too big to keep: the caller reads what was read so far, then the rest (still under the idle limit).
+            replacement = new StreamContent(new PrefixedStream(read, body));
+        }
         if (contentType is not null) replacement.Headers.ContentType = contentType;
         replacement.Headers.LastModified = lastModified;
         response.Content = replacement;
         return response;
+    }
+
+    private static async Task<byte[]> ReadUpToAsync(Stream body, int limit, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[Math.Min(limit, 81920)];
+        using var collected = new MemoryStream();
+        while (collected.Length < limit)
+        {
+            var wanted = (int)Math.Min(buffer.Length, limit - collected.Length);
+            var count = await body.ReadAsync(buffer.AsMemory(0, wanted), cancellationToken).ConfigureAwait(false);
+            if (count == 0) break;
+            collected.Write(buffer, 0, count);
+        }
+        return collected.ToArray();
+    }
+
+    /// <summary>Bytes already read, then the rest of the body.</summary>
+    private sealed class PrefixedStream(byte[] prefix, Stream rest) : Stream
+    {
+        private int _offset;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_offset < prefix.Length)
+            {
+                var count = Math.Min(buffer.Length, prefix.Length - _offset);
+                prefix.AsMemory(_offset, count).CopyTo(buffer);
+                _offset += count;
+                return count;
+            }
+            return await rest.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) rest.Dispose();
+            base.Dispose(disposing);
+        }
     }
 
     private HttpResponseMessage Hit(Entry cached, HttpRequestMessage request, string? logLine)

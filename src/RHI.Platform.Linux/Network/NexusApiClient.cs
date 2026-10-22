@@ -124,6 +124,11 @@ public sealed class NexusApiClient
             {
                 throw new NexusApiException(UnreachableMessage, null, ex);
             }
+            // #233 correction: the client's own timeout is this client's failure with RHI's text, not .NET's "canceled" line.
+            catch (TaskCanceledException ex) when (DownloadTimedOutException.IsClientTimeout(ex, cancellationToken))
+            {
+                throw new NexusApiException(DownloadTimedOutException.MessageFor(DownloadSources.NexusApi.Name, _http.Timeout), null, ex);
+            }
             using (response)
             {
                 DownloadSources.NexusApi.ValidateFinal(response, url);
@@ -139,7 +144,15 @@ public sealed class NexusApiClient
                 // A 3xx is never followed (the key would go along): refused like any other non-success answer.
                 if (!response.IsSuccessStatusCode)
                     throw new NexusApiException($"{AnsweredPrefix}{(int)response.StatusCode}.", response.StatusCode);
-                return await ReadCappedAsync(response, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await ReadCappedAsync(response, cancellationToken).ConfigureAwait(false);
+                }
+                // #233: a stalled answer is this client's failure type (its callers catch NexusApiException), keeping the stall's text.
+                catch (DownloadStalledException ex)
+                {
+                    throw new NexusApiException(ex.Message, null, ex);
+                }
             }
         }
     }
@@ -150,7 +163,8 @@ public sealed class NexusApiClient
         var cap = MaxAnswerBytes;
         if (response.Content.Headers.ContentLength is long announced && announced > cap)
             throw new NexusApiException(OversizedMessage, response.StatusCode);
-        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        // #233: the client's 30 s timeout stops at the headers; the idle limit bounds the answer's body.
+        await using var body = IdleTimeoutStream.Wrap(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), DownloadSources.NexusApi.Name);
         using var buffer = new MemoryStream();
         var chunk = new byte[81920];
         int read;
