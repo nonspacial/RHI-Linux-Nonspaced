@@ -36,6 +36,12 @@ public sealed class NeuralRenderingGpuTests : IDisposable
     [InlineData("NVIDIA GeForce GTX 1080", RtxGeneration.Unknown)]
     [InlineData("NVIDIA TITAN X (Pascal)", RtxGeneration.Unknown)]
     [InlineData("Tesla T4", RtxGeneration.Unknown)]
+    // Review nit 5: the chip decides where the GeForce number names another generation (exceptions table).
+    [InlineData("NVIDIA GeForce RTX 2050", RtxGeneration.Rtx30)]              // Ampere GA107
+    [InlineData("NVIDIA GeForce RTX 3050 A Laptop GPU", RtxGeneration.Rtx40)] // Ada AD106
+    [InlineData("NVIDIA GeForce RTX 3050 Laptop GPU", RtxGeneration.Rtx30)]
+    [InlineData("NVIDIA GeForce RTX 3050 Ti Laptop GPU", RtxGeneration.Rtx30)]
+    [InlineData("NVIDIA GeForce RTX 2060", RtxGeneration.Rtx20)]
     public void Probe_ReadsTheGenerationFromTheModelName(string model, RtxGeneration expected)
     {
         var facts = NvidiaGpuProbe.Read(ProcTree(_root, OpenModuleVersion, model), Path.Combine(_root, "sys"));
@@ -54,6 +60,18 @@ public sealed class NeuralRenderingGpuTests : IDisposable
     public void Probe_AnUnknownCardBesideAKnownOne_KeepsTheKnownGeneration()
         => Assert.Equal(RtxGeneration.Rtx30,
             NvidiaGpuProbe.Read(ProcTree(_root, OpenModuleVersion, "NVIDIA GeForce GTX 1080", "NVIDIA RTX A4000"), Path.Combine(_root, "sys")).Generation);
+
+    /// <summary>Review nit 4: one card's unreadable information file leaves out that card only, never every card.</summary>
+    [PermissionDenialFact]
+    public void Probe_OneUnreadableInformationFile_KeepsTheReadableCards()
+    {
+        var proc = ProcTree(_root, OpenModuleVersion, "NVIDIA GeForce RTX 5090", "NVIDIA GeForce RTX 4090");
+        PermissionDenial.MakeUnreadable(Path.Combine(proc, "driver", "nvidia", "gpus", "0000:01:00.0", "information"));
+
+        var facts = NvidiaGpuProbe.Read(proc, Path.Combine(_root, "sys"));
+
+        Assert.Equal((true, RtxGeneration.Rtx40, "NVIDIA GeForce RTX 4090"), (facts.Present, facts.Generation, facts.Model));
+    }
 
     [Fact]
     public void Probe_NvidiaNotLoaded_IsUnknown_WithNoDriver()

@@ -882,7 +882,8 @@ build.
   decision of 2026-10-22; upstream RankFTW 2.8.7 always takes the manifest's first NR entry.
 - RHI reads the card from the NVIDIA driver's model names under `/proc/driver/nvidia/gpus/*/information` (read-only):
   GeForce RTX by number, workstation cards by family (Turing "Quadro RTX"/"TITAN RTX" = 20, Ampere "RTX A…" = 30, "Ada"
-  = 40, "Blackwell" = 50). With several NVIDIA cards the newest generation counts. No NVIDIA driver, no model, a card
+  = 40, "Blackwell" = 50); two GeForce cards by their chip (RTX 2050 = Ampere = 30, RTX 3050 A Laptop = Ada = 40). One
+  card's unreadable information file leaves out that card only. With several NVIDIA cards the newest generation counts. No NVIDIA driver, no model, a card
   from before RTX or a name RHI does not know = unknown. Never `nvidia-smi` (wizardkof) and never the DLL's CUDA fatbin
   list (the real `310.8.3 (50xx)` DLL lists sm_75/86/89/120, so a fatbin check passes the wrong file).
 - A manifest NR entry fits the generations its label names (`(50xx)`, `(20/30/40/50)`, `(RTX 40 Series)`…); an entry
@@ -910,7 +911,10 @@ build.
 - Which version is installed: the record's own note (`NeuralRendering.DllVersion`, now written by every ShortFuse and
   Feeder install; OptiScaler's runtime-version key); for older records (Borderlands 3's) the record's SHA-256 of the file
   matched against RHI's stamped NR cache entries, else the DLL's PE version mapped to exactly one manifest entry. None or
-  several = "could not be checked", never "current", never a blind swap.
+  several = "could not be checked", never "current", never a blind swap. Before a move RHI checks the file on disk still
+  has the record's SHA-256 (behind the NR Cost Scaler: `nvngx_dlssnr_real.dll`): a DLL the user replaced or removed by hand
+  is "could not be checked" with its own line and left as it is, never an update the swap would refuse on every run. The
+  update history's "from" of an older record is the version told at swap time.
 - A version picked by hand is never changed; when it is made for another card generation the component row says so.
   Unknown card: nothing moves because of the card. Update All exclusions, the NR Cost Scaler hold ("held", never a
   failure), ReShade No Addons holds, journal holds and the "modified outside RHI" refusal of the swap all still apply.

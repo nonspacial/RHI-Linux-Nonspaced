@@ -72,6 +72,8 @@ public static partial class NvidiaGpuProbe
     public static RtxGeneration GenerationOf(string? model)
     {
         if (string.IsNullOrWhiteSpace(model)) return RtxGeneration.Unknown;
+        foreach (var (pattern, generation) in NumberIsNotTheArchitecture)
+            if (pattern.IsMatch(model)) return generation;
         if (BlackwellRegex().IsMatch(model)) return RtxGeneration.Rtx50;
         if (AdaRegex().IsMatch(model)) return RtxGeneration.Rtx40;
         if (AmpereWorkstationRegex().IsMatch(model)) return RtxGeneration.Rtx30;
@@ -88,6 +90,17 @@ public static partial class NvidiaGpuProbe
             }
             : RtxGeneration.Unknown;
     }
+
+    /// <summary>
+    /// GeForce cards whose number names another generation than their chip (review nit 5); checked before the number rule:
+    /// the laptop RTX 2050 is an Ampere chip (GA107) = RTX 30, the RTX 3050 A Laptop GPU an Ada chip (AD106) = RTX 40.
+    /// NR builds are labelled by architecture, so the chip decides. Add a card here only with NVIDIA's own spec page.
+    /// </summary>
+    private static readonly (Regex Pattern, RtxGeneration Generation)[] NumberIsNotTheArchitecture =
+    [
+        (new Regex(@"\bRTX\s*2050\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), RtxGeneration.Rtx30),
+        (new Regex(@"\bRTX\s*3050\s+A\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), RtxGeneration.Rtx40),
+    ];
 
     /// <summary>
     /// #231 (moved here from <c>LinuxHdrLaunchProfileService</c>, one reader): the loaded NVIDIA kernel module's version
@@ -158,12 +171,20 @@ public static partial class NvidiaGpuProbe
             {
                 var info = Path.Combine(dir, "information");
                 if (!File.Exists(info)) continue;
-                foreach (var line in File.ReadLines(info))
+                // One card's unreadable file drops only that card; the readable ones still count (review nit 4).
+                try
                 {
-                    if (!line.StartsWith("Model:", StringComparison.OrdinalIgnoreCase)) continue;
-                    var model = line["Model:".Length..].Trim();
-                    if (model.Length > 0) models.Add(model);
-                    break;
+                    foreach (var line in File.ReadLines(info))
+                    {
+                        if (!line.StartsWith("Model:", StringComparison.OrdinalIgnoreCase)) continue;
+                        var model = line["Model:".Length..].Trim();
+                        if (model.Length > 0) models.Add(model);
+                        break;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    RHI.Core.Services.AppLog.Warn("nvidia", $"NVIDIA GPU information unreadable, that card is left out: {info}", ex);
                 }
             }
         }
