@@ -578,6 +578,16 @@ public sealed class WaveOneMessageLocalizationTests
         // w11/download-idle rows
         // w11/nr-gpu rows
         // w11/nightly-switch rows
+        yield return OptiScalerDeploymentService.NightlySwitchedPrefix + "20261012";
+        yield return OptiScalerDeploymentService.NightlySwitchedToLatestPrefix + "20261013";
+        yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix + "HTTP 404";
+        yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + "Managed OptiScaler file was modified outside RHI and will not be updated: /jogos/exemplo/dxgi.dll";
+        yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + "OptiScaler managed file is missing or has no ownership hash: /jogos/exemplo/dxgi.dll";
+        yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + "OptiScaler update package layout is invalid: /jogos/exemplo/OptiScaler";
+        yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + "OptiScaler update rolled back: New OptiScaler package file collides with an external/untracked file: /jogos/exemplo/x.dll";
+        yield return OptiScalerDeploymentService.NightlySwitchNotNightlyMessage;
+        yield return OptiScalerDeploymentService.NightlySwitchSameBuildPrefix + "20261004";
+        yield return OptiScalerDeploymentService.NightlySwitchControlUePrefix + "20261004";
         // w11/nr-check rows
     }
 

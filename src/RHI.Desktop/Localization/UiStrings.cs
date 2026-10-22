@@ -635,7 +635,7 @@ internal static class UiStrings
         ("Sync.OptiScalerNightlyBuildTip", "Fixa este jogo numa das 30 builds nightly mais recentes. Um jogo fixado fica na sua build: Atualizar tudo não a troca. Mais recente sempre segue a build mais nova.", "Pins this game to one of the 30 newest nightly builds. A pinned game stays on its build: Update All leaves it alone. Latest always follows the newest build."),
         ("Sync.OptiScalerNightlyLatest", "Mais recente (atualização automática)", "Latest (auto-update)"),
         ("Sync.OptiScalerNightlyNote", "A build escolhida é salva por jogo e baixada quando o OptiScaler é instalado.", "The chosen build is saved per game and downloaded when OptiScaler is installed."),
-        ("Sync.OptiScalerNightlyLocked", "Remova o OptiScaler para trocar a build.", "Remove OptiScaler to change the build."),
+        ("Sync.OptiScalerNightlyLocked", "Esta build está instalada. Escolha outra build e clique em Aplicar para trocá-la no lugar.", "This build is installed. Choose another build and press Apply to change it in place."),
         ("Sync.OptiScalerNightlyListFailed", "Não foi possível carregar a lista de builds nightly; só Mais recente e a build salva estão disponíveis.", "The nightly build list could not be loaded; only Latest and the saved build are offered."),
         ("Sync.OptiScalerNightlyPinned", "{0}: OptiScaler Nightly fixado na build {1}.", "{0}: OptiScaler Nightly pinned to build {1}."),
         ("Sync.OptiScalerNightlyUnpinned", "{0}: OptiScaler Nightly segue a build mais nova.", "{0}: OptiScaler Nightly follows the newest build."),
@@ -1351,6 +1351,15 @@ internal static class UiStrings
         // w11/download-idle rows
         // w11/nr-gpu rows
         // w11/nightly-switch rows
+        ("Nsw.NightlyDiffers", "Instalada: {0}. Clique em Aplicar para trocar para a build escolhida; até lá o jogo continua com a instalada.", "Installed: {0}. Press Apply to switch to the chosen build; until then the game keeps the installed one."),
+        ("Nsw.ControlUeHeld", "A geração de quadros do Control precisa desta build, então ela fica; remova o OptiScaler para escolher outra.", "Control's frame generation needs this build, so it stays; remove OptiScaler to choose another."),
+        ("Nsw.OtherChannelLocked", "Remova o OptiScaler para trocar a build.", "Remove OptiScaler to change the build."),
+        ("Nsw.ApplyTip", "Troca o OptiScaler Nightly instalado para a build escolhida, no lugar; o OptiScaler.ini e o nome da DLL são mantidos.", "Switches the installed OptiScaler Nightly to the chosen build in place; OptiScaler.ini and its DLL name are kept."),
+        ("Nsw.Chosen", "{0}: build {1} escolhida; clique em Aplicar para trocar o OptiScaler Nightly instalado.", "{0}: build {1} chosen; press Apply to switch the installed OptiScaler Nightly."),
+        ("Nsw.ChosenLatest", "{0}: Mais recente escolhida; clique em Aplicar para trocar o OptiScaler Nightly instalado.", "{0}: Latest chosen; press Apply to switch the installed OptiScaler Nightly."),
+        ("Nsw.Switching", "{0}: trocando o OptiScaler Nightly para {1}…", "{0}: switching OptiScaler Nightly to {1}…"),
+        ("Nsw.Switched", "{0}: o OptiScaler Nightly agora está em {1}.", "{0}: OptiScaler Nightly is now on {1}."),
+        ("Nsw.SwitchCancelled", "{0}: troca cancelada; o OptiScaler Nightly continua na build instalada.", "{0}: switch cancelled; OptiScaler Nightly stays on its installed build."),
         // w11/nr-check rows
     ];
 }

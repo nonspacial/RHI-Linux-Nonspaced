@@ -150,9 +150,23 @@ public sealed partial class OptiScalerDeploymentService
     {
         var record = GetRecord(game);
         if (record is null) return ComponentOperationResult.Fail("OptiScaler is not managed by RHI Linux for this game.");
+        // A pinned Nightly stays on its build (#156): Update All never moves it; only the ⚙ dialog's Apply does (#232).
         if (GetPinnedNightlyBuild(record) is { } pinned)
             return ComponentOperationResult.Ok(NightlyPinnedNotUpdatedPrefix + pinned);
+        return await UpdateCoreAsync(game, record, nightly: null, cancellationToken).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// OptiScaler's update transaction (#23, #31), shared by Update All (<paramref name="nightly"/> null: the channel's
+    /// latest package) and the in-place Nightly build switch (#232, <see cref="SwitchNightlyBuildAsync"/>: the chosen
+    /// build, its pin and the saved choice written with the record). Same file checks, journal, rollback and DLL name.
+    /// </summary>
+    private async Task<ComponentOperationResult> UpdateCoreAsync(
+        DetectedGame game,
+        LinuxDeploymentRecord record,
+        NightlySwitch? nightly,
+        CancellationToken cancellationToken)
+    {
         var legacySwaps = await FindLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
         foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
         {
@@ -170,12 +184,16 @@ public sealed partial class OptiScalerDeploymentService
         string? nrRuntimeVersion = null;
         try
         {
-            package = await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false);
+            package = nightly is null
+                ? await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false)
+                : await nightly.FetchAsync(_packages, cancellationToken).ConfigureAwait(false);
             (nrRuntime, nrRuntimeVersion) = await PrepareDlssNrRuntimeAsync(variant, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return ComponentOperationResult.Fail($"Could not obtain latest OptiScaler {VariantLabel(variant)} package: {ex.Message}");
+            return ComponentOperationResult.Fail(nightly is null
+                ? $"Could not obtain latest OptiScaler {VariantLabel(variant)} package: {ex.Message}"
+                : NightlyBuildUnavailablePrefix + ex.Message);
         }
         // OptiPatcher is refreshed only where this install carries it (upstream re-copies it only where it is deployed);
         // its download failing keeps the deployed build.
@@ -252,6 +270,8 @@ public sealed partial class OptiScalerDeploymentService
             }
             foreach (var dir in createdDirs)
                 if (!record.DirectoriesCreatedByRhi.Contains(dir, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(dir);
+            // #232: the switched build's pin, and the saved choice written tracked + declared BEFORE the commit point.
+            if (nightly is not null) await nightly.BeforeCommitAsync(record, scope, cancellationToken).ConfigureAwait(false);
             _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
@@ -264,7 +284,8 @@ public sealed partial class OptiScalerDeploymentService
         }
         // The record carries the operation id: it is the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok($"OptiScaler {VariantLabel(variant)} updated to {package.Version}; OptiScaler.ini, ReShade coexistence and Wine override ownership were preserved.",
+        return ComponentOperationResult.Ok(nightly?.SuccessMessage(package)
+            ?? $"OptiScaler {VariantLabel(variant)} updated to {package.Version}; OptiScaler.ini, ReShade coexistence and Wine override ownership were preserved.",
             requested.Select(item => item.Target).Where(path => !Path.GetFileName(path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)).ToArray());
     }
 

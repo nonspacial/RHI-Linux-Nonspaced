@@ -1623,6 +1623,19 @@ public static class UiLocalizationService
         // w11/download-idle rows
         // w11/nr-gpu rows
         // w11/nightly-switch rows
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchedPrefix, "O OptiScaler Nightly foi trocado no lugar; o OptiScaler.ini, o nome da DLL e o override do Wine foram mantidos. Build: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchedToLatestPrefix, "O OptiScaler Nightly foi trocado no lugar para Mais recente (atualização automática); o OptiScaler.ini, o nome da DLL e o override do Wine foram mantidos. Versão: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchFailedPrefix, "O OptiScaler Nightly não foi trocado; a build instalada continua e a escolha salva voltou para ela: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlyBuildUnavailablePrefix, "Não foi possível baixar a build escolhida do OptiScaler Nightly: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchNotNightlyMessage, "Só um OptiScaler Nightly instalado pode trocar de build no lugar; nada foi alterado."),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchSameBuildPrefix, "O OptiScaler Nightly já está na build escolhida; nada foi alterado. Build: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchControlUePrefix, "Este OptiScaler Nightly foi instalado para a geração de quadros do Control, que precisa desta build, então não foi trocado; remova o OptiScaler para escolher outra build. Build: "),
+        // The update transaction's own refusals, which a switch now shows in the ⚙ dialog (#232).
+        ("OptiScaler managed file is missing or has no ownership hash: ", "Um arquivo gerenciado do OptiScaler está faltando ou não tem hash de posse: "),
+        ("Managed OptiScaler file was modified outside RHI and will not be updated: ", "Um arquivo gerenciado do OptiScaler foi modificado fora do RHI e não será atualizado: "),
+        ("OptiScaler update package layout is invalid: ", "O pacote de atualização do OptiScaler tem uma estrutura inválida: "),
+        ("OptiScaler update rolled back: ", "A atualização do OptiScaler foi desfeita: "),
+        ("New OptiScaler package file collides with an external/untracked file: ", "Um arquivo do novo pacote do OptiScaler colide com um arquivo externo/não rastreado: "),
         // w11/nr-check rows
     ];
 

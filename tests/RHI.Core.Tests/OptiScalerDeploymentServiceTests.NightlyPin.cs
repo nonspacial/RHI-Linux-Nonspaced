@@ -15,6 +15,11 @@ public sealed partial class OptiScalerDeploymentServiceTests
     private sealed class NightlyProvider(OptiScalerPackage latest, OptiScalerPackage pinned) : IOptiScalerPackageProvider
     {
         public List<string> Calls { get; } = [];
+        public OptiScalerPackage Latest { get; set; } = latest;
+        /// <summary>The package every pinned build is served from (#232 tests swap it to tell two builds apart).</summary>
+        public OptiScalerPackage Pinned { get; set; } = pinned;
+        /// <summary>Thrown by every request while set (a build that cannot be downloaded).</summary>
+        public Exception? Failure { get; set; }
 
         public Task<OptiScalerPackage> GetLatestAsync(CancellationToken cancellationToken = default)
             => GetLatestAsync(OptiScalerVariant.Stable, cancellationToken);
@@ -22,13 +27,15 @@ public sealed partial class OptiScalerDeploymentServiceTests
         public Task<OptiScalerPackage> GetLatestAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
         {
             Calls.Add("latest:" + variant);
-            return Task.FromResult(latest with { Variant = variant });
+            return Failure is { } failure ? Task.FromException<OptiScalerPackage>(failure) : Task.FromResult(Latest with { Variant = variant });
         }
 
         public Task<OptiScalerPackage> GetNightlyBuildAsync(string build, CancellationToken cancellationToken = default)
         {
             Calls.Add("build:" + build);
-            return Task.FromResult(pinned with { Variant = OptiScalerVariant.Nightly, Version = build });
+            return Failure is { } failure
+                ? Task.FromException<OptiScalerPackage>(failure)
+                : Task.FromResult(Pinned with { Variant = OptiScalerVariant.Nightly, Version = build });
         }
 
         public Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)

@@ -98,8 +98,8 @@ public sealed partial class LinuxManagedComponentService
     }
 
     /// <summary>
-    /// The nightly build shown for the game (#156): the installed record's pin while OptiScaler Nightly is installed (its
-    /// choice is fixed until removal, as upstream), otherwise the saved preference. Null = Latest.
+    /// The game's nightly build (#156): the installed record's pin while RHI's OptiScaler is installed, otherwise the saved
+    /// preference. Null = Latest. The ⚙ row shows <see cref="GetOptiScalerNightlyChoice"/>, which may differ until Apply (#232).
     /// </summary>
     public string? GetOptiScalerNightlyBuild(DetectedGame game)
     {
@@ -110,7 +110,10 @@ public sealed partial class LinuxManagedComponentService
         return OptiScalerPackageProvider.IsNightlyBuild(saved) ? saved : null;
     }
 
-    /// <summary>Saves the nightly build used at the next Nightly install (null = Latest). Throws when the file cannot be written.</summary>
+    /// <summary>
+    /// Saves the nightly build used at the next Nightly install, or by Apply on an installed Nightly (#232); null = Latest.
+    /// Throws when the file cannot be written.
+    /// </summary>
     public void SetOptiScalerNightlyBuild(DetectedGame game, string? build)
     {
         if (build is not null && !OptiScalerPackageProvider.IsNightlyBuild(build))
@@ -120,6 +123,48 @@ public sealed partial class LinuxManagedComponentService
 
     public Task<IReadOnlyList<string>> ListOptiScalerNightlyBuildsAsync(CancellationToken cancellationToken = default)
         => _optiscaler.ListNightlyBuildsAsync(cancellationToken);
+
+    /// <summary>
+    /// The nightly build saved as the game's choice (#156; null = Latest), whatever is installed. While OptiScaler Nightly
+    /// is installed it may differ from <see cref="GetInstalledOptiScalerNightlyBuild"/> until Apply switches it (#232).
+    /// </summary>
+    public string? GetOptiScalerNightlyChoice(DetectedGame game)
+    {
+        var saved = _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler);
+        return OptiScalerPackageProvider.IsNightlyBuild(saved) ? saved : null;
+    }
+
+    /// <summary>What the ⚙ dialog's Nightly build row may do with RHI's installed OptiScaler on the game (#232).</summary>
+    public OptiScalerNightlySwitchState GetOptiScalerNightlySwitchState(DetectedGame game)
+    {
+        var record = _optiscaler.GetRecord(game);
+        if (record is null) return OptiScalerNightlySwitchState.NotInstalled;
+        if (OptiScalerDeploymentService.GetInstalledVariant(record) != OptiScalerVariant.Nightly) return OptiScalerNightlySwitchState.OtherChannel;
+        return OptiScalerDeploymentService.HoldsControlUeFrameGenerationBuild(game, record)
+            ? OptiScalerNightlySwitchState.HeldForControlUe
+            : OptiScalerNightlySwitchState.Switchable;
+    }
+
+    /// <summary>The build RHI's installed OptiScaler Nightly is on (null = Latest, or no Nightly installed).</summary>
+    public string? GetInstalledOptiScalerNightlyBuild(DetectedGame game)
+        => _optiscaler.GetRecord(game) is { } record ? OptiScalerDeploymentService.GetPinnedNightlyBuild(record) : null;
+
+    /// <summary>
+    /// #232 (wizardkof v0.9.25 "Apply selected build now"): switches RHI's installed OptiScaler Nightly to the saved choice
+    /// (<see cref="GetOptiScalerNightlyChoice"/>) in place, guarded like an update and recorded in the update history. A
+    /// failed or cancelled switch leaves the installed build and puts the choice back on it.
+    /// </summary>
+    public Task<ComponentOperationResult> ApplyOptiScalerNightlyBuildAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler);
+        if (guard is not null) return Task.FromResult(guard);
+        var build = GetOptiScalerNightlyChoice(game);
+        return Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Update,
+            () => (NightlySwitchForTesting ?? ((g, b, ct) => _optiscaler.SwitchNightlyBuildAsync(g, b, _neuralVersionPins, ct)))(game, build, cancellationToken));
+    }
+
+    /// <summary>Test seam (#232 VM rows): stands in for the switch itself after the guards; null = the real one.</summary>
+    internal Func<DetectedGame, string?, CancellationToken, Task<ComponentOperationResult>>? NightlySwitchForTesting { get; set; }
 
     /// <summary>
     /// w3/dllnames (#136): Control UE's optional frame-generation step after its RenoDX install — OptiScaler Nightly pinned
@@ -134,6 +179,19 @@ public sealed partial class LinuxManagedComponentService
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
                 () => new ControlUeFrameGenerationService(_optiscaler, _records).InstallAsync(game, useHdr, cancellationToken));
     }
+}
+
+/// <summary>What the OptiScaler ⚙ Nightly build row may do with the installed OptiScaler (#232).</summary>
+public enum OptiScalerNightlySwitchState
+{
+    /// <summary>RHI has not installed OptiScaler on the game: the choice is used at the next install.</summary>
+    NotInstalled,
+    /// <summary>RHI's OptiScaler is another channel: no nightly build applies.</summary>
+    OtherChannel,
+    /// <summary>RHI's OptiScaler Nightly: a chosen build can be applied in place.</summary>
+    Switchable,
+    /// <summary>Control frame generation's pinned build (#136): it stays on that build.</summary>
+    HeldForControlUe
 }
 
 /// <summary>What setting the global OptiScaler overlay key changed (Refs #187): templates and games updated, games that kept their file.</summary>
