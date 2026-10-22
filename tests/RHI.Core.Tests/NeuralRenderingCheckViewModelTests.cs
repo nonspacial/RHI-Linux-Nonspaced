@@ -417,6 +417,26 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task ASecondPressWhileThePageOpens_OpensNoSecondPage()
+    {
+        var (fx, _) = await PrototypeShapeAsync("en-US");
+        using var fixture = fx;
+        var shown = 0;
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fx.Vm.NrCheck.ShowDialogAsync = async model => { shown++; first.TrySetResult(); await release.Task; };
+
+        var opening = fx.Vm.NrCheck.OpenCommand.ExecuteAsync(null);
+        await first.Task.WaitAsync(HangGuard);
+        var menu = fx.Vm.CardMenuFor(fx.Vm.Games.Single()).Last();
+        await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)menu.Command).ExecuteAsync(null).WaitAsync(HangGuard);
+        release.TrySetResult();
+        await opening.WaitAsync(HangGuard);
+
+        Assert.Equal(1, shown);
+    }
+
+    [Fact]
     public async Task OpeningThePage_WritesNothing_GameFolderPrefixOrRhiData()
     {
         var (fx, bl3) = await PrototypeShapeAsync("en-US");
