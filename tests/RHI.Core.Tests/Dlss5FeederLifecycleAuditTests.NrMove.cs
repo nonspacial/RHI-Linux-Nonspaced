@@ -129,15 +129,14 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
     [InlineData("replaced", false)]
     [InlineData("replaced", true)]
     [InlineData("removed", false)]
+    [InlineData("unhashed", true)] // a record without the file's hash cannot show the file is unchanged: never moved
     public async Task NrMove_ADllChangedOutsideRhi_IsCouldNotCheck_NeverAFailedRun(string change, bool versionRecorded)
     {
         using var f = await LegacyLatestOn50xxAsync();
-        if (versionRecorded)
-        {
-            var record = f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)!;
-            record.Metadata[NeuralRenderingDllSwap.MetaDllVersion] = For50;
-            f.Records.Upsert(record);
-        }
+        var record = f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)!;
+        if (versionRecorded) record.Metadata[NeuralRenderingDllSwap.MetaDllVersion] = For50;
+        if (change == "unhashed") ManagedFileSwap.FindFile(record, "nvngx_dlssnr.dll")!.Sha256 = "";
+        f.Records.Upsert(record);
         if (change == "removed") File.Delete(NrPath(f));
         else File.WriteAllBytes(NrPath(f), Dll(ForAll)); // the user's own copy; the record keeps 310.8.3's hash
         var managed = Managed(f, RtxGeneration.Rtx40, out _, out var log);
