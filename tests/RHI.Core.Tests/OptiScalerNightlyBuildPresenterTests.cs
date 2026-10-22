@@ -96,30 +96,240 @@ public sealed class OptiScalerNightlyBuildPresenterTests
         Assert.Equal(UiLocalizationService.Text("Sync.OptiScalerNightlyListFailed"), row.Note);
     }
 
+    // #232 (was "locked while installed", #156): an installed Nightly keeps the dropdown live; the saved choice shows, and
+    // a choice other than the installed build offers Apply and says the two differ.
     [Fact]
-    public async Task Row_WhileOptiScalerIsInstalled_ShowsTheInstalledBuild_AndIsLocked()
+    public async Task Row_WhileNightlyIsInstalled_StaysLive_ShowsTheChoice_AndOffersApplyOnlyForAnotherBuild()
     {
         var (fx, game) = await StartAsync(NightlyList);
         using var _ = fx;
-        fx.Records.Upsert(new LinuxDeploymentRecord
-        {
-            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.OptiScaler,
-            BinaryDirectory = game.BinaryDirectory!, Version = "20261004", Files = [],
-            Metadata = new(StringComparer.OrdinalIgnoreCase) { ["OptiScaler.Variant"] = "Nightly", ["OptiScaler.NightlyBuild"] = "20261004" }
-        });
-        fx.Managed.SetOptiScalerNightlyBuild(game, "20261012"); // a later preference never overrides what is installed
+        SeedInstalledNightly(fx, game, "20261004");
+        fx.Managed.SetOptiScalerNightlyBuild(game, "20261012"); // chosen since the install, not applied yet
+        ChooseNightly(fx);
+        var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
+
+        await row.RefreshAsync(fetchList: true);
+
+        Assert.True(row.IsEnabled);
+        Assert.Equal("2026-10-12", row.Selected);
+        Assert.True(row.CanApply);
+        Assert.Equal(UiLocalizationService.Format("Nsw.NightlyDiffers", "2026-10-04"), row.Note);
+
+        row.Selected = "2026-10-04"; // back to the installed build: nothing to apply
+        Assert.Equal("20261004", fx.Managed.GetOptiScalerNightlyChoice(game));
+        Assert.False(row.CanApply);
+        Assert.Equal(UiLocalizationService.Text("Sync.OptiScalerNightlyLocked"), row.Note);
+        Assert.Contains("pinned to build 2026-10-04", fx.Vm.StatusText);
+
+        row.Selected = "Latest (auto-update)";
+        Assert.Null(fx.Managed.GetOptiScalerNightlyChoice(game));
+        Assert.Equal("20261004", fx.Managed.GetInstalledOptiScalerNightlyBuild(game)); // choosing never changes what is installed
+        Assert.True(row.CanApply);
+        Assert.Equal(UiLocalizationService.Format("Nsw.ChosenLatest", game.Name), fx.Vm.StatusText);
+        Assert.Equal(UiLocalizationService.Format("Nsw.NightlyDiffers", "2026-10-04"), row.Note);
+    }
+
+    // Control frame generation's build (#136) stays: locked, no Apply, the note says why (#232 decision).
+    [Fact]
+    public async Task Row_ForControlFrameGenerationsBuild_IsLocked_WithoutApply()
+    {
+        var fx = await ViewModelFixture.StartAsync([], "en-US", httpResponse: NightlyList);
+        using var _ = fx;
+        var control = fx.Game(ControlUePostInstallService.GameName);
+        Assert.True((await fx.Vm.ManualGames.TryAddManualGameAsync(new() { Name = control.Name, InstallPath = control.InstallPath, ExecutablePath = control.ExecutablePath, Runner = "Manual Windows" })).Added);
+        for (var i = 0; i < 200 && (fx.Vm.IsSelectionProbeBusy || fx.Vm.SelectedGame is null); i++) await Task.Delay(25);
+        var game = fx.Vm.SelectedGame!;
+        SeedInstalledNightly(fx, game, ControlUeFrameGenerationService.RequiredNightlyBuild, ControlUeFrameGenerationService.OptiScalerProxyName);
+        fx.Managed.SetOptiScalerNightlyBuild(game, "20261012");
         ChooseNightly(fx);
         var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
 
         await row.RefreshAsync(fetchList: true);
 
         Assert.False(row.IsEnabled);
-        Assert.Equal("2026-10-04", row.Selected);
-        Assert.Equal(UiLocalizationService.Text("Sync.OptiScalerNightlyLocked"), row.Note);
+        Assert.False(row.CanApply);
+        Assert.Equal("2026-10-04", row.Selected); // the build it is held on, not the saved choice
+        Assert.Equal(UiLocalizationService.Text("Nsw.ControlUeHeld"), row.Note);
         row.Selected = "2026-10-13";
-        Assert.Equal("20261004", fx.Managed.GetOptiScalerNightlyBuild(game));
-        fx.Records.Remove(game, ManagedComponentKind.OptiScaler);
-        Assert.Equal("20261012", fx.Managed.GetOptiScalerNightlyBuild(game)); // the locked row saved nothing
+        Assert.Equal("20261012", fx.Managed.GetOptiScalerNightlyChoice(game)); // the locked row saved nothing
+    }
+
+    public static TheoryData<string> Languages => new() { "en-US", "pt-BR" };
+
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task Apply_SwitchesUnderTheBusyGate_AndTheLineSaysSo(string lang)
+    {
+        var (fx, game, row, lines) = await InstalledAndChosenAsync(lang);
+        using var _ = fx;
+        try
+        {
+            var busyDuringSwitch = false;
+            string? asked = "unset";
+            fx.Managed.NightlySwitchForTesting = (g, build, _) =>
+            {
+                busyDuringSwitch = fx.Vm.Operations.IsBusy && row.IsApplying && !row.CanApply;
+                asked = build;
+                SeedInstalledNightly(fx, g, build!); // what the real switch records
+                return Task.FromResult(ComponentOperationResult.Ok(OptiScalerDeploymentService.NightlySwitchedPrefix + build));
+            };
+
+            Assert.True(await row.ApplyAsync());
+
+            Assert.True(busyDuringSwitch);
+            Assert.Equal("20261012", asked);
+            Assert.False(fx.Vm.Operations.IsBusy);
+            var switched = UiLocalizationService.Format("Nsw.Switched", game.Name, "2026-10-12");
+            Assert.Contains(UiLocalizationService.Format("Nsw.Switching", game.Name, "2026-10-12"), lines);
+            Assert.Contains(switched, lines);
+            Assert.Equal(switched, row.Note); // also under the row: the status line is behind the ⚙ dialog
+            Assert.False(row.CanApply);
+            Assert.False(row.IsApplying);
+            Assert.Equal("2026-10-12", row.Selected);
+            if (lang == "pt-BR") Assert.Contains("agora está em 2026-10-12", switched);
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task Apply_Failed_ShowsWhyInTheLanguage_AndTheRowIsBackOnTheInstalledBuild(string lang)
+    {
+        var (fx, game, row, lines) = await InstalledAndChosenAsync(lang);
+        using var _ = fx;
+        try
+        {
+            var failure = OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix + "HTTP 404";
+            fx.Managed.NightlySwitchForTesting = (g, _, _) =>
+            {
+                fx.Managed.SetOptiScalerNightlyBuild(g, "20261004"); // what the real switch does with the choice
+                return Task.FromResult(ComponentOperationResult.Fail(failure));
+            };
+
+            Assert.False(await row.ApplyAsync());
+
+            var shown = UiLocalizationService.Present(failure);
+            Assert.Equal(shown, fx.Vm.StatusText);
+            Assert.Equal(shown, row.Note);
+            if (lang == "pt-BR") Assert.DoesNotContain("was not switched", shown);
+            Assert.Equal("2026-10-04", row.Selected);
+            Assert.False(row.CanApply);
+            Assert.False(fx.Vm.Operations.IsBusy);
+            Assert.DoesNotContain(lines, line => line == UiLocalizationService.Format("Nsw.Switched", game.Name, "2026-10-12"));
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
+    public static TheoryData<string, bool> LanguagesAndCancelShapes => new()
+    {
+        { "en-US", true }, { "pt-BR", true }, { "en-US", false }, { "pt-BR", false }
+    };
+
+    // A Cancel surfaces either as the cancellation itself or as a failed result (services turn it into one); both say
+    // the build stays, never the failure's own text.
+    [Theory]
+    [MemberData(nameof(LanguagesAndCancelShapes))]
+    public async Task Apply_CancelledWhileDownloading_SaysTheBuildStays_FromTheRowsOwnCancel(string lang, bool throws)
+    {
+        var (fx, game, row, _) = await InstalledAndChosenAsync(lang);
+        using var _fx = fx;
+        try
+        {
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            fx.Managed.NightlySwitchForTesting = async (g, _, ct) =>
+            {
+                started.SetResult();
+                try { await Task.Delay(Timeout.Infinite, ct); } // still downloading
+                catch (OperationCanceledException) when (!throws)
+                {
+                    return ComponentOperationResult.Fail(OptiScalerDeploymentService.NightlySwitchFailedPrefix + "A task was canceled.");
+                }
+                return ComponentOperationResult.Ok("");
+            };
+
+            var apply = row.ApplyAsync();
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.True(row.CanCancel);
+            row.Operations.CancelCommand.Execute(null);
+            Assert.False(await apply.WaitAsync(TimeSpan.FromSeconds(30)));
+
+            var cancelled = UiLocalizationService.Format("Nsw.SwitchCancelled", game.Name);
+            Assert.Equal(cancelled, fx.Vm.StatusText);
+            Assert.Equal(cancelled, row.Note);
+            Assert.False(row.CanCancel);
+            Assert.False(row.IsApplying);
+            if (lang == "pt-BR") Assert.Contains("troca cancelada", cancelled);
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task Apply_ThatLandedDespiteASaveError_KeepsTheLandedNote(string lang)
+    {
+        var (fx, game, row, _) = await InstalledAndChosenAsync(lang);
+        using var _fx = fx;
+        try
+        {
+            var landed = DeploymentScope.Landed("OptiScaler");
+            fx.Managed.NightlySwitchForTesting = (g, build, _) =>
+            {
+                SeedInstalledNightly(fx, g, build!);
+                return Task.FromResult(landed);
+            };
+
+            Assert.True(await row.ApplyAsync());
+
+            Assert.Equal(UiLocalizationService.Format("Nsw.Switched", game.Name, "2026-10-12") + " " + UiLocalizationService.Present(landed.Message),
+                fx.Vm.StatusText);
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
+    [Fact]
+    public async Task Apply_WhileRhiIsBusy_ChangesNothing()
+    {
+        var (fx, _, row, _) = await InstalledAndChosenAsync("en-US");
+        using var _fx = fx;
+        var called = false;
+        fx.Managed.NightlySwitchForTesting = (_, _, _) => { called = true; return Task.FromResult(ComponentOperationResult.Ok("")); };
+        using var held = fx.Vm.Operations.TryBegin("test");
+        Assert.NotNull(held);
+
+        Assert.False(await row.ApplyAsync().WaitAsync(TimeSpan.FromSeconds(30)));
+
+        Assert.False(called);
+        Assert.True(row.CanApply);
+    }
+
+    private static void SeedInstalledNightly(ViewModelFixture fx, DetectedGame game, string? build, string proxyName = "dxgi.dll")
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["OptiScaler.Variant"] = "Nightly", ["OptiScaler.ProxyName"] = proxyName };
+        if (build is not null) metadata["OptiScaler.NightlyBuild"] = build;
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.OptiScaler,
+            BinaryDirectory = game.BinaryDirectory!, Version = build ?? "20261013", Files = [], Metadata = metadata
+        });
+    }
+
+    // OptiScaler Nightly 2026-10-04 installed, 2026-10-12 chosen since; every status line collected.
+    private static async Task<(ViewModelFixture Fx, DetectedGame Game, OptiScalerNightlyBuildPresenter Row, List<string> Lines)> InstalledAndChosenAsync(string lang)
+    {
+        UiLocalizationService.Apply(lang);
+        var (fx, game) = await StartAsync(NightlyList, lang);
+        SeedInstalledNightly(fx, game, "20261004");
+        fx.Managed.SetOptiScalerNightlyBuild(game, "20261012");
+        ChooseNightly(fx);
+        var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
+        await row.RefreshAsync(fetchList: true);
+        Assert.True(row.CanApply);
+        var lines = new List<string>();
+        fx.Vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(fx.Vm.StatusText)) lock (lines) lines.Add(fx.Vm.StatusText);
+        };
+        return (fx, game, row, lines);
     }
 
     [Fact]
@@ -159,7 +369,7 @@ public sealed class OptiScalerNightlyBuildPresenterTests
             var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
             await row.RefreshAsync(fetchList: true);
 
-            Assert.Equal(["Mais recente (atualização automática)", "2026-10-13", "2026-10-12", "2026-10-04"], row.Options);
+            Assert.Equal(["Mais recente (automática)", "2026-10-13", "2026-10-12", "2026-10-04"], row.Options);
             row.Selected = "2026-10-12";
             Assert.Contains("fixado na build 2026-10-12", fx.Vm.StatusText);
         }

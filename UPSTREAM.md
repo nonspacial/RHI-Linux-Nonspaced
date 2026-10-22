@@ -185,7 +185,7 @@ build.
 
 - The OptiScaler ⚙ dialog has a **Nightly build** row, shown only for the Nightly channel: "Latest (auto-update)" plus the 30 newest builds, shown as dates (`2026-10-04`), as upstream `2975485`. A pinned game installs exactly that build; Latest keeps following the newest build.
 - The choice is saved per game, in the same file as the Neural Rendering version pins, so it follows the game through "Repair after move". The build is downloaded when OptiScaler is installed (asked by its tag `nightly-YYYYMMDD`, so builds older than the listed 30 still install), cached per tag behind its cache stamp, and recorded in the deployment record (`OptiScaler.NightlyBuild`).
-- While OptiScaler is installed the row is locked and shows the installed build, like the channel selector above it: remove OptiScaler to change the build (upstream: "Uninstall OptiScaler first"). If the list cannot be loaded, the row offers Latest and the saved build and says so.
+- While OptiScaler Nightly is installed the row stays live and an **Apply** button changes the installed build in place (wave 11, #232; it was locked until removal before). If the list cannot be loaded, the row offers Latest and the saved build and says so.
 - A pinned game stays on its build: the update check reports "pinned and current" without asking GitHub (never "could not check", never an update); Update All (manual and background) counts it current; a direct update leaves it unchanged.
 - Service API for Control UE (#136): `OptiScalerDeploymentService.InstallPinnedNightlyAsync(game, "20261004")`, or `LinuxManagedComponentService.InstallOptiScalerAsync(game, OptiScalerVariant.Nightly, "20261004")`.
 - Not ported: upstream's pre-staging when a build is picked (Linux downloads at install, so browsing the list downloads nothing).
@@ -982,5 +982,32 @@ build.
   `OptiScaler/` helper folder (after the backslash names are rebuilt); otherwise it is refused before any game file changes.
 
 <!-- w11/nightly-switch notes -->
+
+### #232 — OptiScaler Nightly: change an installed Nightly's build in place
+
+Source: wizardkof v0.9.25.0-beta.1 (`26e5259`) "Apply selected build now" (inventory PAR-D109), and upstream RankFTW 2.8.7
+`MainWindow.Events.Components.cs:2677-2696` (the build dropdown stays enabled while Nightly is installed).
+
+- The OptiScaler ⚙ **Nightly build** dropdown stays enabled while OptiScaler Nightly is installed. Choosing a build saves
+  the choice (as before); while it differs from the installed build an **Apply** button sits beside the dropdown (under it,
+  right-aligned, when the dialog is narrow) and the note line says which build is installed. Apply runs under the busy
+  gate, with its own Cancel while the build is still downloading (the main window's Cancel is behind the dialog); the
+  outcome shows on the status line and under the row.
+- The switch is OptiScaler's own update transaction with the chosen package (`OptiScalerDeploymentService.SwitchNightlyBuildAsync`,
+  `LinuxManagedComponentService.ApplyOptiScalerNightlyBuildAsync`): the same "modified outside RHI" refusal before any
+  download, the same journal and rollback, the same DLL name, `OptiScaler.ini` (never overwritten), OptiPatcher and
+  Streamline stack handling. Switching to a date pins the game (`OptiScaler.NightlyBuild`); switching to Latest drops the
+  pin, so Update All follows the newest build again. It is logged in the update history.
+- The record's pin, the files and the saved choice always end on the same build: the choice is put back on the installed
+  build before anything is downloaded and written with the new record (tracked by the journal, before the commit
+  point), so a refusal, a failed download, a failed save, a Cancel or a crash leaves the installed build with the choice
+  back on it (as the ticket asks; upstream keeps the new choice and stages it for the next install).
+- Update All is unchanged: a pinned Nightly stays on its build, and a Latest Nightly updates to the newest build, never to
+  the saved choice.
+- Control Ultimate Edition's frame-generation install (Nightly `20261004` as `winmm.dll`, #136) keeps its build: on that
+  game the dropdown stays locked with a note saying why, there is no Apply, and the service refuses the switch.
+- Differences: wizardkof applies on top of its Update path and refuses while the game runs; here, as for the fork's other
+  single-game installs, updates and renames, there is no running-game check (Update All still skips running games). Files
+  the old build had and the new build lacks stay, owned by the record, as after any OptiScaler update.
 
 <!-- w11/nr-check notes -->

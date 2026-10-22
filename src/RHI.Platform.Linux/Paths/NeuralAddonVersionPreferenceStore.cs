@@ -105,6 +105,31 @@ public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
             });
     }
 
+    /// <summary>
+    /// #232: the file write that sets <paramref name="game"/>'s <paramref name="kind"/> pin to <paramref name="releaseTag"/>
+    /// (null = none), staged for a journaled operation (the in-place OptiScaler Nightly switch saves the choice with its
+    /// record); null when nothing would change. Nothing is written here. Throws <see cref="JsonStoreUnavailableException"/>
+    /// when the file holds unreadable data.
+    /// </summary>
+    public StagedFileWrite? StageSet(DetectedGame game, ManagedComponentKind kind, string? releaseTag)
+    {
+        EnsureSupported(kind);
+        var normalized = string.IsNullOrWhiteSpace(releaseTag) ? null : releaseTag.Trim();
+        if (normalized is not null && !IsSafeTag(normalized))
+            throw new ArgumentException("GitHub release tag contains unsafe characters.", nameof(releaseTag));
+        lock (_gate)
+        {
+            var staged = _file.Stage(current =>
+            {
+                var entries = JsonStoreMaps.CaseInsensitive(current);
+                if (normalized is null) GameRecordIdentity.Remove(entries, game, KindSuffix(kind));
+                else GameRecordIdentity.Set(entries, game, normalized, KindSuffix(kind));
+                return current is null && entries.Count == 0 ? null : entries; // no file and nothing to keep: no write
+            });
+            return staged is null || (staged.Before is { } before && before.AsSpan().SequenceEqual(staged.After)) ? null : staged;
+        }
+    }
+
     private Dictionary<string, string> LoadUnsafe()
         => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
 
