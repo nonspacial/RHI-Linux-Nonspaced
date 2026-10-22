@@ -9,7 +9,72 @@ The app still reports version `0.9.23.4-beta.1`; the fork has not published a re
 
 ## In progress
 
-Not on `main` yet: nothing at the moment.
+Not on `main` yet:
+
+- **Check Neural Rendering**: a read-only page per game that lists the graphics card and driver, the Neural Rendering
+  DLL installed and whether it is made for this card, and what else may stop Neural Rendering from working.
+
+## Wave 11 — 2026-10-22: Neural Rendering DLL per card, F5 driver warning, Nightly build switch, stalled downloads
+
+> [!WARNING]
+> Before going back to the wave-10 build, do these first; it does not know what this build added:
+>
+> - In each game with ShortFuse or DLSS5 Feeder whose Neural Rendering DLL is on **Latest**, pick the version made for
+>   your card by hand in the **NR DLL** dropdown (on an RTX 20, 30 or 40 card, the one marked `(20/30/40/50)`). The
+>   wave-10 build takes the newest version in the list as **Latest**, whatever the card, so its next install or version
+>   swap on **Latest** puts back a DLL made for another card (`310.8.3 (50xx)` on an RTX 40). It does not undo what this
+>   build's Update All moved, and it keeps a version picked by hand.
+> - Leave OptiScaler out of Update All (card menu **Choose what Update All changes…**) in games with OptiScaler DLSS NR
+>   or F5 DLSSNR. The wave-10 build's Update All replaces their Neural Rendering DLL with the newest one in the list,
+>   also one made for another card.
+>
+> The wave-10 build lists every Neural Rendering version, also those made for another card, and its **Latest** is the
+> newest in the list. It installs F5 DLSSNR without the driver warning. A Nightly build switched here stays as it is:
+> the wave-10 build keeps it pinned and leaves it out of Update All, but cannot switch it again (remove OptiScaler and
+> install the build you want). A download that stops sending data can make it wait without end; press Cancel then.
+
+Components
+
+- **Neural Rendering DLL per graphics card** (wizardkof's policy): **Latest** is now the newest Neural Rendering DLL
+  made for your card's generation, read from the DLSS list's label (`(50xx)`, `(20/30/40/50)`). Versions made for
+  another generation are left out of every Neural Rendering list: the **NR DLL** dropdown, the DLSS section's swap row,
+  **Batch DLSS** and the Settings default. With several NVIDIA cards the newest generation counts. When RHI cannot tell
+  the card (no NVIDIA driver loaded, a card from before RTX), every version is listed, the dropdown's tooltip says why,
+  and nothing is moved because of the card. A Settings default or a **Batch DLSS** choice made for another card skips
+  only that game's Neural Rendering step, with a line saying so; the other DLLs are still applied.
+- **Update All moves Latest Neural Rendering installs** onto the DLL made for the card: ShortFuse and DLSS5 Feeder Full
+  installs on **Latest** whose DLL is made for another card (Borderlands 3 with `310.8.3 (50xx)` on an RTX 40) are
+  swapped in place, and the update history shows the move. A version you picked by hand stays, with a row note when it
+  is made for another card. A DLL RHI cannot identify, or one changed or removed outside RHI, is counted as "could not
+  be checked" and left as it is; while the NR Cost Scaler is installed the move waits. OptiScaler DLSS NR and F5 DLSSNR
+  take the DLL made for the card at their next install or update.
+- **F5 DLSSNR driver warning** (upstream's driver check, as a question): before installing OptiScaler F5 DLSSNR, RHI
+  asks when the NVIDIA driver is older than 615.71.09 (the first Linux driver of the 615 branch, the Linux equivalent of
+  upstream's Windows 616.56) or cannot be read, and when the Neural Rendering DLL F5 would load is a 310.8.0 build on a
+  615 or newer driver (it crashes there; 310.8.2 or newer is needed). **Install anyway** goes ahead; RHI never refuses.
+  Update All never asks: its line carries the warning. ShortFuse, DLSS5 Feeder and OptiScaler rows say when their Neural
+  Rendering DLL is a 310.8.0 build on such a driver. The F5 package is also checked for its forwarder DLL and its helper
+  files before anything is installed.
+- **Change an installed OptiScaler Nightly's build** (upstream's live dropdown, wizardkof's "Apply selected build now"):
+  in OptiScaler's ⚙ the **Nightly build** dropdown stays available while Nightly is installed; pick a build (or
+  **Latest**) and press **Apply**. The build is changed in place: OptiScaler.ini, the DLL name and the Wine override
+  stay, and the update history records it. While the build downloads the row has its own **Cancel**. A switch that fails
+  or is cancelled changes nothing, and the dropdown goes back to the installed build. The build Control Ultimate
+  Edition's frame generation needs stays locked, with a note.
+
+Downloads
+
+- A download that stops sending data is given up after 60 seconds without a byte, with a line that names the source,
+  instead of waiting without end; a slow download that keeps arriving is never cut off. A server that never answers is
+  given up after 5 minutes with RHI's own line. In Update All and the background update pass a stalled download counts
+  for that game only (failed, or could not be checked) and the pass carries on; it never reads as Cancel. Cancel still
+  stops a stalled download straight away.
+
+Safety
+
+- A game held after an undo RHI could not finish now also gets the restart message from OptiScaler's Update All, the
+  Nightly build switch, Update All's Neural Rendering move and a Neural Rendering version swap, instead of a "modified
+  outside RHI" refusal that took RHI's own half-undone file for a change of yours.
 
 ## Wave 10 — 2026-10-22: default DLSS presets, add-ons inside archives, games held after a failed undo
 

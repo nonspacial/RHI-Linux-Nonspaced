@@ -1010,4 +1010,16 @@ Source: wizardkof v0.9.25.0-beta.1 (`26e5259`) "Apply selected build now" (inven
   single-game installs, updates and renames, there is no running-game check (Update All still skips running games). Files
   the old build had and the new build lacks stay, owned by the record, as after any OptiScaler update.
 
+### Wave 11 integration — held games on the new update paths
+
+- The w10 rule "a service that checks the game's files before its journaled operation asks the hold first" now also
+  covers OptiScaler's update transaction (Update All and the in-place Nightly switch, #232), the shared in-place file
+  swap (an NR version swap, add-on version swaps) and Update All's NR move (#230): a game held after an undo RHI could
+  not finish gets the restart text, never "modified outside RHI" or "changed outside RHI" for RHI's own half-undone
+  file. Before asking, the hold is settled (the undo is retried); an undo that now finishes puts RHI's file back, so the
+  NR move checks the file again.
+- A stalled download (#233) inside the NR move or a Nightly switch happens before the first write: that game's line is
+  the stall message, and the DLL, the record and the saved choice stay as they were. A Nightly owns no NR DLL, so the NR
+  move and the switch never touch each other's files.
+
 <!-- w11/nr-check notes -->
