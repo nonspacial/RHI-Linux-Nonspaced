@@ -54,6 +54,9 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         using var f = await LegacyLatestOn50xxAsync();
         var managed = Managed(f, RtxGeneration.Rtx40, out _, out var log);
 
+        Assert.Equal(new InstalledNrVersion(For50, InstalledNrVersionSource.CacheStamp),
+            managed.InstalledNeuralRenderingVersion(f.Game, f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)!));
+
         var check = await managed.CheckManagedUpdateAsync(f.Game, ManagedComponentKind.Dlss5Feeder, []);
 
         Assert.True(check.UpdateAvailable, check.Message);
@@ -133,6 +136,20 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             record.Metadata[NeuralRenderingDllSwap.MetaDllVersion] = ForAll;
             var recorded = NeuralRenderingInstalledVersion.Identify(record, LiveVersions, Path.Combine(dir, "no-cache"), [record]);
 
+            // Under the NR Cost Scaler the owner's DLL is the scaler's nvngx_dlssnr_real.dll; the proxy sits at the name.
+            var proxy = PeVersionReaderTests.BuildVersionedPe("1,0,0,0", "1,0,0,0", size: 80_000);
+            var real = Path.Combine(dir, "nvngx_dlssnr_real.dll");
+            File.Copy(nr, real);
+            File.WriteAllBytes(nr, proxy);
+            var scaler = new LinuxDeploymentRecord
+            {
+                Component = ManagedComponentKind.NrCostScaler, Files = [new LinuxDeployedFile { Path = nr, Sha256 = FileHash.Sha256HexOf(proxy) }]
+            };
+            record.Metadata.Remove(NeuralRenderingDllSwap.MetaDllVersion);
+            var scaled = NeuralRenderingInstalledVersion.Identify(record, LiveVersions, Path.Combine(dir, "no-cache"), [record, scaler]);
+            File.WriteAllBytes(nr, Dll(For50));
+
+            Assert.Equal(new InstalledNrVersion(For50, InstalledNrVersionSource.PeVersion), scaled);
             Assert.Equal(new InstalledNrVersion(null, InstalledNrVersionSource.Ambiguous), both);
             Assert.Equal(new InstalledNrVersion(null, InstalledNrVersionSource.Unknown), none);
             Assert.Equal(new InstalledNrVersion(ForAll, InstalledNrVersionSource.Metadata), recorded);
