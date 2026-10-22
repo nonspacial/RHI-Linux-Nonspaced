@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Hdr;
 
 namespace RHI.Desktop.ViewModels;
 
@@ -56,6 +57,45 @@ public sealed partial class VersionChoice : ObservableObject
 }
 
 /// <summary>
+/// #215: one DLSS preset dropdown (Settings' default presets, the DLSS batch): the manifest's preset list with the same
+/// labels as the NVIDIA settings (Default first), the saved value kept when the manifest no longer lists it, and — in
+/// the batch — "Do not change" first. <see cref="Value"/> is null for "Do not change".
+/// </summary>
+public sealed partial class PresetChoice : ObservableObject
+{
+    private readonly OptionItem<uint?> _cleared;
+
+    public PresetChoice(string label, string tip, IReadOnlyList<DlssPreset> presets, uint current, bool doNotChange)
+    {
+        Label = label;
+        Tip = tip;
+        var list = OptionLists.DlssPresetChoices(presets, current, doNotChange);
+        Items = list.Options();
+        _cleared = Items.For(list.Fallback);
+        selected = doNotChange && current == DlssPresetCatalogue.Default ? _cleared : Items.For(current);
+    }
+
+    public string Label { get; }
+    public string Tip { get; }
+    public OptionItems<uint?> Items { get; }
+
+    private OptionItem<uint?> selected;
+
+    /// <summary>The shown entry; a null written back by the dropdown (its items reset) is not a choice and is ignored.</summary>
+    public OptionItem<uint?>? Selected
+    {
+        get => selected;
+        set { if (value is not null) SetProperty(ref selected, value); }
+    }
+
+    /// <summary>The chosen preset value; null = "Do not change".</summary>
+    public uint? Value => selected.Value;
+
+    /// <summary>Back to Default (Settings) or "Do not change" (batch).</summary>
+    public void Clear() => Selected = _cleared;
+}
+
+/// <summary>
 /// The DLSS / Streamline batch dialog (epic #89: was built in the window's code-behind). Lists the eligible games, the
 /// five version dropdowns filled from Settings' defaults, and runs Apply / Restore selected through the DLSS panel (busy
 /// gate). While a batch runs, Close becomes Cancel (the main window's overlay is behind this modal dialog, Refs #77)
@@ -66,8 +106,8 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
 
-    private readonly Func<IReadOnlyList<DetectedGame>, LinuxDlssVersionDefaults, Task<LinuxDlssBatchResult>> _apply;
-    private readonly Func<IReadOnlyList<DetectedGame>, Task<LinuxDlssBatchResult>> _restore;
+    private readonly Func<IReadOnlyList<DetectedGame>, LinuxDlssVersionDefaults, NvidiaPresetChoice, Task<DlssBatchOutcome>> _apply;
+    private readonly Func<IReadOnlyList<DetectedGame>, Task<DlssBatchOutcome>> _restore;
     private readonly Action _cancel;
 
     /// <summary>The eligible candidates, by name; null when none is eligible (the caller says so instead of opening).</summary>
@@ -81,18 +121,23 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
         => new(eligible,
             [dlss.DlssSrVersions, dlss.DlssRrVersions, dlss.DlssFgVersions, dlss.DlssNrVersions, dlss.StreamlineVersions],
             dlss.DlssVersionDefaults,
-            (games, chosen) => dlss.ApplyDlssBatchAsync(games, chosen),
+            (games, chosen, presets) => dlss.ApplyDlssBatchAsync(games, chosen, presets),
             games => dlss.RestoreDlssBatchAsync(games),
-            operations.Cancel);
+            operations.Cancel,
+            dlss.DlssPresetDefaults);
 
     /// <param name="versions">SR, RR, FG, NR and Streamline versions, in that order.</param>
+    /// <param name="presetDefaults">#215: Settings' default presets the preset dropdowns start from (none = "Do not change").</param>
+    /// <param name="presetLists">#215: the preset lists (default: the manifest's, <see cref="DlssPresetCatalogue.Current"/>).</param>
     internal DlssBatchDialogViewModel(
         IReadOnlyList<LinuxDlssBatchCandidate> eligible,
         IReadOnlyList<IEnumerable<string>> versions,
         LinuxDlssVersionDefaults defaults,
-        Func<IReadOnlyList<DetectedGame>, LinuxDlssVersionDefaults, Task<LinuxDlssBatchResult>> apply,
-        Func<IReadOnlyList<DetectedGame>, Task<LinuxDlssBatchResult>> restore,
-        Action cancel)
+        Func<IReadOnlyList<DetectedGame>, LinuxDlssVersionDefaults, NvidiaPresetChoice, Task<DlssBatchOutcome>> apply,
+        Func<IReadOnlyList<DetectedGame>, Task<DlssBatchOutcome>> restore,
+        Action cancel,
+        NvidiaPresetChoice? presetDefaults = null,
+        DlssPresetLists? presetLists = null)
     {
         _apply = apply;
         _restore = restore;
@@ -104,6 +149,13 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
         FrameGeneration = new(T("Win.FrameGeneration"), versions[2], defaults.FrameGeneration);
         NeuralRendering = new(T("Win.NeuralRendering"), versions[3], defaults.NeuralRendering);
         Streamline = new("Streamline", versions[4], defaults.Streamline);
+        // #215 (upstream MassDlssDeployDialog): the three presets under the versions, filled from Settings' defaults.
+        var lists = presetLists ?? DlssPresetCatalogue.Current;
+        var chosen = presetDefaults ?? NvidiaPresetChoice.None;
+        var tip = T("Dp.BatchPresetsTip");
+        SuperResolutionPreset = new(T("Nv.SrPreset"), tip, lists.SuperResolution, chosen.SuperResolution ?? DlssPresetCatalogue.Default, doNotChange: true);
+        RayReconstructionPreset = new(T("Nv.RrPreset"), tip, lists.RayReconstruction, chosen.RayReconstruction ?? DlssPresetCatalogue.Default, doNotChange: true);
+        FrameGenerationPreset = new(T("Nv.FgPreset"), tip, lists.FrameGeneration, chosen.FrameGeneration ?? DlssPresetCatalogue.Default, doNotChange: true);
         closeLabel = T("Win.Close");
     }
 
@@ -116,6 +168,10 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
     public VersionChoice NeuralRendering { get; }
     public VersionChoice Streamline { get; }
     public IReadOnlyList<VersionChoice> Versions => [SuperResolution, RayReconstruction, FrameGeneration, NeuralRendering, Streamline];
+    public PresetChoice SuperResolutionPreset { get; }
+    public PresetChoice RayReconstructionPreset { get; }
+    public PresetChoice FrameGenerationPreset { get; }
+    public IReadOnlyList<PresetChoice> Presets => [SuperResolutionPreset, RayReconstructionPreset, FrameGenerationPreset];
 
     [ObservableProperty] private string status = "";
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanRun))] private bool isRunning;
@@ -162,7 +218,8 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
 
         var chosen = new LinuxDlssVersionDefaults(
             SuperResolution.Value, RayReconstruction.Value, FrameGeneration.Value, NeuralRendering.Value, Streamline.Value);
-        if (!restoreMode && !chosen.HasAny)
+        var presets = new NvidiaPresetChoice(SuperResolutionPreset.Value, RayReconstructionPreset.Value, FrameGenerationPreset.Value);
+        if (!restoreMode && !chosen.HasAny && !presets.HasAny)
         {
             Status = T("Win.SelectAtLeastOneVersionUsing");
             return;
@@ -173,16 +230,17 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
         try
         {
             Status = restoreMode ? T("Win.RestoringSelectedGames") : T("Win.ApplyingSelectedGames");
-            var result = restoreMode ? await _restore(selected) : await _apply(selected, chosen);
-            Status = UiLocalizationService.Present(result.Summary);
+            var outcome = restoreMode ? await _restore(selected) : await _apply(selected, chosen, presets);
+            Status = outcome.Line;
         }
         catch (OperationRefusedException refused)
         {
             Status = refused.Message;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException cancelled)
         {
-            Status = T("Vm.OperationCancelled");
+            // #215: the batch's own line names the games whose presets were already set or reset.
+            Status = cancelled is DlssBatchCancelledException batch ? batch.Line : T("Vm.OperationCancelled");
         }
         catch (Exception ex)
         {

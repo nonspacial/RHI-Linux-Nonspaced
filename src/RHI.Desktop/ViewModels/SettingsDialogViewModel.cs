@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using RHI.Core.Models;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Hdr;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
@@ -59,6 +60,14 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
         DefaultDlssg = Choice(shell.Dlss.DlssFgVersions, settings.DefaultDlssgVersion);
         DefaultDlssnr = Choice(shell.Dlss.DlssNrVersions, settings.DefaultDlssnrVersion);
         DefaultStreamline = Choice(shell.Dlss.StreamlineVersions, settings.DefaultStreamlineVersion);
+        // #215: the default presets, from the manifest's lists (the NVIDIA settings' own labels; a saved value the
+        // manifest no longer lists stays shown).
+        var presets = DlssPresetCatalogue.Current;
+        var defaultsTip = T("Dp.DefaultPresetsTip");
+        DefaultSrPreset = new(T("Nv.SrPreset"), T("Nv.SrPresetTip") + "\n" + defaultsTip, presets.SuperResolution, settings.DefaultSrPreset, doNotChange: false);
+        DefaultRrPreset = new(T("Nv.RrPreset"), T("Nv.RrPresetTip") + "\n" + defaultsTip, presets.RayReconstruction, settings.DefaultRrPreset, doNotChange: false);
+        DefaultFgPreset = new(T("Nv.FgPreset"), T("Nv.FgPresetTip") + "\n" + defaultsTip, presets.FrameGeneration, settings.DefaultFgPreset, doNotChange: false);
+        DefaultPresetsTip = defaultsTip;
         CanApplyToGame = shell.HasSelectedGame;
         saveLabel = T("Ui.Save");
         resetLabel = T("Ui.ResetSettings");
@@ -100,6 +109,12 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
     public VersionChoice DefaultDlssg { get; }
     public VersionChoice DefaultDlssnr { get; }
     public VersionChoice DefaultStreamline { get; }
+
+    /// <summary>#215: the default presets Quick Apply and the DLSS batch copy into a game's NVIDIA settings.</summary>
+    public PresetChoice DefaultSrPreset { get; }
+    public PresetChoice DefaultRrPreset { get; }
+    public PresetChoice DefaultFgPreset { get; }
+    public string DefaultPresetsTip { get; }
 
     [ObservableProperty] private string? status;
     [ObservableProperty] private string saveLabel;
@@ -166,6 +181,9 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
             DefaultDlssgVersion = DefaultDlssg.Value,
             DefaultDlssnrVersion = DefaultDlssnr.Value,
             DefaultStreamlineVersion = DefaultStreamline.Value,
+            DefaultSrPreset = DefaultSrPreset.Value ?? DlssPresetCatalogue.Default, // #215
+            DefaultRrPreset = DefaultRrPreset.Value ?? DlssPresetCatalogue.Default,
+            DefaultFgPreset = DefaultFgPreset.Value ?? DlssPresetCatalogue.Default,
         };
         foreach (var rows in _hosted) rows.WriteTo(settings);
         return settings;
@@ -204,6 +222,9 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
         DefaultDlssg.Clear();
         DefaultDlssnr.Clear();
         DefaultStreamline.Clear();
+        DefaultSrPreset.Clear(); // #215
+        DefaultRrPreset.Clear();
+        DefaultFgPreset.Clear();
         foreach (var rows in _hosted) rows.Reset(defaults);
         Status = _shell.Settings.ResetLinuxSettings();
         Applied?.Invoke();

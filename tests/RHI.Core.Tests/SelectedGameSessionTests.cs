@@ -73,7 +73,7 @@ public sealed class SelectedGameSessionTests
         var result = mode == "apply"
             ? await fx.Vm.Dlss.ApplyDlssBatchAsync([selected], new LinuxDlssVersionDefaults("310.1.0", "", "", "", ""))
             : await fx.Vm.Dlss.RestoreDlssBatchAsync([selected]);
-        Assert.Equal(0, result.ChangedCount);
+        Assert.Equal(0, result.Result.ChangedCount);
         await WaitForAnalysisAsync(fx);
 
         // Analysed again, not left on the analysis from before the batch with an empty cache behind it.

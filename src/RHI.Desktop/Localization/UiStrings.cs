@@ -473,7 +473,7 @@ internal static class UiStrings
         ("Win.NativeLinuxWatcherNeverDeletesSource", "Monitor nativo do Linux. Um add-on do RenoDX baixado é instalado no jogo que você confirmar e então retirado da pasta; outros arquivos .addon32/.addon64 são importados para Add-ons personalizados após confirmação; arquivos compactados geram somente uma notificação.", "Native Linux watcher. A downloaded RenoDX add-on is installed into the game you confirm, then removed from the folder; other .addon32/.addon64 files are imported into Custom Add-ons after confirmation; archives only generate a notification."),
         ("Win.PreferencePersistedComponentLogsRemainUnder", "A preferência é persistida; os logs dos componentes permanecem nos caminhos XDG de dados/configuração do RHI.", "The preference is persisted; component logs remain under RHI XDG data/config paths."),
         ("Win.DLSSStreamlineDefaults", "Padrões de DLSS / Streamline", "DLSS / Streamline defaults"),
-        ("Win.QuickApplyBatchApplyReplaceOnly", "Aplicação rápida e aplicação em lote substituem apenas DLLs locais que já existem no jogo. ‘Não alterar’ ignora o componente. Predefinições de perfil do driver NVIDIA e escala de renderização dependem de NVAPI e não são emuladas no Linux.", "Quick apply and batch apply replace only local DLLs that already exist in the game. “Do not change” skips the component. NVIDIA driver profile presets and render scaling depend on NVAPI and are not emulated on Linux."),
+        ("Win.QuickApplyBatchApplyReplaceOnly", "Aplicação rápida e aplicação em lote substituem apenas DLLs locais que já existem no jogo. ‘Não alterar’ ignora o componente. Os presets padrão abaixo vão para as configurações NVIDIA do próprio jogo.", "Quick apply and batch apply replace only local DLLs that already exist in the game. “Do not change” skips the component. The default presets below go into the game's own NVIDIA settings."),
         ("Win.SuperResolutionNvngxDlssDll", "Super-resolução (nvngx_dlss.dll)", "Super Resolution (nvngx_dlss.dll)"),
         ("Win.RayReconstructionNvngxDlssdDll", "Reconstrução de raios (nvngx_dlssd.dll)", "Ray Reconstruction (nvngx_dlssd.dll)"),
         ("Win.FrameGenerationNvngxDlssgDll", "Geração de quadros (nvngx_dlssg.dll)", "Frame Generation (nvngx_dlssg.dll)"),
@@ -1319,6 +1319,21 @@ internal static class UiStrings
         ("Rdx.HdrOffKept", "Engine.ini: as linhas de HDR já estavam lá antes do RHI e continuam.", "Engine.ini: the HDR lines were there before RHI and stay."),
         // w8/commit-point rows
         // w10/dlss-presets rows
+        // #215 global default DLSS presets (Settings → DLSS/Streamline, Quick Apply, DLSS batch)
+        ("Dp.DefaultPresets", "Presets padrão", "Default presets"),
+        ("Dp.DefaultPresetsTip", "Aplicar padrões e DLSS em lote copiam estes presets para as configurações NVIDIA do próprio jogo, só onde a janela Configurações NVIDIA… do jogo mostra a linha (nunca sobre um arquivo DLSS 1.x). Padrão não copia nada: a escolha do próprio jogo continua. Nada daqui é aplicado ao iniciar um jogo.", "Apply defaults and Batch DLSS copy these presets into the game's own NVIDIA settings, only where that game's NVIDIA settings… dialog shows the row (never over a DLSS 1.x file). Default copies nothing: the game's own choice stays. Nothing here is applied when a game starts."),
+        ("Dp.PresetSummary", "Presets padrão · DLSS {0} · RR {1} · FG {2}", "Default presets · DLSS {0} · RR {1} · FG {2}"),
+        ("Dp.PresetsSet", "Configurações NVIDIA de {0} — definido(s): {1}.", "NVIDIA settings of {0} — set: {1}."),
+        ("Dp.PresetsNotShown", "Não definido(s), porque as configurações NVIDIA deste jogo não oferecem: {0}.", "Not set, as this game's NVIDIA settings do not offer: {0}."),
+        ("Dp.PresetsDlss1x", "Não definido(s) sobre um arquivo DLSS 1.x: {0}.", "Not set over a DLSS 1.x file: {0}."),
+        ("Dp.BatchPresetsHeading", "Presets NVIDIA", "NVIDIA presets"),
+        ("Dp.BatchPresetsTip", "Copia o preset para as configurações NVIDIA de cada jogo marcado, só onde a janela Configurações NVIDIA… desse jogo mostra a linha (nunca sobre um arquivo DLSS 1.x). Preenchido a partir dos presets padrão das Configurações; ‘Não alterar’ mantém o preset de cada jogo.", "Copies the preset into each ticked game's NVIDIA settings, only where that game's NVIDIA settings… dialog shows the row (never over a DLSS 1.x file). Filled from Settings' default presets; ‘Do not change’ keeps each game's own preset."),
+        ("Dp.BatchPresets", "Presets NVIDIA: definidos em {0} jogo(s).", "NVIDIA presets: set in {0} game(s)."),
+        ("Dp.BatchPresetsNotShown", "Não definidos em {0} jogo(s), porque as configurações NVIDIA do jogo não oferecem a linha.", "Not set in {0} game(s), as the game's NVIDIA settings do not offer the row."),
+        ("Dp.BatchPresetsDlss1x", "Não definidos sobre um arquivo DLSS 1.x em {0} jogo(s).", "Not set over a DLSS 1.x file in {0} game(s)."),
+        ("Dp.BatchPresetsBeforeCancel", "Presets NVIDIA definidos antes do cancelamento: {0}.", "NVIDIA presets set before the cancel: {0}."),
+        ("Dp.BatchPresetsResetBeforeCancel", "Presets NVIDIA de volta ao padrão antes do cancelamento: {0}.", "NVIDIA presets back to Default before the cancel: {0}."),
+        ("Dp.BatchPresetsReset", "Presets NVIDIA de volta ao padrão em {0} jogo(s).", "NVIDIA presets back to Default in {0} game(s)."),
         // w10/archives rows
         // w10/journal-holds rows
     ];

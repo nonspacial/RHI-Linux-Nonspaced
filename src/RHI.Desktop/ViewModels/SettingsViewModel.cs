@@ -122,6 +122,9 @@ public sealed class SettingsViewModel : PanelViewModel
             // w7/dxvk-hdr rows
             // w10 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
             // w10/dlss-presets rows
+            DefaultSrPreset = Host.Settings.DefaultSrPreset, // #215
+            DefaultRrPreset = Host.Settings.DefaultRrPreset, // #215
+            DefaultFgPreset = Host.Settings.DefaultFgPreset, // #215
             // w10/archives rows
             // w10/journal-holds rows
         };

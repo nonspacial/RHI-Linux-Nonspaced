@@ -339,6 +339,30 @@ public static class OptionLists
     // w8/renodx rows
     // w8/commit-point rows
     // w10/dlss-presets rows
+    /// <summary>
+    /// #211/#215: a preset list that keeps <paramref name="saved"/> visible and selectable when the manifest no longer
+    /// lists it (never silently dropped; shown by its number, before "NVIDIA Recommended").
+    /// </summary>
+    public static OptionList<uint> DlssPresetsWithSaved(IReadOnlyList<DlssPreset> presets, uint saved)
+    {
+        if (saved == DlssPresetCatalogue.Default || presets.Any(p => p.Value == saved)) return DlssPresets(presets);
+        var list = presets.ToList();
+        list.Insert(Math.Max(1, list.Count - 1), new DlssPreset(NvidiaLaunchSettings.Format(saved), saved));
+        return DlssPresets(list);
+    }
+
+    /// <summary>
+    /// #215: the Settings and DLSS-batch preset dropdowns — the same entries and labels as <see cref="DlssPresets"/>
+    /// (with <paramref name="saved"/> kept), headed by "Do not change" (null) when <paramref name="doNotChange"/>.
+    /// </summary>
+    public static OptionList<uint?> DlssPresetChoices(IReadOnlyList<DlssPreset> presets, uint saved, bool doNotChange)
+    {
+        var entries = DlssPresetsWithSaved(presets, saved).Entries
+            .Select(e => new OptionEntry<uint?>(e.Value, e.TextKey, e.FixedLabel, e.Aliases));
+        return doNotChange
+            ? new(null, null, [new OptionEntry<uint?>(null, "Win.DoNotChange"), .. entries])
+            : new(DlssPresetCatalogue.Default, null, [.. entries]);
+    }
     // w10/archives rows
     // w10/journal-holds rows
 

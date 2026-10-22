@@ -477,7 +477,7 @@ public sealed class DlssAutoFollowService
                 // The history names the version as the manifest spells it (310.4.0, not the DLL's 310.4.0.0).
                 var targets = TargetsOf(candidate.Detection, plan.Family)
                     .Select(target => (Target: target, Installed: InstalledVersion(target, plan.Family)))
-                    .Where(target => target.Installed is { } installed && !IsVersion1(installed))
+                    .Where(target => target.Installed is { } installed && !IsDlss1x(installed))
                     .Select(target => (target.Target, From: followFrom.FirstOrDefault(version => SameVersion(version, target.Installed))))
                     .Where(target => target.From is not null)
                     .Select(target => (target.Target, target.From!))
@@ -577,7 +577,14 @@ public sealed class DlssAutoFollowService
     internal static bool SameVersion(string? a, string? b)
         => Numbers(a) is { } x && Numbers(b) is { } y && x.SequenceEqual(y);
 
-    private static bool IsVersion1(string version) => Numbers(version) is [1, ..];
+    /// <summary>
+    /// The one DLSS 1.x rule (auto-follow, Apply defaults, the DLSS batch and the preset rows): the version's first
+    /// number is 1. Null or unreadable is not 1.x.
+    /// </summary>
+    internal static bool IsDlss1x(string? version) => Numbers(version) is [1, ..];
+
+    /// <summary>The same rule over a DLL's PE version resource (bounded read; null version = not 1.x).</summary>
+    internal static bool IsDlss1xFile(string path) => IsDlss1x(PeFileVersion(path));
 
     /// <summary>The order of two versions (numbers part by part), or null when either cannot be read.</summary>
     internal static int? Compare(string? a, string? b)
