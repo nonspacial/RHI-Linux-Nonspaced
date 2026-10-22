@@ -12,21 +12,24 @@ public sealed class IdleTimeoutStream : Stream
     private readonly Stream _inner;
     private readonly TimeSpan _idleLimit;
     private readonly string _source;
+    private readonly TimeProvider _time;
 
-    public IdleTimeoutStream(Stream inner, TimeSpan idleLimit, string source)
+    /// <param name="time">The clock the idle timer runs on (tests: a manual clock; default the system's).</param>
+    public IdleTimeoutStream(Stream inner, TimeSpan idleLimit, string source, TimeProvider? time = null)
     {
         ArgumentNullException.ThrowIfNull(inner);
         if (idleLimit <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(idleLimit));
         _inner = inner;
         _idleLimit = idleLimit;
         _source = source;
+        _time = time ?? TimeProvider.System;
     }
 
     /// <summary>
     /// Wraps a response body under <see cref="TrustedDownload.IdleLimit"/>; <paramref name="source"/> (the download
     /// policy's name) ends the stall message.
     /// </summary>
-    public static Stream Wrap(Stream body, string source) => new IdleTimeoutStream(body, TrustedDownload.IdleLimit, source);
+    public static Stream Wrap(Stream body, string source) => new IdleTimeoutStream(body, TrustedDownload.IdleLimit, source, TrustedDownload.IdleClock);
 
     /// <summary>
     /// A whole text body under the idle limit (for readers outside <see cref="TrustedDownload"/>): decoded with the
@@ -47,11 +50,12 @@ public sealed class IdleTimeoutStream : Stream
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        idle.CancelAfter(_idleLimit);
+        // A new timer for every read: the limit is the gap since the last byte, never the time since the first.
+        using var idle = new CancellationTokenSource(_idleLimit, _time);
+        using var read = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, idle.Token);
         try
         {
-            return await _inner.ReadAsync(buffer, idle.Token).ConfigureAwait(false);
+            return await _inner.ReadAsync(buffer, read.Token).ConfigureAwait(false);
         }
         // Only the idle timer fired: the caller's token (a user Cancel, a shutdown) keeps its own exception.
         catch (Exception ex) when (idle.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -96,6 +100,9 @@ public sealed class DownloadStalledException : HttpRequestException
     /// <summary>Fixed text between the seconds and the source's name (PT-BR presentation pair).</summary>
     public const string MessageMiddle = " seconds. Source: ";
 
+    /// <summary><see cref="MessageMiddle"/> after exactly one second (PT-BR presentation pair).</summary>
+    public const string MessageMiddleOneSecond = " second. Source: ";
+
     public DownloadStalledException(string source, TimeSpan idleLimit, Exception? inner = null)
         : base(MessageFor(source, idleLimit), inner)
     {
@@ -108,6 +115,45 @@ public sealed class DownloadStalledException : HttpRequestException
 
     public TimeSpan IdleLimit { get; }
 
-    public static string MessageFor(string source, TimeSpan idleLimit)
-        => $"{MessagePrefix}{Math.Max(1, (int)Math.Ceiling(idleLimit.TotalSeconds))}{MessageMiddle}{source}";
+    public static string MessageFor(string source, TimeSpan idleLimit) => MessagePrefix + SecondsThenSource(idleLimit, source);
+
+    /// <summary>"60 seconds. Source: X" / "1 second. Source: X": whole seconds, rounded up, at least one.</summary>
+    internal static string SecondsThenSource(TimeSpan limit, string source)
+    {
+        var seconds = Math.Max(1, (int)Math.Ceiling(limit.TotalSeconds));
+        return $"{seconds}{(seconds == 1 ? MessageMiddleOneSecond : MessageMiddle)}{source}";
+    }
+}
+
+/// <summary>
+/// #233 correction: the app's <see cref="HttpClient.Timeout"/> ran out before the server's answer was complete (the wait
+/// for its headers, or a body a handler reads inside <c>SendAsync</c>). .NET reports that as a
+/// <see cref="TaskCanceledException"/> ("The request was canceled due to the configured HttpClient.Timeout …"), which is
+/// neither a user Cancel nor plain text; RHI's readers turn it into this network failure with its own EN + PT-BR text.
+/// </summary>
+public sealed class DownloadTimedOutException : HttpRequestException
+{
+    /// <summary>Fixed start of the message (PT-BR presentation pair); the seconds and the source's name follow.</summary>
+    public const string MessagePrefix = "The server took too long to answer: RHI stopped waiting after ";
+
+    public DownloadTimedOutException(string source, TimeSpan timeout, Exception? inner = null)
+        : base(MessageFor(source, timeout), inner)
+    {
+        DownloadSource = source;
+        Timeout = timeout;
+    }
+
+    public string DownloadSource { get; }
+
+    public TimeSpan Timeout { get; }
+
+    public static string MessageFor(string source, TimeSpan timeout)
+        => MessagePrefix + DownloadStalledException.SecondsThenSource(timeout, source);
+
+    /// <summary>
+    /// True when <paramref name="error"/> is <see cref="HttpClient"/>'s own timeout (its <see cref="TaskCanceledException"/>
+    /// carries a <see cref="TimeoutException"/>) and not the caller's Cancel.
+    /// </summary>
+    public static bool IsClientTimeout(Exception error, CancellationToken callersToken)
+        => error is TaskCanceledException { InnerException: TimeoutException } && !callersToken.IsCancellationRequested;
 }

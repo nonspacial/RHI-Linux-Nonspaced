@@ -51,9 +51,15 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 **Stalled downloads (#233).** Every body `TrustedDownload` reads (payloads and metadata) gives up when no byte arrives
 for `TrustedDownload.IdleLimit` (60 s; each read has its own timer, so a slow but steady download still finishes) with
 `DownloadStalledException` ("The download stopped: no data arrived for 60 seconds. Source: <policy name>"), a network
-failure, never a Cancel: the temp file is removed and nothing is placed or stamped. The Luma wiki page, the GitHub token
-check and Nexus Mods API answers read under the same limit; the wait for response headers stays bounded by the app's
-`HttpClient.Timeout` (5 min).
+failure, never a Cancel: the temp file is removed and nothing is placed or stamped. GitHub API answers that
+`GitHubConditionalCacheHandler` (below) reads inside `SendAsync` are read under the same limit (it holds at most 8 MiB +
+1 byte; a longer answer is passed on whole and not cached). The Luma wiki page, the GitHub token check and Nexus Mods
+API answers read under the same limit too. Not covered: the wait for the response headers, bounded by the client's
+`HttpClient.Timeout` (app: 5 min; token check and Nexus Mods: 30 s), which on `TrustedDownload` paths and the Nexus Mods
+client reads "The server took too long to answer: RHI stopped waiting after 300 seconds. Source: <policy name>"
+(`DownloadTimedOutException`, EN + PT-BR); bodies read under a whole-body timeout token or buffered by `HttpClient`
+(reshade.me, RenoDX catalogue, MOTD: its 5-min total) are listed in `UPSTREAM.md`. The limit is per gap, never a total
+deadline: a server sending a byte every 59 s is not stopped by it (the manual Cancel works; a throughput floor is #235).
 
 **Release lookups (#35).** GitHub API GETs pass through `GitHubConditionalCacheHandler` on the app's `HttpClient`
 (upstream's session `GitHubETagCache`): answers are revalidated with `If-None-Match`/`If-Modified-Since`; a 304

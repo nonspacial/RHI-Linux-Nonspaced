@@ -124,6 +124,11 @@ public sealed class NexusApiClient
             {
                 throw new NexusApiException(UnreachableMessage, null, ex);
             }
+            // #233 correction: the client's own timeout is this client's failure with RHI's text, not .NET's "canceled" line.
+            catch (TaskCanceledException ex) when (DownloadTimedOutException.IsClientTimeout(ex, cancellationToken))
+            {
+                throw new NexusApiException(DownloadTimedOutException.MessageFor(DownloadSources.NexusApi.Name, _http.Timeout), null, ex);
+            }
             using (response)
             {
                 DownloadSources.NexusApi.ValidateFinal(response, url);

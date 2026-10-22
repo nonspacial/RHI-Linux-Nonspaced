@@ -55,6 +55,26 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
         Assert.Equal("The download stopped: no data arrived for 60 seconds. Source: OptiScaler", message);
         Assert.Equal("O download parou: nenhum dado chegou durante 60 segundos. Origem: OptiScaler", UiLocalizationService.PresentFor("pt-BR", message));
         Assert.Equal(message, UiLocalizationService.PresentFor("en-US", message));
+
+        // One second reads singular in both languages (the tests' sub-second limits round up to it).
+        var oneSecond = DownloadStalledException.MessageFor("GitHub API", TimeSpan.FromMilliseconds(300));
+        Assert.Equal("The download stopped: no data arrived for 1 second. Source: GitHub API", oneSecond);
+        Assert.Equal("O download parou: nenhum dado chegou durante 1 segundo. Origem: GitHub API", UiLocalizationService.PresentFor("pt-BR", oneSecond));
+    }
+
+    // #233 correction: HttpClient's own timeout (.NET: "The request was canceled due to the configured HttpClient.Timeout
+    // of 300 seconds elapsing.") is shown as RHI's own line in both languages.
+    [Fact]
+    public void TimedOutMessage_IsFixedTextFirst_SourceLast_InEnglishAndPortuguese()
+    {
+        var message = DownloadTimedOutException.MessageFor("GitHub API", TimeSpan.FromMinutes(5));
+
+        Assert.Equal("The server took too long to answer: RHI stopped waiting after 300 seconds. Source: GitHub API", message);
+        Assert.Equal("O servidor demorou demais para responder: o RHI parou de esperar após 300 segundos. Origem: GitHub API",
+            UiLocalizationService.PresentFor("pt-BR", message));
+        Assert.Equal(message, UiLocalizationService.PresentFor("en-US", message));
+        Assert.Equal("The server took too long to answer: RHI stopped waiting after 1 second. Source: Nexus Mods API",
+            DownloadTimedOutException.MessageFor("Nexus Mods API", TimeSpan.FromSeconds(1)));
     }
 
     [Fact]
@@ -67,7 +87,7 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
         var error = await Assert.ThrowsAsync<DownloadStalledException>(() => TrustedDownload.DownloadToTempAsync(
             http, PayloadUrl, Path.Combine(dir, "OptiScaler.7z"), DownloadSources.OptiScaler).WaitAsync(StalledHttp.HangGuard));
 
-        Assert.Equal("The download stopped: no data arrived for 1 seconds. Source: OptiScaler", error.Message);
+        Assert.Equal("The download stopped: no data arrived for 1 second. Source: OptiScaler", error.Message);
         Assert.Equal("OptiScaler", error.DownloadSource);
         Assert.Empty(Directory.EnumerateFileSystemEntries(dir)); // the partial temp file is gone
     }
@@ -89,7 +109,7 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
 
         var error = await Assert.ThrowsAsync<DownloadStalledException>(() => read().WaitAsync(StalledHttp.HangGuard));
 
-        Assert.Equal("The download stopped: no data arrived for 1 seconds. Source: GitHub API", error.Message);
+        Assert.Equal("The download stopped: no data arrived for 1 second. Source: GitHub API", error.Message);
     }
 
     [Fact]
@@ -109,22 +129,38 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(dir));
     }
 
-    [Fact]
-    public async Task SlowButSteadyPayload_LongerThanTheLimitInTotal_Finishes()
+    // Per gap, never a total deadline, on a manual clock (no real waiting, so machine load cannot move the margin): 40
+    // chunks 59 s apart (39 minutes in all) finish under the 60 s limit; one gap of exactly 60 s is a stall.
+    [Theory]
+    [InlineData(59, true)]
+    [InlineData(60, false)]
+    public async Task SlowButSteadyPayload_LongerThanTheLimitInTotal_Finishes(int gapSeconds, bool finishes)
     {
-        // 40 chunks, one every 75 ms: about 3 s in all, three times the 1 s idle limit, and never 1 s without a byte.
-        TrustedDownload.IdleLimitForTesting = TimeSpan.FromSeconds(1);
+        var clock = new ManualClock();
+        TrustedDownload.IdleClockForTesting = clock;
         const int chunks = 40, size = 1024;
+        var gap = TimeSpan.FromSeconds(gapSeconds);
         var dir = Directory.CreateDirectory(Path.Combine(_root, "trickle")).FullName;
-        using var http = new HttpClient(new StalledHttp.Handler(_ => StalledHttp.Response(new TrickleStream(chunks, size, TimeSpan.FromMilliseconds(75)))));
-        var watch = Stopwatch.StartNew();
+        using var http = new HttpClient(new StalledHttp.Handler(_ => StalledHttp.Response(new TrickleStream(chunks, size, gap, clock))));
 
-        using var download = await TrustedDownload.DownloadToTempAsync(http, PayloadUrl, Path.Combine(dir, "OptiScaler.7z"), DownloadSources.OptiScaler)
+        var download = TrustedDownload.DownloadToTempAsync(http, PayloadUrl, Path.Combine(dir, "OptiScaler.7z"), DownloadSources.OptiScaler)
             .WaitAsync(StalledHttp.HangGuard);
 
-        Assert.True(watch.Elapsed > TimeSpan.FromSeconds(2), $"the trickle took only {watch.Elapsed}");
-        Assert.Equal(chunks * size, download.Length);
-        Assert.Equal(Convert.ToHexString(SHA256.HashData(TrickleStream.Expected(chunks, size))), download.Sha256);
+        if (finishes)
+        {
+            using var done = await download;
+            Assert.Equal(gap * chunks, clock.Elapsed); // 40 × 59 s: forty times the limit's worth of gaps in all
+            Assert.Equal(chunks * size, done.Length);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(TrickleStream.Expected(chunks, size))), done.Sha256);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<DownloadStalledException>(() => download);
+            Assert.Equal("The download stopped: no data arrived for 60 seconds. Source: OptiScaler", error.Message);
+            Assert.Equal(gap, clock.Elapsed); // the first gap already
+            Assert.Empty(Directory.EnumerateFileSystemEntries(dir));
+        }
+        Assert.Equal(0, clock.LiveTimers); // every read's own timer ended with its read
     }
 
     [Fact]
@@ -175,6 +211,94 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
         Assert.Equal(new[] { entry, CacheStamp.StampPath(entry) }.Order(), Directory.EnumerateFiles(dir).Order());
     }
 
+    // ---- #233 correction: the app's HttpClient has the GitHub API cache handler in front ----
+
+    private const string DisplayCommanderApi = "https://api.github.com/repos/pmnoxx/display-commander/releases/tags/latest";
+
+    // The handler reads an api.github.com answer that carries a validator inside SendAsync, before TrustedDownload sees
+    // it: that read is under the idle limit too, so a stalled answer gives up at the limit, long before HttpClient.Timeout.
+    [Theory]
+    [InlineData("etag")]
+    [InlineData("last-modified")]
+    [InlineData("none")]
+    public async Task GitHubApiAnswer_ThroughTheAppsCacheHandler_ThatStopsSendingData_GivesUpAtTheIdleLimit(string validator)
+    {
+        TrustedDownload.IdleLimitForTesting = ShortLimit;
+        var clientTimeout = TimeSpan.FromSeconds(10);
+        using var http = new HttpClient(new GitHubConditionalCacheHandler(new StalledHttp.Handler(_ => StalledHttp.Stalled(bytesFirst: 10,
+            etag: validator == "etag" ? "\"dc-1\"" : null,
+            lastModified: validator == "last-modified" ? DateTimeOffset.UnixEpoch : null)))) { Timeout = clientTimeout };
+        var watch = Stopwatch.StartNew();
+
+        var error = await Assert.ThrowsAsync<DownloadStalledException>(() => TrustedDownload.GetStringAsync(
+            http, DisplayCommanderApi, DownloadSources.GitHubApi).WaitAsync(StalledHttp.HangGuard));
+
+        Assert.True(watch.Elapsed < clientTimeout / 2, $"gave up only after {watch.Elapsed}");
+        Assert.Equal("The download stopped: no data arrived for 1 second. Source: GitHub API", error.Message);
+    }
+
+    // The handler holds at most its cache limit + 1 byte: a longer answer is not kept, and the caller still gets all of it.
+    [Fact]
+    public async Task GitHubApiAnswer_LongerThanTheCacheKeeps_ReachesTheCallerWhole_AndIsNotKept()
+    {
+        var size = GitHubConditionalCacheHandler.MaxCachedBodyBytes + 100_000;
+        var body = TrickleStream.Expected(size / 1000, 1000);
+        var inner = new StalledHttp.Handler(_ =>
+        {
+            var response = StalledHttp.Response(new TrickleStream(size / 1000, 1000, TimeSpan.Zero)); // no Content-Length
+            response.Headers.ETag = System.Net.Http.Headers.EntityTagHeaderValue.Parse("\"big-1\"");
+            return response;
+        });
+        var cache = new GitHubConditionalCacheHandler(inner);
+        using var http = new HttpClient(cache);
+
+        var first = await TrustedDownload.GetBytesAsync(http, DisplayCommanderApi, DownloadSources.GitHubApi).WaitAsync(StalledHttp.HangGuard);
+        var second = await TrustedDownload.GetBytesAsync(http, DisplayCommanderApi, DownloadSources.GitHubApi).WaitAsync(StalledHttp.HangGuard);
+
+        Assert.Equal(body, first);
+        Assert.Equal(body, second);
+        Assert.Equal(0, cache.CacheHits);
+    }
+
+    // HttpClient's own timeout (a server that never answers) is RHI's network failure with its own text, on every
+    // TrustedDownload path, never .NET's "The request was canceled due to the configured HttpClient.Timeout" line.
+    [Theory]
+    [InlineData("get-string")]
+    [InlineData("payload")]
+    [InlineData("head")]
+    public async Task ServerThatNeverAnswers_GivesUpAtTheClientTimeout_WithRhisOwnLine(string call)
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(_root, "silent")).FullName;
+        using var http = new HttpClient(new StalledHttp.NeverAnswers()) { Timeout = TimeSpan.FromMilliseconds(300) };
+        Func<Task> read = call switch
+        {
+            "get-string" => () => TrustedDownload.GetStringAsync(http, ApiUrl, DownloadSources.GitHubApi),
+            "payload" => () => TrustedDownload.DownloadToTempAsync(http, PayloadUrl, Path.Combine(dir, "OptiScaler.7z"), DownloadSources.OptiScaler),
+            _ => () => TrustedDownload.HeadAsync(http, PayloadUrl, DownloadSources.OptiScaler),
+        };
+
+        var error = await Assert.ThrowsAsync<DownloadTimedOutException>(() => read().WaitAsync(StalledHttp.HangGuard));
+
+        var source = call == "get-string" ? "GitHub API" : "OptiScaler";
+        Assert.Equal($"The server took too long to answer: RHI stopped waiting after 1 second. Source: {source}", error.Message);
+        Assert.IsAssignableFrom<HttpRequestException>(error);
+        Assert.IsType<TaskCanceledException>(error.InnerException);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(dir));
+    }
+
+    [Fact]
+    public async Task CallersCancel_WhileWaitingForTheAnswer_IsStillACancel()
+    {
+        using var http = new HttpClient(new StalledHttp.NeverAnswers()) { Timeout = TimeSpan.FromSeconds(30) };
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TrustedDownload.GetStringAsync(
+            http, ApiUrl, DownloadSources.GitHubApi, cancellationToken: cancel.Token).WaitAsync(StalledHttp.HangGuard));
+
+        Assert.True(cancel.IsCancellationRequested);
+        Assert.IsNotType<TimeoutException>(error.InnerException);
+    }
+
     // ---- the other body readers (audit): each now runs under the same idle limit ----
 
     [Fact]
@@ -188,7 +312,7 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
         var luma = new LumaCatalogService(http);
 
         var error = await Assert.ThrowsAsync<DownloadStalledException>(() => luma.FetchAsync().WaitAsync(StalledHttp.HangGuard));
-        Assert.Equal("The download stopped: no data arrived for 1 seconds. Source: Luma Framework", error.Message);
+        Assert.Equal("The download stopped: no data arrived for 1 second. Source: Luma Framework", error.Message);
         // The wiki gate was released: the next lookup asks again (offline now) instead of waiting behind the stall.
         await Assert.ThrowsAsync<HttpRequestException>(() => luma.FetchAsync().WaitAsync(StalledHttp.HangGuard));
         Assert.Equal(2, calls);
@@ -217,8 +341,21 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
 
         var error = await Assert.ThrowsAsync<NexusApiException>(() => nexus.ValidateKeyAsync("key").WaitAsync(StalledHttp.HangGuard));
 
-        Assert.Equal("The download stopped: no data arrived for 1 seconds. Source: Nexus Mods API", error.Message);
+        Assert.Equal("The download stopped: no data arrived for 1 second. Source: Nexus Mods API", error.Message);
         Assert.IsType<DownloadStalledException>(error.InnerException);
+        Assert.False(error.Rejected);
+    }
+
+    [Fact]
+    public async Task NexusAnswer_ClientTimeout_IsTheClientsFailure_WithRhisOwnLine()
+    {
+        using var http = new HttpClient(new StalledHttp.NeverAnswers()) { Timeout = TimeSpan.FromMilliseconds(300) };
+        var nexus = new NexusApiClient(http);
+
+        var error = await Assert.ThrowsAsync<NexusApiException>(() => nexus.ValidateKeyAsync("key").WaitAsync(StalledHttp.HangGuard));
+
+        Assert.Equal("The server took too long to answer: RHI stopped waiting after 1 second. Source: Nexus Mods API", error.Message);
+        Assert.IsType<TaskCanceledException>(error.InnerException);
         Assert.False(error.Rejected);
     }
 

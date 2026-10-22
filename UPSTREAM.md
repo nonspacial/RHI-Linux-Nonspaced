@@ -883,14 +883,28 @@ build.
   network failure: an Update All check reads "could not be checked", an update fails for that game and the pass moves
   on; the user's Cancel still reads "Operation cancelled.". Message, EN and PT-BR: "The download stopped: no data arrived
   for 60 seconds. Source: OptiScaler" / "O download parou: nenhum dado chegou durante 60 segundos. Origem: OptiScaler".
+- GitHub API answers: the app's `HttpClient` has `GitHubConditionalCacheHandler` (#35) in front, which reads every
+  api.github.com answer that carries an ETag or Last-Modified (GitHub always sends one) inside `SendAsync`, before
+  `TrustedDownload` sees it. That read is itself under the same idle limit (correction round): a stalled release lookup
+  gives up after 60 s with the message above ("Source: GitHub API"). The handler holds at most 8 MiB + 1 byte; a longer
+  answer is not cached and reaches the caller whole, still under the limit.
 - A stalled download's temp file is removed and no cache entry or stamp is written; downloads stay before the write gate,
   so nothing reaches a game folder.
-- The idle limit covers the body only: the wait for the response headers stays bounded by the app's `HttpClient.Timeout`
-  (5 min), as before.
+- Per gap, never a total deadline (owner rule): a server that keeps sending a byte every 59 s is never stopped by the
+  idle limit (a payload then runs until its size cap). The manual Cancel works throughout the download. A
+  minimum-throughput floor is follow-up #235 (no milestone).
+- Not covered by the idle limit: the wait for the response headers, bounded by `HttpClient.Timeout` (the app's client:
+  5 min; the GitHub token check and Nexus Mods clients: 30 s), and a GitHub API answer that keeps trickling for longer than
+  that 5 min in all. On `TrustedDownload` paths and the Nexus Mods client that timeout reads "The server took too long to
+  answer: RHI stopped waiting after 300 seconds. Source: GitHub API" / "O servidor demorou demais para responder: o RHI
+  parou de esperar após 300 segundos. Origem: GitHub API" (`DownloadTimedOutException`, a network failure), never .NET's
+  "The request was canceled due to the configured HttpClient.Timeout …"; the token check shows its "could not check"
+  line.
 - Other body readers: the Luma wiki page, the GitHub token check and the Nexus Mods API answers now read under the same
-  limit (they had no bound on the body); the RenoDX Unity list (30 s), upstream manifest (15 s), PCGW central data
-  (60 s), DLSS manifest (15 s) and PCGW API reads already run under a timeout token for the whole body; reshade.me's
-  page, the RenoDX catalogue and the MOTD are buffered inside `HttpClient`, so its 5-minute timeout bounds them.
+  idle limit (they had no bound on the body); the RenoDX Unity list (30 s), upstream manifest (15 s), PCGW central data
+  (60 s), DLSS manifest (15 s) and PCGW API reads run under a timeout token for the whole body instead; reshade.me's page,
+  the RenoDX catalogue and the MOTD are buffered inside `HttpClient`, so only its 5-minute total timeout bounds them
+  (reshade.me reports "did not answer in time"; the catalogue and MOTD fall back quietly).
 - Two stagings of one OptiScaler package cannot run at once: a manual install and the background pass take the same busy
   gate. A second copy would also be harmless in `TrustedDownload` (unique temp names, atomic rename, stamp written from
   the file in place), so no cache-entry lock was added (wizardkof's provider lock is not ported).

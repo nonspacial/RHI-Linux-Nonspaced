@@ -578,6 +578,8 @@ public sealed class WaveOneMessageLocalizationTests
         // w11/download-idle rows
         yield return DownloadStalledException.MessageFor(DownloadSources.OptiScaler.Name, TrustedDownload.DefaultIdleLimit); // #233
         yield return DownloadStalledException.MessageFor(DownloadSources.GitHubApi.Name, TimeSpan.FromSeconds(1));
+        yield return DownloadTimedOutException.MessageFor(DownloadSources.GitHubApi.Name, TimeSpan.FromMinutes(5)); // #233 correction
+        yield return DownloadTimedOutException.MessageFor(DownloadSources.NexusApi.Name, TimeSpan.FromSeconds(1));
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
@@ -644,6 +646,9 @@ public sealed class WaveOneMessageLocalizationTests
         // w11/download-idle (#233): a stalled download's fixed text is gone in PT-BR
         { DownloadStalledException.MessageFor("OptiScaler", TimeSpan.FromSeconds(60)), "The download stopped" },
         { DownloadStalledException.MessageFor("OptiScaler", TimeSpan.FromSeconds(60)), "seconds. Source:" },
+        { DownloadStalledException.MessageFor("GitHub API", TimeSpan.FromSeconds(1)), "second. Source:" },
+        { DownloadTimedOutException.MessageFor("GitHub API", TimeSpan.FromMinutes(5)), "took too long to answer" },
+        { DownloadTimedOutException.MessageFor("GitHub API", TimeSpan.FromMinutes(5)), "stopped waiting" },
     };
 
     [Theory]

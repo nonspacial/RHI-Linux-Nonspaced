@@ -234,6 +234,18 @@ public static class TrustedDownload
         set => IdleLimitOverride.Value = value;
     }
 
+    private static readonly AsyncLocal<TimeProvider?> IdleClockOverride = new();
+
+    /// <summary>The clock <see cref="IdleTimeoutStream.Wrap"/>'s timers run on (the system's outside tests).</summary>
+    internal static TimeProvider IdleClock => IdleClockOverride.Value ?? TimeProvider.System;
+
+    /// <summary>Test seam: a manual clock for the idle timers of the calling async flow only (as <see cref="IdleLimitForTesting"/>).</summary>
+    internal static TimeProvider? IdleClockForTesting
+    {
+        get => IdleClockOverride.Value;
+        set => IdleClockOverride.Value = value;
+    }
+
     private static readonly ProductInfoHeaderValue DefaultUserAgent = ProductInfoHeaderValue.Parse(RHI.Core.RhiProductInfo.UserAgent);
 
     /// <summary>Parses <paramref name="url"/> and refuses it (<see cref="UntrustedDownloadException"/>) unless the policy allows it.</summary>
@@ -247,7 +259,7 @@ public static class TrustedDownload
     {
         using var request = new HttpRequestMessage(HttpMethod.Head, policy.Validate(url));
         request.Headers.UserAgent.Add(DefaultUserAgent);
-        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var response = await SendAsync(http, request, policy, cancellationToken).ConfigureAwait(false);
         try
         {
             policy.ValidateFinal(response, url);
@@ -318,7 +330,7 @@ public static class TrustedDownload
     private static async Task<byte[]> SendCappedAsync(
         HttpClient http, HttpRequestMessage request, string url, TrustedDownloadPolicy policy, CancellationToken cancellationToken)
     {
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        using var response = await SendAsync(http, request, policy, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         policy.ValidateFinal(response, url);
         var cap = Math.Min(policy.MaxBytes, MetadataMaxBytes);
@@ -336,6 +348,21 @@ public static class TrustedDownload
             buffer.Write(chunk, 0, read);
         }
         return buffer.ToArray();
+    }
+
+    // #233 correction: HttpClient's own timeout (headers, or a body a handler reads inside SendAsync, such as the GitHub
+    // API cache) becomes RHI's network failure with its own text; the caller's Cancel stays a Cancel.
+    private static async Task<HttpResponseMessage> SendAsync(
+        HttpClient http, HttpRequestMessage request, TrustedDownloadPolicy policy, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TaskCanceledException ex) when (DownloadTimedOutException.IsClientTimeout(ex, cancellationToken))
+        {
+            throw new DownloadTimedOutException(policy.Name, http.Timeout, ex);
+        }
     }
 
     // #233: every body TrustedDownload reads (metadata and payload) goes through the idle limit.
@@ -362,7 +389,7 @@ public static class TrustedDownload
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.UserAgent.Add(userAgent ?? DefaultUserAgent);
         configureRequest?.Invoke(request);
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        using var response = await SendAsync(http, request, policy, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         policy.ValidateFinal(response, url);
         onResponse?.Invoke(response);

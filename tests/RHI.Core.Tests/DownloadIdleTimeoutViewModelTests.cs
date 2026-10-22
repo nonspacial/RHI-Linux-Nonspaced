@@ -9,7 +9,8 @@ namespace RHI.Core.Tests;
 /// <summary>
 /// #233 through the view models and Update All: a stalled download reads as its own failure line (EN and PT-BR), never
 /// as "Operation cancelled."; a real Cancel still does; a family whose check or update stalls counts as could not be
-/// checked / failed for that game and the pass carries on to the next game; nothing reaches the game folder.
+/// checked / failed for that game and the pass carries on to the next game; nothing reaches the game folder. The stalled
+/// GitHub API answers carry an ETag and go through the app's <c>GitHubConditionalCacheHandler</c>, as in the app.
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
 public sealed class DownloadIdleTimeoutViewModelTests : IDisposable
@@ -25,13 +26,14 @@ public sealed class DownloadIdleTimeoutViewModelTests : IDisposable
     }
 
     [Theory]
-    [InlineData("en-US", "The download stopped: no data arrived for 1 seconds. Source: GitHub API")]
-    [InlineData("pt-BR", "O download parou: nenhum dado chegou durante 1 segundos. Origem: GitHub API")]
+    [InlineData("en-US", "The download stopped: no data arrived for 1 second. Source: GitHub API")]
+    [InlineData("pt-BR", "O download parou: nenhum dado chegou durante 1 segundo. Origem: GitHub API")]
     public async Task StalledCheck_ShowsTheStallLine_NeverTheCancelLine(string language, string stallLine)
     {
         TrustedDownload.IdleLimitForTesting = ShortLimit;
         using var fx = await ViewModelFixture.StartAsync([], uiLanguage: language, httpResponse: request
-            => request.RequestUri!.AbsoluteUri == UltimateAsiLoaderDeploymentService.GitHubApiUrl ? StalledHttp.Stalled(bytesFirst: 10) : null);
+            => request.RequestUri!.AbsoluteUri == UltimateAsiLoaderDeploymentService.GitHubApiUrl ? StalledHttp.Stalled(bytesFirst: 10, etag: "\"ual-1\"") : null,
+            gitHubCache: true); // the app's pipeline: the GitHub API cache handler reads this answer itself
         await AddAndAnalyseAsync(fx, "Tunic");
         UiLocalizationService.Apply(language);
         try
@@ -76,7 +78,7 @@ public sealed class DownloadIdleTimeoutViewModelTests : IDisposable
     {
         TrustedDownload.IdleLimitForTesting = ShortLimit;
         var (stalledCheck, stalledUpdate, after) = (PeGame("Check Stalls"), PeGame("Update Stalls"), PeGame("After"));
-        using var fx = await ViewModelFixture.StartAsync([stalledCheck, stalledUpdate, after], httpResponse: Route);
+        using var fx = await ViewModelFixture.StartAsync([stalledCheck, stalledUpdate, after], httpResponse: Route, gitHubCache: true);
         var games = new[] { stalledCheck, stalledUpdate, after }.Select(game => fx.Vm.AllLibraryGames.Single(listed => listed.Name == game.Name)).ToArray();
         SeedRecords(fx, games);
 
@@ -85,11 +87,11 @@ public sealed class DownloadIdleTimeoutViewModelTests : IDisposable
 
         var check = Assert.Single(result.Items, item => item.GameName == "Check Stalls");
         Assert.True(check.Unchecked, check.Message);
-        Assert.Contains("The download stopped: no data arrived for 1 seconds. Source: GitHub API", check.Message, StringComparison.Ordinal);
+        Assert.Contains("The download stopped: no data arrived for 1 second. Source: GitHub API", check.Message, StringComparison.Ordinal);
         var update = Assert.Single(result.Items, item => item.GameName == "Update Stalls");
         Assert.False(update.Success, update.Message);
         Assert.False(update.Unchecked, update.Message);
-        Assert.Contains("The download stopped: no data arrived for 1 seconds. Source: ", update.Message, StringComparison.Ordinal);
+        Assert.Contains("The download stopped: no data arrived for 1 second. Source: ", update.Message, StringComparison.Ordinal);
         Assert.Single(result.Items, item => item.GameName == "After" && item.Unchecked); // the pass went on to the next game
         Assert.Equal((0, 0, 1, 2), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount));
         Assert.False(File.Exists(Path.Combine(games[1].BinaryDirectory!, "relimiter.addon64")));
@@ -102,7 +104,7 @@ public sealed class DownloadIdleTimeoutViewModelTests : IDisposable
     {
         TrustedDownload.IdleLimitForTesting = ShortLimit;
         var (stalledCheck, stalledUpdate, after) = (PeGame("Check Stalls"), PeGame("Update Stalls"), PeGame("After"));
-        using var fx = await ViewModelFixture.StartAsync([stalledCheck, stalledUpdate, after], httpResponse: Route);
+        using var fx = await ViewModelFixture.StartAsync([stalledCheck, stalledUpdate, after], httpResponse: Route, gitHubCache: true);
         SeedRecords(fx, new[] { stalledCheck, stalledUpdate, after }.Select(game => fx.Vm.AllLibraryGames.Single(listed => listed.Name == game.Name)).ToArray());
         fx.Vm.Updates.SetLibraryHasManagedTargets(true);
 
@@ -142,7 +144,7 @@ public sealed class DownloadIdleTimeoutViewModelTests : IDisposable
 
     private static HttpResponseMessage? Route(HttpRequestMessage request) => request.RequestUri!.AbsoluteUri switch
     {
-        DisplayCommanderApi => StalledHttp.Stalled(bytesFirst: 10),
+        DisplayCommanderApi => StalledHttp.Stalled(bytesFirst: 10, etag: "\"dc-1\""), // read by the GitHub API cache handler
         ReLimiterApi => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
         {
             Content = new StringContent($$"""{"tag_name":"v3.3.5","name":"v3.3.5","body":"","assets":[{"name":"relimiter.addon64","browser_download_url":"{{ReLimiterAsset}}"}]}""")

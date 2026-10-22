@@ -1624,6 +1624,9 @@ public static class UiLocalizationService
         // #233: a download that sent no data for the idle limit (seconds and the source's name follow).
         (RHI.Core.Deployment.DownloadStalledException.MessagePrefix, "O download parou: nenhum dado chegou durante "),
         (RHI.Core.Deployment.DownloadStalledException.MessageMiddle, " segundos. Origem: "),
+        (RHI.Core.Deployment.DownloadStalledException.MessageMiddleOneSecond, " segundo. Origem: "),
+        // #233 correction: HttpClient's own timeout ran out (seconds and the source's name follow).
+        (RHI.Core.Deployment.DownloadTimedOutException.MessagePrefix, "O servidor demorou demais para responder: o RHI parou de esperar após "),
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
