@@ -122,7 +122,8 @@ public sealed class GitHubTokenSettingsService
                 AppLog.Warn("github-token", $"GitHub answered {(int)response.StatusCode} to the token check; nothing was saved");
                 return new GitHubTokenStatus(GitHubTokenCheck.CouldNotCheck);
             }
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            // #233: HttpClient.Timeout stops at the headers; the idle limit bounds the body (a stall = could not check).
+            var body = await IdleTimeoutStream.ReadStringAsync(response.Content, DownloadSources.GitHubApi.Name, cancellationToken).ConfigureAwait(false);
             var (limit, remaining) = ReadCoreLimit(body);
             return new GitHubTokenStatus(GitHubTokenCheck.Valid, limit, remaining);
         }

@@ -48,6 +48,13 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | RenoDX add-ons | core `RenoDxAddons` | GitHub, `<author>.github.io`, renodx.com | none (snapshots are rebuilt in place) | fail-open; ETag/Last-Modified/size stamp for update checks |
 | ReShade Addon Manager | core `ReShadeAddons` | GitHub, `<author>.github.io`, raw.githubusercontent.com (Addons.ini) | none checked | fail-open |
 
+**Stalled downloads (#233).** Every body `TrustedDownload` reads (payloads and metadata) gives up when no byte arrives
+for `TrustedDownload.IdleLimit` (60 s; each read has its own timer, so a slow but steady download still finishes) with
+`DownloadStalledException` ("The download stopped: no data arrived for 60 seconds. Source: <policy name>"), a network
+failure, never a Cancel: the temp file is removed and nothing is placed or stamped. The Luma wiki page, the GitHub token
+check and Nexus Mods API answers read under the same limit; the wait for response headers stays bounded by the app's
+`HttpClient.Timeout` (5 min).
+
 **Release lookups (#35).** GitHub API GETs pass through `GitHubConditionalCacheHandler` on the app's `HttpClient`
 (upstream's session `GitHubETagCache`): answers are revalidated with `If-None-Match`/`If-Modified-Since`; a 304
 (which costs no rate limit) returns the cached body; when GitHub refuses (403/429 with no quota left, or 5xx) the

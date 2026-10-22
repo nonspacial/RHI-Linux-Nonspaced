@@ -213,6 +213,27 @@ public static class TrustedDownload
     /// <summary>Largest metadata body (release JSON, checksum lists) read by <see cref="GetStringAsync"/>.</summary>
     public const long MetadataMaxBytes = 16L * 1024 * 1024;
 
+    /// <summary>#233 built default: a body read gives up after 60 seconds with no byte received (w11 plan §11.6).</summary>
+    public static readonly TimeSpan DefaultIdleLimit = TimeSpan.FromSeconds(60);
+
+    private static readonly AsyncLocal<TimeSpan?> IdleLimitOverride = new();
+
+    /// <summary>
+    /// #233: the one idle limit of every HTTP body RHI reads (<see cref="IdleTimeoutStream"/>): no byte for this long and
+    /// the download stops with <see cref="DownloadStalledException"/>. Per gap, never a total deadline.
+    /// </summary>
+    public static TimeSpan IdleLimit => IdleLimitOverride.Value ?? DefaultIdleLimit;
+
+    /// <summary>
+    /// Test seam: the idle limit for the calling async flow only (parallel test classes keep the default); set it in the
+    /// test method's own flow, not inside an awaited helper. Null puts the default back.
+    /// </summary>
+    internal static TimeSpan? IdleLimitForTesting
+    {
+        get => IdleLimitOverride.Value;
+        set => IdleLimitOverride.Value = value;
+    }
+
     private static readonly ProductInfoHeaderValue DefaultUserAgent = ProductInfoHeaderValue.Parse(RHI.Core.RhiProductInfo.UserAgent);
 
     /// <summary>Parses <paramref name="url"/> and refuses it (<see cref="UntrustedDownloadException"/>) unless the policy allows it.</summary>
@@ -304,7 +325,7 @@ public static class TrustedDownload
         if (response.Content.Headers.ContentLength is long announced && announced > cap)
             throw new InvalidDataException($"{SizeLimitPrefix}{cap}{AtomicFile.SizeLimitMiddle}{announced} bytes");
 
-        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using var body = await OpenBodyAsync(response, policy, cancellationToken).ConfigureAwait(false);
         using var buffer = new MemoryStream();
         var chunk = new byte[81920];
         int read;
@@ -316,6 +337,10 @@ public static class TrustedDownload
         }
         return buffer.ToArray();
     }
+
+    // #233: every body TrustedDownload reads (metadata and payload) goes through the idle limit.
+    private static async Task<Stream> OpenBodyAsync(HttpResponseMessage response, TrustedDownloadPolicy policy, CancellationToken cancellationToken)
+        => IdleTimeoutStream.Wrap(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), policy.Name);
 
     /// <summary>
     /// Downloads <paramref name="url"/> into a verified temporary file beside <paramref name="targetPath"/>.
@@ -344,7 +369,7 @@ public static class TrustedDownload
         if (response.Content.Headers.ContentLength is long announced && announced > policy.MaxBytes)
             throw new InvalidDataException($"{SizeLimitPrefix}{policy.MaxBytes}{AtomicFile.SizeLimitMiddle}{announced} bytes");
 
-        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using var body = await OpenBodyAsync(response, policy, cancellationToken).ConfigureAwait(false);
         var staged = await AtomicFile.StageStreamAsync(body, targetPath, expectedSha256, null, policy.MaxBytes, cancellationToken).ConfigureAwait(false);
         return new TempDownload(staged);
     }

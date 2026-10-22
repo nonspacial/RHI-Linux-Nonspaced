@@ -178,7 +178,8 @@ public sealed class LumaCatalogService
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            _wikiHtml = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            // #233: the idle limit, so a stalled wiki page never holds the gate (and every later Luma lookup) for good.
+            _wikiHtml = await RHI.Core.Deployment.IdleTimeoutStream.ReadStringAsync(response.Content, DownloadSources.Luma.Name, cancellationToken).ConfigureAwait(false);
             return _wikiHtml;
         }
         finally { _gate.Release(); }

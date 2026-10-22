@@ -871,6 +871,30 @@ build.
 ## Parity notes (wave 11: wizardkof v0.9.25 — NR DLL per card generation, F5 driver warning, Nightly switch, download idle timeout, NR check)
 
 <!-- w11/download-idle notes -->
+### #233 — A download that stops sending data gives up after an idle time
+
+- Source: wizardkof/RHI-Linux v0.9.25.0-beta.1 (`26e5259`, PAR-D111): its OptiScaler package provider gives each
+  download a 5-minute total deadline and serialises stagings with a per-provider lock. Ported behaviourally, with an
+  IDLE limit instead of a total deadline: a big file on a slow but steady link still finishes.
+- Every HTTP body RHI reads through `TrustedDownload` (payloads via `DownloadToTempAsync`/`EnsureVerifiedAsync`, metadata
+  via `GetStringAsync`/`GetBytesAsync`/`PostJsonAsync`) is wrapped in `IdleTimeoutStream`: each read has its own timer of
+  `TrustedDownload.IdleLimit` (60 s with no byte received). A stall throws `DownloadStalledException`, an
+  `HttpRequestException` (never an `OperationCanceledException`), so every existing "could not reach" rule treats it as a
+  network failure: an Update All check reads "could not be checked", an update fails for that game and the pass moves
+  on; the user's Cancel still reads "Operation cancelled.". Message, EN and PT-BR: "The download stopped: no data arrived
+  for 60 seconds. Source: OptiScaler" / "O download parou: nenhum dado chegou durante 60 segundos. Origem: OptiScaler".
+- A stalled download's temp file is removed and no cache entry or stamp is written; downloads stay before the write gate,
+  so nothing reaches a game folder.
+- The idle limit covers the body only: the wait for the response headers stays bounded by the app's `HttpClient.Timeout`
+  (5 min), as before.
+- Other body readers: the Luma wiki page, the GitHub token check and the Nexus Mods API answers now read under the same
+  limit (they had no bound on the body); the RenoDX Unity list (30 s), upstream manifest (15 s), PCGW central data
+  (60 s), DLSS manifest (15 s) and PCGW API reads already run under a timeout token for the whole body; reshade.me's
+  page, the RenoDX catalogue and the MOTD are buffered inside `HttpClient`, so its 5-minute timeout bounds them.
+- Two stagings of one OptiScaler package cannot run at once: a manual install and the background pass take the same busy
+  gate. A second copy would also be harmless in `TrustedDownload` (unique temp names, atomic rename, stamp written from
+  the file in place), so no cache-entry lock was added (wizardkof's provider lock is not ported).
+
 
 <!-- w11/nr-gpu notes -->
 
