@@ -396,6 +396,12 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             StatusText = line;
             throw new DlssBatchCancelledException(line, ex);
         }
+        catch (Exception ex) when (ex is not OperationRefusedException && tally.Reached.Count > 0)
+        {
+            // w10 follow-up D14: a failure partway through still names the games that already got their presets.
+            await InvalidateAllAndReprobeSelectedAsync();
+            throw new DlssBatchFailedException(TF("Dp.BatchPresetsBeforeFailure", string.Join(", ", tally.Reached)), ex);
+        }
         finally
         {
             NotifyDlssDefaults();
@@ -422,6 +428,7 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             {
                 op.Token.ThrowIfCancellationRequested();
                 items.AddRange((await _dlssDefaults.RestoreBatchAsync([game], Files(indexes), op.Token)).Items);
+                BeforeBatchPresetsForTesting?.Invoke(game);
                 var write = Shell.Runtime.WriteNvidiaSettings([game], (_, saved) =>
                 {
                     if (saved is null) return null;
@@ -446,6 +453,11 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             var line = Join(OperationCancelledText(), reset.Count > 0 ? TF("Dp.BatchPresetsResetBeforeCancel", string.Join(", ", reset)) : "");
             StatusText = line;
             throw new DlssBatchCancelledException(line, ex);
+        }
+        catch (Exception ex) when (ex is not OperationRefusedException && reset.Count > 0)
+        {
+            await InvalidateAllAndReprobeSelectedAsync(); // w10 follow-up D14
+            throw new DlssBatchFailedException(TF("Dp.BatchPresetsResetBeforeFailure", string.Join(", ", reset)), ex);
         }
         finally
         {
@@ -483,6 +495,7 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
     private async Task CopyBatchPresetsAsync(DetectedGame game, IReadOnlyDictionary<string, IReadOnlyList<string>> indexes,
         NvidiaPresetChoice presets, BatchPresetTally tally)
     {
+        BeforeBatchPresetsForTesting?.Invoke(game);
         var host = Shell.Runtime.NvidiaHost;
         var rows = await Task.Run(() =>
         {
@@ -495,6 +508,9 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         var write = Shell.Runtime.WriteNvidiaSettings([game], (_, saved) => (copy = NvidiaPresetCopy.Apply(saved, presets, rows)).Settings);
         tally.Add(game, copy, write);
     }
+
+    /// <summary>Test seam: runs as a batch game's presets are about to be set (Apply) or reset (Restore selected).</summary>
+    internal Action<DetectedGame>? BeforeBatchPresetsForTesting { get; set; }
 
     /// <summary>#215: what the batch's preset copies did, per game: set, skipped by reason, the games reached.</summary>
     private sealed class BatchPresetTally
@@ -847,4 +863,13 @@ public sealed class DlssBatchCancelledException(string line, Exception inner)
     : OperationCanceledException(line, inner, (inner as OperationCanceledException)?.CancellationToken ?? default)
 {
     public string Line { get; } = line;
+}
+
+/// <summary>
+/// w10 follow-up D14: a DLSS batch that failed partway through (not by Cancel) after some games' presets were set or
+/// reset; the message is the failure's own, <see cref="Note"/> names those games (the dialog adds it to its line).
+/// </summary>
+public sealed class DlssBatchFailedException(string note, Exception inner) : Exception(inner.Message, inner)
+{
+    public string Note { get; } = note;
 }

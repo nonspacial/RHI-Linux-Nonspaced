@@ -1331,6 +1331,8 @@ internal static class UiStrings
         ("Dp.BatchPresetsDlss1x", "Não definidos sobre um arquivo DLSS 1.x em {0} jogo(s).", "Not set over a DLSS 1.x file in {0} game(s)."),
         ("Dp.BatchPresetsBeforeCancel", "Presets NVIDIA definidos antes do cancelamento: {0}.", "NVIDIA presets set before the cancel: {0}."),
         ("Dp.BatchPresetsResetBeforeCancel", "Presets NVIDIA de volta ao padrão antes do cancelamento: {0}.", "NVIDIA presets back to Default before the cancel: {0}."),
+        ("Dp.BatchPresetsBeforeFailure", "Presets NVIDIA definidos antes da falha: {0}.", "NVIDIA presets set before the failure: {0}."),
+        ("Dp.BatchPresetsResetBeforeFailure", "Presets NVIDIA de volta ao padrão antes da falha: {0}.", "NVIDIA presets back to Default before the failure: {0}."),
         ("Dp.BatchPresetsReset", "Presets NVIDIA de volta ao padrão em {0} jogo(s).", "NVIDIA presets back to Default in {0} game(s)."),
         // w10/archives rows
         // #216 dropped / watched archives

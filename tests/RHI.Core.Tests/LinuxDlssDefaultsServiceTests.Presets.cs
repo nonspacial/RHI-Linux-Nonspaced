@@ -192,6 +192,8 @@ public sealed partial class LinuxDlssDefaultsServiceTests
     [Theory]
     [InlineData("1.0.13.0", true)]
     [InlineData("1,0,13,0", true)]
+    [InlineData("1, 0, 13, 0", true)]   // w10 follow-up D13: the Windows string-table spelling (the PE's fixed version all zeros)
+    [InlineData("10, 0, 0, 0", false)]
     [InlineData("1", true)]
     [InlineData("1.7", true)]
     [InlineData("10.0.0.0", false)]

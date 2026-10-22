@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -377,24 +376,6 @@ public sealed class DlssManagerService
     {
         var entries = Entries(kind);
         return entries.Select(x => x.Version).ToArray();
-    }
-
-    /// <summary>Best-effort PE version read used by Quick Apply to retain upstream DLSS 1.x protection.</summary>
-    public static string? TryGetDllVersion(string path)
-    {
-        try
-        {
-            if (!File.Exists(path)) return null;
-            var info = FileVersionInfo.GetVersionInfo(path);
-            var raw = !string.IsNullOrWhiteSpace(info.FileVersion) ? info.FileVersion : info.ProductVersion;
-            if (string.IsNullOrWhiteSpace(raw)) return null;
-            var token = raw.Trim().Split(new[] { ' ', '+', '-' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-            return string.IsNullOrWhiteSpace(token) ? null : token;
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     /// <summary>

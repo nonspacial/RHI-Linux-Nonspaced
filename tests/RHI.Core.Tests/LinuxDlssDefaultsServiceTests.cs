@@ -293,15 +293,6 @@ public sealed partial class LinuxDlssDefaultsServiceTests : IDisposable
         Assert.Equal("2.13.0", loaded.DefaultStreamlineVersion);
     }
 
-    [Fact]
-    public void TryGetDllVersion_JunkFileFailsClosed()
-    {
-        var path = Path.Combine(_root, "junk.dll");
-        File.WriteAllText(path, "not a PE");
-        Assert.Null(DlssManagerService.TryGetDllVersion(path));
-        Assert.Null(DlssManagerService.TryGetDllVersion(Path.Combine(_root, "missing.dll")));
-    }
-
     private LinuxDlssDefaultsService NewService(
         GateHandler handler,
         LinuxDeploymentRecordStore? records = null,

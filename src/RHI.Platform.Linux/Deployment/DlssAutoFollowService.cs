@@ -597,11 +597,14 @@ public sealed class DlssAutoFollowService
 
     private static bool IsOlder(string? version, string? than) => Compare(version, than) is < 0;
 
-    // The leading dotted (or comma-separated) numbers of a version string, padded to four parts; null without any.
+    private static readonly System.Text.RegularExpressions.Regex CommaSpaces = new(@"\s*,\s*", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    // The leading dotted (or comma-separated) numbers of a version string, padded to four parts; null without any. The
+    // Windows string-table spelling "1, 0, 13, 0" (a space after each comma) reads as 1.0.13.0 (w10 follow-up D13).
     private static int[]? Numbers(string? version)
     {
         if (string.IsNullOrWhiteSpace(version)) return null;
-        var token = version.Trim().Split([' ', '+', '-', '('], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        var token = CommaSpaces.Replace(version.Trim(), ",").Split([' ', '+', '-', '('], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
         if (token is null) return null;
         var parts = token.Replace(',', '.').Split('.', StringSplitOptions.TrimEntries);
         var numbers = new List<int>();

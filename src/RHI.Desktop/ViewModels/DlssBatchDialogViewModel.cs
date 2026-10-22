@@ -244,7 +244,8 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Status = TF("Win.BatchOperationFailed", UiLocalizationService.Present(ex.Message));
+            var line = TF("Win.BatchOperationFailed", UiLocalizationService.Present(ex.Message));
+            Status = ex is DlssBatchFailedException failed ? line + " " + failed.Note : line; // w10 follow-up D14
         }
         finally
         {

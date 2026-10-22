@@ -389,6 +389,156 @@ public sealed class DlssDefaultPresetsViewModelTests : IDisposable
         Assert.Equal("Operation cancelled. NVIDIA presets back to Default before the cancel: Alpha Quest.", dialog.Status);
     }
 
+    // w10 follow-up D10 (decision 3, the order inside one game): a Cancel during the first game's download — before any
+    // write — leaves that game without presets too, and the line names no game.
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task TheBatch_CancelDuringTheFirstGamesDownload_LeavesThatGameWithoutPresets_AndNamesNoGame(string language)
+    {
+        var alphaGame = Game("Alpha Quest", []);
+        var betaGame = Game("Beta Quest", []);
+        foreach (var game in new[] { alphaGame, betaGame }) File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll"), Enumerable.Repeat((byte)0x11, 70_000).ToArray());
+        DlssBatchDialogViewModel? dialog = null;
+        var downloads = 0;
+        HttpResponseMessage? Respond(HttpRequestMessage request)
+        {
+            if ((request.RequestUri?.AbsoluteUri ?? "").StartsWith("https://github.com/rhi-tests/dlss/", StringComparison.Ordinal)
+                && Interlocked.Increment(ref downloads) == 1)
+                dialog!.CloseCommand.Execute(null); // Cancel while the payload downloads
+            return DlssDownloads(request);
+        }
+        using var fx = await StartAsync([alphaGame, betaGame], Rtx40, select: "Alpha Quest", language: language, httpResponse: Respond);
+        var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+        settings.DefaultDlssVersion = "9.9.9";
+        fx.Vm.Settings.SaveLinuxSettings(settings);
+        SetDefaults(fx, sr: 11);
+        UiLocalizationService.Apply(language);
+        var alpha = fx.Vm.SelectedGame!;
+        var beta = fx.Vm.Games.Single(row => row.Game.Name == "Beta Quest").Game;
+        var candidates = await fx.Vm.Dlss.GetDlssBatchCandidatesAsync().WaitAsync(HangGuard);
+        dialog = DlssBatchDialogViewModel.For(fx.Vm.Dlss, fx.Vm.Operations, DlssBatchDialogViewModel.Eligible(candidates!));
+        foreach (var row in dialog.Games) row.IsChecked = true;
+
+        await dialog.ApplyCommand.ExecuteAsync(null).WaitAsync(HangGuard);
+
+        Assert.True(downloads >= 1, "the payload was never downloaded inside the batch");
+        Assert.Null(SavedNvidia(fx, alpha));
+        Assert.Null(SavedNvidia(fx, beta));
+        Assert.False(File.Exists(Path.Combine(alpha.InstallPath, "nvngx_dlss.dll.original")));
+        Assert.Equal(UiLocalizationService.Text("Vm.OperationCancelled"), dialog.Status);
+    }
+
+    // w10 follow-up D10: inside one game its DLL writes come first, its presets after — seen at the moment each write
+    // phase begins (the first is the first game's): Apply has not set that game's presets yet, Restore has not reset them.
+    [Theory]
+    [InlineData("apply")]
+    [InlineData("restore")]
+    public async Task InsideOneGame_TheDllWritesComeBeforeItsPresets(string how)
+    {
+        UiLocalizationService.Apply("en-US");
+        var alphaGame = Game("Alpha Quest", []);
+        var betaGame = Game("Beta Quest", []);
+        foreach (var game in new[] { alphaGame, betaGame })
+        {
+            File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll"), how == "apply" ? Enumerable.Repeat((byte)0x11, 70_000).ToArray() : [0x4D, 0x5A, 0x01]);
+            if (how == "restore") File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll.original"), [0x4D, 0x5A, 0x02]);
+        }
+        using var fx = await StartAsync([alphaGame, betaGame], Rtx40, select: "Alpha Quest", httpResponse: DlssDownloads);
+        var alpha = fx.Vm.SelectedGame!;
+        var beta = fx.Vm.Games.Single(row => row.Game.Name == "Beta Quest").Game;
+        if (how == "apply")
+        {
+            var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+            settings.DefaultDlssVersion = "9.9.9";
+            fx.Vm.Settings.SaveLinuxSettings(settings);
+            SetDefaults(fx, sr: 11);
+            UiLocalizationService.Apply("en-US");
+        }
+        else
+            Assert.Equal(2, fx.Vm.Runtime.WriteNvidiaSettings([alpha, beta], (_, _) => new NvidiaGameSettings { SuperResolutionPreset = 11, SuperResolutionRenderScale = 72 }).Changed);
+        var candidates = await fx.Vm.Dlss.GetDlssBatchCandidatesAsync().WaitAsync(HangGuard);
+        var dialog = DlssBatchDialogViewModel.For(fx.Vm.Dlss, fx.Vm.Operations, DlssBatchDialogViewModel.Eligible(candidates!));
+        foreach (var row in dialog.Games) row.IsChecked = true;
+        var seen = new System.Collections.Concurrent.ConcurrentQueue<(uint? Alpha, uint? Beta)>();
+        RHI.Core.Deployment.OperationCancellation.WritePhaseObserverForTesting = _ =>
+            seen.Enqueue((SavedNvidia(fx, alpha)?.SuperResolutionPreset, SavedNvidia(fx, beta)?.SuperResolutionPreset));
+        try
+        {
+            await (how == "apply" ? dialog.ApplyCommand : dialog.RestoreCommand).ExecuteAsync(null).WaitAsync(HangGuard);
+        }
+        finally { RHI.Core.Deployment.OperationCancellation.WritePhaseObserverForTesting = null; }
+
+        var phases = seen.ToArray();
+        Assert.True(phases.Length >= 2, $"write phases seen: {phases.Length}");
+        // The first game's DLL write: its presets not set yet (Apply) / not reset yet (Restore); the other game untouched.
+        Assert.Equal(how == "apply" ? ((uint?)null, (uint?)null) : (11u, 11u), phases[0]);
+        // The last game's DLL write: the first game is done (its presets after its DLLs), this one's presets still to come.
+        Assert.Equal(how == "apply" ? (11u, (uint?)null) : (0u, 11u), phases[^1]);
+        Assert.Equal(how == "apply" ? 11u : 0u, SavedNvidia(fx, beta)?.SuperResolutionPreset ?? 0u);
+    }
+
+    // w10 follow-up D11: a presets-only batch (no version chosen) stops between games on Cancel: the loop's own check is
+    // the only stop there — the game that was reached keeps its presets, the next gets none, and the line names the first.
+    [Fact]
+    public async Task APresetsOnlyBatch_StopsBetweenGames_OnCancel()
+    {
+        UiLocalizationService.Apply("en-US");
+        using var fx = await StartAsync([Game("Alpha Quest", ["nvngx_dlss.dll"]), Game("Beta Quest", ["nvngx_dlss.dll"])], Rtx40, select: "Alpha Quest");
+        var alpha = fx.Vm.SelectedGame!;
+        var beta = fx.Vm.Games.Single(row => row.Game.Name == "Beta Quest").Game;
+        using var cancel = new CancellationTokenSource();
+        fx.Vm.Dlss.BeforeBatchPresetsForTesting = game => { if (game.Name == "Alpha Quest") cancel.Cancel(); };
+
+        var stopped = await Assert.ThrowsAsync<DlssBatchCancelledException>(() =>
+            fx.Vm.Dlss.ApplyDlssBatchAsync([alpha, beta], new LinuxDlssVersionDefaults(), new NvidiaPresetChoice(11, null, null), cancel.Token).WaitAsync(HangGuard));
+
+        Assert.Equal(11u, SavedNvidia(fx, alpha)?.SuperResolutionPreset); // reached: runs to the end once begun
+        Assert.Null(SavedNvidia(fx, beta));
+        Assert.Equal("Operation cancelled. NVIDIA presets set before the cancel: Alpha Quest.", stopped.Line);
+    }
+
+    // w10 follow-up D14: a failure (not Cancel) partway through a batch still names the games that already got their
+    // presets set (Apply) or reset (Restore selected), in the dialog's line, EN + PT-BR.
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task AFailurePartwayThrough_NamesTheGamesThatAlreadyGotTheirPresets(string language)
+    {
+        var alphaGame = Game("Alpha Quest", []);
+        var betaGame = Game("Beta Quest", []);
+        foreach (var game in new[] { alphaGame, betaGame })
+        {
+            File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll"), [0x4D, 0x5A, 0x01]);
+            File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll.original"), [0x4D, 0x5A, 0x02]);
+        }
+        using var fx = await StartAsync([alphaGame, betaGame], Rtx40, select: "Alpha Quest", language: language);
+        SetDefaults(fx, sr: 11);
+        UiLocalizationService.Apply(language);
+        var alpha = fx.Vm.SelectedGame!;
+        var beta = fx.Vm.Games.Single(row => row.Game.Name == "Beta Quest").Game;
+        fx.Vm.Dlss.BeforeBatchPresetsForTesting = game => { if (game.Name == "Beta Quest") throw new IOException("Simulated failure."); };
+        var failed = UiLocalizationService.Format("Win.BatchOperationFailed", UiLocalizationService.Present("Simulated failure."));
+        var pt = language == "pt-BR";
+
+        var candidates = await fx.Vm.Dlss.GetDlssBatchCandidatesAsync().WaitAsync(HangGuard);
+        var dialog = DlssBatchDialogViewModel.For(fx.Vm.Dlss, fx.Vm.Operations, DlssBatchDialogViewModel.Eligible(candidates!));
+        foreach (var row in dialog.Games) row.IsChecked = true;
+        await dialog.ApplyCommand.ExecuteAsync(null).WaitAsync(HangGuard); // no version chosen: the presets alone
+
+        Assert.Equal(11u, SavedNvidia(fx, alpha)?.SuperResolutionPreset);
+        Assert.Null(SavedNvidia(fx, beta));
+        Assert.Equal(failed + " " + (pt ? "Presets NVIDIA definidos antes da falha: Alpha Quest." : "NVIDIA presets set before the failure: Alpha Quest."), dialog.Status);
+
+        Assert.Equal(1, fx.Vm.Runtime.WriteNvidiaSettings([beta], (_, _) => new NvidiaGameSettings { SuperResolutionPreset = 11 }).Changed);
+        candidates = await fx.Vm.Dlss.GetDlssBatchCandidatesAsync().WaitAsync(HangGuard);
+        dialog = DlssBatchDialogViewModel.For(fx.Vm.Dlss, fx.Vm.Operations, DlssBatchDialogViewModel.Eligible(candidates!));
+        foreach (var row in dialog.Games) row.IsChecked = true;
+        await dialog.RestoreCommand.ExecuteAsync(null).WaitAsync(HangGuard);
+
+        Assert.Null(SavedNvidia(fx, alpha)); // back to Default: nothing else was set
+        Assert.Equal(11u, SavedNvidia(fx, beta)?.SuperResolutionPreset);
+        Assert.Equal(failed + " " + (pt ? "Presets NVIDIA de volta ao padrão antes da falha: Alpha Quest." : "NVIDIA presets back to Default before the failure: Alpha Quest."), dialog.Status);
+    }
+
     // ---- helpers ----------------------------------------------------------------------------------------------------
 
     /// <summary>The DLSS manifest (SR 9.9.9) and its payload, served on GitHub hosts; anything else is offline.</summary>
