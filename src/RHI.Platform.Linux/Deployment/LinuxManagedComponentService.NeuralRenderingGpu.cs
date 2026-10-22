@@ -108,11 +108,10 @@ public sealed partial class LinuxManagedComponentService
     }
 
     // The owner's NR content (behind the NR Cost Scaler: nvngx_dlssnr_real.dll) still has the record's SHA-256. A record
-    // without a hash is not compared (the swap does not compare it either).
+    // without a hash cannot show it is unchanged: not moved (safe side; RHI writes a hash for every file it places).
     private async Task<bool> OwnerFileMatchesRecordAsync(DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
         var file = ManagedFileSwap.FindFile(record, NeuralRenderingDllSwap.DllName)!;
-        if (string.IsNullOrWhiteSpace(file.Sha256)) return true;
         var content = NrCostScalerService.ContentPath(record, file, _records.FindAll(game));
         try
         {
