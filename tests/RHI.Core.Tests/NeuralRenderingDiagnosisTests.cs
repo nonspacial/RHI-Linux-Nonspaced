@@ -117,7 +117,7 @@ public sealed class NeuralRenderingDiagnosisTests : IDisposable
     }
 
     [Fact]
-    public async Task AHugeLog_OnlyItsEndIsRead_InBoundedTimeAndMemory()
+    public async Task AHugeLog_OnlyItsEndIsRead_InBoundedTime()
     {
         var path = Path.Combine(_bin, "ReShade.log");
         const long size = 48L * 1024 * 1024;

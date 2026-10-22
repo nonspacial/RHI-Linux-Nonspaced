@@ -8,10 +8,7 @@ using RHI.Platform.Linux.Deployment;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>One line of a section: a value, a warning (amber) or a smaller detail/fix line; provenance in its ~2 s tooltip.</summary>
-public sealed record NrCheckLine(string Text, bool IsWarning = false, bool IsDetail = false, string? Tip = null)
-{
-    public bool HasTip => !string.IsNullOrEmpty(Tip);
-}
+public sealed record NrCheckLine(string Text, bool IsWarning = false, bool IsDetail = false, string? Tip = null);
 
 /// <summary>One label/value row of the page.</summary>
 public sealed record NrCheckSection(string Id, string Label, IReadOnlyList<NrCheckLine> Lines);
