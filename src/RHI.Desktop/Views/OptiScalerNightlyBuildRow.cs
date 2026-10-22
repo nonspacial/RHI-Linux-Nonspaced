@@ -30,7 +30,9 @@ public sealed class OptiScalerNightlyBuildRow : UserControl
         var label = new TextBlock
         {
             Text = UiLocalizationService.Text("Sync.OptiScalerNightlyBuild"),
-            VerticalAlignment = VerticalAlignment.Center,
+            // Level with the dropdown's text (not centred over the wrapped Apply line below it).
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 6, 0, 0),
             TextWrapping = TextWrapping.Wrap
         };
         ToolTip.SetTip(label, UiLocalizationService.Text("Sync.OptiScalerNightlyBuildTip"));
