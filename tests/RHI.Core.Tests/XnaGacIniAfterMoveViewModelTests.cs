@@ -57,15 +57,14 @@ public sealed class XnaGacIniAfterMoveViewModelTests : IDisposable
         Assert.Contains(XnaGacReShade.GacIniWineRunningAfterMoveMessage, log, StringComparison.Ordinal);
     }
 
-    [Fact]
+    [PermissionDenialFact]
     public async Task ACopyThatCannotBeRead_TheAppShowsTheRepairDone_AndWhatToDo_NotASaveFailure()
     {
         var installed = await XnaGacIniAfterMoveTests.InstalledAsync(_root, "unreadable");
         var moved = installed.MoveLibrary();
-        File.SetUnixFileMode(moved.GacIni, UnixFileMode.None);
         try
         {
-            if (CanRead(moved.GacIni)) return; // running as root: the mode does not stop a read
+            PermissionDenial.MakeUnreadable(moved.GacIni);
 
             var (lines, _) = await RepairInTheAppAsync(installed, moved, "en-US");
 
@@ -128,11 +127,5 @@ public sealed class XnaGacIniAfterMoveViewModelTests : IDisposable
         var line = lines.FirstOrDefault(l => l.Contains(text, StringComparison.Ordinal));
         Assert.True(line is not null, $"no status line holds \"{text}\"; lines: {string.Join(" | ", lines)}");
         return line!;
-    }
-
-    private static bool CanRead(string path)
-    {
-        try { using var _ = File.OpenRead(path); return true; }
-        catch (UnauthorizedAccessException) { return false; }
     }
 }

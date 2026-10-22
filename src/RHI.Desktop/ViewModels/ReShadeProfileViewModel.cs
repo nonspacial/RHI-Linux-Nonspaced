@@ -447,7 +447,9 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
                 : await _components.ApplyReShadeAddonSelectionAsync(game, addonIds, op.Token);
             if (!addonResult.Success)
             {
-                return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addonResult.Message))));
+                // #222 item 3: a landed ReShade install keeps its note when the add-ons then fail.
+                return ComponentOperationResult.Fail(ShowStatus(LandedLine.With(
+                    TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addonResult.Message)), shaderResult)));
             }
 
             _selectedShaderPackIds.Clear();

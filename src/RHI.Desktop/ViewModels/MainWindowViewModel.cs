@@ -555,6 +555,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             parts.Add(TF("Vm.RHIUndidInterruptedInstallSBut", summary.KeptLaterChanges, summary.LogPath));
         if (summary.RollbackFailed > 0)
             parts.Add(TF("Vm.RHICouldNotUndoInterruptedInstall", summary.RollbackFailed, summary.LogPath));
+        if (summary.CopiesGone.Count > 0) parts.Add(TF("Jh.CopiesGoneNotice", string.Join(", ", summary.CopiesGone), summary.LogPath)); // w10/journal-holds hook (review finding 1)
         if (summary.Deferred > 0)
             parts.Add(TF("Vm.InterruptedInstallSWillFinishedAt", summary.Deferred, summary.LogPath));
         if (summary.Quarantined > 0)

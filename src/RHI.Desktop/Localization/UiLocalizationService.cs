@@ -1578,13 +1578,14 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DeploymentScope.LandedRemovalPrefix,
             "Removido; o registro de implantações informou um erro depois que a remoção foi gravada, então nada foi desfeito: "),
         (RHI.Core.Deployment.DeploymentOperation.UndecidedNote,
-            "O registro de implantações não pôde ser lido depois do erro, então nada foi desfeito agora; o RHI conclui ou desfaz esta alteração antes da próxima alteração do jogo, ou na próxima inicialização."),
-        // w8 commit-point review, finding 2: an operation refused while an earlier change to the same game is undecided.
+            "O registro de implantações não pôde ser lido depois do erro, então nada foi desfeito agora. Reinicie o RHI para concluir."),
+        // w8 commit-point review, finding 2: an operation refused while an earlier change to the same game is undecided
+        // (#221: both texts say plainly to restart RHI).
         (RHI.Core.Deployment.DeploymentJournal.EarlierChangeUndecidedMessage,
-            "O RHI ainda não concluiu nem desfez uma alteração anterior neste jogo, porque o registro de implantações não pode ser lido. Nada foi alterado. Repare o registro ou reinicie o RHI e tente novamente."),
-        // w8 follow-up C8: the undo of that earlier change failed (the ledger reads).
+            "O RHI ainda não concluiu nem desfez uma alteração anterior neste jogo, porque o registro de implantações não pode ser lido. Nada foi alterado. Reinicie o RHI para concluir e tente novamente."),
+        // w8 follow-up C8: the undo of that earlier change failed (the ledger reads); #220: in process or at start-up too.
         (RHI.Core.Deployment.DeploymentJournal.EarlierUndoFailedMessage,
-            "O RHI não conseguiu terminar de desfazer uma alteração anterior neste jogo, então ainda não faz nenhuma alteração nova aqui. Nada foi alterado. Verifique se o RHI pode gravar nas pastas e nos arquivos do jogo (o rhi.log indica o arquivo que falhou) e tente novamente: o RHI tenta desfazer a alteração primeiro."),
+            "O RHI não conseguiu terminar de desfazer uma alteração anterior neste jogo, então não faz nenhuma alteração nova aqui. Nada foi alterado. Reinicie o RHI para concluir (antes, verifique se o RHI pode gravar nas pastas e nos arquivos do jogo; o rhi.log indica o arquivo que falhou) e tente novamente."),
         // w10/dlss-presets rows
         // w10/archives rows
         // #216: why a dropped or watched archive was refused (the UI line names the archive), and the install-time failures.
@@ -1608,6 +1609,12 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.PackageMismatchRefusal, "os arquivos internos saem diferentes do que o arquivo compactado lista: "),
         (RHI.Platform.Linux.Deployment.ExternalArchiveRunner.OutputLimitRefusal, "ele se expande para mais do que lista, então a ferramenta de arquivos foi parada; limite em bytes: "),
         // w10/journal-holds rows
+        // Review finding 2: the held entry itself could not be read or updated at its retry (not the ledger, not the game).
+        (RHI.Core.Deployment.DeploymentJournal.EarlierChangeNotSettledMessage,
+            "O RHI não conseguiu concluir uma alteração anterior neste jogo, porque não conseguiu ler nem atualizar a própria anotação dessa alteração. Nada foi alterado. Reinicie o RHI para concluir (antes, verifique se o RHI pode gravar na pasta de dados dele; o rhi.log indica o arquivo que falhou) e tente novamente."),
+        // Review finding 1: a copy RHI could not look for (a folder refuses it), told apart from a copy that is gone.
+        (": RHI could not look for its copy with the pre-operation content (", ": o RHI não conseguiu procurar a cópia com o conteúdo anterior à operação ("),
+        ("), because a folder cannot be read; every copy was kept.", "), porque uma pasta não pode ser lida; todas as cópias foram mantidas."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

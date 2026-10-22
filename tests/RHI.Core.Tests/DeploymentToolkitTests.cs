@@ -307,7 +307,9 @@ public sealed class DeploymentToolkitTests : IDisposable
 
         var report = await journal.RecoverAsync();
 
-        Assert.Equal(1, report.Failed);
+        // w10 review finding 1: a step of a newer build is kept for that build, logged, not counted as a failed undo.
+        Assert.Equal(JournalRecoveryOutcome.UnknownStep, Assert.Single(report.Entries).Outcome);
+        Assert.Equal(0, report.Failed);
         Assert.Contains(operation.Id, journal.ReferencedOperationIds());
     }
 

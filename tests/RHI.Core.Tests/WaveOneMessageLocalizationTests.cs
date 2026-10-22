@@ -573,6 +573,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return LinuxManagedComponentService.ArchiveExtractFailedPrefix + DroppedArchiveExtractor.PackageMismatchRefusal + "luma-exemplo.7z";
         yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + ExternalArchiveRunner.OutputLimitRefusal + "1048576";
         // w10/journal-holds rows
+        yield return DeploymentJournal.EarlierChangeNotSettledMessage; // review finding 2
+        yield return $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read; every copy was kept."; // review finding 1
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must
@@ -609,9 +611,20 @@ public sealed class WaveOneMessageLocalizationTests
         { RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DuplicateMemberPrefix + "normal/x64/d3d9.dll", "more than once" },
         { "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote, "takes effect with the ReShade profile" },
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
-        // w8 follow-up C8/C9
+        // w8 follow-up C8/C9 (#221 replaced C9's fragment: the note now says to restart RHI)
         { DeploymentJournal.EarlierUndoFailedMessage, "could not finish undoing" },
-        { DeploymentOperation.UndecidedNote, "before the game's next change" },
+        { DeploymentJournal.EarlierUndoFailedMessage, "Restart RHI to finish it" }, // #220
+        { DeploymentOperation.UndecidedNote, "Restart RHI to finish it" },
+        // w10 review finding 2: the held entry itself could not be read or updated; finding 1: a copy RHI could not look for
+        { DeploymentJournal.EarlierChangeNotSettledMessage, "its own note of that change" },
+        { DeploymentJournal.EarlierChangeNotSettledMessage, "Restart RHI to finish it" },
+        { $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read; every copy was kept.", "because a folder cannot be read" },
+        // #221: the unreadable-ledger refusal, and the note appended to a prefixed refusal
+        { DeploymentJournal.EarlierChangeUndecidedMessage, "Restart RHI to finish it" },
+        { ReShadeDeploymentService.RemovalFailedPrefix + P + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided }), "Restart RHI to finish it" },
+        { NrCostScalerService.FailedRolledBackPrefix + E + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided }), "nothing was undone now" },
         // w8 follow-up C4/C5
         { RenoDxDeploymentService.EngineIniFolderNotWritablePrefix + P, "cannot write to the folder" },
         { RenoDxDeploymentService.EngineIniNotTextMessage + RenoDxDeploymentService.EngineIniNotTextOffHint + "r.LUT.UpdateEveryFrame=1", "try again, or delete" },

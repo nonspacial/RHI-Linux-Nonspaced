@@ -46,6 +46,7 @@ public sealed class App : Application
             var vm = services.CreateViewModel();
             vm.Parity = services.Parity; // w3/parity hook
             tokenNoticeTarget = vm;
+            journal.CopiesGoneInSession += entry => { var gone = LinuxDeploymentRecovery.RecordSettled(entry); Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(gone)); }; // w10/journal-holds hook (review finding 1)
             UiExceptionGuard.SetReporter(message =>
             {
                 if (Dispatcher.UIThread.CheckAccess()) vm.StatusText = message;

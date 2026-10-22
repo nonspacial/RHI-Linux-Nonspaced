@@ -171,15 +171,14 @@ public sealed class DllNamePickerTests
         }
     }
 
-    [Fact]
+    [PermissionDenialFact]
     public async Task Picker_WhenTheChoiceCannotBeSaved_GoesBackToTheSavedOne_AndSaysSo()
     {
-        if (Environment.UserName == "root") return; // directory modes do not stop root
         var (fx, game) = await StartAsync("Locked Config Game");
         using var _ = fx;
         var picker = fx.Vm.DllNamePicker;
         await SettledAsync(picker);
-        File.SetUnixFileMode(fx.ConfigDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        PermissionDenial.MakeReadOnly(fx.ConfigDir);
         try
         {
             picker.SelectedOption = picker.Options.Single(o => o.Value == "version.dll");

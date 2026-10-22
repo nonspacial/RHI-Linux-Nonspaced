@@ -182,17 +182,16 @@ public sealed partial class XnaGacIniAfterMoveTests : IDisposable
         Assert.Empty(Directory.GetFiles(fx.JournalDir));
     }
 
-    [Fact]
+    [PermissionDenialFact]
     public async Task ACopyThatCannotBeRead_TheRepairStands_AndTheLineSaysWhatToDo()
     {
         // Review 2: the repair has saved before the copy is read; an unreadable copy is a note, never a throw (which the
         // app would show as "could not save" and leave the library unreloaded).
         var fx = await InstalledAsync("unreadable");
         var moved = fx.MoveLibrary();
-        File.SetUnixFileMode(moved.GacIni, UnixFileMode.None);
         try
         {
-            if (CanRead(moved.GacIni)) return; // running as root: the mode does not stop a read
+            PermissionDenial.MakeUnreadable(moved.GacIni);
 
             var result = fx.Components().RepairAfterMove(moved.Game);
 
@@ -205,12 +204,6 @@ public sealed partial class XnaGacIniAfterMoveTests : IDisposable
             Assert.Empty(Directory.GetFiles(fx.JournalDir));
         }
         finally { File.SetUnixFileMode(moved.GacIni, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
-    }
-
-    private static bool CanRead(string path)
-    {
-        try { using var _ = File.OpenRead(path); return true; }
-        catch (UnauthorizedAccessException) { return false; }
     }
 
     public static TheoryData<string> Crashes => new() { "dies-before-the-write", "write-lands-then-dies" };

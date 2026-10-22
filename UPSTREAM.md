@@ -725,7 +725,7 @@ build.
   as far as replacing the file, it is rolled back at once as before; otherwise nothing is undone now and the change waits
   — RHI finishes or undoes it before the next install, update or removal on that game in the same session (as soon as the
   ledger reads again; until then that game's next change is refused: "RHI has not yet finished or undone an earlier change
-  to this game…"), or at the next start. The row, Update All and the update history then match the ledger (a DX9
+  to this game… Restart RHI to finish it, then try again." — #221), or at the next start. The row, Update All and the update history then match the ledger (a DX9
   Feeder/Luma install used to leave ReShade's record naming `dxgi.dll` while ReShade was back at `d3d9.dll`, so every
   later removal failed).
 
@@ -832,3 +832,38 @@ build.
   with the existing "needs 7-Zip or bsdtar" line (upstream ships 7-Zip); a `.zip` needs neither.
 
 <!-- w10/journal-holds notes -->
+
+### #221 — The unreadable-ledger hold says plainly to restart RHI
+- Fork-only wording (behaviour unchanged since #204): while the deployment ledger cannot be read after a change failed,
+  that game's next change is still refused and other games carry on. The refusal now leads with the restart — "…Nothing
+  was changed. Restart RHI to finish it, then try again." — and the note a failed change adds says "…so nothing was undone
+  now. Restart RHI to finish it." (PT-BR: "Reinicie o RHI para concluir."). The old "Repair the ledger" advice is gone.
+
+### #220 — A game whose undo could not be finished is held until the undo succeeds
+- Fork-only crash safety. When RHI cannot finish undoing a failed or interrupted change (the game's folder or a file is
+  not writable, say), the journal entry is kept for the next start as before, and now that game is held: in the same
+  session (the failed undo of a change that just failed) and after every start (start-up recovery's undo failed), the
+  game's next install, update or removal first tries the undo again; while it still fails the change is refused before
+  anything changes — "RHI could not finish undoing an earlier change to this game, so it makes no new change here.
+  Nothing was changed. Restart RHI to finish it (first check that RHI can write to the game's folders and files; rhi.log
+  names the file that failed), then try again." Other games carry on. The hold lifts as soon as the undo succeeds (at
+  that next change or at a restart). A retry used to go ahead and commit, and the start that finally finished the old
+  undo then put the files back under the retry's record.
+- A change whose undo of a Wine setting was deferred (Wine was running) also retries it before the game's next change;
+  it is never refused for it (the next start finishes it, as before). A plain file change that names no game holds up no
+  game.
+- Only a failure a retry can fix holds the game. When RHI's saved copy of an earlier file is gone (deleted, or the game
+  was reinstalled), no restart can put it back: the change is closed and the status line says which file RHI could not
+  put back, why, and to check that game's mods (Remove, then Install again). A step this build does not know (written by
+  a newer RHI) is left in the journal untouched for that build, logged, and holds nothing. While a copy cannot even be
+  looked for (a folder refuses RHI), the game stays held.
+- A refusal gives the true reason: when RHI cannot read or update its own note of the earlier change (its data folder),
+  it says so instead of blaming the ledger; such a note holds only its own game when that is known, else none.
+
+### #222 — The "saved, but the save reported an error" note on the last few lines
+- Fork-only (follows #204's landed note). A preset installed into every game together with its shader packs names a game
+  whose preset save reported an error after it was written, whether the packs then fail or go in. When ReShade's install
+  applies the game's add-ons after it (the ReShade row, Shaders/Add-ons Apply on a game where RHI does not manage ReShade
+  yet, a preset with its packs on such a game) and the add-ons' save reports such an error, the line says so too. A
+  "Shaders applied, but the add-ons failed" line keeps the note of a shader-pack change or ReShade install that was saved
+  with an error.

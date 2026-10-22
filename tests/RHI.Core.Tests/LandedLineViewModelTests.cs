@@ -15,7 +15,7 @@ namespace RHI.Core.Tests;
 /// complained although the change is in place. The services run journaled on the fixture's ledger, as in the app.
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
-public sealed class LandedLineViewModelTests : IDisposable
+public sealed partial class LandedLineViewModelTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-landed-lines-" + Guid.NewGuid().ToString("N"));
 
@@ -168,8 +168,10 @@ public sealed class LandedLineViewModelTests : IDisposable
         var result = await rig.Fx.Vm.ReShadeProfile.ApplyShaderAddonChoicesAsync(
             new ShaderAddonSetSelection(ShaderAddonMode.Select, [], ShaderAddonMode.Select, ["custom-Alpha"]));
 
-        // ReShade's install applies a game's add-ons after it (its own note), as upstream; Apply then brings them up to date.
-        var install = " " + UiLocalizationService.PresentFor(language, DeploymentScope.Landed("ReShade").Message + LinuxManagedComponentService.AddonSetAppliedNote);
+        // ReShade's install applies a game's add-ons after it (its own note, and since #222 item 2 the add-ons' landed note
+        // too), as upstream; Apply then brings them up to date (this seam lands again).
+        var install = " " + UiLocalizationService.PresentFor(language, DeploymentScope.Landed("ReShade").Message + LinuxManagedComponentService.AddonSetAppliedNote
+                                                                       + " " + DeploymentScope.Landed(AddonManager).Message);
         Assert.True(result.Success, result.Message);
         Assert.Equal(UiLocalizationService.ShaderAddonAppliedFor(language, 0, 1, false) + install + Note(language, AddonManager), result.Message);
     }
@@ -280,6 +282,9 @@ public sealed class LandedLineViewModelTests : IDisposable
         public string Root { get; } = root;
         public string Bin { get; } = bin;
         public string ReShadeIni => Path.Combine(Bin, "ReShade.ini");
+
+        /// <summary>How often the Addon Manager's own apply ran (#222 item 2 seam).</summary>
+        public int AddonCalls { get; set; }
 
         /// <summary>Runs <paramref name="action"/> with the operation's first ledger save landing and then throwing.</summary>
         public async Task<string> Landing(Func<Task<string>> action)
