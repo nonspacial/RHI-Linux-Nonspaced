@@ -221,7 +221,8 @@ public sealed partial class DeploymentScopeCommitPointTests
     }
 
     // The start-up hand-over, entry by entry: a failed undo that names a game holds it; a plain file transaction's holds up
-    // no game; one whose entry cannot be read now holds up every game (fail closed); an entry that did not fail is not held.
+    // no game; one whose entry cannot be read now and whose game the report does not know holds up no game either (w10
+    // review finding 2: logged, retried at the next start); an entry that did not fail is not held.
     [Fact]
     public void TheStartupHandOver_HoldsEachFailedUndoByItsOwnProbe()
     {
@@ -239,7 +240,7 @@ public sealed partial class DeploymentScopeCommitPointTests
             Failed("game"), Failed("plain"), Failed("garbled"), Failed("gone"),
             new("deferred", "deferred", JournalRecoveryOutcome.Deferred, ["Wine is running"], [])]));
 
-        Assert.Equal(["game", "garbled"], journal.WaitingForTesting.Order(StringComparer.Ordinal));
+        Assert.Equal(["game"], journal.WaitingForTesting.Order(StringComparer.Ordinal));
     }
 
     // The text: it says plainly to restart RHI to finish the undo (and what to check first), keeps "Nothing was changed",

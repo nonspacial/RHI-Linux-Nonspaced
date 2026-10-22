@@ -528,7 +528,8 @@ public static class LinuxDeploymentRecovery
             lines.Add($"{entry.Outcome}: {entry.Description} [{entry.Id}] {string.Join(", ", entry.Paths)}");
             lines.AddRange(entry.Kept.Select(kept => "  kept: " + kept));
             lines.AddRange(entry.Problems.Select(problem => "  " + problem));
-            if (entry.Outcome is JournalRecoveryOutcome.RollbackFailed or JournalRecoveryOutcome.Unreadable)
+            if (entry.Outcome is JournalRecoveryOutcome.RollbackFailed or JournalRecoveryOutcome.Unreadable
+                or JournalRecoveryOutcome.CopiesGone or JournalRecoveryOutcome.UnknownStep)
                 problems.AddRange(entry.Problems.Select(problem => $"{entry.Description}: {problem}"));
         }
         if (startup.DeferredEntries > 0)
@@ -559,8 +560,19 @@ public static class LinuxDeploymentRecovery
             startup.DeferredEntries + (recovery?.Deferred ?? 0),
             sweep?.Quarantined.Count ?? 0,
             logPath,
-            recovery?.KeptLaterChanges ?? 0);
+            recovery?.KeptLaterChanges ?? 0)
+        {
+            CopiesGone = recovery?.Entries.SelectMany(entry => entry.CopiesGone).Distinct(StringComparer.Ordinal).ToArray() ?? []
+        };
     }
+
+    /// <summary>
+    /// w10 review finding 1: an undo of this session closed because RHI's copy of an earlier file is gone
+    /// (<see cref="DeploymentJournal.CopiesGoneInSession"/>): recorded in the
+    /// recovery log as start-up recovery records its entries, with the summary the status line shows.
+    /// </summary>
+    public static DeploymentRecoverySummary RecordSettled(JournalRecoveryEntry entry, string? logPath = null)
+        => Record(new DeploymentStartupReport(new JournalRecoveryReport([entry]), 0, null, []), logPath);
 
     private static void AppendDurably(string path, IEnumerable<string> lines)
     {
@@ -645,5 +657,11 @@ public sealed record DeploymentStartupReport(
 /// <summary>Counts shown to the user after start-up recovery; details are in <see cref="LogPath"/>.</summary>
 public sealed record DeploymentRecoverySummary(int RolledBack, int RollbackFailed, int Deferred, int Quarantined, string LogPath, int KeptLaterChanges = 0)
 {
-    public bool NeedsNotice => RolledBack + RollbackFailed + Deferred + Quarantined + KeptLaterChanges > 0;
+    /// <summary>
+    /// w10 review finding 1: files RHI could not put back after an interrupted change because its copy of their earlier
+    /// content is gone (the change is closed; the user is told to check that game's mods).
+    /// </summary>
+    public IReadOnlyList<string> CopiesGone { get; init; } = [];
+
+    public bool NeedsNotice => RolledBack + RollbackFailed + Deferred + Quarantined + KeptLaterChanges + CopiesGone.Count > 0;
 }

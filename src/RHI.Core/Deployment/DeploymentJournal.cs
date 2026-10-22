@@ -137,14 +137,16 @@ public sealed class DeploymentJournal
     }
 
     // Review w8 finding 2: operations of this session left undecided (and entries a deferred start-up recovery kept), by id,
-    // with the commit check's mark taken when they began (null: unknown, e.g. a previous session's).
-    private readonly Dictionary<string, string?> _waiting = new(StringComparer.Ordinal);
+    // with the commit check's mark taken when they began (null: unknown, e.g. a previous session's) and the commit probe
+    // known when they started waiting (w10 review finding 2: the game an entry holds when the entry cannot be read later;
+    // null: not known).
+    private readonly Dictionary<string, (string? Mark, string? Probe)> _waiting = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _settling = new(1, 1);
 
     /// <summary>Operation <paramref name="id"/> ended undecided: its entry waits, settled before its game's next operation.</summary>
-    internal void Wait(string id, string? mark)
+    internal void Wait(string id, string? mark, string? probe = null)
     {
-        lock (_waiting) _waiting[id] = mark;
+        lock (_waiting) _waiting[id] = (mark, probe);
     }
 
     /// <summary>
@@ -158,7 +160,7 @@ public sealed class DeploymentJournal
         foreach (var entry in System.IO.Directory.EnumerateFiles(Directory, "*" + EntryExtension))
         {
             var id = Path.GetFileNameWithoutExtension(entry);
-            lock (_waiting) _waiting.TryAdd(id, null);
+            lock (_waiting) _waiting.TryAdd(id, (null, null));
         }
     }
 
@@ -172,14 +174,16 @@ public sealed class DeploymentJournal
     internal void HoldAfterFailedUndo(string id, string? probe, string? mark)
     {
         if (CommitCheck is not { } check || !check.HoldsUp(probe, probe)) return;
-        Wait(id, mark);
+        Wait(id, mark, probe);
     }
 
     /// <summary>
-    /// #220: start-up recovery ran and could not undo some entries (<see cref="JournalRecoveryOutcome.RollbackFailed"/>):
-    /// each one still on disk holds its game as an in-process failed undo does (<see cref="HoldAfterFailedUndo"/>), so a
-    /// retry before the undo succeeds is refused instead of being undone by the start that finally finishes it. An entry
-    /// whose probe cannot be read now holds up every game (fail closed, as a deferred start-up's kept entries do).
+    /// #220: start-up recovery ran and could not undo some entries (<see cref="JournalRecoveryOutcome.RollbackFailed"/>, a
+    /// failure a retry can fix): each one still on disk holds its game as an in-process failed undo does
+    /// (<see cref="HoldAfterFailedUndo"/>), so a retry before the undo succeeds is refused instead of being undone by the
+    /// start that finally finishes it. Entries no retry can finish (<see cref="JournalRecoveryOutcome.CopiesGone"/>,
+    /// <see cref="JournalRecoveryOutcome.UnknownStep"/>) hold nothing. The game comes from the recovery report, else from
+    /// the entry; an entry whose game is known from neither holds up no game (w10 review finding 2) and is logged.
     /// </summary>
     public void HoldFailedUndos(JournalRecoveryReport report)
     {
@@ -188,8 +192,33 @@ public sealed class DeploymentJournal
         {
             var entryPath = EntryPath(entry.Id);
             if (!File.Exists(entryPath)) continue;
-            if (TryReadProbe(entryPath, out var probe)) HoldAfterFailedUndo(entry.Id, probe, mark: null);
-            else if (CommitCheck is not null) Wait(entry.Id, mark: null);
+            if (entry.CommitProbe is { } known) HoldAfterFailedUndo(entry.Id, known, mark: null);
+            else if (TryReadProbe(entryPath, out var probe)) HoldAfterFailedUndo(entry.Id, probe, mark: null);
+            else RHI.Core.Services.AppLog.Warn("deployment-journal",
+                $"An interrupted change whose undo failed cannot be read now, so no game is held for it; the next start retries it: {entryPath}");
+        }
+    }
+
+    /// <summary>
+    /// w10 review finding 1: an undo in this session (an operation's own rollback, or a waiting entry settled before a
+    /// game's next change) ended <see cref="JournalRecoveryOutcome.CopiesGone"/> — closed, because RHI's copy of an earlier
+    /// file is gone. The app says so in the status line, as it does for start-up recovery. Raised on the thread of the
+    /// operation that undid it.
+    /// </summary>
+    public event Action<JournalRecoveryEntry>? CopiesGoneInSession;
+
+    internal void ReportCopiesGone(JournalRecoveryEntry entry)
+    {
+        RHI.Core.Services.AppLog.Warn("deployment-journal",
+            $"An undo could not put back every file, because RHI's copy of them is gone; the change was closed: {entry.Description} [{entry.Id}] {string.Join(", ", entry.CopiesGone)}");
+        try
+        {
+            CopiesGoneInSession?.Invoke(entry);
+        }
+        catch (Exception ex)
+        {
+            // The undo is over; a notice that cannot go out must not turn it into a failure.
+            RHI.Core.Services.AppLog.Warn("deployment-journal", $"The notice about a closed change could not be shown: {entry.Id}", ex);
         }
     }
 
@@ -211,7 +240,7 @@ public sealed class DeploymentJournal
     private async Task<string?> SettleWaitingAsync(string? newProbe)
     {
         if (CommitCheck is not { } check) return null;
-        KeyValuePair<string, string?>[] waiting;
+        KeyValuePair<string, (string? Mark, string? Probe)>[] waiting;
         lock (_waiting)
         {
             if (_waiting.Count == 0) return null;
@@ -220,21 +249,35 @@ public sealed class DeploymentJournal
         try
         {
             lock (_waiting) waiting = _waiting.ToArray();
-            string? heldUp = null;
-            foreach (var (id, mark) in waiting)
+            var held = WaitState.Settled;
+            foreach (var (id, (mark, knownProbe)) in waiting)
             {
-                var (settled, probe, undoFailed) = await SettleWaitingEntryAsync(id, mark, check).ConfigureAwait(false);
-                if (settled)
+                var (state, probe) = await SettleWaitingEntryAsync(id, mark, check).ConfigureAwait(false);
+                if (state == WaitState.Settled)
                 {
                     lock (_waiting) _waiting.Remove(id);
+                    continue;
                 }
-                else if (check.HoldsUp(probe, newProbe))
+                if (state == WaitState.NotSettled)
                 {
-                    if (!undoFailed) heldUp = EarlierChangeUndecidedMessage;
-                    else heldUp ??= EarlierUndoFailedMessage;
+                    // w10 review finding 2: the entry (not the ledger) could not be read or updated: it holds only the game
+                    // known for it, else none.
+                    probe ??= knownProbe;
+                    if (probe is null)
+                    {
+                        RHI.Core.Services.AppLog.Warn("deployment-journal", $"An earlier change could not be settled and its game is not known, so no game is held for it: {id}");
+                        continue;
+                    }
                 }
+                if (check.HoldsUp(probe, newProbe) && state > held) held = state;
             }
-            return heldUp;
+            return held switch
+            {
+                WaitState.Undecided => EarlierChangeUndecidedMessage,
+                WaitState.NotSettled => EarlierChangeNotSettledMessage,
+                WaitState.UndoFailed => EarlierUndoFailedMessage,
+                _ => null
+            };
         }
         finally
         {
@@ -242,25 +285,46 @@ public sealed class DeploymentJournal
         }
     }
 
-    // UndoFailed: the entry was decided (not committed) but its rollback failed; else it is still undecided or locked.
-    private async Task<(bool Settled, string? Probe, bool UndoFailed)> SettleWaitingEntryAsync(string id, string? mark, IDeploymentCommitCheck check)
+    /// <summary>How a waiting entry stands after a settle; a later member wins when several hold up one operation.</summary>
+    private enum WaitState
+    {
+        Settled,
+
+        /// <summary>Decided (not committed), but its rollback failed in a way a retry can fix.</summary>
+        UndoFailed,
+
+        /// <summary>w10 review finding 2: the entry itself could not be read or updated (I/O, permission).</summary>
+        NotSettled,
+
+        /// <summary>Still undecided (the ledger cannot be read), or another process works on it now.</summary>
+        Undecided
+    }
+
+    private async Task<(WaitState State, string? Probe)> SettleWaitingEntryAsync(string id, string? mark, IDeploymentCommitCheck check)
     {
         var entryPath = EntryPath(id);
-        if (!File.Exists(entryPath)) return (true, null, false); // recovered elsewhere (another instance's start)
+        if (!File.Exists(entryPath)) return (WaitState.Settled, null); // recovered elsewhere (another instance's start)
         FileStream lockStream;
         try
         {
             lockStream = new FileStream(LockPath(id), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
-            return (false, ProbeOf(entryPath), false); // another process works on it now
+            // w10 review finding 2: RHI may not open its own lock file (its data folder's modes): the true reason is that
+            // note, not the ledger and not another process.
+            RHI.Core.Services.AppLog.Warn("deployment-journal", $"An earlier change could not be settled: its lock cannot be opened: {id}", ex);
+            return (WaitState.NotSettled, ProbeOf(entryPath));
+        }
+        catch (IOException)
+        {
+            return (WaitState.Undecided, ProbeOf(entryPath)); // another process works on it now
         }
         try
         {
             await using (lockStream.ConfigureAwait(false))
             {
-                if (!File.Exists(entryPath)) return (true, null, false);
+                if (!File.Exists(entryPath)) return (WaitState.Settled, null);
                 var (outcome, probe) = await RecoverEntryAsync(id, entryPath, info =>
                 {
                     try
@@ -273,19 +337,20 @@ public sealed class DeploymentJournal
                         return CommitDecision.Undecided;
                     }
                 }).ConfigureAwait(false);
-                if (outcome is null) return (false, probe, false);
+                if (outcome is null) return (WaitState.Undecided, probe);
                 RHI.Core.Services.AppLog.Warn("deployment-journal",
                     $"Earlier undecided operation settled before the next one: {outcome.Outcome}: {outcome.Description} [{id}]"
                     + (outcome.Problems.Count > 0 ? " " + string.Join("; ", outcome.Problems) : ""));
+                // w10 review finding 1: an undo no retry can finish (RHI's copy gone) is closed and said once.
+                if (outcome.Outcome == JournalRecoveryOutcome.CopiesGone) ReportCopiesGone(outcome);
                 // A rollback that failed keeps its entry for the next start, and keeps holding up its game meanwhile.
-                var failed = outcome.Outcome == JournalRecoveryOutcome.RollbackFailed;
-                return (!failed, probe, failed);
+                return (outcome.Outcome == JournalRecoveryOutcome.RollbackFailed ? WaitState.UndoFailed : WaitState.Settled, probe);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             RHI.Core.Services.AppLog.Warn("deployment-journal", $"An earlier undecided operation could not be settled: {id}", ex);
-            return (false, ProbeOf(entryPath), false);
+            return (WaitState.NotSettled, ProbeOf(entryPath));
         }
         finally
         {
@@ -369,7 +434,10 @@ public sealed class DeploymentJournal
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    results.Add(new(id, "", JournalRecoveryOutcome.RollbackFailed, [$"Journal entry recovery failed: {id}: {ex.Message}"], []));
+                    results.Add(new(id, "", JournalRecoveryOutcome.RollbackFailed, [$"Journal entry recovery failed: {id}: {ex.Message}"], [])
+                    {
+                        CommitProbe = ProbeOf(entryPath)
+                    });
                 }
             }
             if (!File.Exists(entryPath)) FileCleanup.TryDelete(LockPath(id));
@@ -404,25 +472,50 @@ public sealed class DeploymentJournal
         var info = new JournalEntryInfo(id, document.Description, document.CommitProbe, document.Committed, paths);
         var decision = document.Committed ? CommitDecision.Committed : decide(info);
         if (decision == CommitDecision.Undecided) return (null, document.CommitProbe);
+        var probe = document.CommitProbe;
         if (decision == CommitDecision.Committed)
         {
             set.Release();
             Delete(id);
-            return (new(id, document.Description, JournalRecoveryOutcome.AlreadyCommitted, [], paths), document.CommitProbe);
+            return (new(id, document.Description, JournalRecoveryOutcome.AlreadyCommitted, [], paths) { CommitProbe = probe }, probe);
         }
 
         var outcome = await RollbackAsync(set, document, RollbackMode.CrashRecovery).ConfigureAwait(false);
-        if (outcome.Failures.Count > 0)
-            return (new(id, document.Description, JournalRecoveryOutcome.RollbackFailed, outcome.Failures, paths, outcome.Kept), document.CommitProbe);
+        JournalRecoveryEntry Entry(JournalRecoveryOutcome kind, IReadOnlyList<string> problems)
+            => new(id, document.Description, kind, problems, paths, outcome.Kept) { CommitProbe = probe, CopiesGone = outcome.CopiesGone };
+        // w10 review finding 1 (coordinator decision): never hold a game for a failure no retry can fix.
+        if (outcome.Retryable.Count > 0)
+            return (Entry(JournalRecoveryOutcome.RollbackFailed, outcome.Failures), probe);
+        if (outcome.Unhandled.Count > 0)
+        {
+            // A step of a newer build: its entry stays as it is for that build; nothing is held.
+            RHI.Core.Services.AppLog.Warn("deployment-journal",
+                $"An interrupted change has a step this build cannot undo; it is kept for the build that wrote it: {document.Description} [{id}] {string.Join("; ", outcome.Unhandled)}");
+            return (Entry(JournalRecoveryOutcome.UnknownStep, outcome.Failures), probe);
+        }
+        if (outcome.CopiesGone.Count > 0)
+        {
+            // Closed (only a step deferred to the next start, if any, stays): no start could put those files back.
+            if (outcome.Deferred.Count == 0) Delete(id);
+            return (Entry(JournalRecoveryOutcome.CopiesGone, [.. outcome.Failures, .. outcome.Deferred]), probe);
+        }
         if (outcome.Deferred.Count > 0)
-            return (new(id, document.Description, JournalRecoveryOutcome.Deferred, outcome.Deferred, paths, outcome.Kept), document.CommitProbe);
+            return (Entry(JournalRecoveryOutcome.Deferred, outcome.Deferred), probe);
         Delete(id);
-        return (new(id, document.Description,
-            outcome.Kept.Count > 0 ? JournalRecoveryOutcome.KeptLaterChanges : JournalRecoveryOutcome.RolledBack,
-            [], paths, outcome.Kept), document.CommitProbe);
+        return (Entry(outcome.Kept.Count > 0 ? JournalRecoveryOutcome.KeptLaterChanges : JournalRecoveryOutcome.RolledBack, []), probe);
     }
 
-    internal sealed record RollbackOutcome(IReadOnlyList<string> Failures, IReadOnlyList<string> Kept, IReadOnlyList<string> Deferred);
+    /// <param name="Failures">Every step that could not be undone.</param>
+    /// <param name="CopiesGone">Files whose earlier content survives nowhere (w10 review finding 1): no retry restores them.</param>
+    /// <param name="Unhandled">Failures of steps no handler of this build knows (an entry of a newer build).</param>
+    /// <param name="Retryable">The rest of <paramref name="Failures"/>: a retry may finish them (permission, I/O).</param>
+    internal sealed record RollbackOutcome(
+        IReadOnlyList<string> Failures,
+        IReadOnlyList<string> Kept,
+        IReadOnlyList<string> Deferred,
+        IReadOnlyList<string> CopiesGone,
+        IReadOnlyList<string> Unhandled,
+        IReadOnlyList<string> Retryable);
 
     /// <summary>
     /// Rolls back the files, then runs the compensations in reverse. When the files are back but a
@@ -433,6 +526,8 @@ public sealed class DeploymentJournal
     {
         var fileRollback = await files.RollbackAsync(mode).ConfigureAwait(false);
         var failures = new List<string>(fileRollback.Failures);
+        var retryable = fileRollback.Failures.Except(fileRollback.CopyGoneFailures).ToList();
+        var unhandled = new List<string>();
         var kept = new List<string>(fileRollback.Kept);
         var deferred = new List<string>();
         var remaining = new List<JournalCompensation>();
@@ -440,7 +535,9 @@ public sealed class DeploymentJournal
         {
             if (!_compensators.TryGetValue(compensation.Kind, out var compensator))
             {
-                failures.Add($"No handler is registered for this step; it was left for the next start: {compensation.Kind}");
+                var unknown = $"No handler is registered for this step; it was left for the next start: {compensation.Kind}";
+                failures.Add(unknown);
+                unhandled.Add(unknown);
                 remaining.Add(compensation);
                 continue;
             }
@@ -460,12 +557,18 @@ public sealed class DeploymentJournal
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException)
             {
-                failures.Add($"Could not undo this step: {compensation.Kind} ({ex.Message})");
+                var failed = $"Could not undo this step: {compensation.Kind} ({ex.Message})";
+                failures.Add(failed);
+                retryable.Add(failed);
                 remaining.Add(compensation);
             }
         }
 
-        if (failures.Count == 0 && deferred.Count > 0)
+        // Narrowed to the deferred steps once the files are final: all put back, or (crash recovery) only copies that are
+        // gone left, which no later start can put back either.
+        var filesFinal = failures.Count == 0
+                         || (mode == RollbackMode.CrashRecovery && retryable.Count == 0 && unhandled.Count == 0);
+        if (filesFinal && deferred.Count > 0)
         {
             remaining.Reverse();
             document.Files = [];
@@ -480,7 +583,7 @@ public sealed class DeploymentJournal
                 deferred.Add($"The journal entry could not be narrowed to the deferred steps ({ex.Message}).");
             }
         }
-        return new(failures, kept, deferred);
+        return new(failures, kept, deferred, fileRollback.CopiesGone, unhandled, retryable);
     }
 
     internal Task WriteAsync(JournalDocument document, CancellationToken cancellationToken)
@@ -503,6 +606,14 @@ public sealed class DeploymentJournal
     /// </summary>
     public const string EarlierUndoFailedMessage =
         "RHI could not finish undoing an earlier change to this game, so it makes no new change here. Nothing was changed. Restart RHI to finish it (first check that RHI can write to the game's folders and files; rhi.log names the file that failed), then try again.";
+
+    /// <summary>
+    /// w10 review finding 2: fixed text of the refusal while RHI's own journal entry of an earlier change to this game cannot
+    /// be read or updated (permission or I/O error on RHI's data folder) — neither the ledger nor the game's files are the
+    /// reason (PT-BR pair). Says plainly to restart RHI (owner wording rule).
+    /// </summary>
+    public const string EarlierChangeNotSettledMessage =
+        "RHI could not finish an earlier change to this game, because it could not read or update its own note of that change. Nothing was changed. Restart RHI to finish it (first check that RHI can write to its data folder; rhi.log names the file that failed), then try again.";
 
     internal string EntryPath(string id) => Path.Combine(Directory, id + EntryExtension);
 
@@ -611,7 +722,13 @@ public sealed class DeploymentOperation : IAsyncDisposable
         var outcome = await _journal.RollbackAsync(Files, Document(), RollbackMode.InProcess).ConfigureAwait(false);
         // A deferred step is not done: the entry (narrowed to it) stays for the next start.
         var failures = outcome.Failures.Concat(outcome.Deferred).ToList();
-        if (failures.Count == 0)
+        // w10 review finding 1 (coordinator decision): only copies that are gone are left — no retry could put them back,
+        // so the entry is closed now and the user told which files (as start-up recovery does).
+        var copiesGoneOnly = outcome.CopiesGone.Count > 0 && outcome.Retryable.Count == 0 && outcome.Unhandled.Count == 0
+                             && outcome.Deferred.Count == 0;
+        var entryKept = failures.Count > 0 && !copiesGoneOnly;
+        var removalFailed = false;
+        if (!entryKept)
         {
             try
             {
@@ -619,13 +736,19 @@ public sealed class DeploymentOperation : IAsyncDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                failures = [$"Rolled back, but the journal entry could not be removed: {Id} ({ex.Message})"];
+                failures.Add($"Rolled back, but the journal entry could not be removed: {Id} ({ex.Message})");
+                entryKept = removalFailed = true;
             }
         }
-        ReleaseLock(deleteLockFile: failures.Count == 0);
+        ReleaseLock(deleteLockFile: !entryKept);
         // #220: the entry is kept for the next start; until its undo succeeds it holds its game (after the lock is gone, so
-        // the next operation's settle can take it and retry the undo).
-        if (failures.Count > 0) _journal.HoldAfterFailedUndo(Id, CommitProbe, CommitMark);
+        // the next operation's settle can take it and retry the undo). w10 review finding 1: only for what a retry can fix
+        // — never for a copy that is gone or a step without a handler (a newer build's; its entry stays for that build).
+        if (outcome.Retryable.Count > 0 || outcome.Deferred.Count > 0 || removalFailed)
+            _journal.HoldAfterFailedUndo(Id, CommitProbe, CommitMark);
+        else if (copiesGoneOnly)
+            _journal.ReportCopiesGone(new JournalRecoveryEntry(Id, Description, JournalRecoveryOutcome.CopiesGone, outcome.Failures,
+                Files.Files.Select(file => file.Path).ToArray(), outcome.Kept) { CommitProbe = CommitProbe, CopiesGone = outcome.CopiesGone });
         return new(failures, outcome.Kept);
     }
 
@@ -663,7 +786,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
                 _settled = CommitDecision.Undecided;
                 ReleaseLock(deleteLockFile: false);
                 // Review w8 finding 2: settled before this game's next operation in this session (or refuses it).
-                _journal.Wait(Id, CommitMark);
+                _journal.Wait(Id, CommitMark, CommitProbe);
                 break;
         }
         return decision;
@@ -768,7 +891,20 @@ public enum JournalRecoveryOutcome
     KeptLaterChanges,
 
     /// <summary>Files rolled back; a step that cannot run safely now (Wine prefix in use) waits for the next start.</summary>
-    Deferred
+    Deferred,
+
+    /// <summary>
+    /// w10 review finding 1: rolled back as far as possible, but RHI's copy of some earlier file is gone (deleted, or the
+    /// folder wiped by a reinstall), so no start could put it back: the entry is closed (a deferred step stays) and the
+    /// user is told which file (<see cref="JournalRecoveryEntry.CopiesGone"/>). Holds no game.
+    /// </summary>
+    CopiesGone,
+
+    /// <summary>
+    /// w10 review finding 1: the entry has a step no handler of this build knows (written by a newer build): kept as it is
+    /// for that build, logged, and holds no game.
+    /// </summary>
+    UnknownStep
 }
 
 public sealed record JournalRecoveryEntry(
@@ -781,6 +917,12 @@ public sealed record JournalRecoveryEntry(
 {
     /// <summary>What was left as someone else changed it after the crash, and where RHI's copies went.</summary>
     public IReadOnlyList<string> Kept => KeptChanges ?? [];
+
+    /// <summary>The entry's commit probe (its game), when it could be read (w10 review finding 2).</summary>
+    public string? CommitProbe { get; init; }
+
+    /// <summary>Files that could not be put back because RHI's copy of their earlier content is gone (w10 review finding 1).</summary>
+    public IReadOnlyList<string> CopiesGone { get; init; } = [];
 }
 
 public sealed record JournalRecoveryReport(IReadOnlyList<JournalRecoveryEntry> Entries)

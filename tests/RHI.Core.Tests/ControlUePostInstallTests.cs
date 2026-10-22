@@ -433,10 +433,9 @@ public sealed partial class ControlUePostInstallTests : IDisposable
     }
 
     // A restore that cannot finish keeps RenoDX installed and the unrestored items owned in the record; a retry ends it.
-    [Fact]
+    [PermissionDenialFact]
     public async Task Remove_WhenARestoreFails_KeepsRenoDxAndTheRemainingItems_RetryFinishes()
     {
-        if (Environment.UserName == "root") return; // directory modes do not stop root
         var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
         var bin = game.BinaryDirectory!;
         var iniBytes = Encoding.UTF8.GetBytes(RendererIni);
@@ -445,7 +444,7 @@ public sealed partial class ControlUePostInstallTests : IDisposable
         var before = ControlUePostInstallService.Deserialize(store.Find(game, ManagedComponentKind.RenoDX))!;
 
         ComponentOperationResult partial;
-        File.SetUnixFileMode(bin, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        PermissionDenial.MakeReadOnly(bin);
         try { partial = await service.RemoveAsync(game); }
         finally { File.SetUnixFileMode(bin, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
 

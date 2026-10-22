@@ -172,16 +172,58 @@ public sealed class OwnedFileSet
     {
         var failures = new List<string>();
         var kept = new List<string>();
+        var lost = new List<string>();
+        var lostFailures = new List<string>();
         var now = nowUtc ?? DateTime.UtcNow;
         foreach (var state in _files.Values.Reverse())
         {
-            var error = await RollbackOneAsync(state, mode, now, kept).ConfigureAwait(false);
-            if (error is not null) failures.Add(error);
+            var lostHere = new List<string>();
+            var error = await RollbackOneAsync(state, mode, now, kept, lostHere).ConfigureAwait(false);
+            if (error is null) continue;
+            failures.Add(error);
+            if (lostHere.Count == 0) continue;
+            lost.AddRange(lostHere);
+            lostFailures.Add(error);
         }
-        return new OwnedFileSetRollback(failures, kept);
+        return new OwnedFileSetRollback(failures, kept) { CopiesGone = lost, CopyGoneFailures = lostFailures };
     }
 
-    private async Task<string?> RollbackOneAsync(OwnedFileState state, RollbackMode mode, DateTime now, List<string> kept)
+    /// <summary>
+    /// w10 review finding 1: whether <paramref name="path"/> is known NOT to exist — its folder (or the nearest folder
+    /// above it that exists) can be listed and does not list it. A path .NET cannot see because a folder refuses this
+    /// process (no search or read permission) is not proved absent: that failure can be fixed, so it is retried.
+    /// </summary>
+    internal static bool ProvedAbsent(string path)
+    {
+        var name = System.IO.Path.GetFileName(path);
+        var folder = System.IO.Path.GetDirectoryName(path);
+        while (!string.IsNullOrEmpty(folder))
+        {
+            try
+            {
+                foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(folder))
+                    if (string.Equals(System.IO.Path.GetFileName(entry), name, StringComparison.Ordinal)) return false;
+                return true;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                name = System.IO.Path.GetFileName(folder);
+                folder = System.IO.Path.GetDirectoryName(folder);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /// <param name="lost">
+    /// Receives the paths whose pre-operation content survives nowhere (every place a copy could be was looked at and
+    /// holds something else or nothing): no retry can put them back. When the returned error is only that, this list is
+    /// not empty; an error with any other cause leaves it empty.
+    /// </param>
+    private async Task<string?> RollbackOneAsync(OwnedFileState state, RollbackMode mode, DateTime now, List<string> kept, List<string> lost)
     {
         var target = state.Path;
         var backup = target + BackupExtension;
@@ -219,6 +261,9 @@ public sealed class OwnedFileSet
             if (state.Existed && state.PreSha256 is { } preTarget && !foreignTarget) wanted.Add((target, preTarget));
             if (state.BackupExisted && state.BackupPreSha256 is { } preBackup && !foreignBackup) wanted.Add((backup, preBackup));
 
+            // w10 review finding 1: a path whose copy is gone does not stop the other path's restore (a later retry could
+            // not do better); the first such error is returned once the rest is back, and the remaining copies are kept.
+            string? goneError = null;
             foreach (var (path, sha) in wanted)
             {
                 if (FileHash.HexEquals(await HashOf(path).ConfigureAwait(false), sha)) continue;
@@ -236,7 +281,16 @@ public sealed class OwnedFileSet
                         kept.Add($"{backup}: not put back; its content was last placed in {target}, which was changed after the interruption.");
                         continue;
                     }
-                    return $"{path}: no surviving copy with the pre-operation content ({sha}) was found; every copy was kept.";
+                    // Gone only when every place a copy could be was seen (read, or listed without it); a folder that
+                    // refuses this process hides copies, and that can be fixed.
+                    var seen = true;
+                    foreach (var candidate in candidates)
+                        if (candidate != path && await HashOf(candidate).ConfigureAwait(false) is null && !ProvedAbsent(candidate)) seen = false;
+                    if (!seen)
+                        return $"{path}: RHI could not look for its copy with the pre-operation content ({sha}), because a folder cannot be read; every copy was kept.";
+                    lost.Add(path);
+                    goneError ??= $"{path}: no surviving copy with the pre-operation content ({sha}) was found; every copy was kept.";
+                    continue;
                 }
                 staged.Add((path, await AtomicFile.StageCopyAsync(source, path, sha, null, CancellationToken.None).ConfigureAwait(false)));
             }
@@ -250,6 +304,7 @@ public sealed class OwnedFileSet
             // 2. Place them.
             foreach (var (path, file) in staged) AtomicFile.MoveIntoPlace(file.Path, path);
             staged.Clear();
+            if (goneError is not null) return goneError;
 
             // 3. Remove what the operation created; set aside, never delete, copies that may be the
             //    only pre-operation version of a file someone else changed since.
@@ -277,6 +332,7 @@ public sealed class OwnedFileSet
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
+            lost.Clear(); // this failure can be retried
             return $"{target}: rollback failed ({ex.Message}); every copy was kept.";
         }
         finally
@@ -301,6 +357,15 @@ public sealed record OwnedFileSetRollback(IReadOnlyList<string> Failures, IReadO
 
     /// <summary>Paths left as someone else changed them after a crash, and where RHI's copy went.</summary>
     public IReadOnlyList<string> Kept => KeptChanges ?? [];
+
+    /// <summary>
+    /// w10 review finding 1: paths that could not be put back because RHI's copy of their earlier content is gone (deleted,
+    /// or the folder was wiped by a reinstall): no retry can restore them.
+    /// </summary>
+    public IReadOnlyList<string> CopiesGone { get; init; } = [];
+
+    /// <summary>The entries of <see cref="Failures"/> caused only by <see cref="CopiesGone"/> (the rest can be retried).</summary>
+    public IReadOnlyList<string> CopyGoneFailures { get; init; } = [];
 
     /// <summary>
     /// What the rollback found about the operation's commit point (#204): a failure at or after the commit write may

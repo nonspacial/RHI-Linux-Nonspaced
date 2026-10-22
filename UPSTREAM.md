@@ -776,6 +776,13 @@ build.
 - A change whose undo of a Wine setting was deferred (Wine was running) also retries it before the game's next change;
   it is never refused for it (the next start finishes it, as before). A plain file change that names no game holds up no
   game.
+- Only a failure a retry can fix holds the game. When RHI's saved copy of an earlier file is gone (deleted, or the game
+  was reinstalled), no restart can put it back: the change is closed and the status line says which file RHI could not
+  put back, why, and to check that game's mods (Remove, then Install again). A step this build does not know (written by
+  a newer RHI) is left in the journal untouched for that build, logged, and holds nothing. While a copy cannot even be
+  looked for (a folder refuses RHI), the game stays held.
+- A refusal gives the true reason: when RHI cannot read or update its own note of the earlier change (its data folder),
+  it says so instead of blaming the ledger; such a note holds only its own game when that is known, else none.
 
 ### #222 — The "saved, but the save reported an error" note on the last few lines
 - Fork-only (follows #204's landed note). A preset installed into every game together with its shader packs names a game
