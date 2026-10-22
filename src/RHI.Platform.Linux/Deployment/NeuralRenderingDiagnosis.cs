@@ -26,7 +26,12 @@ public enum NrDllFit
     /// <summary>RHI could not tell which manifest version the DLL is.</summary>
     VersionUnknown,
     /// <summary>RHI could not tell the card's generation.</summary>
-    CardUnknown
+    CardUnknown,
+    /// <summary>
+    /// The owner's DLL on disk is no longer the file RHI recorded (replaced or removed outside RHI): no version, no fit
+    /// verdict — the same answer Update All gives (could not check; it leaves the file as it is).
+    /// </summary>
+    ChangedOutsideRhi
 }
 
 /// <summary>
@@ -47,9 +52,27 @@ public sealed record NrCheckDll(
 
 /// <summary>
 /// The recommended Neural Rendering method (null while the game's analysis has not told whether it ships DLSS) and the
-/// ones RHI installed in this game (display names).
+/// ones RHI installed in this game (display names, and their kinds in the same order).
 /// </summary>
-public sealed record NrCheckMethod(ManagedComponentKind? Recommended, string? RecommendedName, IReadOnlyList<string> InUse);
+public sealed record NrCheckMethod(ManagedComponentKind? Recommended, string? RecommendedName, IReadOnlyList<string> InUse,
+    IReadOnlyList<ManagedComponentKind> InUseKinds);
+
+/// <summary>
+/// What the main window's controls a fix hint can name do for THIS game, worked out by the rules those controls use, so a
+/// hint never names a control that is disabled or does something else here (follow-up F2).
+/// </summary>
+/// <param name="DlssNrLineSwaps">The DLSS / Streamline section's Neural rendering line and its Apply are enabled
+/// (<c>DlssPanelViewModel.CanSwapDlssNr</c>: a confirmed executable, an NR DLL no RHI component owns, and no ShortFuse /
+/// DLSS5 Feeder Full stack locking the section).</param>
+/// <param name="NrDllListSwaps">The NR DLL list under NR versions swaps the owner's DLL in place (a ShortFuse or DLSS5
+/// Feeder Full stack); otherwise it only saves the choice.</param>
+/// <param name="HeldByScaler">Methods/owners whose swap or removal RHI refuses while the NR Cost Scaler wraps their DLL.</param>
+/// <param name="Protontricks">The D3DCompiler 47 line shows its Protontricks button for this game.</param>
+/// <param name="Winetricks">The D3DCompiler 47 line shows its Winetricks button for this game.</param>
+/// <param name="RemovableRows">The Managed components rows that show an enabled Remove for this game (the window's own rows of
+/// the game's analysis); null while RHI has not analysed the game (then no row and no DLSS line is named).</param>
+public sealed record NrCheckControls(bool DlssNrLineSwaps, bool NrDllListSwaps, IReadOnlyList<ManagedComponentKind> HeldByScaler,
+    bool Protontricks, bool Winetricks, IReadOnlyList<ManagedComponentKind>? RemovableRows = null);
 
 /// <summary>An anti-cheat folder or file found in the game (information only: RHI never blocks or changes anything for it).</summary>
 public sealed record NrCheckAntiCheat(string Name, string Path);
@@ -107,7 +130,8 @@ public sealed record NrCheckDiagnosis(
     NrCheckDll Dll,
     NrCheckMethod Method,
     IReadOnlyList<NrCheckAntiCheat> AntiCheat,
-    IReadOnlyList<NrCheckLog> Logs)
+    IReadOnlyList<NrCheckLog> Logs,
+    NrCheckControls Controls)
 {
     public IReadOnlyList<NrLogFinding> Findings => Logs.SelectMany(log => log.Findings).ToArray();
 }
@@ -312,54 +336,87 @@ public sealed partial class LinuxManagedComponentService
 
     /// <summary>The Neural Rendering methods RHI installed in <paramref name="game"/>, by display name.</summary>
     public IReadOnlyList<string> NeuralRenderingMethodsInUse(DetectedGame game)
+        => NeuralRenderingMethodsInUseByKind(game).Select(method => method.Name).ToArray();
+
+    private List<(ManagedComponentKind Kind, string Name)> NeuralRenderingMethodsInUseByKind(DetectedGame game)
     {
-        var inUse = new List<string>();
+        var inUse = new List<(ManagedComponentKind, string)>();
         foreach (var kind in new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge })
-            if (_records.Find(game, kind) is not null) inUse.Add(DisplayNeuralRenderingMethod(kind));
-        if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } optiScaler) inUse.Add(optiScaler);
-        if (NeuralRenderingRuntimeOwnership.RtxEncoreOwner(_records, game) is { } encore) inUse.Add(encore);
+            if (_records.Find(game, kind) is not null) inUse.Add((kind, DisplayNeuralRenderingMethod(kind)));
+        if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } optiScaler) inUse.Add((ManagedComponentKind.OptiScaler, optiScaler));
+        if (NeuralRenderingRuntimeOwnership.RtxEncoreOwner(_records, game) is { } encore) inUse.Add((ManagedComponentKind.RtxEncore, encore));
         return inUse;
     }
 
     /// <summary>
-    /// #234: what the Check Neural Rendering page shows. Reads files only (RHI's records, the DLL's version resource, the
-    /// game's logs, folder names) and never fetches the DLSS manifest: "Latest" made for the card is named only when the
-    /// manifest is already loaded. <paramref name="hasNativeDlss"/>: the game's analysis' answer (null = not known yet: no
-    /// recommendation). <paramref name="nrDllPaths"/>: the NR DLLs the game's analysis found (null = not known).
+    /// #234: what the Check Neural Rendering page shows. Reads files only (RHI's records, the DLL's version resource and
+    /// checksum, the game's logs, folder names) and never fetches the DLSS manifest: "Latest" made for the card is named
+    /// only when the manifest is already loaded. <paramref name="hasNativeDlss"/>: the game's analysis' answer (null = not
+    /// known yet: no recommendation). <paramref name="nrDllPaths"/>: the NR DLLs the game's analysis found (null = not known).
     /// </summary>
-    public NrCheckDiagnosis DiagnoseNeuralRendering(DetectedGame game, bool? hasNativeDlss, IReadOnlyList<string>? nrDllPaths,
+    public async Task<NrCheckDiagnosis> DiagnoseNeuralRenderingAsync(DetectedGame game, bool? hasNativeDlss, IReadOnlyList<string>? nrDllPaths,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(game);
         var facts = _nvidiaGpu();
         var gpu = new NrCheckGpu(facts.Present, facts.Model, facts.Generation, facts.DriverVersion);
         cancellationToken.ThrowIfCancellationRequested();
-        var dll = DiagnoseNeuralRenderingDll(game, facts, nrDllPaths);
+        var dll = await DiagnoseNeuralRenderingDllAsync(game, facts, nrDllPaths, cancellationToken).ConfigureAwait(false);
         ManagedComponentKind? recommended = hasNativeDlss is { } native ? RecommendedNeuralRenderingMethod(game, native) : null;
+        var inUse = NeuralRenderingMethodsInUseByKind(game);
         var method = new NrCheckMethod(recommended, recommended is { } kind ? DisplayNeuralRenderingMethod(kind) : null,
-            NeuralRenderingMethodsInUse(game));
+            inUse.Select(m => m.Name).ToArray(), inUse.Select(m => m.Kind).ToArray());
+        var controls = NeuralRenderingFixControls(game, method, nrDllPaths);
         cancellationToken.ThrowIfCancellationRequested();
         var antiCheat = NeuralRenderingDiagnosis.FindAntiCheat(game);
         var logs = NeuralRenderingDiagnosis.ReadLogs(game, cancellationToken);
-        return new NrCheckDiagnosis(gpu, dll, method, antiCheat, logs);
+        return new NrCheckDiagnosis(gpu, dll, method, antiCheat, logs, controls);
     }
 
-    private NrCheckDll DiagnoseNeuralRenderingDll(DetectedGame game, Hdr.NvidiaGpuFacts facts, IReadOnlyList<string>? nrDllPaths)
+    // Follow-up F2: what each control a fix hint can name does for this game, by the rules the controls themselves use
+    // (tests compare each one with the live control's state for the same game).
+    private NrCheckControls NeuralRenderingFixControls(DetectedGame game, NrCheckMethod method, IReadOnlyList<string>? nrDllPaths)
+    {
+        var confirmed = game.HasConfirmedPatchTarget;
+        // DlssPanelViewModel.OrchestratedDlssStackManaged (SelectionFacts reads these two): it locks the DLSS / Streamline
+        // section, and it is when the NR DLL list swaps in place (ExtrasViewModel) instead of only saving the choice.
+        var orchestrated = IsShortFuseManaged(game) || IsDlss5FeederFullManaged(game);
+        // The DLSS line lists the analysis' NR DLLs (RHI-owned files left out); before an analysis it is not known (false:
+        // the page then names no DLSS line).
+        var detected = nrDllPaths is { Count: > 0 };
+        var held = method.InUseKinds.Where(kind => NrCostScalerService.OwnerChangeRefusal(_records, game, kind) is not null).ToArray();
+        return new NrCheckControls(
+            DlssNrLineSwaps: confirmed && detected && !orchestrated,
+            NrDllListSwaps: orchestrated,
+            HeldByScaler: held,
+            Protontricks: confirmed && game.UsesProton,
+            Winetricks: confirmed && D3DCompilerToolInstaller.CanInstallWithWinetricks(game));
+    }
+
+    private async Task<NrCheckDll> DiagnoseNeuralRenderingDllAsync(DetectedGame game, Hdr.NvidiaGpuFacts facts, IReadOnlyList<string>? nrDllPaths,
+        CancellationToken cancellationToken)
     {
         var card = CardGeneration;
         var latest = card != RtxGeneration.Unknown && NrDlss is { Manifest: not null } dlss
             ? dlss.LatestVersion(DlssComponentKind.NeuralRendering)
             : null;
-        var owner = NeuralRenderingRuntimeOwnership.OwnerRecordOtherThan(_records, game, ManagedComponentKind.NrCostScaler);
+        var ownerRecord = NeuralRenderingRuntimeOwnership.OwnerRecordOtherThan(_records, game, ManagedComponentKind.NrCostScaler);
+        (string Name, LinuxDeploymentRecord Record)? owner = null;
         string? path;
         InstalledNrVersion installed;
-        if (owner is { } held && ManagedFileSwap.FindFile(held.Record, NeuralRenderingRuntimeOwnership.DllName) is { } file)
+        var changedOutside = false;
+        if (ownerRecord is { } held && ManagedFileSwap.FindFile(held.Record, NeuralRenderingRuntimeOwnership.DllName) is { } file)
         {
+            owner = held;
             path = file.Path;
-            installed = InstalledNeuralRenderingVersion(game, held.Record);
+            // Update All's own rule (one helper): the version named from the record counts only while the file on disk
+            // (behind the NR Cost Scaler: its real DLL) still has the record's checksum; otherwise could not check.
+            changedOutside = !await OwnerFileMatchesRecordAsync(game, held.Record, cancellationToken).ConfigureAwait(false);
+            installed = changedOutside ? new(null, InstalledNrVersionSource.Unknown) : InstalledNeuralRenderingVersion(game, held.Record);
         }
         else
         {
+            // Follow-up F3: an owner whose record lists no NR DLL did not put this one in (the game's own, or by hand).
             path = GameNeuralRenderingDll(game, nrDllPaths);
             installed = path is null
                 ? new(null, InstalledNrVersionSource.Unknown)
@@ -373,11 +430,12 @@ public sealed partial class LinuxManagedComponentService
         }
 
         var fit = path is null ? NrDllFit.NoDll
+            : changedOutside ? NrDllFit.ChangedOutsideRhi
             : installed.Version is null ? NrDllFit.VersionUnknown
             : card == RtxGeneration.Unknown ? NrDllFit.CardUnknown
             : NeuralRenderingGpuPolicy.MadeForAnotherGeneration(installed.Version, card) ? NrDllFit.NotForThisCard
             : NrDllFit.Fits;
-        var picked = owner?.Record.Component is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder
+        var picked = ownerRecord?.Record.Component is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder
             ? _neuralVersionPins.GetNeuralRenderingDllVersion(game)
             : null;
         var faults = installed.Version is { } version && OptiScalerF5DriverPolicy.IsFaultingNrDll(version)

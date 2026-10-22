@@ -41,7 +41,7 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
         Sections =
         [
             new(GpuSection, T("Nrc.GpuLabel"), GpuLines(diagnosis.Gpu)),
-            new(DllSection, T("Nrc.DllLabel"), DllLines(diagnosis.Dll)),
+            new(DllSection, T("Nrc.DllLabel"), DllLines(diagnosis)),
             new(MethodSection, T("Nrc.MethodLabel"), MethodLines(diagnosis.Method)),
             new(AntiCheatSection, T("Nrc.AntiCheatLabel"), AntiCheatLines(diagnosis.AntiCheat, game)),
             new(LogsSection, T("Nrc.LogsLabel"), LogLines(diagnosis)),
@@ -73,10 +73,12 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
         return lines;
     }
 
-    private static IReadOnlyList<NrCheckLine> DllLines(NrCheckDll dll)
+    private static IReadOnlyList<NrCheckLine> DllLines(NrCheckDiagnosis diagnosis)
     {
+        var dll = diagnosis.Dll;
         if (dll.Fit == NrDllFit.NoDll) return [new(T("Nrc.DllNone"))];
         var tip = DllTip(dll);
+        var changed = dll.Fit == NrDllFit.ChangedOutsideRhi;
         var lines = new List<NrCheckLine>
         {
             dll.Fit switch
@@ -84,16 +86,18 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
                 NrDllFit.Fits => new(F("Nrc.DllFits", dll.Version!), Tip: tip),
                 NrDllFit.NotForThisCard => new(F("Nrc.DllNotForCard", dll.Version!), IsWarning: true, Tip: tip),
                 NrDllFit.CardUnknown => new(F("Nrc.DllCardUnknown", dll.Version!), Tip: tip),
+                // Follow-up F1: Update All's answer for this file — no version, no fit verdict, no swap hint.
+                NrDllFit.ChangedOutsideRhi => new(T("Nrc.DllChangedOutside"), IsWarning: true, Tip: tip),
                 _ => new(T("Nrc.DllVersionUnknown"), IsWarning: true, Tip: tip)
             },
-            new(dll.OwnerName is { } owner ? F("Nrc.DllOwner", owner) : T("Nrc.DllGameOwn"), IsDetail: true, Tip: tip)
+            new(dll.OwnerName is { } owner ? F(changed ? "Nrc.DllOwnerChanged" : "Nrc.DllOwner", owner) : T("Nrc.DllGameOwn"), IsDetail: true, Tip: tip)
         };
         if (dll.PickedVersion is { } picked) lines.Add(new(F("Nrc.DllPicked", picked), IsDetail: true));
         if (dll.FaultsOnThisDriver) lines.Add(new(T("Nrc.DllFaults"), IsWarning: true, IsDetail: true));
         if (dll.Fit == NrDllFit.NotForThisCard || dll.FaultsOnThisDriver)
         {
             if (dll.LatestForCard is { } latest) lines.Add(new(F("Nrc.DllForCard", latest), IsDetail: true));
-            lines.Add(new(F("Nrc.Fix", FixText(NrFixHint.NrDllForCard, dll)), IsDetail: true));
+            lines.Add(new(F("Nrc.Fix", FixText(NrFixHint.NrDllForCard, diagnosis)), IsDetail: true));
         }
         return lines;
     }
@@ -101,6 +105,7 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
     private static string DllTip(NrCheckDll dll)
     {
         var file = F("Nrc.DllFile", dll.Path ?? "");
+        if (dll.Fit == NrDllFit.ChangedOutsideRhi) return file + "\n" + T("Nrc.SourceChanged");
         return dll.VersionSource switch
         {
             InstalledNrVersionSource.Metadata => file + "\n" + T("Nrc.SourceRecord"),
@@ -166,7 +171,7 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
                     : F("Nrc.LogNearEnd", finding.Log, SignatureText(finding.Signature));
                 var tip = log.Path + "\n" + finding.Excerpt;
                 lines.Add(new(headline, IsWarning: true, Tip: tip));
-                lines.Add(new(F("Nrc.Fix", FixText(finding.Fix, diagnosis.Dll)), IsDetail: true, Tip: tip));
+                lines.Add(new(F("Nrc.Fix", FixText(finding.Fix, diagnosis)), IsDetail: true, Tip: tip));
             }
         }
         foreach (var log in problems)
@@ -187,46 +192,110 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
         _ => "Nrc.SigCrash"
     });
 
+    // ---- fix hints (follow-up F2): only a control that is enabled and does that for THIS game, else a plain step ----
+
+    /// <summary>The fix hint's control: a key of <see cref="FixControls"/> (<see cref="NoControl"/>: a plain step).</summary>
+    internal const string NoControl = "none";
+
     /// <summary>
-    /// The control a fix hint names, as a key of <see cref="FixControls"/>: every hint names a control that exists in the
-    /// main window and does exactly that (a test reads the window's layout for each one).
+    /// The control a fix hint names for this game, decided from what each control does in the game's state
+    /// (<see cref="NrCheckDiagnosis.Controls"/>, worked out by the controls' own rules): the NR DLL list only where it swaps
+    /// the owner's DLL in place, the DLSS / Streamline Neural rendering line only where it is enabled, a component row only
+    /// where it offers an enabled Remove, the NR Cost Scaler row first while it holds the owner — otherwise a plain step.
     /// </summary>
-    internal static string FixControl(NrFixHint hint, NrCheckDll dll) => hint switch
+    internal static string FixControl(NrFixHint hint, NrCheckDiagnosis diagnosis) => Route(hint, diagnosis).Control;
+
+    internal static string FixText(NrFixHint hint, NrCheckDiagnosis diagnosis) => Route(hint, diagnosis).Text;
+
+    private static (string Control, string Text) Route(NrFixHint hint, NrCheckDiagnosis diagnosis)
     {
-        NrFixHint.NativeD3DCompiler => "d3dcompiler",
-        NrFixHint.NrDllForCard when dll.Owner is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder => "nr-dll-list",
-        NrFixHint.NrDllForCard when dll.Owner is ManagedComponentKind.OptiScaler => "component-remove",
-        NrFixHint.NrDllForCard when dll.Owner is ManagedComponentKind.RtxEncore => "component-remove",
-        NrFixHint.NrDllForCard => "dlss-nr-line",
-        _ when dll.OwnerName is not null => "component-remove",
-        _ => "dlss-nr-line"
-    };
+        var dll = diagnosis.Dll;
+        var controls = diagnosis.Controls;
+        var latest = dll.LatestForCard;
+        // A component row's Remove, only where the row shows one that is enabled; rows not known yet (no analysis): ask
+        // for one; a row without an enabled Remove: say so (its note says why), naming nothing to press.
+        (string, string) Row(ManagedComponentKind kind, string control, string text)
+            => controls.RemovableRows is null ? (NoControl, T("Nrc.FixSelectFirst"))
+                : controls.RemovableRows.Contains(kind) ? (control, text)
+                : (NoControl, F("Nrc.FixNoRemove", RowName(kind, diagnosis)));
+
+        if (hint == NrFixHint.NativeD3DCompiler)
+            return ("d3dcompiler", T((controls.Protontricks, controls.Winetricks) switch
+            {
+                (true, true) => "Nrc.FixD3DCompilerBoth",
+                (true, false) => "Nrc.FixD3DCompilerProtontricks",
+                (false, true) => "Nrc.FixD3DCompilerWinetricks",
+                _ => "Nrc.FixD3DCompilerBrowse"
+            }));
+
+        if (hint == NrFixHint.NrDllForCard)
+        {
+            // Update All's answer: RHI leaves a file changed outside it as it is.
+            if (dll.Fit == NrDllFit.ChangedOutsideRhi) return (NoControl, T("Nrc.FixChangedOutside"));
+            if (dll.Owner is { } owner)
+            {
+                if (controls.HeldByScaler.Contains(owner)) return ("nr-cost-scaler-remove", T("Nrc.FixScalerFirst"));
+                return owner switch
+                {
+                    ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder when controls.NrDllListSwaps
+                        => ("nr-dll-list", latest is not null ? F("Nrc.FixNrDllList", latest) : T("Nrc.FixNrDllListAny")),
+                    // An older add-on-only DLSS5 Feeder: the list only saves the choice, taken when the Feeder is added again.
+                    ManagedComponentKind.Dlss5Feeder => Row(owner, "nr-dll-list+component-remove",
+                        F("Nrc.FixFeederAgain", latest ?? T("Nrc.FixAnyForCard"), RowName(owner, diagnosis))),
+                    ManagedComponentKind.OptiScaler => Row(owner, "component-remove", T("Nrc.FixOptiScaler")),
+                    ManagedComponentKind.RtxEncore => Row(owner, "component-remove", F("Nrc.FixRtxEncore", RowName(owner, diagnosis))),
+                    _ => (NoControl, T("Nrc.FixReplaceYourself"))
+                };
+            }
+            if (controls.RemovableRows is null) return (NoControl, T("Nrc.FixSelectFirst"));
+            if (controls.DlssNrLineSwaps)
+                return ("dlss-nr-line", latest is not null ? F("Nrc.FixDlssLine", latest) : T("Nrc.FixDlssLineAny"));
+            return (NoControl, T(dll.Path is null ? "Nrc.FixNoDll" : "Nrc.FixReplaceYourself"));
+        }
+
+        // A crash or a lost device: remove the method (the DLL's owner, else the first one RHI set up here).
+        if (RemovableMethod(diagnosis) is not { } method) return (NoControl, T("Nrc.FixNoMethod"));
+        if (controls.HeldByScaler.Contains(method)) return ("nr-cost-scaler-remove", T("Nrc.FixScalerFirst"));
+        return Row(method, "component-remove", F("Nrc.FixRemove", RowName(method, diagnosis)));
+    }
+
+    // The method a "remove it" hint names: the DLL's owner, else the first Neural Rendering method RHI set up here.
+    private static ManagedComponentKind? RemovableMethod(NrCheckDiagnosis diagnosis)
+        => diagnosis.Dll.Owner ?? (diagnosis.Method.InUseKinds.Count > 0 ? diagnosis.Method.InUseKinds[0] : null);
+
+    // Declared before FixControls (static fields initialise in order).
+    private static readonly string[] NrDllListMarkers =
+        ["x:Name=\"ReShadeProfileSection\"", "Text=\"{DynamicResource Ui.NrVersions}\"", "ItemsSource=\"{Binding NeuralRenderingDllVersionOptions}\""];
+    private static readonly string[] ComponentRowMarkers = ["x:Name=\"ManagedComponentsSection\"", "ItemsSource=\"{Binding Components}\""];
 
     /// <summary>
     /// Each control a fix hint can name, with the markers of <c>MainWindow.axaml</c> that prove it is there (bindings and
-    /// handlers, not texts). <c>FixHintControlTests</c> checks every one.
+    /// handlers, not texts). <c>FixHintControlTests</c> checks every one; whether it is enabled for a game is pinned per
+    /// state against the live controls (<c>NeuralRenderingCheckFollowUpTests</c>).
     /// </summary>
     internal static readonly IReadOnlyDictionary<string, string[]> FixControls = new Dictionary<string, string[]>
     {
-        // The NR DLL list under NR versions (ReShade profile section): swaps only ShortFuse's / the Feeder's NR DLL.
-        ["nr-dll-list"] = ["x:Name=\"ReShadeProfileSection\"", "Text=\"{DynamicResource Ui.NrVersions}\"", "ItemsSource=\"{Binding NeuralRenderingDllVersionOptions}\""],
+        // The NR DLL list under NR versions (ReShade profile section): swaps only ShortFuse's / the Feeder Full's NR DLL.
+        ["nr-dll-list"] = NrDllListMarkers,
         // The DLSS / Streamline section's Neural rendering line: its version list and Apply.
         ["dlss-nr-line"] = ["x:Name=\"DlssStreamlineSection\"", "ItemsSource=\"{Binding DlssNrVersions}\"", "Command=\"{Binding SwapDlssComponentCommand}\" CommandParameter=\"NR\""],
-        // The D3DCompiler 47 line of the ReShade profile section: Protontricks, Winetricks and Browse.
+        // The D3DCompiler 47 line of the ReShade profile section: Protontricks, Winetricks (each only where shown) and Browse.
         ["d3dcompiler"] = ["Text=\"D3DCompiler 47\"", "InstallD3DCompilerWithProtontricksCommand", "InstallD3DCompilerWithWinetricksCommand", "Click=\"BrowseD3DCompiler47_Click\""],
         // A Managed components row's action button (Remove while installed).
-        ["component-remove"] = ["x:Name=\"ManagedComponentsSection\"", "ItemsSource=\"{Binding Components}\""],
+        ["component-remove"] = ComponentRowMarkers,
+        // The NR DLL list (saves the choice), then the component row's Remove (the older Feeder takes it when added again).
+        ["nr-dll-list+component-remove"] = [.. NrDllListMarkers, .. ComponentRowMarkers],
+        // The NR Cost Scaler row under NR versions (its Remove): while it wraps the DLL, the owner is held.
+        ["nr-cost-scaler-remove"] = ["<views:NrCostScalerRow/>"],
+        // A plain step: no control.
+        [NoControl] = [],
     };
 
-    internal static string FixText(NrFixHint hint, NrCheckDll dll) => FixControl(hint, dll) switch
-    {
-        "d3dcompiler" => T("Nrc.FixD3DCompiler"),
-        "nr-dll-list" => dll.LatestForCard is { } latest ? F("Nrc.FixNrDllList", latest) : T("Nrc.FixNrDllListAny"),
-        "dlss-nr-line" => dll.LatestForCard is { } latest ? F("Nrc.FixDlssLine", latest) : T("Nrc.FixDlssLineAny"),
-        _ when hint == NrFixHint.NrDllForCard && dll.Owner == ManagedComponentKind.OptiScaler => T("Nrc.FixOptiScaler"),
-        _ when hint == NrFixHint.NrDllForCard && dll.Owner == ManagedComponentKind.RtxEncore => T("Nrc.FixRtxEncore"),
-        _ => F("Nrc.FixRemove", dll.OwnerName ?? "")
-    };
+    // Follow-up F7: the row as the Managed components list shows it ("OptiScaler", never the owner's "OptiScaler DLSS NR").
+    private static string RowName(ManagedComponentKind kind, NrCheckDiagnosis diagnosis)
+        => ComponentProbe.NeuralRenderingRowName(kind)
+           ?? (diagnosis.Dll.Owner == kind ? diagnosis.Dll.OwnerName : null)
+           ?? kind.ToString();
 
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string F(string key, params object[] args) => UiLocalizationService.Format(key, args);

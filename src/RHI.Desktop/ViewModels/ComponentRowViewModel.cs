@@ -76,6 +76,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
             : UiLocalizationService.Text("Ui.ActionInstall");
     public bool IsInstallAction => component.Availability is not (ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable);
     public bool IsRemoveAction => !IsInstallAction;
+    /// <summary>The row shows an enabled Remove (#234 follow-up F2: the Check Neural Rendering page names only such a row).</summary>
+    public bool OffersRemove => HasAction && IsRemoveAction && IsActionEnabled && IsShown(component);
     /// <summary>The row's note, then (#178) what the update inclusion leaves out, so the row says why Update All skips it.</summary>
     public string Note => UpdateExclusionNote is { } leftOut
         ? string.IsNullOrWhiteSpace(ComponentNote) ? leftOut : ComponentNote.TrimEnd() + " " + leftOut

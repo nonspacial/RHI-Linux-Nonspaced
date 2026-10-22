@@ -115,8 +115,10 @@ public sealed partial class LinuxManagedComponentService
     private DeploymentJournal? OwnerJournal(ManagedComponentKind owner)
         => owner == ManagedComponentKind.ShortFuse ? _shortFuse?.Journal : _dlss5Feeder?.Journal;
 
-    // The owner's NR content (behind the NR Cost Scaler: nvngx_dlssnr_real.dll) still has the record's SHA-256. A record
-    // without a hash cannot show it is unchanged: not moved (safe side; RHI writes a hash for every file it places).
+    // The one "changed outside RHI" rule for an owner's NR DLL (Update All's move planner and, #234 follow-up F1, the Check
+    // Neural Rendering page): the owner's NR content (behind the NR Cost Scaler: nvngx_dlssnr_real.dll) still has the
+    // record's SHA-256. Removed, unreadable, or a record without a hash cannot show it is unchanged: false (safe side; RHI
+    // writes a hash for every file it places). Callers: only for a record that lists the NR DLL.
     private async Task<bool> OwnerFileMatchesRecordAsync(DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
         var file = ManagedFileSwap.FindFile(record, NeuralRenderingDllSwap.DllName)!;
@@ -126,12 +128,12 @@ public sealed partial class LinuxManagedComponentService
             if (!File.Exists(content)) return false;
             var current = await FileHash.Sha256HexAsync(content, cancellationToken).ConfigureAwait(false);
             if (string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase)) return true;
-            AppLog.Warn("nr-gpu", $"{game.Name}'s Neural Rendering DLL no longer matches RHI's record (changed outside RHI); it is not moved: {content}");
+            AppLog.Warn("nr-gpu", $"{game.Name}'s Neural Rendering DLL no longer matches RHI's record (changed outside RHI): {content}");
             return false;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            AppLog.Warn("nr-gpu", $"{game.Name}'s Neural Rendering DLL could not be read to check it before a move", ex);
+            AppLog.Warn("nr-gpu", $"{game.Name}'s Neural Rendering DLL could not be read to check it against RHI's record", ex);
             return false;
         }
     }

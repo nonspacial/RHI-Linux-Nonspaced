@@ -86,11 +86,11 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
 
     private static DetectedGame Listed(ViewModelFixture fx, string name) => fx.Vm.Games.Single(row => row.Name == name).Game;
 
-    private static NrCheckDiagnosis Diagnose(ViewModelFixture fx, DetectedGame game)
+    private static Task<NrCheckDiagnosis> DiagnoseAsync(ViewModelFixture fx, DetectedGame game)
     {
         var listed = Listed(fx, game.Name);
         fx.Vm.Session.TryGetCached(listed, out var analysis);
-        return fx.Managed.DiagnoseNeuralRendering(listed, analysis?.Facts.HasNativeDlssForNeuralRendering, analysis?.Dlss.DlssnrPaths);
+        return fx.Managed.DiagnoseNeuralRenderingAsync(listed, analysis?.Facts.HasNativeDlssForNeuralRendering, analysis?.Dlss.DlssnrPaths);
     }
 
     // ---- the NR DLL line: nr-gpu's policy and helper ------------------------------------------------------------------
@@ -102,7 +102,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx40),
             seed: fx => NrGpuGames.SeedOwner(fx.Records, Listed(fx, bl3.Game.Name), ManagedComponentKind.Dlss5Feeder, bl3.Nr, version: "0.13.1-beta.1"));
 
-        var dll = Diagnose(fx, bl3.Game).Dll;
+        var dll = (await DiagnoseAsync(fx, bl3.Game)).Dll;
 
         Assert.Equal(NrDllFit.NotForThisCard, dll.Fit);
         Assert.Equal(For50, dll.Version);
@@ -125,7 +125,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
             seed: fx => NrGpuGames.SeedOwner(fx.Records, Listed(fx, bl3.Game.Name), ManagedComponentKind.ShortFuse, bl3.Nr,
                 new Dictionary<string, string> { [NeuralRenderingDllSwap.MetaDllVersion] = ForAll }));
 
-        var dll = Diagnose(fx, bl3.Game).Dll;
+        var dll = (await DiagnoseAsync(fx, bl3.Game)).Dll;
 
         Assert.Equal(NrDllFit.Fits, dll.Fit);
         Assert.Equal(InstalledNrVersionSource.Metadata, dll.VersionSource);
@@ -140,7 +140,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         using var fx = await StartAsync([bl3.Game], unknown,
             seed: fx => NrGpuGames.SeedOwner(fx.Records, Listed(fx, bl3.Game.Name), ManagedComponentKind.Dlss5Feeder, bl3.Nr));
 
-        var diagnosis = Diagnose(fx, bl3.Game);
+        var diagnosis = (await DiagnoseAsync(fx, bl3.Game));
 
         Assert.Equal(NrDllFit.CardUnknown, diagnosis.Dll.Fit);
         Assert.Null(diagnosis.Dll.LatestForCard);
@@ -154,7 +154,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         var bl3 = Borderlands(ForAll);
         using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx30));
 
-        var dll = Diagnose(fx, bl3.Game).Dll;
+        var dll = (await DiagnoseAsync(fx, bl3.Game)).Dll;
 
         Assert.Null(dll.Owner);
         Assert.Null(dll.OwnerName);
@@ -171,7 +171,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         File.WriteAllBytes(bl3.Nr, Dll("310.9.99"));
         using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx40));
 
-        var dll = Diagnose(fx, bl3.Game).Dll;
+        var dll = (await DiagnoseAsync(fx, bl3.Game)).Dll;
 
         Assert.Equal(NrDllFit.VersionUnknown, dll.Fit);
         Assert.Null(dll.Version);
@@ -185,7 +185,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx50, "615.78.08"),
             seed: fx => NrGpuGames.SeedOwner(fx.Records, Listed(fx, bl3.Game.Name), ManagedComponentKind.Dlss5Feeder, bl3.Nr));
 
-        var dll = Diagnose(fx, bl3.Game).Dll;
+        var dll = (await DiagnoseAsync(fx, bl3.Game)).Dll;
 
         Assert.Equal(NrDllFit.Fits, dll.Fit);
         Assert.True(dll.FaultsOnThisDriver);
@@ -203,7 +203,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
             new RHI.Platform.Linux.Paths.NeuralAddonVersionPreferenceStore(Path.Combine(fx.ConfigDir, "prefs", "neural.json")).SetNeuralRenderingDllVersion(listed, For50);
         });
 
-        Assert.Equal(For50, Diagnose(fx, bl3.Game).Dll.PickedVersion);
+        Assert.Equal(For50, (await DiagnoseAsync(fx, bl3.Game)).Dll.PickedVersion);
     }
 
     // ---- where the page shows (hide rule) ---------------------------------------------------------------------------------
@@ -253,7 +253,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
 
         Assert.True(fx.Vm.NrCheck.IsAvailable);
         Assert.Equal("nr-check", fx.Vm.CardMenuFor(fx.Vm.Games.Single()).Last().Id);
-        Assert.Equal(["DLSS5 DX11 Bridge"], Diagnose(fx, bl3.Game).Method.InUse);
+        Assert.Equal(["DLSS5 DX11 Bridge"], (await DiagnoseAsync(fx, bl3.Game)).Method.InUse);
     }
 
     [Fact]
@@ -354,8 +354,11 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
                         : "ReShade.log, line 214: the shader compiler could not build the shaders", logs[1].Text);
         Assert.True(logs[1].IsWarning);
         Assert.Contains("error E5017", logs[1].Tip);
-        Assert.Equal(pt ? "Como resolver: na linha D3DCompiler 47 da seção Perfil do ReShade, use o botão do Protontricks ou do Winetricks, ou escolha a DLL da Microsoft com Procurar."
-                        : "Fix: on the D3DCompiler 47 line of the ReShade profile section, use the Protontricks or Winetricks button, or pick Microsoft's DLL with Browse.", logs[2].Text);
+        // A Wine game with its own prefix: the D3DCompiler 47 line shows Winetricks (not Protontricks) — the hint names that one.
+        Assert.True(fx.Vm.ReShadeProfile.CanInstallD3DCompilerWithWinetricks);
+        Assert.False(fx.Vm.ReShadeProfile.CanInstallD3DCompilerWithProtontricks);
+        Assert.Equal(pt ? "Como resolver: na linha D3DCompiler 47 da seção Perfil do ReShade, use o botão do Winetricks. Procurar só escolhe a DLL da Microsoft para a próxima vez que o RHI configurar o ReShade ou o DLSS5 Feeder."
+                        : "Fix: on the D3DCompiler 47 line of the ReShade profile section, use the Winetricks button. Browse only chooses Microsoft's DLL for the next time RHI sets up ReShade or the DLSS5 Feeder.", logs[2].Text);
         Assert.Equal(pt ? "dlss5-feed.log, linha 88: recurso não suportado (0xBAD00001)" : "dlss5-feed.log, line 88: feature not supported (0xBAD00001)", logs[3].Text);
         Assert.StartsWith(pt ? "Como resolver: escolha 310.8.2" : "Fix: choose 310.8.2", logs[4].Text);
         Assert.Equal(pt ? "Somente leitura: o RHI não alterou nenhum arquivo." : "Read only: RHI changed no files.", page.Footer);
@@ -447,7 +450,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
 
         await OpenThroughPanelAsync(fx);
         await OpenThroughMenuAsync(fx);
-        Diagnose(fx, bl3.Game);
+        await DiagnoseAsync(fx, bl3.Game);
 
         Assert.Equal(before, Snapshot(watched));
     }
@@ -472,48 +475,90 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
 }
 
 /// <summary>
-/// #234: every fix hint the page shows names a control that exists in the main window and does exactly that (the D3DCompiler
-/// 47 line's helpers, the NR DLL list, the DLSS section's Neural rendering line with Apply, a component row's action) — the
-/// window's layout is read for each control's bindings and handlers.
+/// #234: every fix hint the page shows names a control that exists in the main window (the D3DCompiler 47 line's helpers,
+/// the NR DLL list, the DLSS section's Neural rendering line with Apply, a component row's action, the NR Cost Scaler row)
+/// or none (a plain step) — the window's layout is read for each control's bindings and handlers, for every owner and every
+/// state of the controls. Whether the named control is enabled for a game is pinned per state against the live controls in
+/// <see cref="NeuralRenderingCheckFollowUpTests"/>.
 /// </summary>
 public sealed class FixHintControlTests
 {
     private static readonly string MainWindow = File.ReadAllText(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "Views", "MainWindow.axaml"));
 
-    public static TheoryData<NrFixHint, ManagedComponentKind?> Cases()
+    private static NrCheckDiagnosis Diagnosis(ManagedComponentKind? owner, NrDllFit fit, NrCheckControls controls, params ManagedComponentKind[] inUse)
     {
-        var data = new TheoryData<NrFixHint, ManagedComponentKind?>();
+        var dll = new NrCheckDll(fit == NrDllFit.NoDll ? null : "/g/nvngx_dlssnr.dll", owner, owner?.ToString(), fit is NrDllFit.ChangedOutsideRhi or NrDllFit.NoDll ? null : "310.8.3 (50xx)",
+            InstalledNrVersionSource.Metadata, fit, "310.8.2 (20/30/40/50)", null, false);
+        var kinds = owner is { } o ? inUse.Prepend(o).Distinct().ToArray() : inUse;
+        return new NrCheckDiagnosis(new NrCheckGpu(true, "NVIDIA GeForce RTX 4090", RtxGeneration.Rtx40, "615.78.08"), dll,
+            new NrCheckMethod(null, null, kinds.Select(k => k.ToString()).ToArray(), kinds), [], [], controls);
+    }
+
+    public static TheoryData<NrFixHint, ManagedComponentKind?, NrDllFit> Cases()
+    {
+        var data = new TheoryData<NrFixHint, ManagedComponentKind?, NrDllFit>();
         foreach (var hint in Enum.GetValues<NrFixHint>())
             foreach (var owner in new ManagedComponentKind?[] { null, ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.OptiScaler, ManagedComponentKind.RtxEncore })
-                data.Add(hint, owner);
+                foreach (var fit in new[] { NrDllFit.NotForThisCard, NrDllFit.ChangedOutsideRhi, NrDllFit.NoDll })
+                    data.Add(hint, owner, fit);
         return data;
     }
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public void EveryFixHint_NamesAControlThatExists(NrFixHint hint, ManagedComponentKind? owner)
+    public void EveryFixHint_NamesAControlThatExists_OrNone(NrFixHint hint, ManagedComponentKind? owner, NrDllFit fit)
     {
-        var dll = new NrCheckDll("/g/nvngx_dlssnr.dll", owner, owner?.ToString(), "310.8.3 (50xx)", InstalledNrVersionSource.Metadata,
-            NrDllFit.NotForThisCard, "310.8.2 (20/30/40/50)", null, false);
+        ManagedComponentKind[] every = [ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge,
+            ManagedComponentKind.OptiScaler, ManagedComponentKind.RtxEncore];
+        foreach (var line in new[] { false, true })
+            foreach (var list in new[] { false, true })
+                foreach (var held in new[] { false, true })
+                    foreach (var tricks in new[] { false, true })
+                        foreach (var rows in new ManagedComponentKind[]?[] { null, [], every })
+                    {
+                        ManagedComponentKind[] heldKinds = held && owner is { } o ? [o] : [];
+                        var diagnosis = Diagnosis(owner, fit, new NrCheckControls(line, list, heldKinds, tricks, !tricks, rows), ManagedComponentKind.Dlss5Dx11Bridge);
 
-        var control = NeuralRenderingCheckDialogViewModel.FixControl(hint, dll);
+                        var control = NeuralRenderingCheckDialogViewModel.FixControl(hint, diagnosis);
 
-        Assert.True(NeuralRenderingCheckDialogViewModel.FixControls.TryGetValue(control, out var markers), $"{hint}/{owner}: {control} is no known control");
-        foreach (var marker in markers!) Assert.Contains(marker, MainWindow);
-        Assert.False(string.IsNullOrWhiteSpace(NeuralRenderingCheckDialogViewModel.FixText(hint, dll)));
+                        Assert.True(NeuralRenderingCheckDialogViewModel.FixControls.TryGetValue(control, out var markers), $"{hint}/{owner}/{fit}: {control} is no known control");
+                        foreach (var marker in markers!) Assert.Contains(marker, MainWindow);
+                        Assert.False(string.IsNullOrWhiteSpace(NeuralRenderingCheckDialogViewModel.FixText(hint, diagnosis)));
+                    }
     }
 
     [Fact]
-    public void TheShaderCompilerHint_NamesTheD3DCompilerLine_AndTheDllHint_TheListOfItsOwner()
+    public void EachHint_FollowsWhatItsControlDoesForTheGame()
     {
-        var feeder = new NrCheckDll("/g/nvngx_dlssnr.dll", ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", "310.8.3 (50xx)",
-            InstalledNrVersionSource.Metadata, NrDllFit.NotForThisCard, "310.8.2 (20/30/40/50)", null, false);
-        var own = feeder with { Owner = null, OwnerName = null };
+        var swaps = new NrCheckControls(DlssNrLineSwaps: true, NrDllListSwaps: true, HeldByScaler: [], Protontricks: false, Winetricks: false,
+            RemovableRows: [ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.OptiScaler]);
+        var feeder = Diagnosis(ManagedComponentKind.Dlss5Feeder, NrDllFit.NotForThisCard, swaps);
+        var own = Diagnosis(null, NrDllFit.NotForThisCard, swaps);
 
         Assert.Equal("d3dcompiler", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NativeD3DCompiler, feeder));
         Assert.Equal("nr-dll-list", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, feeder));
+        Assert.Equal("nr-dll-list+component-remove", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard,
+            Diagnosis(ManagedComponentKind.Dlss5Feeder, NrDllFit.NotForThisCard, swaps with { NrDllListSwaps = false })));
+        Assert.Equal("nr-cost-scaler-remove", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard,
+            Diagnosis(ManagedComponentKind.Dlss5Feeder, NrDllFit.NotForThisCard, swaps with { HeldByScaler = [ManagedComponentKind.Dlss5Feeder] })));
+        Assert.Equal("none", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, Diagnosis(ManagedComponentKind.Dlss5Feeder, NrDllFit.ChangedOutsideRhi, swaps)));
         Assert.Equal("dlss-nr-line", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, own));
+        Assert.Equal("none", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, Diagnosis(null, NrDllFit.NotForThisCard, swaps with { DlssNrLineSwaps = false })));
         Assert.Equal("component-remove", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.RemoveNrMethod, feeder));
-        Assert.Equal("dlss-nr-line", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.RemoveNrMethod, own));
+        Assert.Equal("nr-cost-scaler-remove", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.RemoveNrMethod,
+            Diagnosis(ManagedComponentKind.Dlss5Feeder, NrDllFit.NotForThisCard, swaps with { HeldByScaler = [ManagedComponentKind.Dlss5Feeder] })));
+        Assert.Equal("none", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.RemoveNrMethod, own));
+        // A row without an enabled Remove is never named as the thing to press; rows not known yet (no analysis): ask for one.
+        var rtx = Diagnosis(ManagedComponentKind.RtxEncore, NrDllFit.NotForThisCard, swaps);
+        Assert.Equal("none", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, rtx));
+        Assert.Equal(UiLocalizationService.Format("Nrc.FixNoRemove", ComponentProbe.RtxEncoreDisplayName), NeuralRenderingCheckDialogViewModel.FixText(NrFixHint.NrDllForCard, rtx));
+        Assert.Equal("component-remove", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, rtx with { Controls = swaps with { RemovableRows = [ManagedComponentKind.RtxEncore] } }));
+        foreach (var unknown in new[] { Diagnosis(ManagedComponentKind.OptiScaler, NrDllFit.NotForThisCard, swaps with { RemovableRows = null }), own with { Controls = swaps with { RemovableRows = null } } })
+        {
+            Assert.Equal("none", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, unknown));
+            Assert.Equal(UiLocalizationService.Text("Nrc.FixSelectFirst"), NeuralRenderingCheckDialogViewModel.FixText(NrFixHint.NrDllForCard, unknown));
+        }
+        // The NR DLL list and the NR Cost Scaler row are known from RHI's records alone: named without an analysis too.
+        Assert.Equal("nr-dll-list", NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, feeder with { Controls = swaps with { RemovableRows = null } }));
     }
 }

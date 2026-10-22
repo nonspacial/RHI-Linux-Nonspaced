@@ -69,7 +69,7 @@ public static class ComponentProbe
             Make(ManagedComponentKind.RenoDX, "RenoDX HDR", indexedFiles.Any(path => IsPrimaryRenoDxAddonFileName(Path.GetFileName(path)))),
             Make(ManagedComponentKind.RenoDXUpgrade, "RenoDX Upgrade", indexedFiles.Any(path =>
                 IsRenoDxUpgradeAddonFileName(Path.GetFileName(path)))),
-            Make(ManagedComponentKind.OptiScaler, "OptiScaler", IsOptiScalerInstalled(indexedFiles, binaryDirectory)),
+            Make(ManagedComponentKind.OptiScaler, OptiScalerDisplayName, IsOptiScalerInstalled(indexedFiles, binaryDirectory)),
             Make(ManagedComponentKind.LumaFramework, "Luma Framework", files.Any(IsLumaFrameworkAddonFileName)),
             Make(ManagedComponentKind.REFramework, "RE Framework", IsReFrameworkInstalled(indexedFiles, binaryDirectory)),
             Make(ManagedComponentKind.Dlss, "DLSS", files.Contains("nvngx_dlss.dll")),
@@ -86,9 +86,9 @@ public static class ComponentProbe
             Make(ManagedComponentKind.Rtx40MfgStandalone, "Universal MFG (Experimental)", false),
             // Generic proxy names as well, but identified by its own version resource; RHI's record marks it managed.
             Make(ManagedComponentKind.RtxEncore, RtxEncoreDisplayName, rtxEncoreInstalled),
-            Make(ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", files.Any(IsDlss5FeederAddonFileName)),
-            Make(ManagedComponentKind.Dlss5Dx11Bridge, "DLSS5 DX11 Bridge", files.Any(IsDlss5BridgeAddonFileName)),
-            Make(ManagedComponentKind.ShortFuse, "ShortFuse / DLSS Frame Generation", files.Contains("renodx-dlss.addon64") || files.Contains("zzz_renodx-dlss.addon64")),
+            Make(ManagedComponentKind.Dlss5Feeder, Dlss5FeederDisplayName, files.Any(IsDlss5FeederAddonFileName)),
+            Make(ManagedComponentKind.Dlss5Dx11Bridge, Dlss5BridgeDisplayName, files.Any(IsDlss5BridgeAddonFileName)),
+            Make(ManagedComponentKind.ShortFuse, ShortFuseDisplayName, files.Contains("renodx-dlss.addon64") || files.Contains("zzz_renodx-dlss.addon64")),
             Make(ManagedComponentKind.DofFix, "Universal UE DOF Fix", indexedFiles.Any(path =>
                 Path.GetFileName(path).Equals("renodx-universal_ue-dof-fix.addon64", StringComparison.OrdinalIgnoreCase) &&
                 (binaryDirectory is null || string.Equals(
@@ -143,6 +143,26 @@ public static class ComponentProbe
 
     /// <summary>The RTX Encore row's name (upstream 2.8.6 "RTX Encore (Beta)": every release so far is a prerelease).</summary>
     public const string RtxEncoreDisplayName = "RTX Encore (Beta)";
+
+    /// <summary>The Neural Rendering rows' names, as the Managed components list shows them.</summary>
+    public const string OptiScalerDisplayName = "OptiScaler";
+    public const string Dlss5FeederDisplayName = "DLSS5 Feeder";
+    public const string Dlss5BridgeDisplayName = "DLSS5 DX11 Bridge";
+    public const string ShortFuseDisplayName = "ShortFuse / DLSS Frame Generation";
+
+    /// <summary>
+    /// The Managed components row a Neural Rendering method or runtime owner shows as (the Check Neural Rendering page's
+    /// fix hints name the row as shown); null for any other kind.
+    /// </summary>
+    public static string? NeuralRenderingRowName(ManagedComponentKind kind) => kind switch
+    {
+        ManagedComponentKind.OptiScaler => OptiScalerDisplayName,
+        ManagedComponentKind.Dlss5Feeder => Dlss5FeederDisplayName,
+        ManagedComponentKind.Dlss5Dx11Bridge => Dlss5BridgeDisplayName,
+        ManagedComponentKind.ShortFuse => ShortFuseDisplayName,
+        ManagedComponentKind.RtxEncore => RtxEncoreDisplayName,
+        _ => null
+    };
 
     /// <summary>#200: the DX9 HDR row's name (plain: no format or colour-space names; provenance lives in the tooltip).</summary>
     public const string DxvkHdrDisplayName = "DX9 HDR";

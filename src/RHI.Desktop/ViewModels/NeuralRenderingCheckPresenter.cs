@@ -109,7 +109,13 @@ public sealed partial class NeuralRenderingCheckPresenter : ObservableObject
             NrCheckDiagnosis diagnosis;
             try
             {
-                diagnosis = await Task.Run(() => _managed.DiagnoseNeuralRendering(game, hasNativeDlss, nrDlls)).ConfigureAwait(true);
+                diagnosis = await Task.Run(() => _managed.DiagnoseNeuralRenderingAsync(game, hasNativeDlss, nrDlls)).ConfigureAwait(true);
+                // Follow-up F2: the rows the window shows for this game's analysis, by the rows' own rule (none known
+                // without an analysis: the page then names no row).
+                var removable = analysis?.Components
+                    .Select(component => new ComponentRowViewModel(component, _shell.ManageComponentCommand))
+                    .Where(row => row.OffersRemove).Select(row => row.Kind).ToArray();
+                diagnosis = diagnosis with { Controls = diagnosis.Controls with { RemovableRows = removable } };
             }
             catch (Exception ex)
             {
