@@ -24,6 +24,12 @@ public sealed partial class LinuxDlssDefaultsServiceTests
     {
         var root = Path.Combine(_root, "settings");
         var store = new LinuxSettingsStore(Path.Combine(root, "settings.json"), Path.Combine(root, "cache"), Path.Combine(root, "data"));
+        // w10 review probe P2: a settings file from before #215 (no preset keys) reads as Default, its other keys kept.
+        Directory.CreateDirectory(root);
+        File.WriteAllText(store.SettingsPath, """{ "UiLanguage": "pt-BR" }""");
+        var old = store.Load();
+        Assert.Equal(("pt-BR", 0u, 0u, 0u), (old.UiLanguage, old.DefaultSrPreset, old.DefaultRrPreset, old.DefaultFgPreset));
+
         store.Save(new LinuxAppSettings { DefaultSrPreset = 11, DefaultRrPreset = DlssPresetCatalogue.Recommended, DefaultFgPreset = 2 });
 
         var loaded = store.Load();
@@ -138,6 +144,27 @@ public sealed partial class LinuxDlssDefaultsServiceTests
         Assert.Equal(11u, settings.DefaultSrPreset);
         Assert.DoesNotContain(plan.Environment.Keys, key => key.Contains("RENDER_PRESET", StringComparison.Ordinal));
         Assert.Contains("DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_SCALING_RATIO", plan.Environment.Keys);
+    }
+
+    // w10 review probe P4: the DLSS 1.x guard reads each file's version resource with the bounded PE reader, so a hostile
+    // nvngx_dlss.dll (a link to /dev/zero, a FIFO nobody writes, a broken link) returns at once and is not 1.x.
+    [Fact]
+    public async Task HostileDlssFiles_TheRowRuleReturnsAtOnce_AndNoneIsDlss1x()
+    {
+        var game = PresetGame("rows-hostile", fg: "");
+        var zero = Path.Combine(game.InstallPath, "a", "nvngx_dlss.dll");
+        var fifo = Path.Combine(game.InstallPath, "b", "nvngx_dlss.dll");
+        var broken = Path.Combine(game.InstallPath, "c", "nvngx_dlss.dll");
+        foreach (var file in new[] { zero, fifo, broken }) Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.CreateSymbolicLink(zero, "/dev/zero");
+        using (var mkfifo = System.Diagnostics.Process.Start("mkfifo", [fifo])) mkfifo.WaitForExit();
+        File.CreateSymbolicLink(broken, Path.Combine(game.InstallPath, "missing.dll"));
+        var detection = new DlssDetectionResult { DlssPaths = [zero, fifo, broken], DlssgPaths = [Path.Combine(game.InstallPath, "nvngx_dlssg.dll")] };
+
+        var rows = await Task.Run(() => LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, Rtx40)).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(NvidiaPresetRowState.Shown, rows.SuperResolution);
+        Assert.All(new[] { zero, fifo, broken }, file => Assert.False(DlssAutoFollowService.IsDlss1xFile(file)));
     }
 
     // ---- the version swap's DLSS 1.x guard ---------------------------------------------------------------------------
