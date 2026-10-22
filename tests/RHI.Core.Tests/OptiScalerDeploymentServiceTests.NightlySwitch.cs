@@ -190,6 +190,34 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Equal(Installed, Choice(f));
     }
 
+    // Review minor 2: the saved choice cannot be put back on the installed build (its file became unwritable after the
+    // user chose): refused before any download with nothing changed, and the message says the choice was NOT put back —
+    // it still names the chosen build.
+    [PermissionDenialFact]
+    public async Task Switch_WhenTheChoiceCannotBePutBack_IsRefusedBeforeAnyDownload_AndSaysTheChoiceStayed()
+    {
+        var f = NewSwitch("nsw-choice-locked");
+        await InstallThenChooseAsync(f, Installed, Chosen);
+        var before = CancelAtWritePhase.Snapshot(f.Game.InstallPath, f.Game.PrefixPath!);
+        var ledgerPath = Path.Combine(_root, "nsw-choice-locked", "records.json");
+        var ledger = File.ReadAllText(ledgerPath);
+        var cfg = Path.GetDirectoryName(f.ChoicePath)!;
+
+        ComponentOperationResult result;
+        PermissionDenial.MakeReadOnly(cfg);
+        try { result = await f.Service.SwitchNightlyBuildAsync(f.Game, Chosen, f.Choices); }
+        finally { PermissionDenial.MakeWritable(cfg); }
+
+        Assert.False(result.Success);
+        Assert.StartsWith(OptiScalerDeploymentService.NightlySwitchChoiceNotResetPrefix, result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("is back on it", result.Message, StringComparison.Ordinal);
+        Assert.Empty(f.Provider.Calls);
+        CancelAtWritePhase.AssertUnchanged(before, f.Game.InstallPath, f.Game.PrefixPath!);
+        Assert.Equal(ledger, File.ReadAllText(ledgerPath));
+        Assert.Equal(Installed, OptiScalerDeploymentService.GetPinnedNightlyBuild(f.Store.Find(f.Game, ManagedComponentKind.OptiScaler)!));
+        Assert.Equal(Chosen, Choice(f)); // what the message says: the choice was not put back
+    }
+
     [Fact]
     public async Task Switch_ControlFrameGenerationBuild_IsRefused_BeforeAnyChange_ButTheSamePinElsewhereSwitches()
     {
@@ -305,6 +333,31 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Equal(Chosen, entry.ToVersion);
     }
 
+    // Review nit 3: Apply replaces the files already there, so it is guarded like an update (PatchTargetGuard), not an
+    // install: an Xbox card whose exe is encrypted on disk and whose package declares no architecture (the install-only
+    // "bitness unknown" refusal) still switches, as Update does.
+    [Fact]
+    public async Task ManagedApply_OnAnXboxCardWhoseBitnessNothingTells_IsGuardedLikeAnUpdate_AndSwitches()
+    {
+        var f = NewSwitch("nsw-xbox-bitness");
+        await InstallThenChooseAsync(f, Installed, Chosen);
+        var managed = new LinuxManagedComponentService(f.Store, null!, null!, null!, null!, f.Service, null!, null!, null!, null!,
+            null!, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!,
+            neuralVersionPins: f.Choices, updateLog: new ComponentUpdateLogStore(Path.Combine(_root, "nsw-xbox-bitness", "log.json")));
+        f.Game.InstallPath = Path.GetDirectoryName(f.Game.BinaryDirectory)!;
+        File.WriteAllBytes(f.Game.ExecutablePath!, GameArchitectureTests.EncryptedExe);
+        f.Game.XboxPackage = new XboxPackageInfo("9ENC", "Xodus", null, null, Architecture: null);
+        Assert.Equal(XboxWriteGate.EncryptedExecutableMessage, XboxWriteGate.InstallRefusal(f.Game)); // an install is refused
+        Assert.Null(XboxWriteGate.Refusal(f.Game));
+
+        var result = await managed.ApplyOptiScalerNightlyBuildAsync(f.Game);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(["build:" + Chosen], f.Provider.Calls);
+        Assert.Equal(Chosen, managed.GetInstalledOptiScalerNightlyBuild(f.Game));
+        Assert.Equal(Chosen, Choice(f));
+    }
+
     // ── Crash, Cancel and commit-point agreement (#204 shapes) over the switch ────────────────────────────────────────
 
     [Fact]
@@ -400,8 +453,16 @@ public sealed partial class OptiScalerDeploymentServiceTests
             return new CommitPointCase(root, [Path.Combine(root, "game"), Path.Combine(root, "pfx"), Path.Combine(root, "cfg")],
                 f.Store, f.Journal!.Ledger, f.Journal.Journal, f.Journal.Dir,
                 () => f.Service.SwitchNightlyBuildAsync(f.Game, Chosen, f.Choices),
-                Extra: () => "pin=" + OptiScalerDeploymentService.GetPinnedNightlyBuild(
-                    new LinuxDeploymentRecordStore(f.Journal.Ledger).Find(f.Game, ManagedComponentKind.OptiScaler)!) + " choice=" + Choice(f));
+                Extra: () =>
+                {
+                    // Review nit 4: crash + recovery and the in-process outcome could agree on a wrong order; the record's
+                    // pin and the saved choice must also agree with each other, at every write, in both landed shapes.
+                    var pin = OptiScalerDeploymentService.GetPinnedNightlyBuild(
+                        new LinuxDeploymentRecordStore(f.Journal.Ledger).Find(f.Game, ManagedComponentKind.OptiScaler)!);
+                    var choice = Choice(f);
+                    Assert.True(pin == choice, $"the record's pin ({pin ?? "Latest"}) and the saved choice ({choice ?? "Latest"}) differ");
+                    return "pin=" + pin + " choice=" + choice;
+                });
         }, shape);
 
         Assert.True(results[^1].Success);

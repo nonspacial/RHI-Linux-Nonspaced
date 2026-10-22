@@ -21,6 +21,12 @@ public sealed partial class OptiScalerDeploymentService
     /// <summary>Nothing was switched: the installed build, the record and the saved choice are as before; the reason follows.</summary>
     public const string NightlySwitchFailedPrefix =
         "OptiScaler Nightly was not switched; the installed build stays and the saved choice is back on it: ";
+    /// <summary>
+    /// Nothing was switched or changed, but the saved choice could not be put back on the installed build before the switch
+    /// (its file cannot be written), so it still names the chosen build; the reason follows.
+    /// </summary>
+    public const string NightlySwitchChoiceNotResetPrefix =
+        "OptiScaler Nightly was not switched and nothing was changed, but the saved choice could not be put back on the installed build: ";
     /// <summary>The chosen build could not be had (offline, no such build, a refused archive); the reason follows.</summary>
     public const string NightlyBuildUnavailablePrefix = "The chosen OptiScaler Nightly build could not be downloaded: ";
     public const string NightlySwitchNotNightlyMessage =
@@ -73,7 +79,7 @@ public sealed partial class OptiScalerDeploymentService
         try { choices?.Set(game, ManagedComponentKind.OptiScaler, installed); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return ComponentOperationResult.Fail(NightlySwitchFailedPrefix + ex.Message);
+            return ComponentOperationResult.Fail(NightlySwitchChoiceNotResetPrefix + ex.Message);
         }
 
         var result = await UpdateCoreAsync(game, record, new NightlySwitch(build, choices, game), cancellationToken).ConfigureAwait(false);

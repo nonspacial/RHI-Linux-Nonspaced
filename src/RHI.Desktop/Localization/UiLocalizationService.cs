@@ -1624,8 +1624,9 @@ public static class UiLocalizationService
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchedPrefix, "O OptiScaler Nightly foi trocado no lugar; o OptiScaler.ini, o nome da DLL e o override do Wine foram mantidos. Build: "),
-        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchedToLatestPrefix, "O OptiScaler Nightly foi trocado no lugar para Mais recente (atualização automática); o OptiScaler.ini, o nome da DLL e o override do Wine foram mantidos. Versão: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchedToLatestPrefix, "O OptiScaler Nightly foi trocado no lugar para Mais recente (automática); o OptiScaler.ini, o nome da DLL e o override do Wine foram mantidos. Versão: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchFailedPrefix, "O OptiScaler Nightly não foi trocado; a build instalada continua e a escolha salva voltou para ela: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchChoiceNotResetPrefix, "O OptiScaler Nightly não foi trocado e nada foi alterado, mas não foi possível voltar a escolha salva para a build instalada: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlyBuildUnavailablePrefix, "Não foi possível baixar a build escolhida do OptiScaler Nightly: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchNotNightlyMessage, "Só um OptiScaler Nightly instalado pode trocar de build no lugar; nada foi alterado."),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchSameBuildPrefix, "O OptiScaler Nightly já está na build escolhida; nada foi alterado. Build: "),

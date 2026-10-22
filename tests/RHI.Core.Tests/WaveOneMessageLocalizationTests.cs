@@ -585,6 +585,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + "OptiScaler managed file is missing or has no ownership hash: /jogos/exemplo/dxgi.dll";
         yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + "OptiScaler update package layout is invalid: /jogos/exemplo/OptiScaler";
         yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + "OptiScaler update rolled back: New OptiScaler package file collides with an external/untracked file: /jogos/exemplo/x.dll";
+        yield return OptiScalerDeploymentService.NightlySwitchChoiceNotResetPrefix + "Access to the path '/jogos/exemplo/cfg/pins.json' is denied.";
         yield return OptiScalerDeploymentService.NightlySwitchNotNightlyMessage;
         yield return OptiScalerDeploymentService.NightlySwitchSameBuildPrefix + "20261004";
         yield return OptiScalerDeploymentService.NightlySwitchControlUePrefix + "20261004";

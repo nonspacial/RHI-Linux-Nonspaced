@@ -633,7 +633,7 @@ internal static class UiStrings
         // w3/sync rows
         ("Sync.OptiScalerNightlyBuild", "Build nightly", "Nightly build"),
         ("Sync.OptiScalerNightlyBuildTip", "Fixa este jogo numa das 30 builds nightly mais recentes. Um jogo fixado fica na sua build: Atualizar tudo não a troca. Mais recente sempre segue a build mais nova.", "Pins this game to one of the 30 newest nightly builds. A pinned game stays on its build: Update All leaves it alone. Latest always follows the newest build."),
-        ("Sync.OptiScalerNightlyLatest", "Mais recente (atualização automática)", "Latest (auto-update)"),
+        ("Sync.OptiScalerNightlyLatest", "Mais recente (automática)", "Latest (auto-update)"),
         ("Sync.OptiScalerNightlyNote", "A build escolhida é salva por jogo e baixada quando o OptiScaler é instalado.", "The chosen build is saved per game and downloaded when OptiScaler is installed."),
         ("Sync.OptiScalerNightlyLocked", "Esta build está instalada. Escolha outra build e clique em Aplicar para trocá-la no lugar.", "This build is installed. Choose another build and press Apply to change it in place."),
         ("Sync.OptiScalerNightlyListFailed", "Não foi possível carregar a lista de builds nightly; só Mais recente e a build salva estão disponíveis.", "The nightly build list could not be loaded; only Latest and the saved build are offered."),

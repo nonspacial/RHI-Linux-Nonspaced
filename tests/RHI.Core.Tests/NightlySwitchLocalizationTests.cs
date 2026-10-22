@@ -19,6 +19,7 @@ public sealed class NightlySwitchLocalizationTests
         { OptiScalerDeploymentService.NightlySwitchedToLatestPrefix + "20261013", "to Latest" },
         { OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix + "HTTP 404", "was not switched" },
         { OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix + "HTTP 404", "could not be downloaded" },
+        { OptiScalerDeploymentService.NightlySwitchChoiceNotResetPrefix + "Access to the path '/jogos/exemplo/cfg/pins.json' is denied.", "could not be put back" },
         { OptiScalerDeploymentService.NightlySwitchNotNightlyMessage, "can change its build" },
         { OptiScalerDeploymentService.NightlySwitchSameBuildPrefix + "20261004", "already on the chosen build" },
         { OptiScalerDeploymentService.NightlySwitchControlUePrefix + "20261004", "frame generation" },

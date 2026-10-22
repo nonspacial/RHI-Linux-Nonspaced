@@ -369,7 +369,7 @@ public sealed class OptiScalerNightlyBuildPresenterTests
             var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
             await row.RefreshAsync(fetchList: true);
 
-            Assert.Equal(["Mais recente (atualização automática)", "2026-10-13", "2026-10-12", "2026-10-04"], row.Options);
+            Assert.Equal(["Mais recente (automática)", "2026-10-13", "2026-10-12", "2026-10-04"], row.Options);
             row.Selected = "2026-10-12";
             Assert.Contains("fixado na build 2026-10-12", fx.Vm.StatusText);
         }

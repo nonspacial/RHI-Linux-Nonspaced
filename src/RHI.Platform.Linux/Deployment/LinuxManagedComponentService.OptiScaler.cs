@@ -156,7 +156,9 @@ public sealed partial class LinuxManagedComponentService
     /// </summary>
     public Task<ComponentOperationResult> ApplyOptiScalerNightlyBuildAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
-        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler);
+        // Guarded like an update (UpdateManagedAsync), not an install: it replaces the files already there, so an Xbox
+        // card whose bitness nothing tells is not refused.
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler);
         if (guard is not null) return Task.FromResult(guard);
         var build = GetOptiScalerNightlyChoice(game);
         return Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Update,
