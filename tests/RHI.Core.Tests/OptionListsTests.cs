@@ -67,6 +67,10 @@ public sealed class OptionListsTests
             AssertRoundTrips(OptionLists.DlssPresetChoices(RHI.Platform.Linux.Hdr.DlssPresetCatalogue.Fallback.FrameGeneration, 0, doNotChange: false)); // #215 Settings
             // w10/archives rows
             // w10/journal-holds rows
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
         }
         finally
         {

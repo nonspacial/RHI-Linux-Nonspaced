@@ -867,3 +867,13 @@ build.
   yet, a preset with its packs on such a game) and the add-ons' save reports such an error, the line says so too. A
   "Shaders applied, but the add-ons failed" line keeps the note of a shader-pack change or ReShade install that was saved
   with an error.
+
+## Parity notes (wave 11: wizardkof v0.9.25 — NR DLL per card generation, F5 driver warning, Nightly switch, download idle timeout, NR check)
+
+<!-- w11/download-idle notes -->
+
+<!-- w11/nr-gpu notes -->
+
+<!-- w11/nightly-switch notes -->
+
+<!-- w11/nr-check notes -->

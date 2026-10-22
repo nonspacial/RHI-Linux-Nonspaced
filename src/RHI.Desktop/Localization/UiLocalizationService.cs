@@ -642,6 +642,10 @@ public static class UiLocalizationService
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1616,6 +1620,10 @@ public static class UiLocalizationService
         // Review finding 1: a copy RHI could not look for (a folder refuses it), told apart from a copy that is gone.
         (": RHI could not look for its copy with the pre-operation content (", ": o RHI não conseguiu procurar a cópia com o conteúdo anterior à operação ("),
         ("), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept.", "), porque uma pasta não pode ser lida ou não está lá (o disco dela está montado?); todas as cópias foram mantidas."),
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

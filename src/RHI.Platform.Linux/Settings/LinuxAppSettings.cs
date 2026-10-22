@@ -84,6 +84,11 @@ public sealed class LinuxAppSettings
     public uint DefaultFgPreset { get; set; }
     // w10/archives rows
     // w10/journal-holds rows
+    // w11 lane rows: settings fields (one per line; add its Normalize line below)
+    // w11/download-idle rows
+    // w11/nr-gpu rows
+    // w11/nightly-switch rows
+    // w11/nr-check rows
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -141,6 +146,11 @@ public sealed class LinuxAppSettings
         DefaultFgPreset = RHI.Platform.Linux.Hdr.NvidiaGameSettings.NormalizePreset(DefaultFgPreset);
         // w10/archives rows
         // w10/journal-holds rows
+        // w11 lane rows: Normalize
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         return this;
     }
 

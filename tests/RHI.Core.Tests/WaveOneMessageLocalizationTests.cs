@@ -575,6 +575,10 @@ public sealed class WaveOneMessageLocalizationTests
         // w10/journal-holds rows
         yield return DeploymentJournal.EarlierChangeNotSettledMessage; // review finding 2
         yield return $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept."; // review finding 1
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must

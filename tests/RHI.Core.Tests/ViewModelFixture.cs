@@ -62,6 +62,10 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         )
     {
         _hang.When = hangWhen;
@@ -101,6 +105,10 @@ internal sealed class ViewModelFixture : IDisposable
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             );
         // w3/scan Settings row (#90): the fixture's own "Xbox / Game Pass folders" list (w3 integration).
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
@@ -122,6 +130,10 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
@@ -164,6 +176,10 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -195,6 +211,10 @@ internal sealed class ViewModelFixture : IDisposable
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
@@ -271,6 +291,10 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         )
     {
         var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse, hang));
@@ -347,6 +371,10 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         var managed = new LinuxManagedComponentService(
             records, reshade, new ReShadeAddonManagerService(http, upstreamManifest, Path.Combine(cacheDir, "addons"), Path.Combine(prefs, "custom-addons"), Path.Combine(prefs, "addon-manager.json"), records), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
@@ -375,6 +403,10 @@ internal sealed class ViewModelFixture : IDisposable
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             );
         managed.ShaderSets = shaderSets; // w7/shader-sets (#179): after construction, as the app's composition does
         built(managed);

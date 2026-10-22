@@ -115,6 +115,11 @@ public sealed partial class SettingsDialogView : UserControl
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11 lane rows: Settings rows (build the row, Fill its slot, Host its values)
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;
@@ -135,5 +140,10 @@ public sealed partial class SettingsDialogView : UserControl
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11 lane rows: Settings tabs (after Maintenance)
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
     }
 }

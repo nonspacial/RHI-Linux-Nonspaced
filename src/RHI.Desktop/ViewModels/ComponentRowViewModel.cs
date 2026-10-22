@@ -140,6 +140,11 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w10/dlss-presets rows
     // w10/archives rows
     // w10/journal-holds rows
+    // w11 lane rows: component-row members (one member each)
+    // w11/download-idle rows
+    // w11/nr-gpu rows
+    // w11/nightly-switch rows
+    // w11/nr-check rows
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }

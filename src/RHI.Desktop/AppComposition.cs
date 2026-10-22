@@ -77,6 +77,10 @@ internal sealed class AppComposition
     // w10/dlss-presets rows
     // w10/archives rows
     // w10/journal-holds rows
+    // w11/download-idle rows
+    // w11/nr-gpu rows
+    // w11/nightly-switch rows
+    // w11/nr-check rows
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -256,6 +260,11 @@ internal sealed class AppComposition
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11 lane rows: services LinuxManagedComponentService takes (named args below)
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
@@ -284,6 +293,11 @@ internal sealed class AppComposition
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11 lane rows: named arguments, each line starting with a comma
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
@@ -343,6 +357,10 @@ internal sealed class AppComposition
         // #216: archive folders a closed (crashed or killed) RHI left in the cache go at start (another running RHI's stay).
         DroppedArchiveExtractor.SweepLeftovers(managedComponents.DroppedArchiveRoot);
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -400,6 +418,10 @@ internal sealed class AppComposition
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
         };
     }
 }

@@ -365,6 +365,10 @@ public static class OptionLists
     }
     // w10/archives rows
     // w10/journal-holds rows
+    // w11/download-idle rows
+    // w11/nr-gpu rows
+    // w11/nightly-switch rows
+    // w11/nr-check rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>
     public static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");

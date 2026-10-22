@@ -1348,5 +1348,9 @@ internal static class UiStrings
         ("Arc.SourceKept", "O arquivo compactado continua na pasta observada: ele mudou depois que o RHI o leu.", "The archive stays in the watch folder: it changed after RHI read it."),
         // w10/journal-holds rows
         ("Jh.CopiesGoneNotice", "O RHI não conseguiu restaurar {0} depois de uma alteração interrompida: a cópia que ele guardou do arquivo anterior não existe mais (foi apagada ou o jogo foi reinstalado), então reiniciar não a traz de volta. Confira os mods desse jogo: use Remover e depois Instalar de novo nos que não funcionarem. Detalhes: {1}", "RHI could not put back {0} after an interrupted change: its saved copy of the earlier file is gone (deleted, or the game was reinstalled), so a restart cannot bring it back. Check that game's mods: use Remove and then Install again on any that do not work. Details: {1}"),
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
     ];
 }

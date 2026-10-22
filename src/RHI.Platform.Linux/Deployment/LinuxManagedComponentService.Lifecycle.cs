@@ -68,6 +68,11 @@ public sealed partial class LinuxManagedComponentService
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11 lane rows: update checks (one arm each)
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -129,6 +134,11 @@ public sealed partial class LinuxManagedComponentService
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11 lane rows: updates (one arm each)
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -187,6 +197,11 @@ public sealed partial class LinuxManagedComponentService
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11 lane rows: installs (one arm each)
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -260,6 +275,11 @@ public sealed partial class LinuxManagedComponentService
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11 lane rows: removals (one arm each)
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

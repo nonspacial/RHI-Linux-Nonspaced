@@ -178,6 +178,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w10/dlss-presets rows
     // w10/archives rows
     // w10/journal-holds rows
+    // w11 lane rows: shell hooks (one member each; logic lives in your presenter)
+    // w11/download-idle rows
+    // w11/nr-gpu rows
+    // w11/nightly-switch rows
+    // w11/nr-check rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1607,6 +1612,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
+        // w11/download-idle rows
+        // w11/nr-gpu rows
+        // w11/nightly-switch rows
+        // w11/nr-check rows
         return items;
     }
 

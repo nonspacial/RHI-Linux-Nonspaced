@@ -64,6 +64,11 @@ public sealed class SettingsViewModel : PanelViewModel
     // w10/dlss-presets rows
     // w10/archives rows
     // w10/journal-holds rows
+    // w11 lane rows: Settings hooks (one member each)
+    // w11/download-idle rows
+    // w11/nr-gpu rows
+    // w11/nightly-switch rows
+    // w11/nr-check rows
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
@@ -127,6 +132,11 @@ public sealed class SettingsViewModel : PanelViewModel
             DefaultFgPreset = Host.Settings.DefaultFgPreset, // #215
             // w10/archives rows
             // w10/journal-holds rows
+            // w11 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

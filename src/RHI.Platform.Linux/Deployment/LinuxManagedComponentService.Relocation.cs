@@ -55,6 +55,10 @@ public sealed partial class LinuxManagedComponentService
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            // w11/download-idle rows
+            // w11/nr-gpu rows
+            // w11/nightly-switch rows
+            // w11/nr-check rows
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }
