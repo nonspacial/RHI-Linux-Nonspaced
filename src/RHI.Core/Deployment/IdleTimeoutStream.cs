@@ -156,4 +156,15 @@ public sealed class DownloadTimedOutException : HttpRequestException
     /// </summary>
     public static bool IsClientTimeout(Exception error, CancellationToken callersToken)
         => error is TaskCanceledException { InnerException: TimeoutException } && !callersToken.IsCancellationRequested;
+
+    /// <summary>
+    /// w11 follow-up E1: a <see cref="IsClientTimeout"/> error that is really the handler's <c>ConnectTimeout</c> (no
+    /// connection within it). Both are a <see cref="TaskCanceledException"/> carrying a <see cref="TimeoutException"/>;
+    /// <see cref="HttpClient"/>'s own timeout wraps the cancellation it caused (an <see cref="OperationCanceledException"/>)
+    /// in its <see cref="TimeoutException"/>, the handler's connect limit does not (.NET 8: "A connection could not be
+    /// established within the configured ConnectTimeout", nothing inside). The server was never reached, so the client's
+    /// seconds are not the time waited.
+    /// </summary>
+    public static bool IsConnectTimeout(Exception error)
+        => error is TaskCanceledException { InnerException: TimeoutException { InnerException: not OperationCanceledException } };
 }

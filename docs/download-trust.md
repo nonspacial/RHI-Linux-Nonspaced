@@ -56,8 +56,10 @@ failure, never a Cancel: the temp file is removed and nothing is placed or stamp
 1 byte; a longer answer is passed on whole and not cached). The Luma wiki page, the GitHub token check and Nexus Mods
 API answers read under the same limit too. Not covered: the wait for the response headers, bounded by the client's
 `HttpClient.Timeout` (app: 5 min; token check and Nexus Mods: 30 s), which on `TrustedDownload` paths and the Nexus Mods
-client reads "The server took too long to answer: RHI stopped waiting after 300 seconds. Source: <policy name>"
-(`DownloadTimedOutException`, EN + PT-BR); bodies read under a whole-body timeout token or buffered by `HttpClient`
+client reads "The server took too long to answer: RHI stopped waiting after <timeout> seconds. Source: <policy name>" —
+300 seconds on the app's client, "30 seconds. Source: Nexus Mods API" on the Nexus Mods client
+(`DownloadTimedOutException`, EN + PT-BR; the Nexus Mods client's 15-s connect limit reads "Nexus Mods could not be
+reached." instead); bodies read under a whole-body timeout token or buffered by `HttpClient`
 (reshade.me, RenoDX catalogue, MOTD: its 5-min total) are listed in `UPSTREAM.md`. The limit is per gap, never a total
 deadline: a server sending a byte every 59 s is not stopped by it (the manual Cancel works; a throughput floor is #235).
 

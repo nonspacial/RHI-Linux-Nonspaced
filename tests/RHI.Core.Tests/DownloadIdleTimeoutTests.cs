@@ -359,6 +359,39 @@ public sealed class DownloadIdleTimeoutTests : IDisposable
         Assert.False(error.Rejected);
     }
 
+    // w11 follow-up E1 (download-idle re-review 1): no connection within the handler's ConnectTimeout (15 s in the app)
+    // reaches the client as a TaskCanceledException with a TimeoutException, like HttpClient's own 30-s timeout. Nexus
+    // was never reached: the line says so, never "stopped waiting after 30 seconds" after 15. The real handler, a connect
+    // that never finishes (no network), EN + PT-BR.
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pt-BR")]
+    public async Task NexusConnectTimeout_ReadsAsUnreachable_NeverTheClientsSeconds(string language)
+    {
+        var handler = NexusApiClient.CreateHandler();
+        handler.UseProxy = false;
+        handler.ConnectTimeout = TimeSpan.FromMilliseconds(300);
+        handler.ConnectCallback = async (_, token) =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            throw new InvalidOperationException("unreachable");
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+        var nexus = new NexusApiClient(http);
+
+        var error = await Assert.ThrowsAsync<NexusApiException>(() => nexus.ValidateKeyAsync("key").WaitAsync(StalledHttp.HangGuard));
+
+        Assert.Equal(NexusApiClient.UnreachableMessage, error.Message);
+        Assert.True(DownloadTimedOutException.IsClientTimeout(error.InnerException!, CancellationToken.None)); // the shape that misled
+        Assert.False(error.Rejected);
+        var line = UiLocalizationService.PresentFor(language, error.Message);
+        Assert.DoesNotContain("30", line, StringComparison.Ordinal);
+        Assert.DoesNotContain(UiLocalizationService.UnlocalizedFallbackFor(language), line, StringComparison.Ordinal);
+        Assert.False(DownloadTimedOutException.IsConnectTimeout( // HttpClient's own timeout wraps the cancellation it caused
+            new TaskCanceledException("client", new TimeoutException("client", new TaskCanceledException()))));
+        Assert.Null(error.InnerException!.InnerException!.InnerException); // .NET 8's connect-limit shape, as the probe saw it
+    }
+
     // ---- the background loop: a pass that stalls is retried after its pause, never at once ----
 
     [Fact]

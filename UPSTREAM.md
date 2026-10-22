@@ -899,10 +899,12 @@ build.
 - Not covered by the idle limit: the wait for the response headers, bounded by `HttpClient.Timeout` (the app's client:
   5 min; the GitHub token check and Nexus Mods clients: 30 s), and a GitHub API answer that keeps trickling for longer than
   that 5 min in all. On `TrustedDownload` paths and the Nexus Mods client that timeout reads "The server took too long to
-  answer: RHI stopped waiting after 300 seconds. Source: GitHub API" / "O servidor demorou demais para responder: o RHI
-  parou de esperar após 300 segundos. Origem: GitHub API" (`DownloadTimedOutException`, a network failure), never .NET's
-  "The request was canceled due to the configured HttpClient.Timeout …"; the token check shows its "could not check"
-  line.
+  answer: RHI stopped waiting after <timeout> seconds. Source: <policy name>" — "… after 300 seconds. Source: GitHub API" /
+  "O servidor demorou demais para responder: o RHI parou de esperar após 300 segundos. Origem: GitHub API" on the app's
+  client, "… after 30 seconds. Source: Nexus Mods API" on the Nexus Mods client (`DownloadTimedOutException`, a network
+  failure), never .NET's "The request was canceled due to the configured HttpClient.Timeout …"; the token check shows its
+  "could not check" line. The Nexus Mods client's 15-s connect limit arrives in the same shape but reads "Nexus Mods could
+  not be reached." (w11 follow-up E1: the host was never reached, so the client's 30 s are not the time waited).
 - Other body readers: the Luma wiki page, the GitHub token check and the Nexus Mods API answers now read under the same
   idle limit (they had no bound on the body); the RenoDX Unity list (30 s), upstream manifest (15 s), PCGW central data
   (60 s), DLSS manifest (15 s) and PCGW API reads run under a timeout token for the whole body instead; reshade.me's page,
