@@ -68,6 +68,7 @@ public sealed partial class MainWindow
                 confirmVm.ShowNotesAsync = ShowGameNotesAsync;
                 confirmVm.Support.ShowReportDialogAsync = ShowGameReportDialogAsync; // #192 Copy game report
                 if (confirmVm.UpdatePolicy is { } updatePolicy) updatePolicy.ShowInclusionAsync = ShowUpdateInclusionAsync; // w5/update-policy hook (#178)
+                confirmVm.NrCheck.ShowDialogAsync = ShowNeuralRenderingCheckAsync; // w11/nr-check hook (#234)
             }
             ApplyViewMode();
             SyncAddonWatcherFromSettings();

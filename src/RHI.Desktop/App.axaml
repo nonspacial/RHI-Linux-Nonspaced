@@ -88,6 +88,10 @@
     <DataTemplate DataType="vm:NvidiaSettingsDialogViewModel">
       <dialogs:NvidiaSettingsDialogView/>
     </DataTemplate>
+    <!-- w11/nr-check (#234): the read-only Check Neural Rendering page (panel button and card menu). -->
+    <DataTemplate DataType="vm:NeuralRenderingCheckDialogViewModel">
+      <dialogs:NeuralRenderingCheckDialogView/>
+    </DataTemplate>
   </Application.DataTemplates>
 
   <Application.Styles>
