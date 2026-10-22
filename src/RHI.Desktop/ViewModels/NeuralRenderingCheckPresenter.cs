@@ -27,7 +27,8 @@ public sealed partial class NeuralRenderingCheckPresenter : ObservableObject
     private readonly MainWindowViewModel _shell;
     private readonly LinuxManagedComponentService _managed;
     // Follow-up F4: whether the game's LAST analysis saw a Neural Rendering DLL, kept per game outside the session's
-    // 8-entry analysis cache, so both entry points give one answer for a game whose analysis has left that cache.
+    // 8-entry analysis cache, so both entry points give one answer for a game whose analysis has left that cache. Written
+    // whenever an answer is read from an analysis (Refresh runs on every published analysis of the selected game).
     private readonly ConcurrentDictionary<string, bool> _nrDllSeen = new(StringComparer.Ordinal);
     private bool _isAvailable;
     private bool _opening;
@@ -43,13 +44,7 @@ public sealed partial class NeuralRenderingCheckPresenter : ObservableObject
         // The Neural rendering line is re-raised whenever the selection, its analysis, a component or the language
         // changes (NotifyDlss): the button follows it.
         _shell.Runtime.PropertyChanged += OnRuntimeChanged;
-        ((IPanelHost)_shell).Session.Completed += OnAnalysed;
         Refresh();
-    }
-
-    private void OnAnalysed(AnalysisOutcome outcome)
-    {
-        if (((IPanelHost)_shell).Session.TryGetCached(outcome.Game, out var analysis)) Remember(outcome.Game, analysis);
     }
 
     private bool Remember(DetectedGame game, GameAnalysis analysis)

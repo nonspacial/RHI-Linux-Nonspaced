@@ -267,15 +267,17 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx40));
         var listed = Listed(fx, bl3.Game.Name);
 
+        // The panel's answer only (the menu is not opened while the analysis is cached).
         var panel = fx.Vm.NrCheck.IsAvailable;
-        var menuCached = fx.Vm.CardMenuFor(fx.Vm.Games.Single()).Any(item => item.Id == "nr-check");
         fx.Vm.Session.Invalidate(listed);
         var menuUncached = fx.Vm.CardMenuFor(fx.Vm.Games.Single()).Any(item => item.Id == "nr-check");
+        Assert.False(fx.Vm.Session.TryGetCached(listed, out _));
+        await SelectAsync(fx, bl3.Game.Name);
+        var menuCached = fx.Vm.CardMenuFor(fx.Vm.Games.Single()).Any(item => item.Id == "nr-check");
 
         Assert.True(panel);
-        Assert.True(menuCached);
         Assert.True(menuUncached);
-        Assert.False(fx.Vm.Session.TryGetCached(listed, out _));
+        Assert.True(menuCached);
     }
 
     [Fact]

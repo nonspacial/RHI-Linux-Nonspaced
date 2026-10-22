@@ -371,6 +371,39 @@ public sealed class NeuralRenderingCheckFollowUpTests : IDisposable
         AssertHintIsUsable(fx, page, NrFixHint.NrDllForCard);
     }
 
+    // An older Feeder owning the DLL whose add-on file is gone: its row offers Install (enabled), never Remove — not named.
+    [Fact]
+    public async Task F2_AnOwnerRowOfferingInstall_IsNeverNamedAsTheThingToPress()
+    {
+        var g = MakeGame("Feeder Gone", For50);
+        using var fx = await StartAsync(g, seed: fx => Record(fx, ManagedComponentKind.Dlss5Feeder, g.Bin, [g.Nr, Path.Combine(g.Bin, "dlss5-feed.addon64")]));
+
+        var page = await OpenAsync(fx);
+
+        var row = fx.Vm.Components.Single(r => r.Kind == ManagedComponentKind.Dlss5Feeder);
+        Assert.True(row.IsInstallAction && row.IsActionEnabled);
+        Assert.Equal(NeuralRenderingCheckDialogViewModel.NoControl, NeuralRenderingCheckDialogViewModel.FixControl(NrFixHint.NrDllForCard, page.Diagnosis));
+        Assert.Equal(UiLocalizationService.Format("Nrc.FixNoRemove", "DLSS5 Feeder"), NeuralRenderingCheckDialogViewModel.FixText(NrFixHint.NrDllForCard, page.Diagnosis));
+    }
+
+    // The row rule the page reads: an enabled Remove only (an Install, or a locked Remove, is not one).
+    [Theory]
+    [InlineData(ComponentAvailability.Installed, true, true)]
+    [InlineData(ComponentAvailability.UpdateAvailable, true, true)]
+    [InlineData(ComponentAvailability.Installed, false, false)]
+    [InlineData(ComponentAvailability.Available, true, false)]
+    [InlineData(ComponentAvailability.Available, false, false)]
+    public void F2_ARowOffersRemove_OnlyWithAnEnabledRemove(ComponentAvailability availability, bool allowed, bool offers)
+    {
+        var row = new ComponentRowViewModel(new ManagedComponent
+        {
+            Kind = ManagedComponentKind.Dlss5Feeder, DisplayName = "DLSS5 Feeder", Availability = availability, ActionAllowed = allowed
+        }, new CommunityToolkit.Mvvm.Input.RelayCommand(() => { }));
+
+        Assert.Equal(offers, row.OffersRemove);
+        Assert.Equal(offers, row.IsRemoveAction && row.IsActionEnabled); // what the row's button shows
+    }
+
     // Opened for a game without an analysis (another game selected; the card menu selects its card first, so in the app
     // this is an analysis that failed or ran past the page's wait): no row or DLSS line is named.
     [Fact]
