@@ -574,7 +574,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + ExternalArchiveRunner.OutputLimitRefusal + "1048576";
         // w10/journal-holds rows
         yield return DeploymentJournal.EarlierChangeNotSettledMessage; // review finding 2
-        yield return $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read; every copy was kept."; // review finding 1
+        yield return $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept."; // review finding 1
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must
@@ -618,7 +618,7 @@ public sealed class WaveOneMessageLocalizationTests
         // w10 review finding 2: the held entry itself could not be read or updated; finding 1: a copy RHI could not look for
         { DeploymentJournal.EarlierChangeNotSettledMessage, "its own note of that change" },
         { DeploymentJournal.EarlierChangeNotSettledMessage, "Restart RHI to finish it" },
-        { $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read; every copy was kept.", "because a folder cannot be read" },
+        { $"{P}: RHI could not look for its copy with the pre-operation content (aa11), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept.", "because a folder cannot be read or is not there" },
         // #221: the unreadable-ledger refusal, and the note appended to a prefixed refusal
         { DeploymentJournal.EarlierChangeUndecidedMessage, "Restart RHI to finish it" },
         { ReShadeDeploymentService.RemovalFailedPrefix + P + DeploymentScope.RollbackNote(

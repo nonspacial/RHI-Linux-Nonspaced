@@ -1615,7 +1615,7 @@ public static class UiLocalizationService
             "O RHI não conseguiu concluir uma alteração anterior neste jogo, porque não conseguiu ler nem atualizar a própria anotação dessa alteração. Nada foi alterado. Reinicie o RHI para concluir (antes, verifique se o RHI pode gravar na pasta de dados dele; o rhi.log indica o arquivo que falhou) e tente novamente."),
         // Review finding 1: a copy RHI could not look for (a folder refuses it), told apart from a copy that is gone.
         (": RHI could not look for its copy with the pre-operation content (", ": o RHI não conseguiu procurar a cópia com o conteúdo anterior à operação ("),
-        ("), because a folder cannot be read; every copy was kept.", "), porque uma pasta não pode ser lida; todas as cópias foram mantidas."),
+        ("), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept.", "), porque uma pasta não pode ser lida ou não está lá (o disco dela está montado?); todas as cópias foram mantidas."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

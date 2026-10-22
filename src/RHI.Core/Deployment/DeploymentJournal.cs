@@ -316,9 +316,16 @@ public sealed class DeploymentJournal
             RHI.Core.Services.AppLog.Warn("deployment-journal", $"An earlier change could not be settled: its lock cannot be opened: {id}", ex);
             return (WaitState.NotSettled, ProbeOf(entryPath));
         }
-        catch (IOException)
+        catch (IOException ex) when (IsHeldByAnother(ex))
         {
             return (WaitState.Undecided, ProbeOf(entryPath)); // another process works on it now
+        }
+        catch (IOException ex)
+        {
+            // w10 follow-up D8: any other reason the lock cannot be opened (a read-only file system, an I/O error, a link
+            // loop) is RHI's own note that cannot be used, not another process at work and not the ledger.
+            RHI.Core.Services.AppLog.Warn("deployment-journal", $"An earlier change could not be settled: its lock cannot be opened: {id}", ex);
+            return (WaitState.NotSettled, ProbeOf(entryPath));
         }
         try
         {
@@ -561,11 +568,13 @@ public sealed class DeploymentJournal
             }
         }
 
-        // Narrowed to the deferred steps once the files are final: all put back, or (crash recovery) only copies that are
-        // gone left, which no later start can put back either.
-        var filesFinal = failures.Count == 0
-                         || (mode == RollbackMode.CrashRecovery && retryable.Count == 0 && unhandled.Count == 0);
-        if (filesFinal && deferred.Count > 0)
+        // Narrowed to the steps still to do (deferred, or of a newer build) once the files are final: all put back, or
+        // (crash recovery) only copies that are gone left, which no later start can put back either. w10 follow-up D7
+        // (coordinator decision): an entry kept for a newer build's step is narrowed too, so its file rollback never runs
+        // again over a later install of the same game; one with nothing to drop stays exactly as that build wrote it.
+        var filesFinal = retryable.Count == 0 && (fileRollback.Failures.Count == 0 || mode == RollbackMode.CrashRecovery);
+        var dropsSomething = document.Files.Count > 0 || remaining.Count < document.Compensations.Count;
+        if (filesFinal && (deferred.Count > 0 || (unhandled.Count > 0 && dropsSomething)))
         {
             remaining.Reverse();
             document.Files = [];
@@ -611,6 +620,13 @@ public sealed class DeploymentJournal
     /// </summary>
     public const string EarlierChangeNotSettledMessage =
         "RHI could not finish an earlier change to this game, because it could not read or update its own note of that change. Nothing was changed. Restart RHI to finish it (first check that RHI can write to its data folder; rhi.log names the file that failed), then try again.";
+
+    /// <summary>
+    /// Whether opening a lock failed because another open file holds it (<c>flock</c> answered <c>EWOULDBLOCK</c>, which
+    /// .NET raises as an <see cref="IOException"/> carrying that errno), as opposed to any other I/O error.
+    /// </summary>
+    internal static bool IsHeldByAnother(IOException error)
+        => error.HResult == (OperatingSystem.IsWindows() ? unchecked((int)0x80070020) : 11); // ERROR_SHARING_VIOLATION; EWOULDBLOCK (EAGAIN) on Linux
 
     internal string EntryPath(string id) => Path.Combine(Directory, id + EntryExtension);
 

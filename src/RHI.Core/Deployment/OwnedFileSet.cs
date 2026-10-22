@@ -189,33 +189,28 @@ public sealed class OwnedFileSet
     }
 
     /// <summary>
-    /// w10 review finding 1: whether <paramref name="path"/> is known NOT to exist — its folder (or the nearest folder
-    /// above it that exists) can be listed and does not list it. A path .NET cannot see because a folder refuses this
-    /// process (no search or read permission) is not proved absent: that failure can be fixed, so it is retried.
+    /// w10 review finding 1: whether <paramref name="path"/> is known NOT to exist — its OWN folder exists, can be listed
+    /// and does not list it. A path .NET cannot see because a folder refuses this process (no search or read permission)
+    /// is not proved absent: that failure can be fixed, so it is retried. Nor is a path whose folder is missing (w10
+    /// follow-up D6): a game folder on a drive that is not mounted yet or was unplugged looks exactly like that, and the
+    /// copy is back once the drive is; climbing to a parent that exists would prove nothing about it. A folder wiped and
+    /// made again (a store reinstall) exists and lists without the copy: gone.
     /// </summary>
     internal static bool ProvedAbsent(string path)
     {
         var name = System.IO.Path.GetFileName(path);
         var folder = System.IO.Path.GetDirectoryName(path);
-        while (!string.IsNullOrEmpty(folder))
+        if (string.IsNullOrEmpty(folder)) return false;
+        try
         {
-            try
-            {
-                foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(folder))
-                    if (string.Equals(System.IO.Path.GetFileName(entry), name, StringComparison.Ordinal)) return false;
-                return true;
-            }
-            catch (DirectoryNotFoundException)
-            {
-                name = System.IO.Path.GetFileName(folder);
-                folder = System.IO.Path.GetDirectoryName(folder);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return false;
-            }
+            foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(folder))
+                if (string.Equals(System.IO.Path.GetFileName(entry), name, StringComparison.Ordinal)) return false;
+            return true;
         }
-        return false;
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false; // missing (DirectoryNotFoundException), refused or unreadable: not proved, retryable
+        }
     }
 
     /// <param name="lost">
@@ -281,13 +276,14 @@ public sealed class OwnedFileSet
                         kept.Add($"{backup}: not put back; its content was last placed in {target}, which was changed after the interruption.");
                         continue;
                     }
-                    // Gone only when every place a copy could be was seen (read, or listed without it); a folder that
-                    // refuses this process hides copies, and that can be fixed.
+                    // Gone only when every place a copy could be was seen (read, or its own folder listed without it); a
+                    // folder that refuses this process, or is not there (a drive not mounted), hides copies, and that can
+                    // be fixed (w10 follow-up D6).
                     var seen = true;
                     foreach (var candidate in candidates)
                         if (candidate != path && await HashOf(candidate).ConfigureAwait(false) is null && !ProvedAbsent(candidate)) seen = false;
                     if (!seen)
-                        return $"{path}: RHI could not look for its copy with the pre-operation content ({sha}), because a folder cannot be read; every copy was kept.";
+                        return $"{path}: RHI could not look for its copy with the pre-operation content ({sha}), because a folder cannot be read or is not there (is its drive mounted?); every copy was kept.";
                     lost.Add(path);
                     goneError ??= $"{path}: no surviving copy with the pre-operation content ({sha}) was found; every copy was kept.";
                     continue;

@@ -562,7 +562,10 @@ public static class LinuxDeploymentRecovery
             logPath,
             recovery?.KeptLaterChanges ?? 0)
         {
-            CopiesGone = recovery?.Entries.SelectMany(entry => entry.CopiesGone).Distinct(StringComparer.Ordinal).ToArray() ?? []
+            // w10 follow-up D9: named by the entry that closed for it (once); an entry still held (a retry can finish the
+            // rest) names its gone copies when it closes, not at every start meanwhile.
+            CopiesGone = recovery?.Entries.Where(entry => entry.Outcome == JournalRecoveryOutcome.CopiesGone)
+                .SelectMany(entry => entry.CopiesGone).Distinct(StringComparer.Ordinal).ToArray() ?? []
         };
     }
 
