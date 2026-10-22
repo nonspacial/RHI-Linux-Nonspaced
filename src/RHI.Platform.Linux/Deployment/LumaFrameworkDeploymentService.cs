@@ -496,6 +496,11 @@ public sealed class LumaFrameworkDeploymentService
                 .Where(x => !string.IsNullOrWhiteSpace(x.Path))
                 .ToDictionary(x => Path.GetFullPath(x.Path), StringComparer.OrdinalIgnoreCase);
 
+            // w10 final review 2 (D15 for Luma): a game held by an earlier change whose undo is not finished gets the hold's
+            // restart text first — the scan below would take that change's own files, still in place, for someone else's.
+            if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.LumaFramework).ConfigureAwait(false) is { } held)
+                return ComponentOperationResult.Fail(held);
+
             foreach (var item in plan)
             {
                 var existingPath = FindCaseInsensitiveExistingPath(item.TargetPath);

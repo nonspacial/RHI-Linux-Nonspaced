@@ -240,6 +240,11 @@ public sealed partial class ReShadeDeploymentService
             return ComponentOperationResult.Fail("Could not determine whether the game executable is 32-bit or 64-bit.");
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
+        // w10 final review 2 (D15 for ReShade): a game held by an earlier change whose undo is not finished gets the hold's
+        // restart text before the checks below read its files — they would take that change's own DLL, still in place,
+        // for a ReShade RHI did not install.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.ReShade).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
         options = _shaderPacks.WithEffectiveSelection(game, options); // w7/shader-sets hook (#179): the game's effective shader set
 
         // #92: the Vulkan layer on request, and an installed layer stays one (Update All never switches the path).
