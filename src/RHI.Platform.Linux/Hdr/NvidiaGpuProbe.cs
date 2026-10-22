@@ -147,10 +147,17 @@ public static partial class NvidiaGpuProbe
 
     /// <summary>
     /// A model known to predate DLSS Frame Generation (RTX 20/30, GTX, Quadro, TITAN, RTX A-series). Ada and Blackwell
-    /// workstation cards ("RTX 2000 Ada", "RTX PRO 6000 Blackwell") are not; "Quadro RTX 4000" (Turing) is.
+    /// workstation cards ("RTX 2000 Ada", "RTX PRO 6000 Blackwell") are not; "Quadro RTX 4000" (Turing) is. w11 follow-up
+    /// E4: a GeForce whose number names another generation than its chip follows the chip, as <see cref="GenerationOf"/>
+    /// does (the RTX 3050 A Laptop GPU is Ada: frame generation runs there).
     /// </summary>
     public static bool IsBeforeFrameGeneration(string? model)
-        => !string.IsNullOrWhiteSpace(model) && !AdaOrNewerRegex().IsMatch(model) && BeforeAdaRegex().IsMatch(model);
+    {
+        if (string.IsNullOrWhiteSpace(model)) return false;
+        foreach (var (pattern, generation) in NumberIsNotTheArchitecture)
+            if (pattern.IsMatch(model)) return generation < RtxGeneration.Rtx40;
+        return !AdaOrNewerRegex().IsMatch(model) && BeforeAdaRegex().IsMatch(model);
+    }
 
     /// <summary>
     /// An RTX 50-series (Blackwell) model name: "NVIDIA GeForce RTX 5080", "… RTX 5070 Ti Laptop GPU", "RTX PRO 6000 Blackwell …".

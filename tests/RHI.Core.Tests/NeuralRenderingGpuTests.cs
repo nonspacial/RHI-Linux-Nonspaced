@@ -50,6 +50,25 @@ public sealed class NeuralRenderingGpuTests : IDisposable
         Assert.True(facts.Present);
     }
 
+    // w11 follow-up E4 (nr-gpu re-review 2): frame generation (#211's FG preset) follows the same chip table as the
+    // generation, so the two never disagree: the RTX 3050 A Laptop GPU is Ada and runs it; the laptop RTX 2050 is Ampere.
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 3050 A Laptop GPU", true)] // Ada AD106
+    [InlineData("NVIDIA GeForce RTX 2050", false)]             // Ampere GA107
+    [InlineData("NVIDIA GeForce RTX 3050 Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 3050 Ti Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 4060 Laptop GPU", true)]
+    [InlineData("NVIDIA RTX 2000 Ada Generation", true)]
+    [InlineData("Quadro RTX 4000", false)]
+    public void Probe_FrameGeneration_FollowsTheChip_AsTheGenerationDoes(string model, bool frameGeneration)
+    {
+        var facts = NvidiaGpuProbe.Read(ProcTree(_root, OpenModuleVersion, model), Path.Combine(_root, "sys"));
+
+        Assert.Equal(frameGeneration, facts.FrameGeneration);
+        Assert.Equal(!frameGeneration, NvidiaGpuProbe.IsBeforeFrameGeneration(model));
+        Assert.Equal(frameGeneration, facts.Generation >= RtxGeneration.Rtx40);
+    }
+
     [Theory]
     [InlineData("NVIDIA GeForce RTX 3060", "NVIDIA GeForce RTX 4090")]
     [InlineData("NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 3060")]
