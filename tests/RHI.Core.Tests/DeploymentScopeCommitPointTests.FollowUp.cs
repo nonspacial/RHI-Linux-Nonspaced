@@ -124,6 +124,41 @@ public sealed partial class DeploymentScopeCommitPointTests
         Assert.Equal(narrowed, File.ReadAllBytes(Assert.Single(JournalEntries()))); // kept for the newer build, as narrowed
     }
 
+    // D7: an unknown-step entry is narrowed only once its files are final — a file restore a retry can still finish (the
+    // folder read-only at this start) keeps the file in the entry, and the start after the folder opens again puts it back.
+    [PermissionDenialFact]
+    public async Task D7_AnUnknownStepEntry_WhoseFileRestoreCanStillBeFinished_KeepsItsFile_UntilAStartPutsItBack()
+    {
+        Rig();
+        var j0 = LinuxDeploymentRecovery.CreateJournal(new WineDllOverrideService(new WineRegistryEditor(_ => false)), JournalDir, _ => false,
+            records: new LinuxDeploymentRecordStore(Ledger));
+        var op = await j0.BeginAsync("future", LinuxDeploymentRecovery.RecordCommitProbe(Game, ManagedComponentKind.ReShade));
+        await op.TrackFileAsync(Payload);
+        await op.RecordWriteAsync(Payload, FileHash.Sha256HexOf(After));
+        File.WriteAllBytes(Payload, After);
+        await op.AddCompensationAsync("a-step-from-a-newer-build", "{}");
+        op.AbandonAsIfCrashed();
+
+        PermissionDenial.MakeReadOnly(P("game"));
+        try
+        {
+            var (_, _, held) = await RestartAsync();
+            Assert.Equal(JournalRecoveryOutcome.RollbackFailed, Assert.Single(held.Recovery!.Entries).Outcome); // retryable wins
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Assert.Single(JournalEntries())));
+            Assert.Equal(1, document.RootElement.GetProperty("Files").GetArrayLength()); // not narrowed: the file is still to do
+        }
+        finally
+        {
+            PermissionDenial.MakeWritable(P("game"));
+        }
+
+        var (_, _, again) = await RestartAsync();
+        Assert.Equal(JournalRecoveryOutcome.UnknownStep, Assert.Single(again.Recovery!.Entries).Outcome);
+        Assert.Equal(Before, File.ReadAllBytes(Payload));
+        using (var narrowed = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Assert.Single(JournalEntries()))))
+            Assert.Equal(0, narrowed.RootElement.GetProperty("Files").GetArrayLength());
+    }
+
     // D8: a held game's retry cannot open RHI's lock file of the entry for a reason other than another process holding it
     // (here a link loop, as a read-only file system or an I/O error would): refused with the true reason — RHI's own note
     // of the change — never the ledger text ("another process works on it" is only EWOULDBLOCK).
