@@ -363,6 +363,32 @@ public sealed partial class DeploymentScopeCommitPointTests
         }
     }
 
+    // An entry a deferred start handed over (its game not known then) that cannot be read at the retry: its game is known
+    // from nowhere, so it holds up no game (logged) — neither fail-closed for every game nor the ledger's text.
+    [PermissionDenialFact]
+    public async Task AKeptEntryThatCannotBeReadAtTheRetry_AndWhoseGameIsNotKnown_HoldsUpNoGame()
+    {
+        var (_, journal) = Rig();
+        Directory.CreateDirectory(JournalDir);
+        var entryPath = Path.Combine(JournalDir, "kept.json");
+        File.WriteAllText(entryPath, System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Format = 1, Id = "kept", Description = "kept", CommitProbe = LinuxDeploymentRecovery.RecordCommitProbe(Game, ManagedComponentKind.ReShade)
+        }));
+        journal.WaitOnKeptEntries();
+        PermissionDenial.MakeUnreadable(entryPath);
+        try
+        {
+            var other = await journal.BeginAsync("other game", LinuxDeploymentRecovery.RecordCommitProbe(OtherGame, ManagedComponentKind.ReShade));
+            await other.RollbackAsync();
+            Assert.True(File.Exists(entryPath)); // kept for the next start
+        }
+        finally
+        {
+            File.SetUnixFileMode(entryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
     // Its game known from neither the report nor the entry: it holds up no game at all (and is logged).
     [PermissionDenialFact]
     public async Task AnUnreadableEntryWhoseGameIsNotKnown_HoldsUpNoGame()
