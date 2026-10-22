@@ -10,9 +10,9 @@ public enum LinuxWatchedFileKind
 public sealed record LinuxWatchedFileCandidate(string Path, LinuxWatchedFileKind Kind);
 
 /// <summary>
-/// Linux-native, non-destructive file watcher for downloaded ReShade/RenoDX payloads.
-/// It never installs into a game and never deletes the source file. The UI decides what to do
-/// with a detected candidate.
+/// Linux-native file watcher for downloaded ReShade/RenoDX/Luma payloads. It never installs into a game or deletes a
+/// file itself: it raises a candidate once the file has settled (a download still being written is never raised) and
+/// the UI decides what to do with it.
 /// </summary>
 public sealed class LinuxAddonFileWatcher : IDisposable
 {
@@ -79,7 +79,7 @@ public sealed class LinuxAddonFileWatcher : IDisposable
 
         _ = Task.Run(async () =>
         {
-            if (!await WaitUntilReadableAsync(path).ConfigureAwait(false)) return;
+            if (!await WaitUntilSettledAsync(path).ConfigureAwait(false)) return;
             CandidateDetected?.Invoke(new LinuxWatchedFileCandidate(path, kind));
         });
     }
@@ -121,19 +121,40 @@ public sealed class LinuxAddonFileWatcher : IDisposable
         return Path.Combine(home, "Downloads");
     }
 
-    private static async Task<bool> WaitUntilReadableAsync(string path)
+    /// <summary>How often a new file is looked at while it may still be written.</summary>
+    internal static readonly TimeSpan SettleInterval = TimeSpan.FromMilliseconds(250);
+    /// <summary>Looks in a row that must see the same size and change time before the file is raised (about 1 s).</summary>
+    internal const int StableLooks = 4;
+    /// <summary>The longest a file that keeps changing is waited for (a slow download); after it, it is not raised.</summary>
+    internal static readonly TimeSpan MaxSettleWait = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// #216: true once the file has settled — readable, not empty, its size and change time (ctime: a rewrite in place
+    /// keeps the size) unchanged for <see cref="StableLooks"/> looks in a row — so a download still being written is never
+    /// raised (and never offered or removed); false when it goes away or never settles. The reader still checks the file
+    /// did not change while it copied it (<c>DroppedArchiveExtractor.ChangedWhileReadRefusal</c>).
+    /// </summary>
+    internal static async Task<bool> WaitUntilSettledAsync(string path, TimeSpan? maxWait = null, CancellationToken cancellationToken = default)
     {
-        for (var attempt = 0; attempt < 20; attempt++)
+        var deadline = DateTime.UtcNow + (maxWait ?? MaxSettleWait);
+        (long Length, DateTime? Changed)? last = null;
+        var same = 0;
+        while (DateTime.UtcNow < deadline)
         {
-            await Task.Delay(250).ConfigureAwait(false);
+            await Task.Delay(SettleInterval, cancellationToken).ConfigureAwait(false);
+            (long, DateTime?)? now;
             try
             {
-                if (!File.Exists(path)) continue;
-                using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-                return stream.Length > 0;
+                if (!File.Exists(path)) return false;
+                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                    now = (stream.Length, RHI.Core.Deployment.FileChangeTime.TryGetUtc(path, followLinks: true));
             }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            catch (IOException) { now = null; }
+            catch (UnauthorizedAccessException) { now = null; }
+            if (now is { Item1: > 0 } && now == last) same++;
+            else same = 0;
+            last = now;
+            if (same >= StableLooks - 1) return true;
         }
         return false;
     }

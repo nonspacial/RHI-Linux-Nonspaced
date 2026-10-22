@@ -531,7 +531,7 @@ build.
   the global set, its own list or none) plus the dropped one become its **Choose for this game** list, so a later global
   change or Update All does not take it out again; the global set itself is never edited.
 - A watched file directly in the watch folder is removed after a successful install, as upstream (the status line says so), but only while it still has the bytes RHI copied (a newer download under the same name stays); a dropped file is never touched.
-- Not ported yet (a parity gap, planned for a later wave): upstream extracts a dropped or watched archive (`.zip`, `.7z`, `.rar`) and offers its `renodx-`/Luma add-on for the same confirmed install; Linux does not open archives yet and leaves them where they are (a status line says so).
+- Since #216 (wave 10) a dropped or watched archive (`.zip`, `.7z`, `.rar`) offers the `renodx-`/Luma add-on inside for this same confirmed install: see #216 below.
 
 <!-- w7/reshade notes -->
 
@@ -782,5 +782,53 @@ build.
   `FileVersionInfo`, which reads no PE resource on Linux, so it never fired; it now reads the version resource.
 
 <!-- w10/archives notes -->
+
+### #216 — Dropped or watched archives: the add-on inside is offered for the same confirmed install
+
+- Upstream (`DragDropHandler.ProcessDroppedArchive`, `AddonFileWatcher`, `MainWindow.HandleArchiveFile`): a dropped
+  archive (and a watched `.zip`/`.7z`/`.rar` whose name holds `renodx` or `luma`) is extracted whole by 7-Zip into a temp
+  folder (60 s limit); the `.addon64`/`.addon32`/`.addon` files whose name starts `renodx-` or holds `Luma` are the
+  candidates; none → "No Addon Found"; several → a picker; a Luma one sends the original archive to the Luma package
+  install on a Luma-capable game, anything else goes to the dropped-add-on install. The temp folder is deleted
+  afterwards. A watched Luma archive is deleted from the watch folder; other archives are kept.
+- Linux, inspect before anything is extracted (fork-only safety): RHI copies the archive into a private mode-0700 folder
+  under its cache (`~/.cache/rhi-linux/dropped-archives/<id>`, never the watch folder or beside the archive), hashing it
+  as it copies (1 GiB cap); everything later reads that copy. The copy is listed — a `.zip` by RHI itself, a `.7z`/`.rar`
+  by the host 7-Zip (`l -slt`) or bsdtar (`-tvf`), read strictly — and the whole archive is refused, before anything is
+  extracted, when any member has an absolute path, a `..` or empty part, is listed twice, is a link or a device, has a
+  name with control characters, or when an add-on lists more than 256 MiB, all members together more than 2 GiB, or more
+  than 100 times the archive's own size above 16 MiB (a zip bomb). Backslash names are read as folders
+  (`OptiScalerPackageProvider.NormalizeBackslashEntries`' rules). Nested archives are never opened. Only the add-on chosen
+  for the install is extracted (a zip entry through the bounded, CRC-checked `ReShadeArchiveExtractor.ExtractEntryAsync`;
+  a 7-Zip/bsdtar member by its literal name), and it must come out as exactly one plain file of the size the archive
+  listed (a header can lie). What 7-Zip or bsdtar may write is bounded while it runs (#216 review): every file by a
+  file-size limit the kernel enforces (`ulimit -f` in a `/bin/sh` that `exec`s the tool), all of them together by a
+  watcher that stops the tool's process tree; the bound is the size the listing gives, so an archive that unpacks to more
+  (a gzip stream behind a `.7z` name lists its trailer's size) is stopped there and refused, never after it has filled
+  the cache. Every other host-tool extraction gets a 2 GiB bound. A zip entry is never read past its listed size. A file
+  that changes while RHI copies it (a download still being written) is refused. The private folder is deleted after
+  the install, a refusal, a failure or Cancel; folders a crashed or killed RHI left are removed at the next start (each
+  folder names its process and that process's start time, so another running RHI's folder stays).
+- Linux, candidates as upstream through the dropped-file rules: a RenoDX game add-on becomes the game's RenoDX mod
+  (`InstallLocalRenoDxAddonAsync`), another `renodx-` add-on a dropped file would install goes in beside it through
+  Shaders/Add-ons (`InstallDroppedAddonForGameAsync`, the #179 choice rules included), a Luma add-on sends the whole
+  package to the Luma package install (the same install warnings as a dropped Luma package): RHI's copy of a `.zip`, or
+  a `.7z`/`.rar` taken out whole with the same checks and caps and zipped again inside RHI's private folder (the Luma
+  install reads a `.zip`; the user's file is never touched); what comes out must be exactly the files the listing gives.
+  Names a dropped file would only import into Custom Add-ons are not offered; an archive with no add-on keeps a status
+  line that says so and nothing is imported. Every refusal of the dropped-file path is unchanged and is asked before
+  anything is extracted; extraction happens inside the operation, before its first game write, so Cancel stops it and
+  leaves the game as it was.
+- Linux, one dialog: the existing drop dialog names the archive and the add-on; with two or more add-ons an **Add-on**
+  dropdown sits above the game dropdown (upstream shows a separate picker first). Each add-on keeps its own game list and
+  match (its file name, then the archive's name, then the selected game).
+- Linux deviations: a watched `.zip` named for Luma goes through the same offer and dialog as every watched archive
+  (one dialog; upstream likewise routes it through `ProcessDroppedArchive`); a dropped one keeps the existing Luma
+  package prompt for the selected game. The watcher raises a file only once its size and change time have stayed the
+  same for about a second (a download still being written is never offered or removed). A watched archive directly in the watch folder is removed after a
+  successful install, but only while it still holds the bytes RHI read (SHA-256 of RHI's copy against the file right
+  before the removal; a newer download under the same name stays and the status line says so); upstream keeps renodx
+  archives and deletes Luma ones. A dropped archive is never removed. Without 7-Zip or bsdtar a `.7z`/`.rar` is refused
+  with the existing "needs 7-Zip or bsdtar" line (upstream ships 7-Zip); a `.zip` needs neither.
 
 <!-- w10/journal-holds notes -->

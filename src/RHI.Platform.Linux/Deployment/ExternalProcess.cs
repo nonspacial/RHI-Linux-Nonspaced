@@ -47,12 +47,15 @@ public static class ExternalProcess
     /// and waits for it. Throws <see cref="TimeoutException"/> (message <see cref="TimeoutPrefix"/> + tool and
     /// limit) after <paramref name="timeout"/>, <see cref="OperationCanceledException"/> when
     /// <paramref name="cancellationToken"/> fires; the process tree is killed in both cases.
+    /// <paramref name="toolName"/>: the name messages give the tool when <paramref name="startInfo"/> starts it through a
+    /// wrapper (<see cref="ExternalArchiveRunner"/>'s size bound); the started file's name otherwise.
     /// </summary>
     public static async Task<ExternalProcessResult> RunAsync(
         ProcessStartInfo startInfo,
         TimeSpan timeout,
         CancellationToken cancellationToken,
-        string? standardInput = null)
+        string? standardInput = null,
+        string? toolName = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         startInfo.UseShellExecute = false;
@@ -61,7 +64,7 @@ public static class ExternalProcess
         startInfo.RedirectStandardOutput = true;
         startInfo.RedirectStandardError = true;
 
-        var tool = Path.GetFileName(startInfo.FileName);
+        var tool = toolName ?? Path.GetFileName(startInfo.FileName);
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start {tool}.");
         var stdout = new BoundedCapture();
         var stderr = new BoundedCapture();
