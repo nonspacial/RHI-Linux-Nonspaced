@@ -163,6 +163,9 @@ public sealed partial class LinuxManagedComponentService
             },
             NrMoveKind.Unknown when !addon.UpdateAvailable => addon with { CouldNotCheck = true, Message = Join(addon.Message, NrUnknownMessage) },
             NrMoveKind.ChangedOutsideRhi when !addon.UpdateAvailable => addon with { CouldNotCheck = true, Message = Join(addon.Message, NrChangedOutsideMessage) },
+            // w11 follow-up E5: with an add-on update due, the line still says the NR DLL was changed outside RHI (and is
+            // left as it is) the same run, not only on the next one.
+            NrMoveKind.ChangedOutsideRhi => addon with { Message = Join(addon.Message, NrChangedOutsideMessage) },
             _ => addon
         };
     }
