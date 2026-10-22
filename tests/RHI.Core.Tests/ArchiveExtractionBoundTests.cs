@@ -74,14 +74,23 @@ public sealed class ArchiveExtractionBoundTests(ITestOutputHelper output) : IDis
     [Fact]
     public async Task TheRunner_StopsATool_ThatKeepsWritingSmallFiles_AtTheTotalBound()
     {
-        // Every file under the per-file bound; together past the total one: the watcher stops the tool's tree.
+        // Every file under the per-file bound; together past the total one: the watcher stops the tool's tree. The fake
+        // tool is stepped, not timed (w10 final review 1: a timed writer outran the watcher under a loaded suite): each
+        // 64 KiB file appears whole (written beside the folder, then renamed in), and once the folder holds more than the
+        // bound (9 files, 576 KiB) the tool waits for the test's "go" before it writes again — it never ends by itself.
+        // Only the watcher can end it before the 2-minute timeout, and it must find exactly those 9 files.
         var script = Path.Combine(_root, "slow7z.sh");
-        File.WriteAllText(script, """
+        var go = Path.Combine(_root, "go-slow");
+        File.WriteAllText(script, $$"""
             #!/bin/sh
             OUT=""
             for a in "$@"; do case "$a" in -o*) OUT="${a#-o}";; esac; done
+            GO='{{go}}'
             i=0
-            while :; do head -c 65536 /dev/zero > "$OUT/f$i"; i=$((i+1)); sleep 0.02; done
+            while :; do
+              head -c 65536 /dev/zero > "$OUT.stage"; mv "$OUT.stage" "$OUT/f$i"; i=$((i+1))
+              if [ "$i" -ge 9 ]; then while [ ! -e "$GO" ]; do sleep 0.02; done; fi
+            done
             """);
         File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var archive = Path.Combine(Downloads, "slow.7z");
@@ -96,10 +105,11 @@ public sealed class ArchiveExtractionBoundTests(ITestOutputHelper output) : IDis
 
         Assert.True(ExternalArchiveRunner.IsOverLimit(error), error.Message);
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), $"stopped after {clock.Elapsed}");
-        var total = Directory.EnumerateFiles(outFolder).Sum(file => new FileInfo(file).Length);
-        Assert.InRange(total, (512 << 10) + 1, 2L << 20); // stopped soon after it passed the bound
-        await Task.Delay(300);
-        Assert.Equal(total, Directory.EnumerateFiles(outFolder).Sum(file => new FileInfo(file).Length)); // and it stays stopped
+        long Total() => Directory.EnumerateFiles(outFolder).Sum(file => new FileInfo(file).Length);
+        Assert.Equal(9L * 65536, Total()); // stopped at the first look past the bound, whatever the load
+        File.WriteAllText(go, ""); // a tool still running would write again now
+        await Task.Delay(500);
+        Assert.Equal(9L * 65536, Total()); // and it stays stopped
     }
 
     [Fact]
