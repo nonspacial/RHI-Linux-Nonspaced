@@ -389,7 +389,6 @@ internal static class UiStrings
         ("Win.CouldNotSave", "Não foi possível salvar: {0}", "Could not save: {0}"),
         ("Win.InstallLumaAdd", "🌙 Instalar add-on Luma", "🌙 Install Luma add-on"),
         ("Win.AddDroppedWindow", "Add-on solto na janela", "Add-on dropped on window"),
-        ("Win.InstallLumaPackage", "🌙 Instalar pacote Luma", "🌙 Install Luma package"),
         ("Win.ArchiveDetectedRHILinuxDoesNot", "{0} não contém nenhum add-on que o RHI possa instalar (um add-on do RenoDX ou do Luma), então nada foi instalado.", "{0} holds no add-on RHI can install (a RenoDX or Luma add-on), so nothing was installed."),
         ("Win.AddWatcherCouldNotOpen", "O monitor de add-ons não conseguiu abrir: {0}", "The add-on watcher could not open: {0}"),
         ("Win.LumaAddDetectedByWatcher", "🌙 Add-on Luma detectado pelo monitor", "🌙 Luma add-on detected by watcher"),

@@ -89,6 +89,14 @@ public sealed class DroppedRenoDxPresenter(LinuxManagedComponentService componen
             : Handles(candidate.Path, watched: true) ? WatchedFileRoute.DropDialog
             : WatchedFileRoute.CustomAddonsImport;
 
+    /// <summary>
+    /// Whether a dropped file goes to the archive offer (<see cref="OfferForArchiveAsync"/>): every dropped archive, a Luma
+    /// <c>.zip</c> included — one dialog for every dropped or watched archive, as <see cref="RouteFor"/> does for the
+    /// watch folder.
+    /// </summary>
+    public static bool OffersDroppedArchive(LinuxDroppedFileKind kind)
+        => kind is LinuxDroppedFileKind.ModArchive or LinuxDroppedFileKind.LumaArchive;
+
     /// <summary>Whether a dropped (or, with <paramref name="watched"/>, watched) add-on gets this dialog.</summary>
     public static bool Handles(string? path, bool watched)
         => LinuxDroppedFileClassifier.AddonTarget(path, watched) != DroppedAddonTarget.CustomAddonsImport;

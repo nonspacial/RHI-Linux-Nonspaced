@@ -248,35 +248,39 @@ public sealed partial class MainWindow
     private void GameFiles_Drop(object? sender, DragEventArgs e) => RunUiSafe(async () =>
     {
         if (e.DataTransfer.TryGetFiles() is not { } files) return;
-        foreach (var file in files)
-        {
-            var path = file.Path.LocalPath;
-            switch (LinuxDroppedFileClassifier.Classify(path))
-            {
-                case LinuxDroppedFileKind.WindowsGameExecutable:
-                    await ShowAddGameDialogForExecutableAsync(path);
-                    break;
-                case LinuxDroppedFileKind.LumaAddon:
-                    await PromptInstallLumaAddonAsync(path, T("Win.InstallLumaAdd"));
-                    break;
-                case LinuxDroppedFileKind.ReShadeAddon when DroppedRenoDxPresenter.Handles(path, watched: false): // w7/smalls (#195)
-                    await PromptInstallDroppedRenoDxAsync(path, watchFolder: null);
-                    break;
-                case LinuxDroppedFileKind.ReShadeAddon:
-                    await PromptImportCustomAddonAsync(path, T("Win.AddDroppedWindow"));
-                    break;
-                case LinuxDroppedFileKind.LumaArchive:
-                    await PromptInstallLumaAddonAsync(path, T("Win.InstallLumaPackage"));
-                    break;
-                case LinuxDroppedFileKind.ModArchive: // #216: the add-on inside is offered (upstream ProcessDroppedArchive)
-                    await PromptInstallDroppedArchiveAsync(path, watchFolder: null);
-                    break;
-                case LinuxDroppedFileKind.ReShadePreset: // w5/ini-presets hook (#180): Views/MainWindow.Presets.cs
-                    await OfferDroppedPresetAsync(path);
-                    break;
-            }
-        }
+        foreach (var file in files) await HandleDroppedFileAsync(file.Path.LocalPath);
     });
+
+    /// <summary>One file dropped on the window goes to the prompt its kind gets (the harness calls it by name).</summary>
+    private async Task HandleDroppedFileAsync(string path)
+    {
+        var kind = LinuxDroppedFileClassifier.Classify(path);
+        if (DroppedRenoDxPresenter.OffersDroppedArchive(kind))
+        {
+            // #216: the add-on inside is offered (upstream ProcessDroppedArchive); a Luma .zip too — one dialog for every
+            // dropped or watched archive.
+            await PromptInstallDroppedArchiveAsync(path, watchFolder: null);
+            return;
+        }
+        switch (kind)
+        {
+            case LinuxDroppedFileKind.WindowsGameExecutable:
+                await ShowAddGameDialogForExecutableAsync(path);
+                break;
+            case LinuxDroppedFileKind.LumaAddon:
+                await PromptInstallLumaAddonAsync(path, T("Win.InstallLumaAdd"));
+                break;
+            case LinuxDroppedFileKind.ReShadeAddon when DroppedRenoDxPresenter.Handles(path, watched: false): // w7/smalls (#195)
+                await PromptInstallDroppedRenoDxAsync(path, watchFolder: null);
+                break;
+            case LinuxDroppedFileKind.ReShadeAddon:
+                await PromptImportCustomAddonAsync(path, T("Win.AddDroppedWindow"));
+                break;
+            case LinuxDroppedFileKind.ReShadePreset: // w5/ini-presets hook (#180): Views/MainWindow.Presets.cs
+                await OfferDroppedPresetAsync(path);
+                break;
+        }
+    }
 
     private void SyncAddonWatcherFromSettings()
     {

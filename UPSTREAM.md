@@ -822,9 +822,9 @@ build.
 - Linux, one dialog: the existing drop dialog names the archive and the add-on; with two or more add-ons an **Add-on**
   dropdown sits above the game dropdown (upstream shows a separate picker first). Each add-on keeps its own game list and
   match (its file name, then the archive's name, then the selected game).
-- Linux deviations: a watched `.zip` named for Luma goes through the same offer and dialog as every watched archive
-  (one dialog; upstream likewise routes it through `ProcessDroppedArchive`); a dropped one keeps the existing Luma
-  package prompt for the selected game. The watcher raises a file only once its size and change time have stayed the
+- Linux deviations: a `.zip` named for Luma, dropped or watched, goes through the same offer and dialog as every
+  archive (one dialog for every dropped or watched archive; upstream likewise routes it through `ProcessDroppedArchive`);
+  a Luma `.zip` downloaded through Nexus keeps the Luma package prompt for the selected game (#227). The watcher raises a file only once its size and change time have stayed the
   same for about a second (a download still being written is never offered or removed). A watched archive directly in the watch folder is removed after a
   successful install, but only while it still holds the bytes RHI read (SHA-256 of RHI's copy against the file right
   before the removal; a newer download under the same name stays and the status line says so); upstream keeps renodx
