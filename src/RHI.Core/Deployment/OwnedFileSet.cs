@@ -207,7 +207,10 @@ public sealed class OwnedFileSet
     /// that game folder; the path is proved absent when the nearest folder that exists lists without the next one. That
     /// folder is the game folder itself or inside it, so the game's drive is mounted and only a sub-folder was deleted.
     /// A game folder that is missing itself (its drive offline) still proves nothing, as does a path outside every game
-    /// folder whose own folder is missing.</para>
+    /// folder whose own folder is missing. w10 final re-review 1: that holds for EVERY game folder, also one inside
+    /// another (an install folder inside the Wine prefix, <c>pfx/drive_c/Games/Foo</c>): the climb stops there.
+    /// Not decidable by listing (w10 final re-review 2): a game folder that is itself an empty mount point (or a link to
+    /// a mount root) whose drive is offline lists as there and empty, so a copy below it reads as gone.</para>
     /// </summary>
     internal static bool ProvedAbsent(string path, IReadOnlyList<string>? gameFolders = null)
     {
@@ -238,6 +241,12 @@ public sealed class OwnedFileSet
     {
         if (gameFolders is null || gameFolders.Count == 0) return false;
         var full = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(folder));
+        // w10 final re-review 1: a missing folder that IS one of the game folders (even one nested inside another, e.g.
+        // the install folder inside the prefix) may be on a drive that is offline: never climb past it.
+        foreach (var gameFolder in gameFolders)
+            if (!string.IsNullOrWhiteSpace(gameFolder)
+                && System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(gameFolder)) == full)
+                return false;
         foreach (var gameFolder in gameFolders)
         {
             if (string.IsNullOrWhiteSpace(gameFolder)) continue;
