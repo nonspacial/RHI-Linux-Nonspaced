@@ -684,6 +684,12 @@ public sealed partial class OptiScalerDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
+        // w11 follow-up E7 (the toolkit rule since w10 D15): a game held after a failed undo gets the hold's restart text
+        // before the hash checks below, which would take RHI's own half-undone files (the chained ReShade64.dll
+        // included) for a change made outside RHI.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.OptiScaler).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
+
         IReadOnlySet<string> legacySwaps;
         var moveReShadeBack = false;
         try
