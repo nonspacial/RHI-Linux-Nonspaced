@@ -58,6 +58,8 @@ public sealed class OptiScalerF5DriverPolicyTests
     [InlineData("310,8,3,0", "615.78.08", false, false)]
     [InlineData("310,8,0,0", "610.57.04", false, true)] // only the driver warning below R615
     [InlineData("310,8,0,0", null, false, true)]          // no driver: only the driver warning
+    [InlineData("310,9,0,0", "615.78.08", false, false)]  // review mutant F: another minor's .0 build is not the faulting one
+    [InlineData("310.7.0 (20/30/40/50)", "615.78.08", false, false)]
     public void NrDll310_8_0_OnAnR615Driver_IsTheSecondWarning(string nr, string? driver, bool nrFaults, bool driverWarns)
     {
         var advice = OptiScalerF5DriverPolicy.Advise(driver, nr);
@@ -233,18 +235,24 @@ public sealed class F5DriverConfirmViewModelTests : IDisposable
     public async Task UpdateAll_NeverAsks_AndItsLineCarriesTheDriverNote(string language)
     {
         var game = Game("Updated F5 Quest");
+        var stable = Game("Stable Neighbour"); // review mutant A: an OptiScaler game on another channel is never named
         UiLocalizationService.Apply(language);
         var facts = Facts(RtxGeneration.Rtx40, "610.57.04");
-        using var fx = await ViewModelFixture.StartAsync([game], uiLanguage: language, httpResponse: Answer, hdrProfiles: Hdr(facts), nvidiaGpu: () => facts);
+        using var fx = await ViewModelFixture.StartAsync([game, stable], uiLanguage: language, httpResponse: Answer, hdrProfiles: Hdr(facts), nvidiaGpu: () => facts);
         var listed = fx.Vm.Games.Single(row => row.Name == game.Name).Game;
-        var record = new LinuxDeploymentRecord
+        var neighbour = fx.Vm.Games.Single(row => row.Name == stable.Name).Game;
+        foreach (var (target, variant) in new[] { (listed, "F5"), (neighbour, "Stable") })
         {
-            GameKey = LinuxDeploymentRecordStore.GameKey(listed), GameName = listed.Name, Component = ManagedComponentKind.OptiScaler,
-            BinaryDirectory = listed.BinaryDirectory!, Version = "0.1.30", SourceUrl = "https://github.com/rhi-tests/f5.zip"
-        };
-        record.Metadata[OptiScalerDeploymentService.VariantMetadataKey] = "F5";
-        fx.Records.Upsert(record);
+            var record = new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(target), GameName = target.Name, Component = ManagedComponentKind.OptiScaler,
+                BinaryDirectory = target.BinaryDirectory!, Version = "0.1.30", SourceUrl = "https://github.com/rhi-tests/f5.zip"
+            };
+            record.Metadata[OptiScalerDeploymentService.VariantMetadataKey] = variant;
+            fx.Records.Upsert(record);
+        }
         Assert.True(fx.Managed.HasOptiScalerF5(listed));
+        Assert.False(fx.Managed.HasOptiScalerF5(neighbour));
         fx.Vm.Updates.SetLibraryHasManagedTargets(true);
         var asked = 0;
         fx.Vm.ConfirmAsync = (_, _, _) => { asked++; return Task.FromResult(false); };
@@ -257,6 +265,7 @@ public sealed class F5DriverConfirmViewModelTests : IDisposable
                 ? "OptiScaler F5 DLSSNR em Updated F5 Quest: o driver NVIDIA 610.57.04 é mais antigo que o 615.71.09 que o F5 precisa no Linux (616.56 no Windows)."
                 : "OptiScaler F5 DLSSNR in Updated F5 Quest: NVIDIA driver 610.57.04 is older than the 615.71.09 F5 needs on Linux (616.56 on Windows).",
             fx.Vm.StatusText, StringComparison.Ordinal);
+        Assert.DoesNotContain(stable.Name, fx.Vm.StatusText, StringComparison.Ordinal);
     }
 
     [Theory]
