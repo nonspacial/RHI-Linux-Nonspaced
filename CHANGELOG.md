@@ -34,9 +34,9 @@ Components
   leaves the game's own choice, and nothing is applied at launch from the defaults alone. The status line says which
   presets were set and which the game does not offer.
 - **Batch DLSS** has the same three preset dropdowns under the versions, filled from Settings (**Do not change** keeps
-  each game's preset). It goes game by game, so Cancel leaves the games it has not reached untouched. **Restore
-  selected** sets the presets back to Default and turns **Newest DLSS from NVIDIA** off; render scale and frame
-  generation stay.
+  each game's preset). It goes game by game, so Cancel leaves the games it has not reached untouched; after Cancel or
+  an error its line names the games whose presets were already set or reset. **Restore selected** sets the presets
+  back to Default and turns **Newest DLSS from NVIDIA** off; render scale and frame generation stay.
 - **Apply defaults** and **Batch DLSS** no longer put a newer DLSS over a DLSS 1.x file (upstream's rule; the check
   never fired on Linux before).
 - **Add-ons inside archives** (upstream's archive drop): a `.zip`, `.7z` or `.rar` dropped on the window, or saved to
@@ -52,7 +52,9 @@ Safety
 - If RHI cannot finish undoing a change (a folder or file it cannot write), that game is held: its next change tries the
   undo again first and is refused until the undo succeeds, with a message that says to restart RHI to finish it. Other
   games carry on. If RHI's own copy of a file it needs for the undo is gone (deleted, or the game was reinstalled), the
-  change is closed instead and RHI names the file, so you can remove that component and install it again.
+  change is closed instead and RHI names the file, so you can remove that component and install it again. A game
+  folder that is not there at all (its drive not mounted, or unplugged) is not taken for a gone copy: the game stays
+  held until the folder is back.
 - When the install records cannot be read after an error, the refusal of that game's next change now says to restart RHI
   to finish it.
 - The note that a change was kept although its save reported an error now also appears for a preset installed into every
