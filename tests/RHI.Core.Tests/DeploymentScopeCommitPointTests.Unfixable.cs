@@ -214,6 +214,43 @@ public sealed partial class DeploymentScopeCommitPointTests
         Assert.Empty(JournalEntries());
     }
 
+    // One path's copy is gone while the other path's restore fails for a reason that can be fixed (the folder is read-only):
+    // that is a retryable failure — held, entry kept — never taken for "only copies gone" (which would close the entry with
+    // the backup still missing). Once the folder is writable the next start puts the backup back and closes the entry.
+    [PermissionDenialFact]
+    public async Task ACopyGoneBesideARestoreThatCanStillBeFinished_IsRetried_NotClosed()
+    {
+        Rig();
+        var backup = Payload + OwnedFileSet.BackupExtension;
+        var backupBefore = "the earlier .original"u8.ToArray();
+        File.WriteAllBytes(backup, backupBefore);
+        var journal = new DeploymentJournal(JournalDir, []);
+        var operation = await journal.BeginAsync("gone and blocked", LinuxDeploymentRecovery.RecordCommitProbe(Game, ManagedComponentKind.ReShade));
+        await operation.TrackFileAsync(Payload);
+        await operation.RecordWriteAsync(Payload, FileHash.Sha256HexOf(After));
+        File.WriteAllBytes(Payload, After);
+        File.Delete(backup);
+        var payloadCopy = Payload + OwnedFileSet.SnapshotMarker + operation.Id;
+        Assert.True(File.Exists(payloadCopy) && File.Exists(backup + OwnedFileSet.SnapshotMarker + operation.Id));
+        File.Delete(payloadCopy); // the payload's earlier content survives nowhere
+        operation.AbandonAsIfCrashed();
+
+        JournalRecoveryReport first;
+        PermissionDenial.MakeReadOnly(P("game"));
+        try { first = await journal.RecoverAsync(); }
+        finally { PermissionDenial.MakeWritable(P("game")); }
+
+        var entry = Assert.Single(first.Entries);
+        Assert.Equal(JournalRecoveryOutcome.RollbackFailed, entry.Outcome);
+        Assert.Empty(entry.CopiesGone);
+        Assert.Single(JournalEntries());
+        var second = await journal.RecoverAsync();
+        Assert.Equal(JournalRecoveryOutcome.CopiesGone, Assert.Single(second.Entries).Outcome);
+        Assert.Equal([Payload], second.Entries[0].CopiesGone);
+        Assert.Equal(backupBefore, File.ReadAllBytes(backup));
+        Assert.Empty(JournalEntries());
+    }
+
     private sealed class SwitchableCompensator : IDeploymentCompensator
     {
         public const string KindName = "test-switchable";
@@ -275,6 +312,28 @@ public sealed partial class DeploymentScopeCommitPointTests
         Assert.Null(retry);
         Assert.Empty(journal.WaitingForTesting);
         Assert.Empty(JournalEntries());
+    }
+
+    // A game held in this session whose entry then cannot be read at the retry (its mode refuses this process): it holds only
+    // that game — known from when it started waiting — with the true reason; another game goes ahead.
+    [PermissionDenialFact]
+    public async Task Held_TheEntryCannotBeReadAtTheRetry_HoldsOnlyItsGame_WithTheTrueReason()
+    {
+        LinuxDeploymentRecordStore records;
+        DeploymentJournal journal;
+        try { (records, journal) = await InstallWhoseUndoFailsAsync(); }
+        finally { PermissionDenial.MakeWritable(P("game")); }
+        var entryPath = Assert.Single(JournalEntries());
+        PermissionDenial.MakeUnreadable(entryPath);
+        try
+        {
+            Assert.Equal(DeploymentJournal.EarlierChangeNotSettledMessage, await RefusedRetryAsync(journal));
+            await InstallOtherGameAsync(records, journal);
+        }
+        finally
+        {
+            File.SetUnixFileMode(entryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
     }
 
     // An entry that cannot be read when the start hands it over: it holds only its own game (known from recovery), and that

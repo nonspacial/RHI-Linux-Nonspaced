@@ -434,10 +434,7 @@ public sealed class DeploymentJournal
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    results.Add(new(id, "", JournalRecoveryOutcome.RollbackFailed, [$"Journal entry recovery failed: {id}: {ex.Message}"], [])
-                    {
-                        CommitProbe = ProbeOf(entryPath)
-                    });
+                    results.Add(new(id, "", JournalRecoveryOutcome.RollbackFailed, [$"Journal entry recovery failed: {id}: {ex.Message}"], []));
                 }
             }
             if (!File.Exists(entryPath)) FileCleanup.TryDelete(LockPath(id));
