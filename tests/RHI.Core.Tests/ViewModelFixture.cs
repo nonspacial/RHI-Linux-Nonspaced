@@ -65,6 +65,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w11/download-idle rows
         , bool gitHubCache = false
         // w11/nr-gpu rows
+        , Func<RHI.Platform.Linux.Hdr.NvidiaGpuFacts>? nvidiaGpu = null
         // w11/nightly-switch rows
         // w11/nr-check rows
         )
@@ -109,6 +110,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w11/download-idle rows
             , gitHubCache
             // w11/nr-gpu rows
+            , nvidiaGpu
             // w11/nightly-switch rows
             // w11/nr-check rows
             );
@@ -134,6 +136,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/journal-holds rows
         // w11/download-idle rows
         // w11/nr-gpu rows
+        if (nvidiaGpu is not null) Managed.NvidiaGpu = nvidiaGpu; // #229/#231: the fake card and driver (never the real /proc)
         // w11/nightly-switch rows
         // w11/nr-check rows
     }
@@ -181,6 +184,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w11/download-idle rows
         , bool gitHubCache = false
         // w11/nr-gpu rows
+        , Func<RHI.Platform.Linux.Hdr.NvidiaGpuFacts>? nvidiaGpu = null
         // w11/nightly-switch rows
         // w11/nr-check rows
         )
@@ -217,6 +221,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w11/download-idle rows
             , gitHubCache
             // w11/nr-gpu rows
+            , nvidiaGpu
             // w11/nightly-switch rows
             // w11/nr-check rows
             );
@@ -298,6 +303,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w11/download-idle rows
         , bool gitHubCache
         // w11/nr-gpu rows
+        , Func<RHI.Platform.Linux.Hdr.NvidiaGpuFacts>? nvidiaGpu
         // w11/nightly-switch rows
         // w11/nr-check rows
         )
@@ -378,6 +384,8 @@ internal sealed class ViewModelFixture : IDisposable
         // w10/journal-holds rows
         // w11/download-idle rows
         // w11/nr-gpu rows
+        // #229: the NR lists the view model fills at start follow the fake card from the first manifest load.
+        if (nvidiaGpu is not null) dlss.CardGeneration = () => nvidiaGpu().Generation;
         // w11/nightly-switch rows
         // w11/nr-check rows
         var managed = new LinuxManagedComponentService(

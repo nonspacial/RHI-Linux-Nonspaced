@@ -359,6 +359,10 @@ internal sealed class AppComposition
         // w10/journal-holds rows
         // w11/download-idle rows
         // w11/nr-gpu rows
+        // #229/#231: the host's NVIDIA facts (read-only /proc, read once per run: the card and the loaded module do not change
+        // under a running session); the DLSS service's NR lists and "Latest" follow the same answer.
+        var nvidiaGpu = new Lazy<RHI.Platform.Linux.Hdr.NvidiaGpuFacts>(RHI.Platform.Linux.Hdr.NvidiaGpuProbe.Read);
+        managedComponents.NvidiaGpu = () => nvidiaGpu.Value;
         // w11/nightly-switch rows
         // w11/nr-check rows
         return new AppComposition

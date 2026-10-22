@@ -1628,6 +1628,30 @@ public static class UiLocalizationService
         // #233 correction: HttpClient's own timeout ran out (seconds and the source's name follow).
         (RHI.Core.Deployment.DownloadTimedOutException.MessagePrefix, "O servidor demorou demais para responder: o RHI parou de esperar após "),
         // w11/nr-gpu rows
+        // #229: the Neural Rendering step of Quick Apply / the DLSS batch skipped for a DLL made for another card; the DLL follows.
+        (RHI.Platform.Linux.Deployment.LinuxDlssDefaultsService.NotMadeForThisCardPrefix,
+            "Neural Rendering ignorado: a DLL escolhida é feita para outra geração de placa de vídeo, então nenhum arquivo foi alterado. DLL: "),
+        // #230: Update All's NR move (the versions follow), the could-not-tell line, the row note of a hand-picked DLL for
+        // another card (the version follows) and a failed download before the move (the reason follows).
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrMovePrefix,
+            "A DLL do Neural Rendering segue \"Mais recente\" e não é a feita para esta placa de vídeo; o Atualizar tudo a troca: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrUnknownMessage,
+            "O RHI não conseguiu saber qual DLL do Neural Rendering está instalada, então ela não foi comparada com a feita para esta placa de vídeo."),
+        // Review finding 1: the NR DLL on disk is no longer the one RHI installed (never moved, never a failure).
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrChangedOutsideMessage,
+            "A DLL do Neural Rendering foi alterada ou removida fora do RHI, então ela não foi comparada com a feita para esta placa de vídeo; o Atualizar tudo a deixa como está."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrPinOtherGenerationPrefix,
+            "A DLL do Neural Rendering escolhida para este jogo é feita para outra geração de placa de vídeo; o Atualizar tudo a mantém como escolhida: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrStageFailedPrefix,
+            "Não foi possível baixar a DLL do Neural Rendering feita para esta placa de vídeo, então nada foi alterado: "),
+        // #231: the NR owners' row note for a 310.8.0.x DLL on an R615+ driver (the version follows); the two F5 package checks.
+        (RHI.Platform.Linux.Deployment.OptiScalerF5DriverPolicy.FaultingNrDllNotePrefix,
+            "Esta DLL do Neural Rendering trava nos drivers NVIDIA 615 e mais novos; é preciso a 310.8.2 ou mais nova. Instalada: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.F5ForwarderNotPeMessage,
+            "O nvngx.dll_dlssnr.dll do pacote OptiScaler F5 DLSSNR não é uma DLL do Windows, então nada foi instalado."),
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.F5BackendMissingMessage,
+            "O pacote OptiScaler F5 DLSSNR não tem a pasta OptiScaler com os arquivos auxiliares, então nada foi instalado."),
+        ("Could not obtain the official OptiScaler F5 DLSSNR package: ", "Não foi possível obter o pacote oficial do OptiScaler F5 DLSSNR: "),
         // w11/nightly-switch rows
         // w11/nr-check rows
     ];

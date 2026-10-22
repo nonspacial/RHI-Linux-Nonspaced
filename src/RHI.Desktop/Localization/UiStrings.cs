@@ -1350,6 +1350,18 @@ internal static class UiStrings
         ("Jh.CopiesGoneNotice", "O RHI não conseguiu restaurar {0} depois de uma alteração interrompida: a cópia que ele guardou do arquivo anterior não existe mais (foi apagada ou o jogo foi reinstalado), então reiniciar não a traz de volta. Confira os mods desse jogo: use Remover e depois Instalar de novo nos que não funcionarem. Detalhes: {1}", "RHI could not put back {0} after an interrupted change: its saved copy of the earlier file is gone (deleted, or the game was reinstalled), so a restart cannot bring it back. Check that game's mods: use Remove and then Install again on any that do not work. Details: {1}"),
         // w11/download-idle rows
         // w11/nr-gpu rows
+        // #229 "Latest" Neural Rendering DLL per card generation
+        ("Ng.UnknownCardTip", "O RHI não conseguiu identificar a sua placa de vídeo, então todas as versões estão listadas.", "RHI could not tell your graphics card, so every version is listed."),
+        ("Ng.NrSkippedNotForCard", "O Neural Rendering {0} não foi aplicado em {1}: essa DLL é feita para outra geração de placa de vídeo.", "Neural Rendering {0} was not applied to {1}: that DLL is made for another graphics card generation."),
+        // #231 OptiScaler F5 DLSSNR driver check (warn and confirm, never refuse)
+        ("Ng.F5ConfirmTitle", "OptiScaler F5 DLSSNR em {0}: verifique o driver NVIDIA", "OptiScaler F5 DLSSNR in {0}: check the NVIDIA driver"),
+        ("Ng.F5DriverOld", "O F5 DLSSNR precisa do driver NVIDIA {0} ou mais novo no Linux ({1} no Windows). Este computador tem o {2}.", "F5 DLSSNR needs NVIDIA driver {0} or newer on Linux ({1} on Windows). This computer has {2}."),
+        ("Ng.F5NoDriver", "O F5 DLSSNR precisa do driver NVIDIA {0} ou mais novo no Linux ({1} no Windows). O RHI não encontrou um driver NVIDIA carregado (ou não conseguiu ler a versão dele).", "F5 DLSSNR needs NVIDIA driver {0} or newer on Linux ({1} on Windows). RHI found no NVIDIA driver loaded (or could not read its version)."),
+        ("Ng.F5NrDllFaults", "A DLL do Neural Rendering que o F5 vai carregar é a {0}, que trava nos drivers NVIDIA 615 e mais novos; é preciso a 310.8.2 ou mais nova.", "The Neural Rendering DLL F5 will load is {0}, which crashes on NVIDIA drivers 615 and newer; 310.8.2 or newer is needed."),
+        ("Ng.F5Ask", "Instalar mesmo assim?", "Install anyway?"),
+        ("Ng.F5InstallAnyway", "Instalar mesmo assim", "Install anyway"),
+        ("Ng.F5UpdateAllDriverOld", "OptiScaler F5 DLSSNR em {0}: o driver NVIDIA {3} é mais antigo que o {1} que o F5 precisa no Linux ({2} no Windows).", "OptiScaler F5 DLSSNR in {0}: NVIDIA driver {3} is older than the {1} F5 needs on Linux ({2} on Windows)."),
+        ("Ng.F5UpdateAllNoDriver", "OptiScaler F5 DLSSNR em {0}: nenhum driver NVIDIA carregado foi encontrado; o F5 precisa do {1} ou mais novo no Linux ({2} no Windows).", "OptiScaler F5 DLSSNR in {0}: no loaded NVIDIA driver was found; F5 needs {1} or newer on Linux ({2} on Windows)."),
         // w11/nightly-switch rows
         // w11/nr-check rows
     ];

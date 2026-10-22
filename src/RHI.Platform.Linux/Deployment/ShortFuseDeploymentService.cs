@@ -52,6 +52,9 @@ public sealed class ShortFuseDeploymentService
 
     /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
     internal Settings.IGameStateStore GameState => _settings;
+
+    /// <summary>w11/nr-gpu: the DLSS service this stack stages from (the NR seam points its card at the host's).</summary>
+    internal DlssManagerService Dlss => _dlss;
     private readonly string _cacheRoot;
     private readonly DeploymentJournal? _journal;
 
@@ -440,6 +443,7 @@ public sealed class ShortFuseDeploymentService
         string stagedAddon;
         Dictionary<DlssComponentKind, string?> cachedDlss;
         string? cachedStreamline;
+        (string Path, string Version)? cachedNr; // #229: no pin = "Latest" made for this card; #230: its version is recorded
         var ualWasPresent = _ual.GetRecord(game) is not null;
         UalStagedPayload? stagedUal = null;
         try
@@ -455,8 +459,9 @@ public sealed class ShortFuseDeploymentService
                 [DlssComponentKind.SuperResolution] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false),
                 [DlssComponentKind.RayReconstruction] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.RayReconstruction, cancellationToken).ConfigureAwait(false),
                 [DlssComponentKind.FrameGeneration] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.FrameGeneration, cancellationToken).ConfigureAwait(false),
-                [DlssComponentKind.NeuralRendering] = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false),
             };
+            cachedNr = await _dlss.EnsureCachedVersionAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false);
+            cachedDlss[DlssComponentKind.NeuralRendering] = cachedNr?.Path;
             cachedStreamline = await _dlss.EnsureNewestStreamlineCachedAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -553,6 +558,9 @@ public sealed class ShortFuseDeploymentService
                 ["GitHub.ReleaseTagPin"] = releaseTag ?? "",
             };
             if (autoConfigEnabled) metadata[MetaReShadeOriginalPath] = originalReShadePath;
+            // #230: which manifest NR version the owned nvngx_dlssnr.dll is (Update All moves a "Latest" install by it).
+            if (cachedNr is { } nr && deployed.Any(file => Path.GetFileName(file.Path).Equals(NeuralRenderingDllSwap.DllName, StringComparison.OrdinalIgnoreCase)))
+                metadata[NeuralRenderingDllSwap.MetaDllVersion] = nr.Version;
             if (iniSnapshot is not null) WriteIniSnapshot(metadata, iniSnapshot);
             // The cached add-on (verified cache entry) is what was copied: its hash is the deployed file's (#26).
             VerifiedDownload.Record(metadata, addonHash, HasPublishedDigest(release));

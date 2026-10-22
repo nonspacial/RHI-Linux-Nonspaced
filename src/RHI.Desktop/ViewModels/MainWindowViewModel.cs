@@ -181,6 +181,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w11 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w11/download-idle rows
     // w11/nr-gpu rows
+    /// <summary>#231: the OptiScaler F5 DLSSNR driver check (asks before an install, notes Update All; never refuses).</summary>
+    public F5DriverConfirmPresenter F5Driver => new(this, _managedComponents);
     // w11/nightly-switch rows
     // w11/nr-check rows
 
@@ -495,7 +497,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         {
             var manifest = await _dlss.FetchManifestAsync();
             Dlss.ApplyManifest(manifest);
-            Extras.ApplyNrDllVersions(manifest.Dlssnr.Select(x => x.Version));
+            Extras.ApplyNrDllVersions(_dlss.Versions(DlssComponentKind.NeuralRendering)); // #229: the NR DLLs made for this card (all for an unknown card)
             NotifyDlss();
         }
         catch (Exception ex)
@@ -1404,6 +1406,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
             if (!removing && !await AcceptManifestInstallWarningsAsync(game, kind, component.DisplayName, installsTarget: true, probe.Files)) return;
             if (!removing && kind == ManagedComponentKind.DxvkHdr && !await DxvkHdr.ConfirmInstallAsync(game)) return; // w7/dxvk-hdr hook (#200)
+            if (!removing && kind == ManagedComponentKind.OptiScaler && !await F5Driver.ConfirmInstallAsync(game, Runtime.SelectedOptiScalerVariant.Value)) return; // w11/nr-gpu hook (#231)
 
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first. Since 2.8.1
             // the confirmation also offers OptiScaler FG and "Using HDR?" (w3/dllnames #136; a plain confirmation = FG No).

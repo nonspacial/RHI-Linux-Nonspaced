@@ -198,6 +198,9 @@ build.
 - The F5 zip is made on Windows and names entries with backslashes (`OptiScaler\libxess.dll`); 7-Zip and bsdtar on Linux extract those as flat file names. RHI moves them to the folders the names mean, as Windows extracts them. A name with `..`, an empty part, or one that collides with another entry refuses the archive (checked on the real 0.1.30 zip: 70 entries).
 - Package files copied into the game now follow upstream's install step: top-level `.bat .sh .ps1 .txt .md .exe .pdb`, `LICENSE`, `!!…`, and the `docs/` and `redist/` folders stay out of the game folder; DLLs, INIs, `OptiScaler/` and `D3D12_Optiscaler/` are copied. This applies to every channel (Stable used to copy its `!! README … .txt`; F5 would otherwise copy its docs).
 - Not ported: upstream's three `OptiScaler_f5.*.ini` templates (Linux deploys the package's own `OptiScaler.ini`) and the info/version links to the fork (PAR-D97).
+- Since #231 (w11): before an F5 install RHI checks the NVIDIA driver and the NR DLL F5 will load, and asks to confirm
+  below Linux driver 615.71.09 or with a 310.8.0.x NR DLL on a 615+ driver (never a refusal); the package must also hold a
+  real Windows-DLL forwarder and its `OptiScaler/` folder. Upstream RankFTW 2.8.7 does not check either.
 
 **`nvngx_dlssnr.dll` sharing rule** (`NeuralRenderingRuntimeOwnership`; the NR Cost Scaler #96 and RTX Encore #158 adopt it):
 1. One owner per game: ShortFuse, DLSS5 Feeder (any record), OptiScaler DLSS NR or OptiScaler F5 DLSSNR. OptiScaler Stable/Nightly are no owners.
@@ -911,6 +914,72 @@ build.
 
 
 <!-- w11/nr-gpu notes -->
+
+### #229 — "Latest" Neural Rendering DLL = the newest one made for your card generation
+- Source: wizardkof/RHI-Linux v0.9.25.0-beta.1 (`26e5259`, `DlssNrGpuPackagePolicy`), re-implemented under the owner's
+  decision of 2026-10-22; upstream RankFTW 2.8.7 always takes the manifest's first NR entry.
+- RHI reads the card from the NVIDIA driver's model names under `/proc/driver/nvidia/gpus/*/information` (read-only):
+  GeForce RTX by number, workstation cards by family (Turing "Quadro RTX"/"TITAN RTX" = 20, Ampere "RTX A…" = 30, "Ada"
+  = 40, "Blackwell" = 50); two GeForce cards by their chip (RTX 2050 = Ampere = 30, RTX 3050 A Laptop = Ada = 40). One
+  card's unreadable information file leaves out that card only. With several NVIDIA cards the newest generation counts. No NVIDIA driver, no model, a card
+  from before RTX or a name RHI does not know = unknown. Never `nvidia-smi` (wizardkof) and never the DLL's CUDA fatbin
+  list (the real `310.8.3 (50xx)` DLL lists sm_75/86/89/120, so a fatbin check passes the wrong file).
+- A manifest NR entry fits the generations its label names (`(50xx)`, `(20/30/40/50)`, `(RTX 40 Series)`…); an entry
+  without a label RHI can read fits every card (it cannot be judged, so it is never hidden — wizardkof never offers it).
+  "Latest" = the first fitting entry in manifest order (the manifest lists NR newest first).
+- Every NR list shows only the fitting entries: the NR DLL dropdown, the DLSS panel's NR swap list, Settings → DLSS
+  defaults, the DLSS batch. Every "Latest" install follows it: OptiScaler DLSS NR / F5, ShortFuse, DLSS5 Feeder, the NR
+  DLL swap with no pin, and a pin no longer published. An unknown card lists everything, newest first, as upstream (never
+  blocked, unlike wizardkof), and the NR DLL dropdown's tooltip says RHI could not tell the card.
+- A hand-picked per-game NR pin stays selected and is installed as chosen even when hidden from the list (#230 adds its
+  row note). A saved NR default (Settings) or a DLSS batch NR choice made for another card is skipped for that game with
+  a line, before any file changes; its other DLSS steps still run (wizardkof refuses the whole game).
+- RTX Encore keeps its own fixed 310.8.0 runtime whatever the card.
+- The NVIDIA driver version is now read by the same probe (moved from the HDR service); it also reads the open kernel
+  module's line (`NVIDIA UNIX Open Kernel Module for x86_64  615.78.08 …`), which the old pattern missed.
+
+### #230 — Update All moves "Latest" Neural Rendering installs onto the DLL made for your card
+- Source: wizardkof/RHI-Linux v0.9.25.0-beta.1's NR update check (`26e5259`), re-implemented under the owner's decision
+  of 2026-10-22 (item 2); fork-specific because the fork has per-game NR pins.
+- ShortFuse and DLSS5 Feeder Full: with no NR pin, the update check reports an update when the installed
+  `nvngx_dlssnr.dll` is not "Latest" made for the card, and the update swaps only that DLL in place through the existing
+  journaled NR swap (logged in the update history as "… (nvngx_dlssnr.dll)"); the add-on part of the check and update works
+  as before. Their earlier update path never touched the NR DLL (it swaps the add-on only). OptiScaler DLSS NR / F5 keep
+  their own runtime step (its check already compares the installed runtime with "Latest", now the one for the card).
+- Which version is installed: the record's own note (`NeuralRendering.DllVersion`, now written by every ShortFuse and
+  Feeder install; OptiScaler's runtime-version key); for older records (Borderlands 3's) the record's SHA-256 of the file
+  matched against RHI's stamped NR cache entries, else the DLL's PE version mapped to exactly one manifest entry. None or
+  several = "could not be checked", never "current", never a blind swap. Before a move RHI checks the file on disk still
+  has the record's SHA-256 (behind the NR Cost Scaler: `nvngx_dlssnr_real.dll`): a DLL the user replaced or removed by hand
+  is "could not be checked" with its own line and left as it is, never an update the swap would refuse on every run. The
+  update history's "from" of an older record is the version told at swap time.
+- A version picked by hand is never changed; when it is made for another card generation the component row says so.
+  Unknown card: nothing moves because of the card. Update All exclusions, the NR Cost Scaler hold ("held", never a
+  failure), ReShade No Addons holds, journal holds and the "modified outside RHI" refusal of the swap all still apply.
+- The NR DLL swap (by hand or by Update All) now says so when its record save reported an error after the write landed.
+
+### #231 — OptiScaler F5 DLSSNR: warn and ask below Linux driver 615.71.09 or with a 310.8.0 NR DLL; two package checks
+- Source: wizardkof/RHI-Linux v0.9.25.0-beta.1 (`26e5259`: `OptiScalerF5DriverPolicy`, a hard refusal below 616.56 read
+  through `nvidia-smi`; `OptiScalerPackageProvider.ValidatePackageRoot`). Re-implemented under the owner's decision of
+  2026-10-22: warn and ask to confirm, never refuse.
+- Threshold: Linux NVIDIA driver **615.71.09**, the first Linux driver of NVIDIA's R615 branch and the Linux equivalent of
+  F5's Windows minimum **616.56** (coordinator decision 2026-10-22 from `reviews/nvidia-driver-numbering.md`): Linux and
+  Windows share the branch, not the minor numbers, so wizardkof's literal 616.56 would refuse every Linux driver released
+  so far (the owner's 615.78.08 included); 610.57.04's NGX core has no DLSSNR, 615.71.09's has. Compared number by number
+  (`major.minor.patch`). The version comes from `/proc/driver/nvidia/version` (one reader, `NvidiaGpuProbe`), never
+  `nvidia-smi`.
+- Every user-started F5 install (a reinstall too) shows the existing confirm dialog when the driver is below 615.71.09,
+  unreadable, or NVIDIA's driver is not loaded — naming both numbers ("615.71.09 or newer on Linux (616.56 on Windows)") and
+  the version found — with "Install anyway" and Cancel; at or above it there is no dialog. Declined: nothing changes and the
+  status line says the install was cancelled. Other OptiScaler channels never ask.
+- Second warning, same dialog: the `nvngx_dlssnr.dll` F5 will stage is 310.8.0.x on a 615-or-newer driver (it crashes
+  there; 310.8.2 or newer is needed) — read from the cached DLL's version resource, else the manifest label. The same note
+  shows on the row of any NR owner (ShortFuse, DLSS5 Feeder, OptiScaler DLSS NR / F5) whose installed NR DLL is 310.8.0.x
+  on such a driver.
+- Update All (manual and background) never asks and never refuses; when it took an F5 install in while the driver is below
+  615.71.09 or unreadable, its status line says so.
+- F5 package checks: `nvngx.dll_dlssnr.dll` must be a Windows DLL (MZ and a PE header), and the package must hold its
+  `OptiScaler/` helper folder (after the backslash names are rebuilt); otherwise it is refused before any game file changes.
 
 <!-- w11/nightly-switch notes -->
 

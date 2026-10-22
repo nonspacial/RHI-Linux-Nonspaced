@@ -170,6 +170,9 @@ public sealed class Dlss5FeederFullDeploymentService
             () => InstallCoreAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, releaseTag, neuralRenderingDllVersion, cancellationToken),
             cancellationToken);
 
+    /// <summary>w11/nr-gpu: the DLSS service this stack stages from (the NR seam points its card at the host's).</summary>
+    internal DlssManagerService Dlss => _dlss;
+
     /// <summary>Swaps the Feeder-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
     public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
         => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken, _journal);
@@ -399,7 +402,8 @@ public sealed class Dlss5FeederFullDeploymentService
         ReShadeStagedDll? HostReShade,
         IReadOnlyList<(string? Part, string Sha256, bool DigestVerified)> Downloads,
         string? ReleaseTag,
-        string? ConsumerPackage);
+        string? ConsumerPackage,
+        string? CachedNrVersion = null); // #230: the manifest version of the NR DLL placed (recorded as NeuralRendering.DllVersion)
 
     // The network half of an install (before the write gate): every download and extraction.
     private async Task<FeederStaged> StageAsync(
@@ -462,8 +466,10 @@ public sealed class Dlss5FeederFullDeploymentService
 
         var cachedSr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Super Resolution runtime.");
-        var cachedNr = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false)
+        // #229: no pin = "Latest" made for this card; #230: the version placed is recorded so Update All can tell it later.
+        var cachedNrVersion = await _dlss.EnsureCachedVersionAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Neural Rendering runtime.");
+        var cachedNr = cachedNrVersion.Path;
         ValidateCachedRuntime(cachedSr, DlssName);
         ValidateCachedRuntime(cachedNr, NrName);
 
@@ -515,7 +521,8 @@ public sealed class Dlss5FeederFullDeploymentService
         }
 
         return new FeederStaged(feederRelease, feederAddon, host64Executable, feederFx, dfc, renoDxRelease, renoDxAddon, renoDxPackageSha256,
-            cachedSr, cachedNr, lumeniteStage, headersStage, sharedDx9, sharedDx9Record, dgVoodooPayload, hostReShade, downloads, releaseTag, consumerPackage);
+            cachedSr, cachedNr, lumeniteStage, headersStage, sharedDx9, sharedDx9Record, dgVoodooPayload, hostReShade, downloads, releaseTag, consumerPackage,
+            cachedNrVersion.Version);
     }
 
     // The file half of an install (after the write gate): every change goes through the scope; the Feeder record (and,
@@ -659,6 +666,7 @@ public sealed class Dlss5FeederFullDeploymentService
         {
             [FullStackMetadata] = "1",
             [MetaFeederVersion] = staged.FeederRelease.Version,
+            [NeuralRenderingDllSwap.MetaDllVersion] = staged.CachedNrVersion ?? "", // #230
             ["GitHub.ReleaseTagPin"] = staged.ReleaseTag ?? "",
             ["Feeder.Architecture"] = GameArchitecture.Of(game).ToString(),
             ["Feeder.Host64"] = t.Layout.RequiresHost64 ? "1" : "0",

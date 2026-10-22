@@ -812,6 +812,34 @@ internal sealed class ManagedComponentRowDecorator
         DecorateUpdateInclusion(game, components); // w5/update-policy (#178)
     }
 
+    /// <summary>
+    /// w11/nr-gpu: the Neural Rendering notes on the installed NR owners' rows, after every other note (the existing
+    /// Note line; it wraps). #230: a hand-picked NR version made for another card generation stays as picked, and says so.
+    /// #231: an installed 310.8.0.x NR DLL on an R615-or-newer driver (it crashes there) — ShortFuse, DLSS5 Feeder and
+    /// OptiScaler DLSS NR / F5. Update All never asks about it.
+    /// </summary>
+    internal void DecorateNeuralRendering(DetectedGame game, IReadOnlyList<ManagedComponent> components, string? nrPin, RtxGeneration card,
+        string? driver, Func<LinuxDeploymentRecord, string?> installedNr)
+    {
+        foreach (var component in components)
+        {
+            if (component.Kind is not (ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.OptiScaler)
+                || !component.ManagedByRhi
+                || component.Availability is not (ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable)) continue;
+            if (component.Kind != ManagedComponentKind.OptiScaler && NeuralRenderingGpuPolicy.MadeForAnotherGeneration(nrPin, card))
+                component.Note = AppendNote(component.Note, LinuxManagedComponentService.NrPinOtherGenerationPrefix + nrPin);
+            if (!OptiScalerF5DriverPolicy.IsR615OrNewer(driver) || _records.Find(game, component.Kind) is not { } record
+                || !(component.Kind == ManagedComponentKind.OptiScaler
+                    ? NeuralRenderingRuntimeOwnership.OptiScalerOwner(record) is not null
+                    : NeuralRenderingRuntimeOwnership.ListsRuntime(record))) continue;
+            if (installedNr(record) is { } version && OptiScalerF5DriverPolicy.IsFaultingNrDll(version))
+                component.Note = AppendNote(component.Note, OptiScalerF5DriverPolicy.FaultingNrDllNotePrefix + version);
+        }
+    }
+
+    private static string AppendNote(string? note, string addition)
+        => string.IsNullOrWhiteSpace(note) ? addition : note.TrimEnd() + " " + addition;
+
     // w4/encore (#158): RTX Encore's row before install. Hidden (Unsupported) where it cannot apply: not a 64-bit Windows
     // DX11/DX12/Vulkan game, or a game without its own DLSS (everything RTX Encore can do under Proton works through it).
     private bool HideRtxEncore(DetectedGame game, ManagedComponent component, IReadOnlyList<ManagedComponent> components)

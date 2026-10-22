@@ -53,6 +53,12 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
     /// <summary>The F5 release also carries an "Optional-Vendor-Neutral-DLSS5-Forwarder.zip" companion; only this prefix is the package (upstream 8dcf55c, 4f28876).</summary>
     public const string F5AssetPrefix = "OptiScaler-DLSSNR-F5-";
     public const string ArchivePathRefusedPrefix = "The OptiScaler archive holds a path RHI will not extract: ";
+
+    /// <summary>#231: the F5 package's forwarder is not a Windows DLL (MZ + PE header); refused before any game file changes.</summary>
+    public const string F5ForwarderNotPeMessage = "The OptiScaler F5 DLSSNR package's nvngx.dll_dlssnr.dll is not a Windows DLL, so nothing was installed.";
+
+    /// <summary>#231: the F5 package has no OptiScaler/ backend folder; refused before any game file changes.</summary>
+    public const string F5BackendMissingMessage = "The OptiScaler F5 DLSSNR package has no OptiScaler folder with its helper files, so nothing was installed.";
     /// <summary>Nightly tags are <c>nightly-YYYYMMDD</c>; the build a game is pinned to is the date (#156).</summary>
     public const string NightlyTagPrefix = "nightly-";
     /// <summary>Upstream offers the last 30 nightly builds (GitHub's default page of the release list).</summary>
@@ -223,6 +229,15 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
             throw new InvalidOperationException("The extracted OptiScaler.dll failed the local PE/signature-string sanity check.");
         if (NeuralRenderingRuntimeOwnership.OptiScalerVariantOwnsRuntime(variant) && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
             throw new InvalidOperationException($"The OptiScaler {OptiScalerDeploymentService.VariantLabel(variant)} archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
+        // #231 (wizardkof v0.9.25.0-beta.1 ValidatePackageRoot): F5's forwarder must be a real Windows DLL, and the package must
+        // hold its OptiScaler/ backend folder (helper DLLs, after the backslash names are rebuilt); else nothing is installed.
+        if (variant == OptiScalerVariant.F5)
+        {
+            if (PeArchitectureDetector.Detect(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")) == RHI.Core.Models.PeArchitecture.Unknown)
+                throw new InvalidOperationException(F5ForwarderNotPeMessage);
+            if (!Directory.EnumerateDirectories(packageRoot).Any(dir => Path.GetFileName(dir).Equals("OptiScaler", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException(F5BackendMissingMessage);
+        }
 
         if (freshlyExtracted) CacheStamp.WriteBoundTo(extractDir, sourceUrl, rawTag, archiveSha256);
         return new OptiScalerPackage(version, sourceUrl, packageRoot, variant, download);

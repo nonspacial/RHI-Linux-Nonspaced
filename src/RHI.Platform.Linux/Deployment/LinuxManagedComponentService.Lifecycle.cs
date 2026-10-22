@@ -53,8 +53,11 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.Rtx40MfgStandalone => await _rtx40Mfg.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.RtxEncore when _rtxEncore is not null => await _rtxEncore.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken).ConfigureAwait(false),
-            ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false),
-            ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
+            // w11/nr-gpu (#230): the add-on check as before, plus a "Latest" NR DLL that is not the one made for this card.
+            ManagedComponentKind.Dlss5Feeder => await WithNeuralRenderingMoveAsync(game, component,
+                await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.ShortFuse => await WithNeuralRenderingMoveAsync(game, component,
+                await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ReShadeAddonManager => await _addonManager.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #194
             // w7 lane rows: update checks (one arm each)
             // w7/smalls rows
@@ -119,8 +122,9 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.DlssEnablerStandalone => _dlssEnablerStandalone.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.RtxEncore when _rtxEncore is not null => _rtxEncore.UpdateAsync(game, cancellationToken),
-            ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.ShortFuse
-                => SwapNeuralAddonVersionCoreAsync(game, component, cancellationToken),
+            ManagedComponentKind.Dlss5Dx11Bridge => SwapNeuralAddonVersionCoreAsync(game, component, cancellationToken),
+            // w11/nr-gpu (#230): the add-on as before, and a "Latest" NR DLL moved onto the one made for this card.
+            ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.ShortFuse => UpdateNeuralRenderingOwnerAsync(game, component, cancellationToken),
             ManagedComponentKind.ReShadeAddonManager => _addonManager.UpdateAsync(game, cancellationToken), // #194
             // w7 lane rows: updates (one arm each)
             // w7/smalls rows

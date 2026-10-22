@@ -641,7 +641,7 @@ public sealed class RtxEncoreDeploymentService
     {
         if (_dlss is null) return (null, NeuralRenderingNeedsDlssListMessage);
         await _dlss.FetchManifestAsync(cancellationToken).ConfigureAwait(false);
-        var version = _dlss.Versions(DlssComponentKind.NeuralRendering).FirstOrDefault(IsRequiredNeuralRenderingVersion);
+        var version = _dlss.PublishedVersions(DlssComponentKind.NeuralRendering).FirstOrDefault(IsRequiredNeuralRenderingVersion); // w11/nr-gpu hook (#229): its fixed runtime, whatever the card
         if (version is null) return (null, NeuralRenderingUnavailableMessage);
         var cached = await _dlss.EnsureCachedVersionAsync(DlssComponentKind.NeuralRendering, version, cancellationToken).ConfigureAwait(false);
         if (cached is not { } source || !string.Equals(source.Version, version, StringComparison.OrdinalIgnoreCase))

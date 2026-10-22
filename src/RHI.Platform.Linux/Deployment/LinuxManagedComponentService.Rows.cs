@@ -8,7 +8,7 @@ namespace RHI.Platform.Linux.Deployment;
 
 public sealed partial class LinuxManagedComponentService
 {
-    public void Decorate(DetectedGame game, IReadOnlyList<ManagedComponent> components) => _rows.Decorate(game, components);
+    public void Decorate(DetectedGame game, IReadOnlyList<ManagedComponent> components) { _rows.Decorate(game, components); DecorateNeuralRenderingRows(game, components); } // w11/nr-gpu hook (#230/#231): NR notes last
 
     // The refusal text when every link of the entry is outside the RenoDX host allow-list; null when one is usable.
     internal static string? UntrustedRenoDxLink(RenoDxModEntry entry)

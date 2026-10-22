@@ -45,7 +45,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         FillVersions(DlssSrVersions, manifest.Dlss.Select(x => x.Version));
         FillVersions(DlssRrVersions, manifest.Dlssd.Select(x => x.Version));
         FillVersions(DlssFgVersions, manifest.Dlssg.Select(x => x.Version));
-        FillVersions(DlssNrVersions, manifest.Dlssnr.Select(x => x.Version));
+        // #229: NR versions made for another card generation are hidden (swap row, DLSS batch, Settings → DLSS defaults).
+        FillVersions(DlssNrVersions, NeuralRenderingGpuPolicy.ForCard(manifest.Dlssnr.Select(x => x.Version), _dlss.CardGeneration()));
         FillVersions(StreamlineVersions, manifest.Streamline.Select(x => x.Version));
         SelectedDlssSrVersion = DlssSrVersions.FirstOrDefault();
         SelectedDlssRrVersion = DlssRrVersions.FirstOrDefault();
@@ -257,6 +258,7 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
                     ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
                 result = await _dlssDefaults.ApplyDefaultsAsync(game, DlssVersionDefaults, files, op.Token);
                 lines.Add(UiLocalizationService.Present(result.Summary));
+                lines.Add(NrNotForThisCardLine(result.Items, DlssVersionDefaults.NeuralRendering)); // #229
             }
             // #215 (upstream's Apply defaults): after the DLL swaps, the preset defaults go into the game's own NVIDIA
             // settings, only where its NVIDIA settings… dialog shows the row.
@@ -278,6 +280,16 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         {
             NotifyDlssDefaults();
         }
+    }
+
+    /// <summary>
+    /// #229: the games whose Neural Rendering step was skipped because the chosen DLL is made for another card
+    /// generation (their other DLSS steps ran); "" when none.
+    /// </summary>
+    internal static string NrNotForThisCardLine(IEnumerable<LinuxDlssBatchItemResult> items, string version)
+    {
+        var games = items.Where(item => item.NotForThisCard).Select(item => item.GameName).Distinct(StringComparer.Ordinal).ToArray();
+        return games.Length == 0 ? "" : TF("Ng.NrSkippedNotForCard", version, string.Join(", ", games));
     }
 
     [RelayCommand(CanExecute = nameof(CanRestoreAllDlss))]
@@ -385,7 +397,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             }
             var result = defaults.HasAny ? new LinuxDlssBatchResult(items) : null;
             await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
-            var line = Join(result is null ? "" : UiLocalizationService.Present(result.Summary), presets is { HasAny: true } ? tally.Line() : "");
+            var line = Join(result is null ? "" : Join(UiLocalizationService.Present(result.Summary), NrNotForThisCardLine(result.Items, defaults.NeuralRendering)),
+                presets is { HasAny: true } ? tally.Line() : ""); // #229: the NR step skipped for a DLL made for another card
             StatusText = line;
             return new(result ?? new LinuxDlssBatchResult([]), line);
         }
