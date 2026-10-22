@@ -9,12 +9,9 @@ The app still reports version `0.9.23.4-beta.1`; the fork has not published a re
 
 ## In progress
 
-Not on `main` yet:
+Not on `main` yet: nothing at the moment.
 
-- **Check Neural Rendering**: a read-only page per game that lists the graphics card and driver, the Neural Rendering
-  DLL installed and whether it is made for this card, and what else may stop Neural Rendering from working.
-
-## Wave 11 — 2026-10-22: Neural Rendering DLL per card, F5 driver warning, Nightly build switch, stalled downloads
+## Wave 11 — 2026-10-22: NR DLL per card, Check Neural Rendering, F5 driver warning, Nightly switch, stalled downloads
 
 > [!WARNING]
 > Before going back to the wave-10 build, do these first; it does not know what this build added:
@@ -61,6 +58,15 @@ Components
   stay, and the update history records it. While the build downloads the row has its own **Cancel**. A switch that fails
   or is cancelled changes nothing, and the dropdown goes back to the installed build. The build Control Ultimate
   Edition's frame generation needs stays locked, with a note.
+- **Check Neural Rendering** (as in wizardkof's newer beta): a read-only page per game, opened with **Check…** right
+  after the **Neural rendering** line of the game's panel, or with **Check Neural Rendering…**, the last item of the
+  card's right-click menu. It lists the graphics card and its generation (the driver version in its tooltip); the Neural
+  Rendering DLL in the game, what put it there and whether it is made for this card, with the version made for it and a
+  warning for a 310.8.0 build on a 615 or newer driver; the recommended Neural Rendering method and the ones in use;
+  anti-cheat folders; and known errors in the ReShade, OptiScaler and DLSS5 Feeder logs beside the game's executable
+  (only the last 2 MB of each is read). Each problem has a line saying where in RHI to fix it. Both openers show only
+  for Windows games on an NVIDIA card with a Neural Rendering DLL or a Neural Rendering method RHI installed. The page
+  changes no files.
 
 Downloads
 
@@ -76,6 +82,11 @@ Safety
   Nightly build switch, OptiScaler's removal (also with RHI's ReShade chained behind it), Update All's Neural Rendering
   move and a Neural Rendering version swap, instead of a "modified outside RHI" refusal that took RHI's own half-undone
   file for a change of yours.
+
+Interface
+
+- The DLSS / Streamline section's version dropdowns grow to show the whole version picked: the Neural rendering one cut
+  `310.8.2 (20/30/40/50)` short at every window size.
 
 ## Wave 10 — 2026-10-22: default DLSS presets, add-ons inside archives, games held after a failed undo
 
