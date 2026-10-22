@@ -50,11 +50,16 @@ internal static class NeuralRenderingDllSwap
             : "";
         try
         {
+            var saveFailed = false;
             var changed = await ManagedFileSwap.ReplaceAsync(record, [(file.Path, source.Path)], updated =>
             {
                 updated.Metadata[MetaDllVersion] = source.Version;
-                records.Upsert(updated);
+                try { records.Upsert(updated); }
+                catch { saveFailed = true; throw; }
             }, cancellationToken, journal, game).ConfigureAwait(false);
+            // #204 / w11 #230: the record save threw but its write had landed (ManagedFileSwap keeps the committed swap):
+            // finished as committed, and the line says the save reported an error (Update All counts it as updated).
+            if (saveFailed) return DeploymentScope.Landed($"{displayName} {DllName} {source.Version}", changedFiles: file.Path);
             return ComponentOperationResult.Ok(fallback + (changed == 0
                 ? $"{displayName}: {DllName} already matches {source.Version}."
                 : $"{displayName}: {DllName} swapped in place to {source.Version}. Nothing else was changed."), file.Path);

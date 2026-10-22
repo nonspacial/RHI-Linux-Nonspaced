@@ -98,6 +98,12 @@ internal static class NrGpuTestKit
                 DriverVersion = driver
             };
 
+    /// <summary>No game is running (Update All defers running games).</summary>
+    public sealed class NeverRunning : RHI.Platform.Linux.Deployment.IGameRunningProbe
+    {
+        public bool IsRunning(DetectedGame game) => false;
+    }
+
     /// <summary>An HDR launch service over the same fake facts (its default reads the real /proc).</summary>
     public static LinuxHdrLaunchProfileService Hdr(NvidiaGpuFacts facts)
         => new(environment: _ => null, commandExists: _ => false, nvidiaVersion: () => facts.DriverVersion, nvidiaGpu: () => facts);

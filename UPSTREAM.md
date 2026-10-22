@@ -896,6 +896,23 @@ build.
 - The NVIDIA driver version is now read by the same probe (moved from the HDR service); it also reads the open kernel
   module's line (`NVIDIA UNIX Open Kernel Module for x86_64  615.78.08 …`), which the old pattern missed.
 
+### #230 — Update All moves "Latest" Neural Rendering installs onto the DLL made for your card
+- Source: wizardkof/RHI-Linux v0.9.25.0-beta.1's NR update check (`26e5259`), re-implemented under the owner's decision
+  of 2026-10-22 (item 2); fork-specific because the fork has per-game NR pins.
+- ShortFuse and DLSS5 Feeder Full: with no NR pin, the update check reports an update when the installed
+  `nvngx_dlssnr.dll` is not "Latest" made for the card, and the update swaps only that DLL in place through the existing
+  journaled NR swap (logged in the update history as "… (nvngx_dlssnr.dll)"); the add-on part of the check and update works
+  as before. Their earlier update path never touched the NR DLL (it swaps the add-on only). OptiScaler DLSS NR / F5 keep
+  their own runtime step (its check already compares the installed runtime with "Latest", now the one for the card).
+- Which version is installed: the record's own note (`NeuralRendering.DllVersion`, now written by every ShortFuse and
+  Feeder install; OptiScaler's runtime-version key); for older records (Borderlands 3's) the record's SHA-256 of the file
+  matched against RHI's stamped NR cache entries, else the DLL's PE version mapped to exactly one manifest entry. None or
+  several = "could not be checked", never "current", never a blind swap.
+- A version picked by hand is never changed; when it is made for another card generation the component row says so.
+  Unknown card: nothing moves because of the card. Update All exclusions, the NR Cost Scaler hold ("held", never a
+  failure), ReShade No Addons holds, journal holds and the "modified outside RHI" refusal of the swap all still apply.
+- The NR DLL swap (by hand or by Update All) now says so when its record save reported an error after the write landed.
+
 <!-- w11/nightly-switch notes -->
 
 <!-- w11/nr-check notes -->

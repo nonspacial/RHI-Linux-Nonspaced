@@ -578,6 +578,10 @@ public sealed class WaveOneMessageLocalizationTests
         // w11/download-idle rows
         // w11/nr-gpu rows
         yield return LinuxDlssDefaultsService.NotMadeForThisCardPrefix + "310.8.3 (50xx)"; // #229
+        yield return LinuxManagedComponentService.NrMovePrefix + "310.8.3 (50xx) → 310.8.2 (20/30/40/50)"; // #230
+        yield return LinuxManagedComponentService.NrUnknownMessage;
+        yield return LinuxManagedComponentService.NrPinOtherGenerationPrefix + "310.8.3 (50xx)";
+        yield return LinuxManagedComponentService.NrStageFailedPrefix + "HTTP 503";
         // w11/nightly-switch rows
         // w11/nr-check rows
     }
@@ -642,6 +646,10 @@ public sealed class WaveOneMessageLocalizationTests
         { RHI.Platform.Linux.Deployment.XnaGacReShade.MissingCopyAfterMovePrefix + P, "has no d3d9.dll" },
         // w11/nr-gpu rows
         { LinuxDlssDefaultsService.NotMadeForThisCardPrefix + "310.8.3 (50xx)", "made for another graphics card generation" }, // #229
+        { LinuxManagedComponentService.NrMovePrefix + "310.8.3 (50xx) → 310.8.2 (20/30/40/50)", "Update All moves it" }, // #230
+        { LinuxManagedComponentService.NrUnknownMessage, "could not tell which Neural Rendering DLL" },
+        { LinuxManagedComponentService.NrPinOtherGenerationPrefix + "310.8.3 (50xx)", "leaves it as picked" },
+        { LinuxManagedComponentService.NrStageFailedPrefix + "HTTP 503", "could not be downloaded" },
     };
 
     [Theory]

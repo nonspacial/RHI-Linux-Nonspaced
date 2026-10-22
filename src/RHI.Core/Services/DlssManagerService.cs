@@ -407,7 +407,7 @@ public sealed class DlssManagerService
     }
 
     /// <summary>The cache folder of one NR/DLSS version (stamped entries of it are matched by #230's identification).</summary>
-    internal string CacheFolder(DlssComponentKind kind) => Path.Combine(_cacheRoot, CacheSubdir(kind));
+    public string CacheFolder(DlssComponentKind kind) => Path.Combine(_cacheRoot, CacheSubdir(kind));
 
     /// <summary>
     /// Ensures the newest payload for one DLSS component is cached and returns its readable DLL path.

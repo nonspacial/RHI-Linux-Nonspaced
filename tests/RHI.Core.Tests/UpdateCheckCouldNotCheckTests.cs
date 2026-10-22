@@ -117,6 +117,44 @@ public sealed class UpdateCheckCouldNotCheckTests
         }
     }
 
+    /// <summary>
+    /// w11/nr-gpu #230: a "Latest" NR DLL RHI cannot tell (no recorded version, no stamp, a PE version no published entry
+    /// has, or one several share) is "could not be checked" — never current, never moved — even while the add-on itself is
+    /// current (the Feeder's release answers here; for ShortFuse and Feeder the add-on part alone would read as current).
+    /// </summary>
+    [Theory]
+    [InlineData("310,7,9,0")]       // no published entry has it
+    [InlineData("310,8,3,0")]       // two published entries share it (the manifest below)
+    public async Task NrDllRhiCannotTell_IsCouldNotBeChecked_InBothUpdateAllModes(string peVersion)
+    {
+        var shared = new[] { "310.8.3 (50xx)", "310.8.3 (20/30/40/50)" };
+        HttpResponseMessage? Answer(HttpRequestMessage request) => request.RequestUri!.AbsoluteUri switch
+        {
+            RHI.Core.Services.DlssManagerService.ManifestUrl => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(NrGpuTestKit.ManifestJson(shared)) },
+            "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("""[{"tag_name":"v1.0","assets":[{"name":"DLSS5-Feeder-1.0.zip","browser_download_url":"https://github.com/rhi-tests/feeder.zip"}]}]""")
+            },
+            _ => null
+        };
+        using var fx = await ViewModelFixture.StartAsync([], httpResponse: Answer, hdrProfiles: NrGpuTestKit.Hdr(NrGpuTestKit.Facts(RHI.Core.Services.RtxGeneration.Rtx40)),
+            nvidiaGpu: () => NrGpuTestKit.Facts(RHI.Core.Services.RtxGeneration.Rtx40));
+        var game = Game(fx.Root, "nr-dll-unknown");
+        var nr = Path.Combine(game.BinaryDirectory!, "nvngx_dlssnr.dll");
+        File.WriteAllBytes(nr, PeVersionReaderTests.BuildVersionedPe(peVersion, peVersion, size: 80_000));
+        NrGpuGames.SeedOwner(fx.Records, game, ManagedComponentKind.Dlss5Feeder, nr);
+
+        var check = await fx.Managed.CheckManagedUpdateAsync(game, ManagedComponentKind.Dlss5Feeder, []);
+
+        Assert.True(check.CouldNotCheck, check.Message);
+        Assert.False(check.UpdateAvailable, check.Message);
+        foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
+        {
+            var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new NeverRunning()).RunAsync([game], _ => [], mode);
+            Assert.Equal((0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount));
+        }
+    }
+
     private static DetectedGame Game(string root, string variant)
     {
         var dir = Directory.CreateDirectory(Path.Combine(root, "games", "Checked Game")).FullName;

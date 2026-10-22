@@ -1625,6 +1625,16 @@ public static class UiLocalizationService
         // #229: the Neural Rendering step of Quick Apply / the DLSS batch skipped for a DLL made for another card; the DLL follows.
         (RHI.Platform.Linux.Deployment.LinuxDlssDefaultsService.NotMadeForThisCardPrefix,
             "Neural Rendering ignorado: a DLL escolhida é feita para outra geração de placa de vídeo, então nenhum arquivo foi alterado. DLL: "),
+        // #230: Update All's NR move (the versions follow), the could-not-tell line, the row note of a hand-picked DLL for
+        // another card (the version follows) and a failed download before the move (the reason follows).
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrMovePrefix,
+            "A DLL do Neural Rendering segue \"Mais recente\" e não é a feita para esta placa de vídeo; o Atualizar tudo a troca: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrUnknownMessage,
+            "O RHI não conseguiu saber qual DLL do Neural Rendering está instalada, então ela não foi comparada com a feita para esta placa de vídeo."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrPinOtherGenerationPrefix,
+            "A DLL do Neural Rendering escolhida para este jogo é feita para outra geração de placa de vídeo; o Atualizar tudo a mantém como escolhida: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrStageFailedPrefix,
+            "Não foi possível baixar a DLL do Neural Rendering feita para esta placa de vídeo, então nada foi alterado: "),
         // w11/nightly-switch rows
         // w11/nr-check rows
     ];
