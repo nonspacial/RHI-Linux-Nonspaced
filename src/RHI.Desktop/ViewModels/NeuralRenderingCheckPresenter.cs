@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -5,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
 
@@ -24,6 +26,9 @@ public sealed partial class NeuralRenderingCheckPresenter : ObservableObject
 
     private readonly MainWindowViewModel _shell;
     private readonly LinuxManagedComponentService _managed;
+    // Follow-up F4: whether the game's LAST analysis saw a Neural Rendering DLL, kept per game outside the session's
+    // 8-entry analysis cache, so both entry points give one answer for a game whose analysis has left that cache.
+    private readonly ConcurrentDictionary<string, bool> _nrDllSeen = new(StringComparer.Ordinal);
     private bool _isAvailable;
     private bool _opening;
 
@@ -38,7 +43,32 @@ public sealed partial class NeuralRenderingCheckPresenter : ObservableObject
         // The Neural rendering line is re-raised whenever the selection, its analysis, a component or the language
         // changes (NotifyDlss): the button follows it.
         _shell.Runtime.PropertyChanged += OnRuntimeChanged;
+        ((IPanelHost)_shell).Session.Completed += OnAnalysed;
         Refresh();
+    }
+
+    private void OnAnalysed(AnalysisOutcome outcome)
+    {
+        if (((IPanelHost)_shell).Session.TryGetCached(outcome.Game, out var analysis)) Remember(outcome.Game, analysis);
+    }
+
+    private bool Remember(DetectedGame game, GameAnalysis analysis)
+    {
+        var seen = analysis.Dlss.DlssnrPaths.Count > 0;
+        _nrDllSeen[LinuxGameLibraryStore.SessionKey(game)] = seen;
+        return seen;
+    }
+
+    /// <summary>
+    /// The one "is there a Neural Rendering DLL" answer of both entry points: the game's analysis (cached, or remembered
+    /// after it left the cache); before any analysis, one beside its executable.
+    /// </summary>
+    private bool NrDllFound(DetectedGame game)
+    {
+        if (((IPanelHost)_shell).Session.TryGetCached(game, out var analysis)) return Remember(game, analysis);
+        if (_nrDllSeen.TryGetValue(LinuxGameLibraryStore.SessionKey(game), out var seen)) return seen;
+        var directory = NeuralRenderingDiagnosis.LogDirectory(game);
+        return directory is not null && File.Exists(Path.Combine(directory, NeuralRenderingRuntimeOwnership.DllName));
     }
 
     /// <summary>The window's dialog (set by the window; tests and the harness set their own).</summary>
@@ -60,7 +90,7 @@ public sealed partial class NeuralRenderingCheckPresenter : ObservableObject
     {
         var host = (IPanelHost)_shell;
         var available = host.SelectedGame is { } game && host.CurrentAnalysis is { } analysis
-                        && _managed.NeuralRenderingCheckApplies(game, analysis.Dlss.DlssnrPaths.Count > 0);
+                        && _managed.NeuralRenderingCheckApplies(game, Remember(game, analysis));
         if (available != _isAvailable)
         {
             _isAvailable = available;
@@ -71,20 +101,13 @@ public sealed partial class NeuralRenderingCheckPresenter : ObservableObject
     }
 
     /// <summary>
-    /// The card menu item shows for <paramref name="game"/>: its analysis (when RHI has one) or, before it, a Neural
-    /// Rendering DLL beside its executable, or a Neural Rendering method RHI installed there.
+    /// The card menu item shows for <paramref name="game"/>: a Neural Rendering DLL as its analysis saw it (cached or
+    /// remembered; before any analysis, beside its executable), or a Neural Rendering method RHI installed there.
     /// </summary>
     public bool AvailableFor(DetectedGame game)
     {
         ArgumentNullException.ThrowIfNull(game);
-        bool nrDll;
-        if (((IPanelHost)_shell).Session.TryGetCached(game, out var analysis)) nrDll = analysis.Dlss.DlssnrPaths.Count > 0;
-        else
-        {
-            var directory = NeuralRenderingDiagnosis.LogDirectory(game);
-            nrDll = directory is not null && File.Exists(Path.Combine(directory, NeuralRenderingRuntimeOwnership.DllName));
-        }
-        return _managed.NeuralRenderingCheckApplies(game, nrDll);
+        return _managed.NeuralRenderingCheckApplies(game, NrDllFound(game));
     }
 
     /// <summary>The panel button: the selected game's page.</summary>

@@ -256,6 +256,28 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         Assert.Equal(["DLSS5 DX11 Bridge"], (await DiagnoseAsync(fx, bl3.Game)).Method.InUse);
     }
 
+    // #234 follow-up F4 (probe P5): the NR DLL sits in a sub-folder only the analysis finds; the card menu gives the
+    // panel's answer, also once the game's analysis has left the 8-entry cache.
+    [Fact]
+    public async Task NrDllInASubfolder_BothEntryPointsAgree_AfterTheAnalysisLeavesTheCache()
+    {
+        var bl3 = Borderlands(nrVersion: null);
+        var sub = Directory.CreateDirectory(Path.Combine(bl3.Bin, "Plugins", "DLSS")).FullName;
+        File.WriteAllBytes(Path.Combine(sub, "nvngx_dlssnr.dll"), Dll(ForAll));
+        using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx40));
+        var listed = Listed(fx, bl3.Game.Name);
+
+        var panel = fx.Vm.NrCheck.IsAvailable;
+        var menuCached = fx.Vm.CardMenuFor(fx.Vm.Games.Single()).Any(item => item.Id == "nr-check");
+        fx.Vm.Session.Invalidate(listed);
+        var menuUncached = fx.Vm.CardMenuFor(fx.Vm.Games.Single()).Any(item => item.Id == "nr-check");
+
+        Assert.True(panel);
+        Assert.True(menuCached);
+        Assert.True(menuUncached);
+        Assert.False(fx.Vm.Session.TryGetCached(listed, out _));
+    }
+
     [Fact]
     public async Task TheButton_FollowsTheSelection()
     {
