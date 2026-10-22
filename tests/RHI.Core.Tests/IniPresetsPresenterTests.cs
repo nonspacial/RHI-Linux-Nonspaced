@@ -88,6 +88,19 @@ public sealed class IniPresetsPresenterTests
             Runner = "Proton", SteamAppId = 77005, Source = "Steam"
         };
         using var fx = await ViewModelFixture.StartAsync([game]);
+        // The card's analysis writes its "Ready —" line from another thread; a handler reading StatusText then reads that
+        // line for both writes (w11 integration: 1 run in many under load). Let the analysis finish before the question.
+        var analysed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnCompleted(AnalysisOutcome outcome) { if (outcome.Game.Name == game.Name) analysed.TrySetResult(); }
+        fx.Vm.Session.Completed += OnCompleted;
+        try
+        {
+            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == game.Name).Game;
+            if (!(fx.Vm.Session.Game?.Name == game.Name && fx.Vm.Session.Analysis is not null))
+                await analysed.Task.WaitAsync(TimeSpan.FromMinutes(2));
+        }
+        finally { fx.Vm.Session.Completed -= OnCompleted; }
+        await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromMinutes(2));
         fx.Records.Manage(fx.Vm.AllLibraryGames.Single(), ManagedComponentKind.ReLimiter);
         File.SetUnixFileMode(ini, UnixFileMode.None);
         // The selection analysis' "Ready —" line can replace ours at any moment: collect every line written instead.
