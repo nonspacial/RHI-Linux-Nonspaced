@@ -72,6 +72,9 @@ public sealed partial class LinuxManagedComponentService
     /// <summary>#195: the game's RenoDX record (the drop dialog names the add-on it replaces).</summary>
     public LinuxDeploymentRecord? GetRenoDxRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX);
 
+    /// <summary>w10 follow-up D16: RHI's Luma record of <paramref name="game"/> (what a Luma package from an archive replaces).</summary>
+    public LinuxDeploymentRecord? GetLumaRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.LumaFramework);
+
     /// <summary>#195: the add-on file name the RenoDX catalogue matched for the game this session (its snapshot), else null.</summary>
     public string? RenoDxCatalogueFileName(DetectedGame game)
         => _renodx.TryGetPreparedCompatibility(game, out var mod) && mod?.UrlFor(GameArchitecture.Of(game)) is { } url

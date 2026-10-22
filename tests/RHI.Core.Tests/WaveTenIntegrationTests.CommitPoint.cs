@@ -62,12 +62,12 @@ public sealed partial class WaveTenIntegrationTests
     /// landed) while the folder it changed turns read-only: its undo cannot finish, so the game is held (#220). The
     /// folder is beside the game's binaries, so the add-on folder itself stays as it was.
     /// </summary>
-    private static async Task HoldAsync(ViewModelFixture fx, DetectedGame game, string folder)
+    private static async Task HoldAsync(ViewModelFixture fx, DetectedGame game, string folder, string payloadName = "earlier.ini", bool existedBefore = true)
     {
         var renodx = typeof(LinuxManagedComponentService).GetField("_renodx", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fx.Managed)!;
         var journal = (DeploymentJournal)typeof(RenoDxDeploymentService).GetField("_journal", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(renodx)!;
-        var payload = Path.Combine(folder, "earlier.ini");
-        File.WriteAllText(payload, "before");
+        var payload = Path.Combine(folder, payloadName);
+        if (existedBefore) File.WriteAllText(payload, "before");
         var (opened, refusal) = await DeploymentScope.BeginAsync(journal, "earlier RenoDX change", game, ManagedComponentKind.RenoDX, CancellationToken.None);
         Assert.Null(refusal);
         await using var scope = opened!;
@@ -125,6 +125,42 @@ public sealed partial class WaveTenIntegrationTests
         {
             fx.Records.SaveFaultForTesting = null;
             PermissionDenial.MakeWritable(side);
+        }
+    }
+
+    // w10 follow-up D15: the game is held because the undo of its OWN earlier RenoDX add-on could not finish (the add-on
+    // it placed is still there: its folder turned read-only). The archive install gets the hold's restart text — not
+    // "Foreign RenoDX protection", which took RHI's own half-undone add-on for someone else's.
+    [PermissionDenialTheory]
+    [MemberData(nameof(Languages))]
+    public async Task AnArchiveInstall_OnAGameHeldByItsOwnRenoDxUndo_GetsTheRestartText_NotTheForeignFileRefusal(string language)
+    {
+        var (fx, game) = await StartAsync(language);
+        using var _ = fx;
+        var zip = Zip(Path.Combine(Folder(fx, "Downloads"), "Foo Game HDR.zip"), ("renodx-foogame.addon64", AddonBytes()));
+        var offer = await ArchiveOfferAsync(fx, zip);
+        var earlier = Path.Combine(game.BinaryDirectory!, "renodx-foogame-earlier.addon64");
+        try
+        {
+            await HoldAsync(fx, game, game.BinaryDirectory!, Path.GetFileName(earlier), existedBefore: false);
+            Assert.True(File.Exists(earlier)); // the earlier change's own add-on, its undo not finished
+            var lines = Lines(fx);
+
+            Assert.False(await fx.Vm.DroppedRenoDx.InstallAsync(fx.Vm, offer, game));
+
+            var all = string.Join(" | ", lines);
+            var refusal = UiLocalizationService.PresentFor(language, DeploymentJournal.EarlierUndoFailedMessage);
+            Assert.True(lines.Any(l => l.Contains(refusal, StringComparison.Ordinal)), all);
+            Assert.DoesNotContain(UiLocalizationService.PresentFor(language,
+                "Foreign RenoDX protection: another RenoDX add-on already exists at " + earlier + ". RHI Linux will not overwrite or stack it automatically."), all, StringComparison.Ordinal);
+            Assert.DoesNotContain("Foreign RenoDX", all, StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "renodx-foogame.addon64"))); // nothing installed
+            Assert.True(ScratchIsEmpty(fx));
+        }
+        finally
+        {
+            fx.Records.SaveFaultForTesting = null;
+            PermissionDenial.MakeWritable(game.BinaryDirectory!);
         }
     }
 }

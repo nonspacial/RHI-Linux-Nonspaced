@@ -56,6 +56,24 @@ public sealed class DeploymentScope : IAsyncDisposable
         return refusal is not null ? (null, refusal) : (new DeploymentScope(operation), null);
     }
 
+    /// <summary>
+    /// w10 follow-up D15: the refusal <see cref="BeginAsync"/> would give for <paramref name="game"/>'s
+    /// <paramref name="component"/> now (an earlier change still held), or null; nothing is started. Asked before a
+    /// service's own checks of the game's files. A journal that cannot be read or written refuses as BeginAsync does.
+    /// </summary>
+    public static async Task<string?> HoldRefusalAsync(DeploymentJournal? journal, DetectedGame game, ManagedComponentKind component)
+    {
+        if (journal is null) return null;
+        try
+        {
+            return await journal.HoldRefusalAsync(LinuxDeploymentRecovery.RecordCommitProbe(game, component)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"{LinuxDeploymentRecovery.JournalUnavailablePrefix}{ex.Message}); nothing was changed.";
+        }
+    }
+
     /// <summary>A scope with no journal (callers that run inside another service's operation, tests).</summary>
     public static DeploymentScope Unjournaled() => new(null);
 

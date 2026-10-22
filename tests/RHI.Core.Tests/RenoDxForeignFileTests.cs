@@ -95,6 +95,55 @@ public sealed class RenoDxForeignFileTests : IDisposable
         Assert.False(File.Exists(Target));
     }
 
+    // w10 follow-up D15, the catalogue install: a game held because the undo of its own earlier RenoDX add-on could not
+    // finish (the add-on is still in the folder) gets the hold's restart text, not the foreign-file refusal.
+    [PermissionDenialFact]
+    public async Task OnAGameHeldByItsOwnRenoDxUndo_TheInstallGetsTheRestartText_NotTheForeignFileRefusal()
+    {
+        var journal = SimulatedDeath.NewJournal(Path.Combine(_root, "journal"), _store).Journal;
+        var http = new HttpClient(new OverrideHandler());
+        var manifest = new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json");
+        var service = new RenoDxDeploymentService(http, _store, new RenoDxCatalogService(http, manifest), Path.Combine(_root, "cache"), manifest, journal: journal);
+        var bin = _game.BinaryDirectory!;
+        var earlier = Path.Combine(bin, "renodx-foogame.addon64");
+        var (opened, refusal) = await RHI.Platform.Linux.Deployment.DeploymentScope.BeginAsync(journal, "earlier RenoDX change", _game, ManagedComponentKind.RenoDX, CancellationToken.None);
+        Assert.Null(refusal);
+        await using (var scope = opened!)
+        {
+            await scope.PlaceBytesAsync(earlier, _userBytes);
+            _store.SaveFaultForTesting = () =>
+            {
+                PermissionDenial.MakeReadOnly(bin);
+                return new IOException("Simulated write failure: records.json");
+            };
+            try
+            {
+                Assert.NotNull(Record.Exception(() => _store.Upsert(scope.Stamp(new LinuxDeploymentRecord
+                {
+                    GameKey = LinuxDeploymentRecordStore.GameKey(_game), GameName = _game.Name, Component = ManagedComponentKind.RenoDX,
+                    BinaryDirectory = bin, Files = [new LinuxDeployedFile { Path = earlier, Sha256 = RHI.Core.Deployment.FileHash.Sha256HexOf(_userBytes) }]
+                }))));
+            }
+            finally
+            {
+                _store.SaveFaultForTesting = null;
+            }
+            Assert.False((await scope.RollbackAsync()).Success); // held
+        }
+        try
+        {
+            Assert.True(File.Exists(earlier));
+            var install = await service.InstallAsync(_game, _files);
+            Assert.False(install.Success);
+            Assert.Equal(RHI.Core.Deployment.DeploymentJournal.EarlierUndoFailedMessage, install.Message);
+            Assert.False(File.Exists(Target));
+        }
+        finally
+        {
+            PermissionDenial.MakeWritable(bin);
+        }
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
     private sealed class OverrideHandler : HttpMessageHandler

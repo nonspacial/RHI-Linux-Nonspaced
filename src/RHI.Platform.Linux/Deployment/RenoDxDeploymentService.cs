@@ -326,6 +326,9 @@ public sealed class RenoDxDeploymentService
         var target = Path.Combine(deployDir, fileName);
         var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
         var managedOldPath = existingRecord?.Files.FirstOrDefault()?.Path;
+        // w10 follow-up D15: the hold's restart text before the foreign-file scan (as for a dropped add-on).
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.RenoDX).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
 
         foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", CaseInsensitiveTopLevel))
         {
@@ -862,6 +865,10 @@ public sealed class RenoDxDeploymentService
         if (_records.CorruptLedgerPath is { } quarantined)
             return ComponentOperationResult.Fail(LocalLedgerUnreadablePrefix + quarantined);
         var managedOldPath = existingRecord?.Files.FirstOrDefault()?.Path;
+        // w10 follow-up D15: a game held by an earlier RenoDX change whose undo is not finished gets the hold's restart
+        // text first — the scan below would take that change's own add-on, still in place, for someone else's.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.RenoDX).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
         if (Directory.Exists(deployDir))
         {
             foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", CaseInsensitiveTopLevel))

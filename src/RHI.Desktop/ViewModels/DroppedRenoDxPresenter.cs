@@ -199,8 +199,14 @@ public sealed class DroppedRenoDxPresenter(LinuxManagedComponentService componen
     public string? ReplacesFor(DetectedGame game)
         => components.GetRenoDxRecord(game)?.Files.FirstOrDefault()?.Path is { } installed ? TF("Sm.DropReplaces", Path.GetFileName(installed)) : null;
 
-    /// <summary>The line for the dialog under the folder: what a RenoDX add-on replaces; nothing for another add-on.</summary>
-    public string? ReplacesFor(DroppedRenoDxOffer offer, DetectedGame game) => offer.IsRenoDx ? ReplacesFor(game) : null;
+    /// <summary>
+    /// The line for the dialog under the folder: what a RenoDX add-on replaces (RHI's RenoDX add-on), what a Luma package
+    /// replaces (RHI's Luma install — w10 follow-up D16: a Luma offer is built as a RenoDX one, so it used to name the
+    /// RenoDX add-on); nothing for another add-on.
+    /// </summary>
+    public string? ReplacesFor(DroppedRenoDxOffer offer, DetectedGame game)
+        => offer.IsLuma ? (components.GetLumaRecord(game) is not null ? T("Arc.LumaReplaces") : null)
+            : offer.IsRenoDx ? ReplacesFor(game) : null;
 
     /// <summary>
     /// The matched game's index in <paramref name="games"/>: the catalogue's add-on file for the game, then the game's

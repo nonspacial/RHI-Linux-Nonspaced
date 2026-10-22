@@ -136,6 +136,15 @@ public sealed class DeploymentJournal
         return operation;
     }
 
+    /// <summary>
+    /// w10 follow-up D15: what <see cref="BeginAsync"/> would refuse an operation with <paramref name="commitProbe"/> for
+    /// (an earlier change to the same game still undecided, its undo failed, or its note unusable), after settling every
+    /// waiting entry as it would; null when nothing holds it up. Nothing is started. A service asks this before checks of
+    /// its own that read the game's files, so a held game gets the hold's restart text, not a reading of a half-undone
+    /// state (RHI's own add-on taken for someone else's).
+    /// </summary>
+    public Task<string?> HoldRefusalAsync(string? commitProbe) => SettleWaitingAsync(commitProbe);
+
     // Review w8 finding 2: operations of this session left undecided (and entries a deferred start-up recovery kept), by id,
     // with the commit check's mark taken when they began (null: unknown, e.g. a previous session's) and the commit probe
     // known when they started waiting (w10 review finding 2: the game an entry holds when the entry cannot be read later;

@@ -1343,6 +1343,7 @@ internal static class UiStrings
         ("Arc.LumaTitle", "Instalar add-on do Luma", "Install Luma add-on"),
         ("Arc.LumaIntro", "Instalar o pacote Luma {1} (ele contém {0}) neste jogo:", "Install the Luma package {1} (it holds {0}) into this game:"),
         ("Arc.LumaNote", "O RHI usa a mesma instalação gerenciada de um pacote Luma solto sobre ele; o botão Remover da linha do Luma o retira.", "RHI uses the same managed install as for a Luma package dropped on it; the Luma row's Remove button takes it out."),
+        ("Arc.LumaReplaces", "Substitui o Luma que o RHI instalou neste jogo.", "Replaces the Luma install RHI made in this game."),
         ("Arc.AddonChoiceTip", "Os add-ons encontrados no arquivo compactado; escolha o que será instalado.", "The add-ons found in the archive; choose the one to install."),
         ("Arc.SourceKept", "O arquivo compactado continua na pasta observada: ele mudou depois que o RHI o leu.", "The archive stays in the watch folder: it changed after RHI read it."),
         // w10/journal-holds rows

@@ -153,6 +153,35 @@ public sealed class DroppedArchiveOfferTests(ITestOutputHelper output) : IDispos
         Assert.True(ScratchIsEmpty(fx));
     }
 
+    // w10 follow-up D16: the archive dialog's "Replaces …" line for a Luma add-on speaks of Luma, never of the RenoDX
+    // add-on the game has (a Luma offer is built as a RenoDX one); a RenoDX add-on still names RHI's RenoDX add-on.
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pt-BR")]
+    public async Task ALumaAddon_FromAnArchive_SaysWhatItReplacesInLumasWords_NotTheRenoDxAddons(string language)
+    {
+        var (fx, game) = await StartAsync(language);
+        using var _ = fx;
+        var record = (ManagedComponentKind kind, string file) => new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind, BinaryDirectory = game.BinaryDirectory!,
+            Files = [new LinuxDeployedFile { Path = Path.Combine(game.BinaryDirectory!, file), Sha256 = new string('0', 64) }]
+        };
+        fx.Records.Upsert(record(ManagedComponentKind.RenoDX, "renodx-foogame.addon64"));
+        var zip = Zip(Path.Combine(Folder(fx, "Downloads"), "pacote.zip"), ("renodx-bargame.addon64", AddonBytes()), ("Luma-Foo.addon64", AddonBytes()));
+        using var archive = (await fx.Vm.DroppedRenoDx.OfferForArchiveAsync(fx.Vm, zip)).Offer!;
+        var renodx = archive.AddOns.Single(offer => !offer.IsLuma);
+        var luma = archive.AddOns.Single(offer => offer.IsLuma);
+        var pt = language == "pt-BR";
+
+        Assert.Equal(pt ? "Substitui o add-on do RenoDX que o RHI instalou: renodx-foogame.addon64" : "Replaces the RenoDX add-on RHI installed: renodx-foogame.addon64",
+            fx.Vm.DroppedRenoDx.ReplacesFor(renodx, game));
+        Assert.Null(fx.Vm.DroppedRenoDx.ReplacesFor(luma, game)); // no Luma install yet: it replaces nothing
+
+        fx.Records.Upsert(record(ManagedComponentKind.LumaFramework, "Luma-Foo.addon64"));
+        Assert.Equal(pt ? "Substitui o Luma que o RHI instalou neste jogo." : "Replaces the Luma install RHI made in this game.", fx.Vm.DroppedRenoDx.ReplacesFor(luma, game));
+    }
+
     // w10 follow-up D5: two add-ons of one file name in different folders read apart in the "Add-on" dropdown (their
     // path inside the archive); a name no other add-on has stays the bare file name.
     [Fact]
