@@ -220,9 +220,16 @@ public sealed class OptiScalerNightlyBuildPresenterTests
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
+    public static TheoryData<string, bool> LanguagesAndCancelShapes => new()
+    {
+        { "en-US", true }, { "pt-BR", true }, { "en-US", false }, { "pt-BR", false }
+    };
+
+    // A Cancel surfaces either as the cancellation itself or as a failed result (services turn it into one); both say
+    // the build stays, never the failure's own text.
     [Theory]
-    [MemberData(nameof(Languages))]
-    public async Task Apply_CancelledWhileDownloading_SaysTheBuildStays_FromTheRowsOwnCancel(string lang)
+    [MemberData(nameof(LanguagesAndCancelShapes))]
+    public async Task Apply_CancelledWhileDownloading_SaysTheBuildStays_FromTheRowsOwnCancel(string lang, bool throws)
     {
         var (fx, game, row, _) = await InstalledAndChosenAsync(lang);
         using var _fx = fx;
@@ -232,7 +239,11 @@ public sealed class OptiScalerNightlyBuildPresenterTests
             fx.Managed.NightlySwitchForTesting = async (g, _, ct) =>
             {
                 started.SetResult();
-                await Task.Delay(Timeout.Infinite, ct); // still downloading
+                try { await Task.Delay(Timeout.Infinite, ct); } // still downloading
+                catch (OperationCanceledException) when (!throws)
+                {
+                    return ComponentOperationResult.Fail(OptiScalerDeploymentService.NightlySwitchFailedPrefix + "A task was canceled.");
+                }
                 return ComponentOperationResult.Ok("");
             };
 
