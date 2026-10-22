@@ -172,4 +172,47 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             PermissionDenial.MakeWritable(f.Bin);
         }
     }
+
+    // Integration item 5, the other side: the same hold, but the game folder is writable again. Asking for the hold
+    // settles it first (the undo now finishes and RHI's DLL is back), so the check sees RHI's file and plans the move —
+    // never "changed outside RHI" for the half-undone copy it read before the settle — and Update All moves it.
+    [PermissionDenialFact]
+    public async Task W11Int_NrMove_WhenTheHoldSettlesAtTheCheck_SeesRhisFileAgain_AndMoves()
+    {
+        using var f = await LegacyLatestOn50xxAsync(journaled: true);
+        var managed = Managed(f, RtxGeneration.Rtx40, out _, out _);
+        var (opened, refusal) = await DeploymentScope.BeginAsync(f.Journal!, "earlier Feeder change", f.Game, ManagedComponentKind.Dlss5Feeder,
+            CancellationToken.None);
+        Assert.Null(refusal);
+        await using (var scope = opened!)
+        {
+            await scope.PlaceBytesAsync(NrPath(f), Dll(Old50));
+            f.Records.SaveFaultForTesting = () =>
+            {
+                PermissionDenial.MakeReadOnly(f.Bin);
+                return new IOException("Simulated write failure: deployments.json");
+            };
+            try
+            {
+                Assert.NotNull(Record.Exception(() => f.Records.Upsert(scope.Stamp(f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)!))));
+            }
+            finally
+            {
+                f.Records.SaveFaultForTesting = null;
+            }
+            Assert.False((await scope.RollbackAsync()).Success);
+        }
+        PermissionDenial.MakeWritable(f.Bin); // the user fixed the folder; the undo can finish now
+        Assert.Equal(Dll(Old50), File.ReadAllBytes(NrPath(f)));
+
+        var check = await managed.CheckManagedUpdateAsync(f.Game, ManagedComponentKind.Dlss5Feeder, []);
+
+        Assert.Equal(Dll(For50), File.ReadAllBytes(NrPath(f))); // the settle put RHI's DLL back
+        Assert.True(check.UpdateAvailable, check.Message);
+        Assert.False(check.CouldNotCheck, check.Message);
+        Assert.Contains(LinuxManagedComponentService.NrMovePrefix + $"{For50} → {ForAll}", check.Message, StringComparison.Ordinal);
+        var updated = await managed.UpdateManagedAsync(f.Game, ManagedComponentKind.Dlss5Feeder, []);
+        Assert.True(updated.Success, updated.Message);
+        Assert.Equal(Dll(ForAll), File.ReadAllBytes(NrPath(f)));
+    }
 }
