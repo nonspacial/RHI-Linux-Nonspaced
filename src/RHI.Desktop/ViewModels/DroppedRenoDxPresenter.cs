@@ -38,7 +38,14 @@ public sealed class DroppedArchiveOffer(DroppedArchive archive, IReadOnlyList<Dr
 {
     public DroppedArchive Archive { get; } = archive;
     public IReadOnlyList<DroppedRenoDxOffer> AddOns { get; } = addOns;
-    public IReadOnlyList<string> AddOnNames => AddOns.Select(offer => offer.FileName).ToArray();
+    /// <summary>
+    /// The "Add-on" dropdown's entries: each add-on's file name, or its path inside the archive when another add-on of the
+    /// archive has the same file name (w10 follow-up D5), so two entries never read the same.
+    /// </summary>
+    public IReadOnlyList<string> AddOnNames => AddOns.Select(offer =>
+        offer.ArchiveAddon is { } addon && AddOns.Count(other => string.Equals(other.FileName, offer.FileName, StringComparison.OrdinalIgnoreCase)) > 1
+            ? addon.Member.Replace('\\', '/')
+            : offer.FileName).ToArray();
     public string AddOnTip => UiLocalizationService.Text("Arc.AddonChoiceTip");
     public void Dispose() => Archive.Dispose();
 }

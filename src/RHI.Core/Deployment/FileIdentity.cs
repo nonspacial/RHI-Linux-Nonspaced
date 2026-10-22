@@ -43,6 +43,57 @@ public static class FileKind
         if ((MemoryMarshal.Read<uint>(buffer.AsSpan(Statx.MaskOffset)) & MaskType) == 0) return null;
         return (MemoryMarshal.Read<ushort>(buffer.AsSpan(ModeOffset)) & TypeBits) == RegularFile;
     }
+
+    /// <summary>
+    /// w10 follow-up D4: opens <paramref name="path"/> for reading (a link counts as what it leads to) only when the file
+    /// it opened is a regular file — the kind is read from the open file, so nothing put at the path after the check is
+    /// ever read. The open never blocks (<c>O_NONBLOCK</c>: a FIFO with no writer or a device answers at once and is
+    /// refused). Null when it cannot be opened, is not a regular file, or where this cannot be told (not Linux).
+    /// </summary>
+    public static Microsoft.Win32.SafeHandles.SafeFileHandle? OpenRegularFileForReading(string path)
+    {
+        if (!OperatingSystem.IsLinux()) return null;
+        const int ReadOnlyNonBlockingCloseOnExec = 0x0 | 0x800 | 0x80000; // O_RDONLY | O_NONBLOCK | O_CLOEXEC
+        int descriptor;
+        try
+        {
+            descriptor = Libc.open(path, ReadOnlyNonBlockingCloseOnExec);
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            try
+            {
+                descriptor = Glibc.open(path, ReadOnlyNonBlockingCloseOnExec);
+            }
+            catch (Exception inner) when (inner is DllNotFoundException or EntryPointNotFoundException)
+            {
+                return null;
+            }
+        }
+        if (descriptor < 0) return null;
+        var handle = new Microsoft.Win32.SafeHandles.SafeFileHandle(descriptor, ownsHandle: true);
+        var buffer = new byte[Statx.BufferSize];
+        if (!Statx.TryRead(descriptor, MaskType, buffer)
+            || (MemoryMarshal.Read<uint>(buffer.AsSpan(Statx.MaskOffset)) & MaskType) == 0
+            || (MemoryMarshal.Read<ushort>(buffer.AsSpan(ModeOffset)) & TypeBits) != RegularFile)
+        {
+            handle.Dispose();
+            return null;
+        }
+        return handle;
+    }
+
+    private static class Libc
+    {
+        [DllImport("libc", SetLastError = true)]
+        public static extern int open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
+    }
+
+    private static class Glibc
+    {
+        [DllImport("libc.so.6", SetLastError = true)]
+        public static extern int open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
+    }
 }
 
 /// <summary>statx(2) through the C library; its buffer layout is the same on every Linux architecture.</summary>
@@ -61,20 +112,27 @@ internal static class Statx
     private const int AtFdCwd = -100;
     private const int AtSymlinkNoFollow = 0x100;
 
+    private const int AtEmptyPath = 0x1000;
+
     /// <summary>Fills <paramref name="buffer"/>; false when not on Linux, statx is missing from the C library, or the call failed.</summary>
     public static bool TryRead(string path, bool followSymlinks, uint mask, byte[] buffer)
+        => TryRead(AtFdCwd, path, followSymlinks ? 0 : AtSymlinkNoFollow, mask, buffer);
+
+    /// <summary>As <see cref="TryRead(string, bool, uint, byte[])"/> for an open file descriptor (<c>AT_EMPTY_PATH</c>).</summary>
+    public static bool TryRead(int descriptor, uint mask, byte[] buffer) => TryRead(descriptor, "", AtEmptyPath, mask, buffer);
+
+    private static bool TryRead(int dirfd, string path, int flags, uint mask, byte[] buffer)
     {
         if (!OperatingSystem.IsLinux()) return false;
-        var flags = followSymlinks ? 0 : AtSymlinkNoFollow;
         try
         {
-            return Libc.statx(AtFdCwd, path, flags, mask, buffer) == 0;
+            return Libc.statx(dirfd, path, flags, mask, buffer) == 0;
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
             try
             {
-                return Glibc.statx(AtFdCwd, path, flags, mask, buffer) == 0;
+                return Glibc.statx(dirfd, path, flags, mask, buffer) == 0;
             }
             catch (Exception inner) when (inner is DllNotFoundException or EntryPointNotFoundException)
             {

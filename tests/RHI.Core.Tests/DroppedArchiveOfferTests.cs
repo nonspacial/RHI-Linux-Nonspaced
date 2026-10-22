@@ -153,6 +153,22 @@ public sealed class DroppedArchiveOfferTests(ITestOutputHelper output) : IDispos
         Assert.True(ScratchIsEmpty(fx));
     }
 
+    // w10 follow-up D5: two add-ons of one file name in different folders read apart in the "Add-on" dropdown (their
+    // path inside the archive); a name no other add-on has stays the bare file name.
+    [Fact]
+    public async Task TwoAddonsOfOneFileName_ShowTheirFolderInTheAddonDropdown()
+    {
+        var (fx, _) = await StartAsync();
+        using var _ = fx;
+        var zip = Zip(Path.Combine(Folder(fx, "Downloads"), "renodx-pack.zip"),
+            ("v1/renodx-foogame.addon64", AddonBytes()), ("v2\\RenoDX-FooGame.addon64", AddonBytes(size: 3072)), ("renodx-mfg_unlock.addon64", AddonBytes()));
+
+        using var archive = (await fx.Vm.DroppedRenoDx.OfferForArchiveAsync(fx.Vm, zip)).Offer!;
+
+        Assert.Equal(["v1/renodx-foogame.addon64", "v2/RenoDX-FooGame.addon64", "renodx-mfg_unlock.addon64"], archive.AddOnNames);
+        Assert.Equal(archive.AddOnNames.Count, archive.AddOnNames.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
     [Fact]
     public async Task TwoAddons_AreBothOffered_EachWithItsOwnMatch_AndOnlyTheChosenOneIsInstalled()
     {
@@ -491,6 +507,7 @@ public sealed class DroppedArchiveOfferTests(ITestOutputHelper output) : IDispos
         { DroppedArchiveExtractor.DuplicateRefusal + "x", "listed twice" },
         { DroppedArchiveExtractor.LinkRefusal + "x", "link or a device" },
         { DroppedArchiveExtractor.NameRefusal + "x", "read safely" },
+        { DroppedArchiveExtractor.OptionLikeRefusal + "-C/x", "take for an option" }, // w10 follow-up D1
         { DroppedArchiveExtractor.AddonTooLargeRefusal + "x", "larger than 256" },
         { DroppedArchiveExtractor.TotalTooLargeRefusal + "x.zip", "together are larger" },
         { DroppedArchiveExtractor.RatioRefusal + "x.zip", "times its own size" },

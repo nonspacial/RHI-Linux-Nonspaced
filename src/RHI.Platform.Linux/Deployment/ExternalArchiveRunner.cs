@@ -231,17 +231,25 @@ public static class ExternalArchiveRunner
     internal static ProcessStartInfo BuildStartInfo(
         ExternalArchiveTool tool, string archivePath, string outputDirectory, IReadOnlyList<string>? members, bool literalMembers = false)
     {
+        // Where the tool writes (w10 follow-up D1): its working directory and its one output folder are both
+        // outputDirectory, and every switch comes before "--", so nothing taken from the archive (a member name such as
+        // "-C/elsewhere/x", "@list", "-x!x" or "-o/elsewhere") can be read as a switch, a list file or a second output
+        // folder. Both tools refuse absolute and ".." member paths and writing through links, and the listing check
+        // refuses such members (and any name part starting with "-" or "@") before a tool is ever run. So every file
+        // the tool can write is under outputDirectory, which is what the watcher and the after-run check measure.
         var startInfo = new ProcessStartInfo(tool.Command) { WorkingDirectory = outputDirectory };
+        startInfo.Environment["LC_ALL"] = "C.UTF-8"; // as the listing: a UTF-8 name it listed is written, never skipped (D3)
         if (tool.Kind == ExternalArchiveToolKind.SevenZip)
         {
             startInfo.ArgumentList.Add(members is null ? "x" : "e");
-            startInfo.ArgumentList.Add(archivePath);
-            if (members is not null)
-                foreach (var member in members) startInfo.ArgumentList.Add(member);
             startInfo.ArgumentList.Add($"-o{outputDirectory}");
             startInfo.ArgumentList.Add("-y");
             if (literalMembers) startInfo.ArgumentList.Add("-spd"); // no wildcard matching of the member names
             // No -p switch: a password prompt reads stdin, which carries the password or is closed (EOF).
+            startInfo.ArgumentList.Add("--"); // no switch, no @list file past this point
+            startInfo.ArgumentList.Add(archivePath);
+            if (members is not null)
+                foreach (var member in members) startInfo.ArgumentList.Add(member);
         }
         else
         {
@@ -249,6 +257,7 @@ public static class ExternalArchiveRunner
             startInfo.ArgumentList.Add(archivePath);
             startInfo.ArgumentList.Add("-C");
             startInfo.ArgumentList.Add(outputDirectory);
+            startInfo.ArgumentList.Add("--"); // no option past this point
             if (members is not null)
                 foreach (var member in members) startInfo.ArgumentList.Add(literalMembers ? LiteralBsdTarPattern(member) : member);
         }

@@ -469,6 +469,59 @@ public sealed class DroppedArchiveExtractorTests : IDisposable
         Assert.True(ScratchIsEmpty());
     }
 
+    // w10 follow-up D2: listed sizes are summed without wrapping — four members at 2^62 bytes would sum to 0 and pass the
+    // 2 GiB and ratio checks (the Luma re-zip then threw OverflowException in Files.Sum). Refused when it is read.
+    [Fact]
+    public async Task ListedSizesThatWouldWrap_AreRefusedAsTooLargeTogether_BeforeAnythingIsExtracted()
+    {
+        var huge = (1L << 62).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var listing = string.Concat(Enumerable.Range(1, 4).Select(i => $"Path = part{i}.bin\nSize = {huge}\nAttributes = A -rw-r--r--\n\n"))
+                      + "Path = Luma-Foo.addon64\nSize = 2048\nAttributes = A -rw-r--r--\n\n";
+        var tool = FakeSevenZip(listing, "echo extracted > \"$OUT/../extracted\"");
+        var archivePath = Path.Combine(Downloads, "wrapped.7z");
+        File.WriteAllText(archivePath, "7z");
+        ExternalArchiveRunner.FindToolForTesting.Value = () => tool;
+        try
+        {
+            Assert.Equal(DroppedArchiveExtractor.TotalTooLargeRefusal + "wrapped.7z", await RefusedAsync(archivePath));
+        }
+        finally
+        {
+            ExternalArchiveRunner.FindToolForTesting.Value = null;
+        }
+        Assert.Empty(Directory.EnumerateFiles(_root, "extracted", SearchOption.AllDirectories));
+    }
+
+    // w10 follow-up D4: the archive is opened once and its kind read from the open file; a FIFO put at the path after that
+    // (a file swapped between RHI's look and its read) is never opened, so the copy cannot block on it.
+    [Fact]
+    public async Task AFifoPutAtThePathAfterTheCheck_IsNeverOpened_TheCopyDoesNotBlock()
+    {
+        var zip = Zip(Path.Combine(Downloads, "renodx-swap.zip"), ("renodx-foogame.addon64", AddonBytes()));
+        DroppedArchiveExtractor.AfterOpenForTesting.Value = () =>
+        {
+            File.Move(zip, zip + ".moved");
+            Assert.Equal(0, Mono_MkFifo(zip));
+        };
+        Task<DroppedArchiveInspection> read;
+        try
+        {
+            read = Task.Run(() => DroppedArchiveExtractor.InspectAsync(zip, Scratch));
+        }
+        finally
+        {
+            DroppedArchiveExtractor.AfterOpenForTesting.Value = null; // the run took its own copy of the flow
+        }
+        var inTime = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(20))) == read;
+        if (!inTime) { using (File.OpenWrite(zip)) { } } // unblock a read that should never have started
+        Assert.True(inTime, "a FIFO swapped in after the check must never be opened (it would block the copy)");
+        var inspection = await read;
+        inspection.Archive?.Dispose();
+        Assert.Null(inspection.Archive);
+        Assert.Equal(DroppedArchiveExtractor.ChangedWhileReadRefusal + "renodx-swap.zip", inspection.Refusal); // the path changed meanwhile
+        Assert.True(ScratchIsEmpty());
+    }
+
     [Theory]
     [InlineData("true")]                                                                                       // nothing came out
     [InlineData("head -c 1024 /dev/zero > \"$OUT/renodx-foogame.addon64\"; head -c 1024 /dev/zero > \"$OUT/other.addon64\"")] // two files (within the listed size together)

@@ -134,6 +134,8 @@ public static class DroppedArchiveExtractor
     public const string DuplicateRefusal = "a file inside is listed twice: ";
     public const string LinkRefusal = "a file inside is a link or a device, not a plain file: ";
     public const string NameRefusal = "a file inside has a name RHI cannot read safely: ";
+    /// <summary>w10 follow-up D1: a name part starting with <c>-</c> or <c>@</c> (an archive tool could read it as an option or a list file).</summary>
+    public const string OptionLikeRefusal = "a file inside has a name starting with \"-\" or \"@\", which an archive tool could take for an option: ";
     public const string AddonTooLargeRefusal = "an add-on inside is larger than 256 MiB: ";
     public const string TotalTooLargeRefusal = "its files together are larger than 2 GiB: ";
     public const string RatioRefusal = "it unpacks to more than 100 times its own size: ";
@@ -153,6 +155,9 @@ public static class DroppedArchiveExtractor
     /// <summary>Test seam: runs once the add-on's own folder exists, right before the tool or the zip reader fills it.</summary>
     internal static readonly AsyncLocal<Action?> BeforeExtractForTesting = new();
 
+    /// <summary>Test seam: runs right after the user's file was opened and found to be a plain file, before anything is read.</summary>
+    internal static readonly AsyncLocal<Action?> AfterOpenForTesting = new();
+
     /// <summary>Test seam: runs right after the user's file was copied, before RHI checks it did not change meanwhile.</summary>
     internal static readonly AsyncLocal<Action?> AfterCopyForTesting = new();
 
@@ -164,11 +169,20 @@ public static class DroppedArchiveExtractor
     public static async Task<DroppedArchiveInspection> InspectAsync(string archivePath, string scratchRoot, CancellationToken cancellationToken = default)
     {
         var name = Path.GetFileName(archivePath);
-        // A FIFO or a device would block or never end the copy; a link to a plain file is the user's own choice.
+        // A FIFO or a device would block or never end the copy; a link to a plain file is the user's own choice. The path
+        // is looked at first only to refuse early (no read needed); then the file is opened once, without blocking, and
+        // kind and size are read from the open file (w10 follow-up D4): what is copied is the file that was checked,
+        // never a FIFO put at the path in between.
         if (FileKind.IsRegularFile(archivePath) != true) return Refused(NotAFileRefusal + name);
+        if (new FileInfo(archivePath).Length > MaxArchiveBytes) return Refused(ArchiveTooLargeRefusal + name);
+        var handle = FileKind.OpenRegularFileForReading(archivePath);
+        // Not opened (no read permission) or the opened file is not a plain file (changed since the look above).
+        if (handle is null) return Refused((FileKind.IsRegularFile(archivePath) == true ? UnreadableRefusal : NotAFileRefusal) + name);
+        using var source = new FileStream(handle, FileAccess.Read, 81920);
+        AfterOpenForTesting.Value?.Invoke();
         // Before any copy; the copy is capped too (a file still growing).
-        var before = new FileInfo(archivePath);
-        if (before.Length > MaxArchiveBytes) return Refused(ArchiveTooLargeRefusal + name);
+        var length = source.Length;
+        if (length > MaxArchiveBytes) return Refused(ArchiveTooLargeRefusal + name);
         var changedBefore = FileChangeTime.TryGetUtc(archivePath, followLinks: true);
         SweepLeftovers(scratchRoot);
         var folder = CreatePrivateFolder(scratchRoot);
@@ -178,9 +192,7 @@ public static class DroppedArchiveExtractor
             StagedFile staged;
             try
             {
-                var source = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.Asynchronous);
-                await using (source.ConfigureAwait(false))
-                    staged = await AtomicFile.StageStreamAsync(source, snapshot, null, null, MaxArchiveBytes, cancellationToken, PrivateFileMode).ConfigureAwait(false);
+                staged = await AtomicFile.StageStreamAsync(source, snapshot, null, null, MaxArchiveBytes, cancellationToken, PrivateFileMode).ConfigureAwait(false);
             }
             catch (InvalidDataException ex) when (ex.Message.StartsWith(AtomicFile.SizeLimitPrefix, StringComparison.Ordinal))
             {
@@ -189,7 +201,7 @@ public static class DroppedArchiveExtractor
             AfterCopyForTesting.Value?.Invoke();
             // A download still being written: what RHI read is not the file the user will have. Offered later, when the
             // watcher sees it settle (or the user drops it again).
-            if (staged.Length != before.Length || new FileInfo(archivePath).Length != before.Length
+            if (staged.Length != length || new FileInfo(archivePath).Length != length
                 || FileChangeTime.TryGetUtc(archivePath, followLinks: true) != changedBefore)
                 return Fail(folder, ChangedWhileReadRefusal + name);
             AtomicFile.MoveIntoPlace(staged.Path, snapshot);
@@ -265,7 +277,8 @@ public static class DroppedArchiveExtractor
             seen[path] = member.IsDirectory;
             if (member.IsDirectory) continue;
             if (member.Size is not { } size || size < 0) return UnreadableRefusal + archiveName;
-            total += size;
+            // w10 follow-up D2: saturating, never wrapping (four members listed at 2^62 bytes would sum to 0).
+            total = size > long.MaxValue - total ? long.MaxValue : total + size;
             files.Add((member, path));
         }
         foreach (var (member, path) in files)
@@ -278,8 +291,10 @@ public static class DroppedArchiveExtractor
 
     /// <summary>
     /// A member name as a relative path with forward slashes (a backslash is a folder separator, as on Windows), or why
-    /// it is refused: absolute (<c>/x</c>, <c>\x</c>, <c>C:</c>), an empty part (<c>a//b</c>) or a <c>..</c> part.
-    /// <c>.</c> parts and one trailing separator (a folder) are dropped.
+    /// it is refused: absolute (<c>/x</c>, <c>\x</c>, <c>C:</c>), an empty part (<c>a//b</c>), a <c>..</c> part, or a part
+    /// starting with <c>-</c> or <c>@</c> (w10 follow-up D1: on a tool's command line such a name reads as an option or a
+    /// list file; RHI passes member names after <c>--</c> as well). <c>.</c> parts and one trailing separator (a folder)
+    /// are dropped.
     /// </summary>
     internal static (string? Path, string? Refusal) Normalize(string name)
     {
@@ -293,6 +308,7 @@ public static class DroppedArchiveExtractor
         {
             if (part.Length == 0) return (null, EmptyPartRefusal);
             if (part == "..") return (null, ParentRefusal);
+            if (part[0] is '-' or '@') return (null, OptionLikeRefusal);
             if (part != ".") kept.Add(part);
         }
         return (string.Join('/', kept), null);
@@ -510,6 +526,7 @@ public static class DroppedArchiveExtractor
             BeforeExtractForTesting.Value?.Invoke();
             cancellationToken.ThrowIfCancellationRequested();
             var listed = archive.Files.ToDictionary(file => file.Path, file => file.Size, StringComparer.Ordinal);
+            // The listing check bounds the sum (MaxListedTotalBytes, saturating: w10 follow-up D2), so this never overflows.
             var limit = new ExtractionLimit(archive.Files.Sum(file => file.Size), archive.Files.Select(file => file.Size).DefaultIfEmpty(0).Max());
             try
             {

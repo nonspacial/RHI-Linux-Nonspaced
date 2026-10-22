@@ -1599,6 +1599,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.DuplicateRefusal, "um arquivo interno aparece duas vezes: "),
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.LinkRefusal, "um arquivo interno é um link ou um dispositivo, não um arquivo comum: "),
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.NameRefusal, "um arquivo interno tem um nome que o RHI não consegue ler com segurança: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.OptionLikeRefusal, "um arquivo interno tem um nome que começa com \"-\" ou \"@\", que uma ferramenta de arquivos poderia tomar por uma opção: "),
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.AddonTooLargeRefusal, "um add-on interno tem mais de 256 MiB: "),
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.TotalTooLargeRefusal, "os arquivos internos somam mais de 2 GiB: "),
         (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.RatioRefusal, "ele se expande para mais de 100 vezes o próprio tamanho: "),

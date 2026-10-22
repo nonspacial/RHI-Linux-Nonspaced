@@ -564,7 +564,7 @@ public sealed class WaveOneMessageLocalizationTests
                      DroppedArchiveExtractor.NotAFileRefusal, DroppedArchiveExtractor.ArchiveTooLargeRefusal, DroppedArchiveExtractor.UnreadableRefusal,
                      DroppedArchiveExtractor.TooManyFilesRefusal, DroppedArchiveExtractor.AbsoluteRefusal, DroppedArchiveExtractor.ParentRefusal,
                      DroppedArchiveExtractor.EmptyPartRefusal, DroppedArchiveExtractor.DuplicateRefusal, DroppedArchiveExtractor.LinkRefusal,
-                     DroppedArchiveExtractor.NameRefusal, DroppedArchiveExtractor.AddonTooLargeRefusal, DroppedArchiveExtractor.TotalTooLargeRefusal,
+                     DroppedArchiveExtractor.NameRefusal, DroppedArchiveExtractor.OptionLikeRefusal, DroppedArchiveExtractor.AddonTooLargeRefusal, DroppedArchiveExtractor.TotalTooLargeRefusal,
                      DroppedArchiveExtractor.RatioRefusal, DroppedArchiveExtractor.SizeMismatchRefusal, DroppedArchiveExtractor.NotExtractedRefusal,
                  })
             yield return reason + "renodx-exemplo.addon64";

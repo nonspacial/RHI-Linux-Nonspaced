@@ -38,8 +38,8 @@ public sealed partial class ReShadeChannelTests
 
     /// <summary>
     /// The fixture's DXVK HDR builds and a fake 7-Zip that lists them (7z l -slt &lt;archive&gt; &lt;member&gt;: the
-    /// build's size, or the one <see cref="Declare64"/> set) and hands them out (7z e &lt;archive&gt; &lt;member&gt;
-    /// -o&lt;out&gt; -y), noting each extraction in <c>extracted.log</c>.
+    /// build's size, or the one <see cref="Declare64"/> set) and hands them out (7z e -o&lt;out&gt; -y -- &lt;archive&gt;
+    /// &lt;member&gt;), noting each extraction in <c>extracted.log</c>.
     /// </summary>
     private sealed class DxvkHdrBuilds
     {
@@ -61,9 +61,9 @@ public sealed partial class ReShadeChannelTests
                   echo "Path = $3"; echo "Type = 7z"; echo; echo "----------"; echo "Path = $4"; echo "Size = $size"; echo
                   exit 0
                 fi
-                echo "$3" >> "{{Folder}}/extracted.log"
-                out="${4#-o}"
-                case "$3" in
+                out=""; for a in "$@"; do case "$a" in -o*) out="${a#-o}";; esac; member="$a"; done # switches, --, archive, member last
+                echo "$member" >> "{{Folder}}/extracted.log"
+                case "$member" in
                   normal/x64/d3d9.dll) cp "{{Folder}}/x64.dll" "$out/d3d9.dll" ;;
                   normal/x32/d3d9.dll) cp "{{Folder}}/x32.dll" "$out/d3d9.dll" ;;
                   *) exit 2 ;;
