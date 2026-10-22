@@ -100,6 +100,38 @@ public sealed class NeuralRenderingDiagnosisTests : IDisposable
         Assert.DoesNotContain(finding.Excerpt, char.IsControl);
     }
 
+    // ---- #234 follow-up F6: tooltip excerpts carry no bidi/format characters and no colour codes -------------------------
+
+    [Fact]
+    public void F6_AnExcerpt_DropsColourCodesAndFormatCharacters()
+    {
+        var line = "\u202Eevil\u200B\0\u001b[31m 0xBAD00001 \u001b[0m tail\u2066x\u2069";
+
+        var finding = Assert.Single(NeuralRenderingDiagnosis.Classify("ReShade.log", line));
+
+        Assert.Equal("evil  0xBAD00001  tailx", finding.Excerpt);
+        Assert.DoesNotContain(finding.Excerpt, ch => char.IsControl(ch) || char.GetUnicodeCategory(ch) == System.Globalization.UnicodeCategory.Format);
+        Assert.DoesNotContain("[31m", finding.Excerpt);
+    }
+
+    // P7: a binary, non-UTF-8 log whose error line carries a bidi override and a colour code.
+    [Fact]
+    public void F6_BinaryLogWithBidiAndColourCodes_TheExcerptIsClean()
+    {
+        var bytes = new List<byte>();
+        var noise = new byte[3 * 1024 * 1024];
+        new Random(7).NextBytes(noise);
+        for (var i = 0; i < noise.Length; i++) if (noise[i] == (byte)'\n') noise[i] = 0xFF;
+        bytes.AddRange(noise);
+        bytes.AddRange(Encoding.UTF8.GetBytes("\n\u202Eevil\0\u001b[31m 0xBAD00001 tail\n"));
+        File.WriteAllBytes(Path.Combine(_bin, "ReShade.log"), bytes.ToArray());
+
+        var log = NeuralRenderingDiagnosis.ReadLogs(Game()).Single(l => l.Name == "ReShade.log");
+
+        var finding = Assert.Single(log.Findings);
+        Assert.Equal("evil  0xBAD00001 tail", finding.Excerpt);
+    }
+
     // ---- reading logs -----------------------------------------------------------------------------------------------
 
     [Fact]

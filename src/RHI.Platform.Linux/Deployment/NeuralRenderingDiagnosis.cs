@@ -203,13 +203,19 @@ public static class NeuralRenderingDiagnosis
         return Signatures.Select(row => row.Signature).Where(last.ContainsKey).Select(signature => last[signature]).ToArray();
     }
 
+    // ANSI/VT colour and cursor sequences (ESC [ … final byte) a log may carry: dropped whole, never shown as "[31m".
+    private static readonly Regex AnsiSequence = new(@"\x1B\[[0-?]*[ -/]*[@-~]|\x1B[@-_]", RegexOptions.CultureInvariant);
+
+    // Tooltip text only: colour sequences dropped, control characters shown as a space, and invisible format characters
+    // (bidi overrides such as U+202E, zero-width marks) dropped, so a log line can never reorder or hide the tooltip's text.
     private static string Excerpt(string line)
     {
-        var trimmed = line.Trim();
+        var trimmed = AnsiSequence.Replace(line, "").Trim();
         var clean = new StringBuilder(Math.Min(trimmed.Length, MaxExcerptChars));
         foreach (var ch in trimmed)
         {
             if (clean.Length >= MaxExcerptChars) { clean.Append('…'); break; }
+            if (char.GetUnicodeCategory(ch) == System.Globalization.UnicodeCategory.Format) continue;
             clean.Append(char.IsControl(ch) ? ' ' : ch);
         }
         return clean.ToString();
