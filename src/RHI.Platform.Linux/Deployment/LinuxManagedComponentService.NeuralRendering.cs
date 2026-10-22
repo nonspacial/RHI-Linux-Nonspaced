@@ -125,16 +125,24 @@ public sealed partial class LinuxManagedComponentService
     }
 
     // The NR DLL version lives in the owning record's metadata, not in its Version, so the plain
-    // ledger diff in Track would miss it.
+    // ledger diff in Track would miss it. A record from before #230 has no version there (Borderlands 3's Feeder): its
+    // "from" is the version told just before the swap (record hash vs cache stamp, else PE version; see #230's helper).
     private Task<ComponentOperationResult> TrackNeuralRenderingDll(
         DetectedGame game,
         ManagedComponentKind owner,
         Func<Task<ComponentOperationResult>> swap)
-        => _history is null
-            ? swap()
-            : _history.TrackOwnedFileAsync(game, owner, NeuralRenderingDllSwap.DllName,
-                static record => record.Metadata.TryGetValue(NeuralRenderingDllSwap.MetaDllVersion, out var v) ? v : null,
-                swap);
+    {
+        if (_history is null) return swap();
+        var unrecordedFrom = _records.Find(game, owner) is { } before && RecordedNrVersion(before) is null
+            ? InstalledNeuralRenderingVersion(game, before).Version
+            : null;
+        return _history.TrackOwnedFileAsync(game, owner, NeuralRenderingDllSwap.DllName,
+            record => RecordedNrVersion(record) ?? unrecordedFrom,
+            swap);
+    }
+
+    private static string? RecordedNrVersion(LinuxDeploymentRecord record)
+        => record.Metadata.TryGetValue(NeuralRenderingDllSwap.MetaDllVersion, out var v) && !string.IsNullOrWhiteSpace(v) ? v : null;
 
     private Task<ComponentOperationResult> SwapNeuralAddonVersionCoreAsync(
         DetectedGame game,

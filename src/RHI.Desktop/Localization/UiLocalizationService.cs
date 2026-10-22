@@ -1631,6 +1631,9 @@ public static class UiLocalizationService
             "A DLL do Neural Rendering segue \"Mais recente\" e não é a feita para esta placa de vídeo; o Atualizar tudo a troca: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrUnknownMessage,
             "O RHI não conseguiu saber qual DLL do Neural Rendering está instalada, então ela não foi comparada com a feita para esta placa de vídeo."),
+        // Review finding 1: the NR DLL on disk is no longer the one RHI installed (never moved, never a failure).
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrChangedOutsideMessage,
+            "A DLL do Neural Rendering foi alterada ou removida fora do RHI, então ela não foi comparada com a feita para esta placa de vídeo; o Atualizar tudo a deixa como está."),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrPinOtherGenerationPrefix,
             "A DLL do Neural Rendering escolhida para este jogo é feita para outra geração de placa de vídeo; o Atualizar tudo a mantém como escolhida: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.NrStageFailedPrefix,

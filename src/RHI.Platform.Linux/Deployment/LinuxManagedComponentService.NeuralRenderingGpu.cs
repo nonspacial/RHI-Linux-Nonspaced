@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Hdr;
@@ -48,7 +49,9 @@ public sealed partial class LinuxManagedComponentService
         /// <summary>A "Latest" install on another DLL: Update All swaps it to <see cref="NrMovePlan.To"/>.</summary>
         Move,
         /// <summary>RHI cannot tell which version is installed (or there is no manifest): could not check, never a blind swap.</summary>
-        Unknown
+        Unknown,
+        /// <summary>A move was due but the file on disk is no longer the one RHI recorded (the user replaced or removed it): could not check.</summary>
+        ChangedOutsideRhi
     }
 
     internal sealed record NrMovePlan(NrMoveKind Kind, string? From = null, string? To = null);
@@ -58,6 +61,9 @@ public sealed partial class LinuxManagedComponentService
 
     /// <summary>#230: fixed text when the installed NR DLL cannot be told (never "current", never a blind swap).</summary>
     public const string NrUnknownMessage = "RHI could not tell which Neural Rendering DLL is installed, so it was not checked against the one made for this graphics card.";
+
+    /// <summary>#230 (review finding 1): fixed text when the NR DLL on disk is no longer the one RHI installed (never moved, never a failure).</summary>
+    public const string NrChangedOutsideMessage = "The Neural Rendering DLL was changed or removed outside RHI, so it was not checked against the one made for this graphics card; Update All leaves it as it is.";
 
     /// <summary>#230: the row note of a hand-picked NR version made for another generation; the version follows.</summary>
     public const string NrPinOtherGenerationPrefix = "The Neural Rendering DLL picked for this game is made for another graphics card generation; Update All leaves it as picked: ";
@@ -88,9 +94,39 @@ public sealed partial class LinuxManagedComponentService
         if (latest is null) return new(NrMoveKind.Unknown);
         var installed = InstalledNeuralRenderingVersion(game, record);
         if (!installed.Known) return new(NrMoveKind.Unknown);
-        return string.Equals(installed.Version, latest, StringComparison.OrdinalIgnoreCase)
-            ? new(NrMoveKind.Current, installed.Version, latest)
-            : new(NrMoveKind.Move, installed.Version, latest);
+        if (string.Equals(installed.Version, latest, StringComparison.OrdinalIgnoreCase))
+            return new(NrMoveKind.Current, installed.Version, latest);
+        // The version above comes from the RECORD (its metadata or its hash vs the cache stamps): before a move, check the
+        // file on disk still is that file. One the user replaced (or removed) would only be refused by the swap ("modified
+        // outside RHI") and fail that game on every Update All, so it is "could not check" instead (review finding 1).
+        // Hashed only here, when a move is planned, never on every check — and not while the NR Cost Scaler wraps the
+        // runtime: the move is then held, never attempted, and the check says so (HeldByLayer).
+        if (NrCostScalerService.OwnerChangeRefusal(_records, game, owner) is null
+            && !await OwnerFileMatchesRecordAsync(game, record, cancellationToken).ConfigureAwait(false))
+            return new(NrMoveKind.ChangedOutsideRhi, installed.Version, latest);
+        return new(NrMoveKind.Move, installed.Version, latest);
+    }
+
+    // The owner's NR content (behind the NR Cost Scaler: nvngx_dlssnr_real.dll) still has the record's SHA-256. A record
+    // without a hash is not compared (the swap does not compare it either).
+    private async Task<bool> OwnerFileMatchesRecordAsync(DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    {
+        var file = ManagedFileSwap.FindFile(record, NeuralRenderingDllSwap.DllName)!;
+        if (string.IsNullOrWhiteSpace(file.Sha256)) return true;
+        var content = NrCostScalerService.ContentPath(record, file, _records.FindAll(game));
+        try
+        {
+            if (!File.Exists(content)) return false;
+            var current = await FileHash.Sha256HexAsync(content, cancellationToken).ConfigureAwait(false);
+            if (string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase)) return true;
+            AppLog.Warn("nr-gpu", $"{game.Name}'s Neural Rendering DLL no longer matches RHI's record (changed outside RHI); it is not moved: {content}");
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("nr-gpu", $"{game.Name}'s Neural Rendering DLL could not be read to check it before a move", ex);
+            return false;
+        }
     }
 
     /// <summary>#230 (one helper, #234 reuses it): the manifest version of the owner's installed NR DLL.</summary>
@@ -102,7 +138,7 @@ public sealed partial class LinuxManagedComponentService
 
     /// <summary>
     /// The ShortFuse / DLSS5 Feeder update check with its NR DLL part: the add-on part as before; a "Latest" install on
-    /// another DLL than "Latest" made for this card is an update; an NR DLL RHI cannot tell is "could not check" unless
+    /// another DLL than "Latest" made for this card is an update; an NR DLL RHI cannot tell, or one changed outside RHI, is "could not check" unless
     /// the add-on itself has an update.
     /// </summary>
     private async Task<ManagedUpdateCheck> WithNeuralRenderingMoveAsync(DetectedGame game, ManagedComponentKind owner, ManagedUpdateCheck addon,
@@ -119,6 +155,7 @@ public sealed partial class LinuxManagedComponentService
                 Message = Join(addon.UpdateAvailable ? addon.Message : "", NrMovePrefix + $"{plan.From} → {plan.To}")
             },
             NrMoveKind.Unknown when !addon.UpdateAvailable => addon with { CouldNotCheck = true, Message = Join(addon.Message, NrUnknownMessage) },
+            NrMoveKind.ChangedOutsideRhi when !addon.UpdateAvailable => addon with { CouldNotCheck = true, Message = Join(addon.Message, NrChangedOutsideMessage) },
             _ => addon
         };
     }

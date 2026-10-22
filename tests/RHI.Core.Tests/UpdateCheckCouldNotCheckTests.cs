@@ -155,6 +155,44 @@ public sealed class UpdateCheckCouldNotCheckTests
         }
     }
 
+    /// <summary>
+    /// w11/nr-gpu review finding 1: the record names the 310.8.3 (50xx) build an RTX 40 should move off, but the file on
+    /// disk is no longer that file (the user put another DLL there by hand): "could not be checked" in both modes — never
+    /// an update the swap would refuse on every run, never a failure.
+    /// </summary>
+    [Fact]
+    public async Task NrDllChangedOutsideRhi_IsCouldNotBeChecked_InBothUpdateAllModes()
+    {
+        HttpResponseMessage? Answer(HttpRequestMessage request) => request.RequestUri!.AbsoluteUri switch
+        {
+            RHI.Core.Services.DlssManagerService.ManifestUrl => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(NrGpuTestKit.ManifestJson()) },
+            "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("""[{"tag_name":"v1.0","assets":[{"name":"DLSS5-Feeder-1.0.zip","browser_download_url":"https://github.com/rhi-tests/feeder.zip"}]}]""")
+            },
+            _ => null
+        };
+        using var fx = await ViewModelFixture.StartAsync([], httpResponse: Answer, hdrProfiles: NrGpuTestKit.Hdr(NrGpuTestKit.Facts(RHI.Core.Services.RtxGeneration.Rtx40)),
+            nvidiaGpu: () => NrGpuTestKit.Facts(RHI.Core.Services.RtxGeneration.Rtx40));
+        var game = Game(fx.Root, "nr-dll-changed");
+        var nr = Path.Combine(game.BinaryDirectory!, "nvngx_dlssnr.dll");
+        File.WriteAllBytes(nr, NrGpuTestKit.Dll(NrGpuTestKit.For50));
+        NrGpuGames.SeedOwner(fx.Records, game, ManagedComponentKind.Dlss5Feeder, nr,
+            new Dictionary<string, string> { [NeuralRenderingDllSwap.MetaDllVersion] = NrGpuTestKit.For50 });
+        File.WriteAllBytes(nr, NrGpuTestKit.Dll(NrGpuTestKit.ForAll)); // replaced by hand; the record keeps 310.8.3's hash
+
+        var check = await fx.Managed.CheckManagedUpdateAsync(game, ManagedComponentKind.Dlss5Feeder, []);
+
+        Assert.True(check.CouldNotCheck, check.Message);
+        Assert.False(check.UpdateAvailable, check.Message);
+        foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
+        {
+            var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new NeverRunning()).RunAsync([game], _ => [], mode);
+            Assert.Equal((0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount));
+        }
+        Assert.Equal(NrGpuTestKit.Dll(NrGpuTestKit.ForAll), File.ReadAllBytes(nr));
+    }
+
     private static DetectedGame Game(string root, string variant)
     {
         var dir = Directory.CreateDirectory(Path.Combine(root, "games", "Checked Game")).FullName;

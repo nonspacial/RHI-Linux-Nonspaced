@@ -96,7 +96,24 @@ public sealed partial class ShortFuseDeploymentServiceTests
         Assert.Equal(addonBefore, File.ReadAllBytes(addon));
         Assert.Equal(NrAll, ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse)!.Metadata[RHI.Platform.Linux.Deployment.NeuralRenderingDllSwap.MetaDllVersion]);
         var entry = Assert.Single(log.GetAll(), entry => entry.Component == ManagedComponentKind.ShortFuse);
-        Assert.Equal((ManagedComponentKind.ShortFuse, (string?)null, NrAll), (entry.Component, entry.FromVersion, entry.ToVersion));
+        // Review finding 2: the record has no NR version, so "from" is the one told at move time (its cache stamp).
+        Assert.Equal((ManagedComponentKind.ShortFuse, (string?)Nr50, NrAll), (entry.Component, entry.FromVersion, entry.ToVersion));
+    }
+
+    /// <summary>Review finding 2: a hand-made NR swap (the NR DLL dropdown) of a legacy record logs the version it replaced too.</summary>
+    [Fact]
+    public async Task NrSwap_ByHand_OnALegacyRecord_LogsTheVersionItReplaced()
+    {
+        var (fixture, ctx) = await LegacyShortFuseOn50xxAsync("nrswap-hand");
+        using var disposeFixture = fixture;
+        var managed = NrManaged(ctx, fixture.Root, RtxGeneration.Rtx40, out var pins, out var log);
+        pins.SetNeuralRenderingDllVersion(fixture.Game, NrAll);
+
+        var swapped = await managed.SwapNeuralRenderingDllAsync(fixture.Game);
+
+        Assert.True(swapped.Success, swapped.Message);
+        var entry = Assert.Single(log.GetAll(), entry => entry.Component == ManagedComponentKind.ShortFuse);
+        Assert.Equal(((string?)Nr50, NrAll), (entry.FromVersion, entry.ToVersion));
     }
 
     [Theory]

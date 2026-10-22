@@ -580,6 +580,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return LinuxDlssDefaultsService.NotMadeForThisCardPrefix + "310.8.3 (50xx)"; // #229
         yield return LinuxManagedComponentService.NrMovePrefix + "310.8.3 (50xx) → 310.8.2 (20/30/40/50)"; // #230
         yield return LinuxManagedComponentService.NrUnknownMessage;
+        yield return LinuxManagedComponentService.NrChangedOutsideMessage; // review finding 1
         yield return LinuxManagedComponentService.NrPinOtherGenerationPrefix + "310.8.3 (50xx)";
         yield return LinuxManagedComponentService.NrStageFailedPrefix + "HTTP 503";
         yield return OptiScalerF5DriverPolicy.FaultingNrDllNotePrefix + "310.8.0 (50xx)"; // #231
@@ -652,6 +653,7 @@ public sealed class WaveOneMessageLocalizationTests
         { LinuxDlssDefaultsService.NotMadeForThisCardPrefix + "310.8.3 (50xx)", "made for another graphics card generation" }, // #229
         { LinuxManagedComponentService.NrMovePrefix + "310.8.3 (50xx) → 310.8.2 (20/30/40/50)", "Update All moves it" }, // #230
         { LinuxManagedComponentService.NrUnknownMessage, "could not tell which Neural Rendering DLL" },
+        { LinuxManagedComponentService.NrChangedOutsideMessage, "changed or removed outside RHI" }, // review finding 1
         { LinuxManagedComponentService.NrPinOtherGenerationPrefix + "310.8.3 (50xx)", "leaves it as picked" },
         { LinuxManagedComponentService.NrStageFailedPrefix + "HTTP 503", "could not be downloaded" },
         { OptiScalerF5DriverPolicy.FaultingNrDllNotePrefix + "310.8.0 (50xx)", "crashes on NVIDIA drivers" }, // #231

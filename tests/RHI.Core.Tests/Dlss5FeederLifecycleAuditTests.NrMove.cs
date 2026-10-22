@@ -72,7 +72,8 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         Assert.Equal(FileHash.Sha256Hex(NrPath(f)), ManagedFileSwap.FindFile(record, "nvngx_dlssnr.dll")!.Sha256, ignoreCase: true);
         Assert.Equal(addonBefore, File.ReadAllBytes(Path.Combine(f.Bin, "dlss5-feed.addon64"))); // the add-on was current
         var entry = Assert.Single(log.GetAll());
-        Assert.Equal((ManagedComponentKind.Dlss5Feeder, ComponentUpdateAction.Update, (string?)null, ForAll, true),
+        // Review finding 2: the record has no NR version, so the history's "from" is the one told at move time (its stamp).
+        Assert.Equal((ManagedComponentKind.Dlss5Feeder, ComponentUpdateAction.Update, (string?)For50, ForAll, true),
             (entry.Component, entry.Action, entry.FromVersion, entry.ToVersion, entry.Success));
         Assert.Contains("nvngx_dlssnr.dll", entry.ComponentName, StringComparison.Ordinal);
         Assert.False((await managed.CheckManagedUpdateAsync(f.Game, ManagedComponentKind.Dlss5Feeder, [])).UpdateAvailable);
@@ -116,6 +117,64 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         Assert.Equal(odd, File.ReadAllBytes(NrPath(f)));
         var all = await new LinuxUpdateAllService(f.Records, managed, new NeverRunning()).RunAsync([f.Game], _ => [], LinuxUpdateRunMode.Manual);
         Assert.Equal((0, 0, 1), (all.ChangedCount, all.CurrentCount, all.UncheckedCount));
+    }
+
+    /// <summary>
+    /// Review finding 1 (reviewer's probe, adopted): the user replaced the NR DLL by hand (or removed it) while the record
+    /// still names the 310.8.3 build — by its hash (Borderlands 3's legacy record) or by its recorded version. A move would
+    /// only be refused by the swap ("modified outside RHI") on every run: it is "could not check" instead, with its own
+    /// line; never an update, never a failed run, never a history row, the user's file untouched. Two runs.
+    /// </summary>
+    [Theory]
+    [InlineData("replaced", false)]
+    [InlineData("replaced", true)]
+    [InlineData("removed", false)]
+    public async Task NrMove_ADllChangedOutsideRhi_IsCouldNotCheck_NeverAFailedRun(string change, bool versionRecorded)
+    {
+        using var f = await LegacyLatestOn50xxAsync();
+        if (versionRecorded)
+        {
+            var record = f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder)!;
+            record.Metadata[NeuralRenderingDllSwap.MetaDllVersion] = For50;
+            f.Records.Upsert(record);
+        }
+        if (change == "removed") File.Delete(NrPath(f));
+        else File.WriteAllBytes(NrPath(f), Dll(ForAll)); // the user's own copy; the record keeps 310.8.3's hash
+        var managed = Managed(f, RtxGeneration.Rtx40, out _, out var log);
+
+        var check = await managed.CheckManagedUpdateAsync(f.Game, ManagedComponentKind.Dlss5Feeder, []);
+
+        Assert.False(check.UpdateAvailable, check.Message);
+        Assert.True(check.CouldNotCheck, check.Message);
+        Assert.Contains(LinuxManagedComponentService.NrChangedOutsideMessage, check.Message, StringComparison.Ordinal);
+        foreach (var run in new[] { 1, 2 })
+        {
+            var all = await new LinuxUpdateAllService(f.Records, managed, new NeverRunning()).RunAsync([f.Game], _ => [], LinuxUpdateRunMode.Manual);
+            Assert.Equal((0, 0, 1), (all.FailedCount, all.ChangedCount, all.UncheckedCount));
+        }
+        Assert.Empty(log.GetAll());
+        if (change == "removed") Assert.False(File.Exists(NrPath(f)));
+        else Assert.Equal(Dll(ForAll), File.ReadAllBytes(NrPath(f)));
+    }
+
+    /// <summary>
+    /// Review finding 3 (mutant M): the add-on's own check could not run (its release list unreachable) while the NR DLL
+    /// is due a move — the move is still an update (not "could not check"), and Update All makes it.
+    /// </summary>
+    [Fact]
+    public async Task NrMove_WhileTheAddonCheckCannotRun_IsStillAnUpdate_AndUpdateAllMovesIt()
+    {
+        using var f = await LegacyLatestOn50xxAsync();
+        Assert.True(f.Responses.Remove("https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1"));
+        var managed = Managed(f, RtxGeneration.Rtx40, out _, out _);
+
+        var check = await managed.CheckManagedUpdateAsync(f.Game, ManagedComponentKind.Dlss5Feeder, []);
+        var all = await new LinuxUpdateAllService(f.Records, managed, new NeverRunning()).RunAsync([f.Game], _ => [], LinuxUpdateRunMode.Manual);
+
+        Assert.True(check.UpdateAvailable, check.Message);
+        Assert.False(check.CouldNotCheck, check.Message);
+        Assert.Equal((1, 0, 0), (all.ChangedCount, all.FailedCount, all.UncheckedCount));
+        Assert.Equal(Dll(ForAll), File.ReadAllBytes(NrPath(f)));
     }
 
     [Fact]
@@ -172,9 +231,13 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         Assert.Equal(Dll(For50), File.ReadAllBytes(NrPath(f)));
         var row = new ManagedComponent { Kind = ManagedComponentKind.Dlss5Feeder, DisplayName = "DLSS5 Feeder", Availability = ComponentAvailability.Installed,
             ManagedByRhi = true, Note = "Managed by RHI Linux · 0.13.1-beta.1." };
+        // OptiScaler stages its own NR runtime and never reads the per-game NR pin: its row gets no pin note (mutant K).
+        var optiScaler = new ManagedComponent { Kind = ManagedComponentKind.OptiScaler, DisplayName = "OptiScaler", Availability = ComponentAvailability.Installed,
+            ManagedByRhi = true, Note = "Managed by RHI Linux · 0.1.30." };
         typeof(LinuxManagedComponentService).GetMethod("DecorateNeuralRenderingRows", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(managed, [f.Game, new[] { row }]);
+            .Invoke(managed, [f.Game, new[] { row, optiScaler }]);
         Assert.Equal("Managed by RHI Linux · 0.13.1-beta.1. " + LinuxManagedComponentService.NrPinOtherGenerationPrefix + For50, row.Note);
+        Assert.Equal("Managed by RHI Linux · 0.1.30.", optiScaler.Note);
     }
 
     [Fact]

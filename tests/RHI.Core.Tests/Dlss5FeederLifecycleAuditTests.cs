@@ -290,6 +290,7 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             responses[ReShadeDeploymentService.HomeUrl + "/"] = Encoding.UTF8.GetBytes("<a href=\"/downloads/ReShade_Setup_9.9.9_Addon.exe\">Download</a>");
             responses[ReShadeDeploymentService.HomeUrl] = responses[ReShadeDeploymentService.HomeUrl + "/"];
             responses["https://reshade.me/downloads/ReShade_Setup_9.9.9_Addon.exe"] = Pe(600_000);
+            Responses = responses;
             Watch = new GateWatchingHandler(new FixtureHandler(responses, Requests));
             _http = new HttpClient(Watch);
             var dlss = Dlss = new DlssManagerService(_http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
@@ -307,6 +308,8 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
                 dx9ReShade: new Dx9TranslationReShadeCoordinator(Records, overrides, Journal), journal: Journal);
         }
 
+        /// <summary>The synthetic server's answers (a test removes one to make that source unreachable).</summary>
+        public Dictionary<string, byte[]> Responses { get; }
         public DeploymentJournal? Journal { get; }
         /// <summary>w11/nr-gpu: the fixture's DLSS service (tests set its card).</summary>
         public DlssManagerService Dlss { get; }
