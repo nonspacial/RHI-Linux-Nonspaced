@@ -603,6 +603,10 @@ public sealed class WaveOneMessageLocalizationTests
         yield return OptiScalerDeploymentService.NightlySwitchNotNightlyMessage;
         yield return OptiScalerDeploymentService.NightlySwitchSameBuildPrefix + "20261004";
         yield return OptiScalerDeploymentService.NightlySwitchControlUePrefix + "20261004";
+        // w11 integration rows: OptiScaler's update transaction asks the hold first, so a held game's Nightly switch says so
+        yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + DeploymentJournal.EarlierUndoFailedMessage;
+        yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix
+            + DownloadStalledException.MessageFor("OptiScaler", TimeSpan.FromSeconds(60));
         // w11/nr-check rows
     }
 
@@ -681,6 +685,12 @@ public sealed class WaveOneMessageLocalizationTests
         { OptiScalerPackageProvider.F5ForwarderNotPeMessage, "is not a Windows DLL" },
         { OptiScalerPackageProvider.F5BackendMissingMessage, "with its helper files" },
         { "Could not obtain the official OptiScaler F5 DLSSNR package: " + OptiScalerPackageProvider.F5BackendMissingMessage, "Could not obtain" },
+        // w11 integration: a held game's Nightly switch, and a stalled Nightly build or NR move download, in PT-BR
+        { OptiScalerDeploymentService.NightlySwitchFailedPrefix + DeploymentJournal.EarlierUndoFailedMessage, "Restart RHI to finish it" },
+        { OptiScalerDeploymentService.NightlySwitchFailedPrefix + DeploymentJournal.EarlierUndoFailedMessage, "was not switched" },
+        { OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix
+            + DownloadStalledException.MessageFor("OptiScaler", TimeSpan.FromSeconds(60)), "The download stopped" },
+        { LinuxManagedComponentService.NrStageFailedPrefix + DownloadStalledException.MessageFor("DLSS", TimeSpan.FromSeconds(60)), "The download stopped" },
     };
 
     [Theory]

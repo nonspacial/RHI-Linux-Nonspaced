@@ -291,7 +291,7 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             responses[ReShadeDeploymentService.HomeUrl] = responses[ReShadeDeploymentService.HomeUrl + "/"];
             responses["https://reshade.me/downloads/ReShade_Setup_9.9.9_Addon.exe"] = Pe(600_000);
             Responses = responses;
-            Watch = new GateWatchingHandler(new FixtureHandler(responses, Requests));
+            Watch = new GateWatchingHandler(new FixtureHandler(responses, Requests, url => Answer?.Invoke(url)));
             _http = new HttpClient(Watch);
             var dlss = Dlss = new DlssManagerService(_http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
             var manifest = new UpstreamRhiManifestService(_http, "https://github.com/rhi-tests/unused-manifest");
@@ -310,6 +310,8 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
 
         /// <summary>The synthetic server's answers (a test removes one to make that source unreachable).</summary>
         public Dictionary<string, byte[]> Responses { get; }
+        /// <summary>w11 integration: answers chosen URLs itself (a stalled body); null = the canned responses.</summary>
+        public Func<string, HttpResponseMessage?>? Answer { get; set; }
         public DeploymentJournal? Journal { get; }
         /// <summary>w11/nr-gpu: the fixture's DLSS service (tests set its card).</summary>
         public DlssManagerService Dlss { get; }
@@ -424,12 +426,14 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         }
     }
 
-    private sealed class FixtureHandler(Dictionary<string, byte[]> responses, List<string> requests) : HttpMessageHandler
+    private sealed class FixtureHandler(Dictionary<string, byte[]> responses, List<string> requests, Func<string, HttpResponseMessage?>? answer = null)
+        : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.AbsoluteUri;
             requests.Add(url);
+            if (answer?.Invoke(url) is { } own) return Task.FromResult(own);
             if (!responses.TryGetValue(url, out var payload))
                 throw new InvalidOperationException("Unexpected synthetic HTTP request: " + url);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) });

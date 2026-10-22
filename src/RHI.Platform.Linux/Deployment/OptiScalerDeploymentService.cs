@@ -167,6 +167,10 @@ public sealed partial class OptiScalerDeploymentService
         NightlySwitch? nightly,
         CancellationToken cancellationToken)
     {
+        // w11 integration (the toolkit rule since w10 D15): a game held after a failed undo gets the hold's restart text
+        // before the file checks below, which would take RHI's own half-undone files for a change made outside RHI.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.OptiScaler).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
         var legacySwaps = await FindLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
         foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
         {
