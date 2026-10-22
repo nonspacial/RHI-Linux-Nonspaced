@@ -73,8 +73,9 @@ Downloads
 Safety
 
 - A game held after an undo RHI could not finish now also gets the restart message from OptiScaler's Update All, the
-  Nightly build switch, Update All's Neural Rendering move and a Neural Rendering version swap, instead of a "modified
-  outside RHI" refusal that took RHI's own half-undone file for a change of yours.
+  Nightly build switch, OptiScaler's removal (also with RHI's ReShade chained behind it), Update All's Neural Rendering
+  move and a Neural Rendering version swap, instead of a "modified outside RHI" refusal that took RHI's own half-undone
+  file for a change of yours.
 
 ## Wave 10 — 2026-10-22: default DLSS presets, add-ons inside archives, games held after a failed undo
 

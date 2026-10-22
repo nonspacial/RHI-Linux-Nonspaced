@@ -1020,6 +1020,8 @@ Source: wizardkof v0.9.25.0-beta.1 (`26e5259`) "Apply selected build now" (inven
   not finish gets the restart text, never "modified outside RHI" or "changed outside RHI" for RHI's own half-undone
   file. Before asking, the hold is settled (the undo is retried); an undo that now finishes puts RHI's file back, so the
   NR move checks the file again.
+- Follow-up: OptiScaler's removal asks the hold too, before its own files' and the chained `ReShade64.dll`'s hash checks
+  (a held game got "Managed ReShade64.dll was modified outside RHI"; pre-existing since wave 3).
 - A stalled download (#233) inside the NR move or a Nightly switch happens before the first write: that game's line is
   the stall message, and the DLL, the record and the saved choice stay as they were. A Nightly owns no NR DLL, so the NR
   move and the switch never touch each other's files.
