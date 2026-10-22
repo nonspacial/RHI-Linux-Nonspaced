@@ -54,7 +54,8 @@ Safety
   games carry on. If RHI's own copy of a file it needs for the undo is gone (deleted, or the game was reinstalled), the
   change is closed instead and RHI names the file, so you can remove that component and install it again. A game
   folder that is not there at all (its drive not mounted, or unplugged) is not taken for a gone copy: the game stays
-  held until the folder is back.
+  held until the folder is back. When only a folder inside a game folder that is there was deleted, RHI's copy went
+  with it: the change is closed and the file named.
 - When the install records cannot be read after an error, the refusal of that game's next change now says to restart RHI
   to finish it.
 - The note that a change was kept although its save reported an error now also appears for a preset installed into every
