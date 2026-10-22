@@ -76,6 +76,7 @@ public sealed partial class DeploymentScopeCommitPointTests
         Assert.True(OwnedFileSet.ProvedAbsent(deep, [P("game")])); // game/a missing, game lists without it
         Assert.True(OwnedFileSet.ProvedAbsent(deep, [P("game") + Path.DirectorySeparatorChar])); // spelled with a slash
         Assert.False(OwnedFileSet.ProvedAbsent(P("elsewhere", "x", "copy"), [P("game")])); // outside every game folder
+        Directory.CreateDirectory(P("gamex"));
         Assert.False(OwnedFileSet.ProvedAbsent(P("gamex", "a", "copy"), [P("game")])); // a sibling sharing the prefix
         Directory.Move(P("game"), P("game.offline"));
         Assert.False(OwnedFileSet.ProvedAbsent(deep, [P("game")])); // the game folder itself is not there: offline
