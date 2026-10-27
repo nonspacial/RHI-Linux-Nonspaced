@@ -288,6 +288,13 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     /// <summary>#191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).</summary>
     public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost);
 
+    /// <summary>
+    /// #250: the Legacy HDR WSI tick shows only where the probed host needs the layer (NVIDIA driver older than 595);
+    /// hidden, not disabled, elsewhere and until the host is probed. Hidden, it keeps the saved value: <see cref="HdrLegacyWsi"/>
+    /// still holds the profile's tick, so a save from another HDR control never turns it off (the plan leaves it out).
+    /// </summary>
+    public bool ShowHdrLegacyWsi => SelectedGame is not null && LinuxHdrLaunchProfileService.OffersLegacyWsi(HdrHost);
+
     /// <summary>The profile the controls show (HDR mode, legacy WSI, resolution toggle and size).</summary>
     private LinuxHdrGameProfile ShownProfile() => new LinuxHdrGameProfile
     {
@@ -557,6 +564,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(SelectedResolutionPlan));
         OnPropertyChanged(nameof(ResolutionHint));
         OnPropertyChanged(nameof(ShowResolutionToggle));
+        OnPropertyChanged(nameof(ShowHdrLegacyWsi)); // #250: follows the host snapshot
         Nvidia?.Notify(); // #211
     }
 

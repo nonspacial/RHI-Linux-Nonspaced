@@ -248,7 +248,7 @@
                               </ComboBox.ItemTemplate>
                       </ComboBox>
                       <CheckBox Content="{DynamicResource Ui.LegacyWsi}" IsChecked="{Binding HdrLegacyWsi, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
-                                ToolTip.Tip="{DynamicResource Ui.LegacyWsiTip}"/>
+                                IsVisible="{Binding ShowHdrLegacyWsi}" ToolTip.Tip="{DynamicResource Ui.LegacyWsiTip}" ToolTip.ShowDelay="2000"/>
                       <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}"
                               IsVisible="{Binding ShowHdrLaunchProfile}" Padding="10,5"/>
                     </WrapPanel>

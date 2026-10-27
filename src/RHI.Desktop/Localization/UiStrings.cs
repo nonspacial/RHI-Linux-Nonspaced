@@ -1461,5 +1461,6 @@ internal static class UiStrings
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        ("Hw.LegacyWsiNotUsed", "A marcação de WSI legado salva não é usada com este driver, que não precisa dela.", "The saved Legacy WSI tick is not used with this driver, which does not need it."),
     ];
 }

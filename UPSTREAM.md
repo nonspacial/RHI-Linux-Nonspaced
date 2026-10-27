@@ -1077,3 +1077,13 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 <!-- w12/pins notes -->
 
 <!-- w12/hdr-wsi notes -->
+
+### #250 — Legacy HDR WSI: the tick only where the host needs it
+
+Fork-only fix (owner report, no upstream commit; upstream RHI is Windows-only and has no HDR WSI layer). The per-game
+"Legacy WSI" tick shows only when the HDR host probe says the layer is needed (an NVIDIA driver older than 595); it is
+hidden on newer drivers, without a readable NVIDIA driver and until the host is probed. `ENABLE_HDR_WSI=1` goes into a
+launch plan only on such a host (`LinuxHdrLaunchProfileService.OffersLegacyWsi`), so a tick saved earlier is left out of
+the launch line RHI shows for pasting into Steam or into the app that installed an Xbox game, the Heroic/Lutris steps
+and a game RHI starts directly — and stays saved (it applies again on an older driver; `game-library.json` is not
+rewritten). The plan's note then says the saved tick is not used with this driver. HDR Off is unchanged (no variables).

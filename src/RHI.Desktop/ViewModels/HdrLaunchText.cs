@@ -50,6 +50,7 @@ public static class HdrLaunchText
             {
                 LinuxHdrLegacyWsiNote.Enabled => T("Hdr.LegacyWsiEnabled"),
                 LinuxHdrLegacyWsiNote.OlderNvidiaDriver => T("Hdr.LegacyWsiOlderDriver"),
+                LinuxHdrLegacyWsiNote.NotUsed => T("Hw.LegacyWsiNotUsed"), // #250: a saved tick this driver does not need
                 _ => T("Hdr.LegacyWsiOff")
             };
         }

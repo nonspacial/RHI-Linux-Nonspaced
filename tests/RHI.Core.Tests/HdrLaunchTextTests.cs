@@ -107,7 +107,8 @@ public sealed class HdrLaunchTextTests : IDisposable
     {
         // DET-07: Source "Heroic/Epic" with an xdg-open heroic:// command used to be a direct launch for HDR.
         var game = Game("Heroic/Epic", "xdg-open 'heroic://launch?appName=Fortnite&runner=legendary'");
-        var plan = Service(gamescope: true).BuildPlan(game, Profile(LinuxHdrModes.Gamescope, legacy: true));
+        // #250: a driver older than 595, so the saved Legacy WSI tick is used and the steps list it.
+        var plan = Service(gamescope: true, nvidia: "580.95.05").BuildPlan(game, Profile(LinuxHdrModes.Gamescope, legacy: true));
 
         Assert.Equal(LaunchHandoff.Heroic, plan.Handoff);
         Assert.False(plan.AppliesAtLaunch);
