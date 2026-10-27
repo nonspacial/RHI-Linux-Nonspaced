@@ -1087,3 +1087,17 @@ launch plan only on such a host (`LinuxHdrLaunchProfileService.OffersLegacyWsi`)
 the launch line RHI shows for pasting into Steam or into the app that installed an Xbox game, the Heroic/Lutris steps
 and a game RHI starts directly — and stays saved (it applies again on an older driver; `game-library.json` is not
 rewritten). The plan's note then says the saved tick is not used with this driver. HDR Off is unchanged (no variables).
+
+### #251 — HDR launch section only for games that can use HDR
+
+Fork-only (owner decision; upstream RHI has no Linux HDR launch section). The HDR launch section shows unless RHI's data
+says the game has no HDR and RHI installed no HDR mod on it (RenoDX, RenoDX Upgrade, Luma Framework, DX9 HDR); unknown,
+offline, a rate limit or a failed lookup show it ("safe, not sorry"). `HdrSupportService` answers, first decisive source
+wins: RHI's curated list (embedded `Hdr/hdr-support-overrides.json`, keyed `steam:`/`heroic:`/`xbox:`/`name:`), the
+PCGamingWiki page's `hdr` field (page found as the graphics-API lookup finds it — manifest page URL, pcgw_data.json title,
+Steam AppID, PCGW search — and read as wikitext through `action=parse`, sharing that lookup's request gate; `true`,
+`hackable`, `limited`, `always on` → Yes, `false` → No, anything else → Unknown), then for a game the app that installed
+it keeps a Microsoft Store record for, that record's `CapabilityHDR` attribute on PC. Answers are cached in
+`~/.cache/rhi-linux/pcgw_hdr_cache.json` with page and fetch time, asked again only after a full Refresh. A hidden
+section's saved profile stays in `game-library.json` but is not applied at a direct launch nor offered as launch text.
+Provenance is only in the section label's 2 s tooltip (EN + PT-BR).

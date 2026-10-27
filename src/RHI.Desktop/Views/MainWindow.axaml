@@ -239,8 +239,10 @@
                     <TextBlock Text="{Binding LumaCoexistenceText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                   </StackPanel>
 
-                  <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
-                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
+                  <!-- #251: the HDR section only for games that can use HDR; why it shows lives in the label's 2 s tooltip. -->
+                  <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"
+                             IsVisible="{Binding Runtime.ShowHdrSection}" ToolTip.Tip="{Binding Runtime.HdrSectionTip}" ToolTip.ShowDelay="2000"/>
+                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrSection}">
                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
                       <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}">
                               <ComboBox.ItemTemplate>

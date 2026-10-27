@@ -90,6 +90,8 @@ internal sealed class AppComposition
     // w12/nr-logs rows
     // w12/pins rows
     // w12/hdr-wsi rows
+    /// <summary>#251: whether a game can use HDR (curated list, PCGamingWiki, the Microsoft Store record); the HDR section follows it.</summary>
+    public RHI.Platform.Linux.Hdr.HdrSupportService? HdrSupport { get; init; }
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -98,6 +100,7 @@ internal sealed class AppComposition
         vm.Settings.UseXboxFolders(XboxFolders); // w3/scan Settings row (#90): the one store the detectors read
         vm.Resolution.Switcher = DisplayModes; // #191: also puts back a display switch an earlier run left behind
         vm.UpdatePolicy = UpdatePolicy; // w5/update-policy hook (#177)
+        vm.Runtime.HdrSupport = HdrSupport; // w12/hdr-wsi hook (#251)
         return vm;
     }
 
@@ -403,6 +406,7 @@ internal sealed class AppComposition
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        var hdrSupport = new RHI.Platform.Linux.Hdr.HdrSupportService(pcgwGraphics, pcgwData); // #251: shares PCGW's request gate
         return new AppComposition
         {
             Scanner = scanner,
@@ -473,6 +477,7 @@ internal sealed class AppComposition
             // w12/nr-logs rows
             // w12/pins rows
             // w12/hdr-wsi rows
+            HdrSupport = hdrSupport,
         };
     }
 }

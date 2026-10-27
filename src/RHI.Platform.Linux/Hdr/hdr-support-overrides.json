@@ -1,0 +1,5 @@
+{
+  "_comment": "#251: RHI's own HDR support answers, which win over PCGamingWiki. Keys: steam:<AppID>, heroic:<app>, xbox:<StoreId>, name:<lower-case name>. Value: {\"hdr\": true|false, \"note\": \"why\"}.",
+  "games": {
+  }
+}

@@ -1461,6 +1461,13 @@ internal static class UiStrings
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        ("Hw.HdrTipCurated", "HDR: a lista de jogos do próprio RHI diz que este jogo tem HDR.", "HDR: RHI's own game list says this game supports HDR."),
+        ("Hw.HdrTipPcgw", "HDR: listado como compatível pelo PCGamingWiki.", "HDR: listed as supported by PCGamingWiki."),
+        ("Hw.HdrTipPcgwHackable", "HDR: o PCGamingWiki indica que é possível com uma correção.", "HDR: PCGamingWiki lists it as possible with a fix."),
+        ("Hw.HdrTipStore", "HDR: a Microsoft Store indica HDR para este jogo no PC.", "HDR: the Microsoft Store lists HDR for this game on PC."),
+        ("Hw.HdrTipUnknown", "HDR: não consta no PCGamingWiki; exibido caso se aplique.", "HDR: not listed on PCGamingWiki, shown in case it applies."),
+        ("Hw.HdrTipUnchecked", "HDR: o suporte ainda não pôde ser verificado; exibido caso se aplique.", "HDR: support could not be checked yet, shown in case it applies."),
+        ("Hw.HdrTipMod", "HDR: um mod de HDR está instalado ({0}).", "HDR: an HDR mod is installed ({0})."),
         ("Hw.LegacyWsiNotUsed", "A marcação de WSI legado salva não é usada com este driver, que não precisa dela.", "The saved Legacy WSI tick is not used with this driver, which does not need it."),
     ];
 }
