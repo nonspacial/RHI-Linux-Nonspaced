@@ -348,6 +348,7 @@ public sealed class NexusModUpdateCheckTests
     [InlineData("https://www.nexusmods.com.example.org/masseffectandromeda/mods/1351", false)]
     [InlineData("https://github.com/masseffectandromeda/mods/1351", false)]
     [InlineData("https://www.nexusmods.com/masseffectandromeda/1351", false)]
+    [InlineData("https://www.nexusmods.com/masseffectandromeda/images/1351", false)]
     [InlineData("https://www.nexusmods.com/masseffectandromeda/mods/x", false)]
     public void ParsePage_OnlyANexusModPage(string url, bool accepted)
         => Assert.Equal(accepted, NexusModUpdateCheck.ParsePage(url) is not null);
