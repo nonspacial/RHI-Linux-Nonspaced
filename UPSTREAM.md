@@ -1089,9 +1089,9 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
   ReShade on the Custom channel is now checked first (`ILinuxManagedUpdateBackend.ChecksBeforeManualRefresh`; the check is
   local: the chosen DLL is still there, and its hash): a source that is gone reads "could not be checked", with the
   check's reason ("Custom ReShade source file is unavailable; installed DLL remains untouched.", PT-BR too) as the item's
-  message and on the ReShade row; nothing is touched. A source still there is refreshed as before. Stable, Nightly, No
-  Addons and Legacy still refresh unchecked on every manual Update All. The background pass already checked first and
-  said "could not be checked" (unchanged).
+  message and in the ReShade section's update-check line; nothing is touched. A source still there is refreshed as
+  before. Stable, Nightly, No Addons and Legacy still refresh unchecked on every manual Update All. The background pass
+  already checked first and said "could not be checked" (unchanged).
 
 <!-- w12/github-cache notes -->
 
