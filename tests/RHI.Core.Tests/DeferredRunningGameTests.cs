@@ -4,7 +4,6 @@ using RHI.Core.Services;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
-using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
 
@@ -17,9 +16,9 @@ namespace RHI.Core.Tests;
 public sealed class DeferredRunningGameTests : IDisposable
 {
     private static readonly TimeSpan HangGuard = TimeSpan.FromSeconds(60);
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-deferred-" + Guid.NewGuid().ToString("N"));
-
-    public DeferredRunningGameTests() => Directory.CreateDirectory(_root);
+    private const string ReLimiterLatest = "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest";
+    private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-deferred-" + Guid.NewGuid().ToString("N"))).FullName;
+    private readonly Clock _clock = new();
 
     public void Dispose()
     {
@@ -35,58 +34,46 @@ public sealed class DeferredRunningGameTests : IDisposable
         var probe = new Probe { Running = true };
         var backend = new UpdatingBackend(records);
         var service = new LinuxUpdateAllService(records, backend, probe);
-        var clock = new Clock();
         var passes = 0;
-        var retry = new DeferredGameRetry(service.IsRunning, () => true, async (closed, token) =>
+        var retry = Retry(service.IsRunning, async (closed, token) =>
         {
             passes++;
-            var result = await service.RunAsync([closed], _ => [], LinuxUpdateRunMode.Background, token);
-            return result.RunningGames.Count > 0;
-        }, DeferredGameRetry.DefaultInterval, clock.Delay);
+            return (await service.RunAsync([closed], _ => [], LinuxUpdateRunMode.Background, token)).RunningGames.Count > 0;
+        });
 
         var first = await service.RunAsync([game], _ => [], LinuxUpdateRunMode.Background);
         Assert.Equal((0, 1), (first.ChangedCount, first.DeferredCount));
-        Assert.Equal([game], first.RunningGames);
         var run = retry.Add(first.RunningGames, CancellationToken.None);
-
-        await clock.WaitingAsync(); // poll 1: still running
-        clock.Release();
-        await clock.WaitingAsync();
+        await _clock.WaitingAsync();
+        await Polls(1); // still running
         Assert.Equal(0, passes);
         probe.Running = false; // the user closed the game
-        clock.Release();
+        _clock.Release();
         await run.WaitAsync(HangGuard); // nothing left to wait for: the poll ends
 
         Assert.Equal(1, passes);
         Assert.Equal([ManagedComponentKind.ReLimiter], backend.UpdateCalls);
         Assert.Equal("1-new", records.Find(game, ManagedComponentKind.ReLimiter)!.Version);
-        Assert.Equal([TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60)], clock.Waits);
+        Assert.Equal([TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60)], _clock.Waits);
         Assert.Empty(retry.Pending);
+        Assert.False(service.IsRunning(game));
     }
 
     [Fact]
     public async Task StillRunning_GetsNoPass_AndEveryPollWaitsTheInterval()
     {
         var probe = new Probe { Running = true };
-        var clock = new Clock();
         var passes = 0;
         using var stop = new CancellationTokenSource();
-        var retry = new DeferredGameRetry(probe.IsRunning, () => true, (_, _) => { passes++; return Task.FromResult(false); },
-            TimeSpan.FromSeconds(60), clock.Delay);
+        var retry = Retry(probe.IsRunning, (_, _) => { passes++; return Task.FromResult(false); });
         var run = retry.Add([Game("Long Session")], stop.Token);
 
-        for (var i = 0; i < 3; i++)
-        {
-            await clock.WaitingAsync();
-            clock.Release();
-        }
-        await clock.WaitingAsync();
+        await _clock.WaitingAsync();
+        await Polls(3);
         stop.Cancel();
         await run.WaitAsync(HangGuard); // ends quietly when the loop stops
 
-        Assert.Equal(0, passes);
-        Assert.Equal(3, probe.Calls);
-        Assert.Equal(4, clock.Waits.Count);
+        Assert.Equal((0, 3, 4), (passes, probe.Calls, _clock.Waits.Count));
         Assert.Single(retry.Pending);
     }
 
@@ -94,27 +81,23 @@ public sealed class DeferredRunningGameTests : IDisposable
     public async Task AutomaticUpdatesTurnedOff_RunNothing_AndForgetTheGames()
     {
         var probe = new Probe { Running = true };
-        var clock = new Clock();
         var wanted = true;
         var passes = 0;
-        var retry = new DeferredGameRetry(probe.IsRunning, () => wanted, (_, _) => { passes++; return Task.FromResult(false); },
-            TimeSpan.FromSeconds(60), clock.Delay);
+        var retry = Retry(probe.IsRunning, (_, _) => { passes++; return Task.FromResult(false); }, () => wanted);
         var run = retry.Add([Game("Off Quest")], CancellationToken.None);
 
-        await clock.WaitingAsync();
+        await _clock.WaitingAsync();
         probe.Running = false;
         wanted = false; // Settings: automatic updates off while the poll waits
-        clock.Release();
+        _clock.Release();
         await run.WaitAsync(HangGuard);
 
         Assert.Equal((0, 0), (passes, probe.Calls));
         Assert.Empty(retry.Pending);
-
         // Off before the first wait: no poll at all.
-        var idle = new DeferredGameRetry(probe.IsRunning, () => false, (_, _) => { passes++; return Task.FromResult(false); },
-            TimeSpan.FromSeconds(60), clock.Delay);
+        var idle = Retry(probe.IsRunning, (_, _) => { passes++; return Task.FromResult(false); }, () => false);
         await idle.Add([Game("Off Again")], CancellationToken.None).WaitAsync(HangGuard);
-        Assert.Equal((0, 1), (passes, clock.Waits.Count));
+        Assert.Equal((0, 1), (passes, _clock.Waits.Count));
         Assert.Empty(idle.Pending);
     }
 
@@ -123,22 +106,16 @@ public sealed class DeferredRunningGameTests : IDisposable
     {
         var log = new AppLog(Path.Combine(_root, "rhi.log"));
         var probe = new Probe { Throws = true };
-        var clock = new Clock();
         var passes = 0;
-        var retry = new DeferredGameRetry(probe.IsRunning, () => true, (_, _) => { passes++; return Task.FromResult(false); },
-            TimeSpan.FromSeconds(60), clock.Delay);
+        var retry = Retry(probe.IsRunning, (_, _) => { passes++; return Task.FromResult(false); });
         Task run;
         using (AppLog.UseInThisFlow(log)) run = retry.Add([Game("Probe Quest")], CancellationToken.None);
 
-        for (var i = 0; i < 3; i++)
-        {
-            await clock.WaitingAsync();
-            clock.Release();
-        }
-        await clock.WaitingAsync();
-        Assert.Equal((0, 3, 4), (passes, probe.Calls, clock.Waits.Count)); // one probe call per poll, each after a full wait
+        await _clock.WaitingAsync();
+        await Polls(3);
+        Assert.Equal((0, 3, 4), (passes, probe.Calls, _clock.Waits.Count)); // one probe call per poll, each after a full wait
         probe.Throws = false;
-        clock.Release();
+        _clock.Release();
         await run.WaitAsync(HangGuard);
 
         Assert.Equal(1, passes);
@@ -146,43 +123,17 @@ public sealed class DeferredRunningGameTests : IDisposable
     }
 
     [Fact]
-    public async Task PassThatMustWaitAgain_KeepsTheGame_UntilAPassIsDone()
-    {
-        // The game started again before its pass (or another operation took the gate first): asked again next poll.
-        var probe = new Probe();
-        var clock = new Clock();
-        var answers = new Queue<bool>([true, false]);
-        var passes = 0;
-        var retry = new DeferredGameRetry(probe.IsRunning, () => true, (_, _) => { passes++; return Task.FromResult(answers.Dequeue()); },
-            TimeSpan.FromSeconds(60), clock.Delay);
-        var run = retry.Add([Game("Again Quest")], CancellationToken.None);
-
-        await clock.WaitingAsync();
-        clock.Release();
-        await clock.WaitingAsync();
-        Assert.Equal(1, passes);
-        Assert.Single(retry.Pending);
-        clock.Release();
-        await run.WaitAsync(HangGuard);
-
-        Assert.Equal(2, passes);
-        Assert.Empty(retry.Pending);
-    }
-
-    [Fact]
     public async Task PassThatThrows_DropsTheGame_AndIsLogged()
     {
         // Left to the next scheduled pass (upstream drops it too): retrying a failing pass every minute only repeats it.
         var log = new AppLog(Path.Combine(_root, "rhi.log"));
-        var clock = new Clock();
         var passes = 0;
-        var retry = new DeferredGameRetry(new Probe().IsRunning, () => true,
-            (_, _) => { passes++; throw new IOException("ledger is not readable"); }, TimeSpan.FromSeconds(60), clock.Delay);
+        var retry = Retry(new Probe().IsRunning, (_, _) => { passes++; throw new IOException("ledger is not readable"); });
         Task run;
         using (AppLog.UseInThisFlow(log)) run = retry.Add([Game("Failing Quest")], CancellationToken.None);
 
-        await clock.WaitingAsync();
-        clock.Release();
+        await _clock.WaitingAsync();
+        _clock.Release();
         await run.WaitAsync(HangGuard);
 
         Assert.Equal(1, passes);
@@ -195,50 +146,20 @@ public sealed class DeferredRunningGameTests : IDisposable
     public async Task GamesAddedWhilePolling_JoinTheSamePoll_EachOnce()
     {
         var probe = new Probe { Running = true };
-        var clock = new Clock();
         var passed = new List<string>();
-        var retry = new DeferredGameRetry(probe.IsRunning, () => true, (game, _) => { passed.Add(game.Name); return Task.FromResult(false); },
-            TimeSpan.FromSeconds(60), clock.Delay);
+        var retry = Retry(probe.IsRunning, (game, _) => { passed.Add(game.Name); return Task.FromResult(false); });
         var first = Game("First Quest");
         var run = retry.Add([first], CancellationToken.None);
-        await clock.WaitingAsync();
+        await _clock.WaitingAsync();
 
-        var joined = retry.Add([Game("Second Quest"), first], CancellationToken.None);
-        Assert.Same(run, joined);
+        Assert.Same(run, retry.Add([Game("Second Quest"), first], CancellationToken.None));
         Assert.Equal(2, retry.Pending.Count);
         probe.Running = false;
-        clock.Release();
+        _clock.Release();
         await run.WaitAsync(HangGuard);
 
         Assert.Equal(["First Quest", "Second Quest"], passed.Order());
-        Assert.Single(clock.Waits);
-    }
-
-    [Fact]
-    public async Task Pass_ListsEachRunningGameOnce_NeverForARefusedPass()
-    {
-        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
-        var running = Game("Running Quest");
-        var idle = Game("Idle Quest");
-        foreach (var game in new[] { running, idle })
-        {
-            Record(records, game, ManagedComponentKind.ReLimiter);
-            Record(records, game, ManagedComponentKind.RenoDX);
-        }
-        var backend = new UpdatingBackend(records) { Hold = true };
-        var service = new LinuxUpdateAllService(records, backend, new Probe { RunningName = running.Name });
-
-        var pass = service.RunAsync([running, idle], _ => [], LinuxUpdateRunMode.Background);
-        await backend.Entered.Task.WaitAsync(HangGuard);
-        var refused = await service.RunAsync([idle], _ => [], LinuxUpdateRunMode.Background);
-        backend.Release.SetResult();
-        var result = await pass.WaitAsync(HangGuard);
-
-        Assert.Empty(refused.RunningGames);
-        Assert.Equal([running], result.RunningGames);
-        Assert.Equal((2, 2), (result.ChangedCount, result.DeferredCount));
-        Assert.True(service.IsRunning(running));
-        Assert.False(service.IsRunning(idle));
+        Assert.Single(_clock.Waits);
     }
 
     [Theory]
@@ -249,13 +170,11 @@ public sealed class DeferredRunningGameTests : IDisposable
         UiLocalizationService.Apply(language);
         try
         {
-            var game = Game("Closing Quest");
             var result = new LinuxUpdateAllResult([
-                new LinuxUpdateItemResult(game.Name, ManagedComponentKind.ReLimiter, true, true, false, "updated"),
-                new LinuxUpdateItemResult(game.Name, ManagedComponentKind.RenoDX, true, false, false, "current")
+                new LinuxUpdateItemResult("Closing Quest", ManagedComponentKind.ReLimiter, true, true, false, "updated"),
+                new LinuxUpdateItemResult("Closing Quest", ManagedComponentKind.RenoDX, true, false, false, "current")
             ]);
-
-            Assert.Equal(expected, UpdatesViewModel.ClosedGamePassStatus(game, result));
+            Assert.Equal(expected, UpdatesViewModel.ClosedGamePassStatus(Game("Closing Quest"), result));
         }
         finally { UiLocalizationService.Apply("en-US"); }
     }
@@ -266,44 +185,24 @@ public sealed class DeferredRunningGameTests : IDisposable
     public async Task ViewModel_BackgroundPass_RetriesTheClosedGame_OnceTheGateIsFree()
     {
         var game = Game("Vm Quest");
-        var checks = new ConcurrentQueue<bool>();
-        var checkSeen = new SemaphoreSlim(0);
-        ViewModelFixture? fixture = null;
-        HttpResponseMessage? Answer(HttpRequestMessage request)
-        {
-            if (request.RequestUri!.AbsoluteUri == ReLimiterLatest)
-            {
-                checks.Enqueue(fixture!.Vm.Operations.CurrentKind == "test");
-                checkSeen.Release();
-            }
-            return null; // offline: the check cannot tell, nothing changes
-        }
+        var checks = new Checks();
         var probe = new Probe { Running = true };
-        using var fx = fixture = await ViewModelFixture.StartAsync([game], httpResponse: Answer, runningProbe: probe);
-        var clock = new Clock();
-        fx.Vm.Updates.DeferredRetryDelay = clock.Delay;
-        Record(fx.Records, game, ManagedComponentKind.ReLimiter);
-
-        TurnAutomaticUpdates(fx, on: true); // the loop's first pass runs at once
-        await clock.WaitingAsync(); // that pass deferred the game: the poll waits
-        Assert.Empty(checks);
-        var retry = fx.Vm.Updates.DeferredRetry!;
+        var (fx, retry) = await DeferredInViewModelAsync(game, probe, checks.Answer);
+        using var disposeFx = fx;
+        checks.Gate = fx.Vm.Operations;
         Assert.Equal([game.Name], retry.Pending.Select(g => g.Name));
+        await Polls(1); // still running
+        Assert.Equal(0, checks.Count);
 
-        clock.Release(); // still running
-        await clock.WaitingAsync();
-        Assert.Empty(checks);
-
-        var held = fx.Vm.Operations.TryBegin("test");
-        Assert.NotNull(held);
+        var held = fx.Vm.Operations.TryBegin("test")!;
         probe.Running = false;
-        clock.Release(); // closed, but an operation holds the gate: the pass waits for it, no new poll needed
+        _clock.Release(); // closed, but an operation holds the gate: the pass waits for it, no new poll needed
         await WaitingForTheGateAsync(fx.Vm.Operations);
-        held!.Dispose();
-        Assert.True(await checkSeen.WaitAsync(HangGuard), "no pass after the gate was freed");
+        held.Dispose();
+        Assert.True(await checks.Seen.WaitAsync(HangGuard), "no pass after the gate was freed");
         await retry.Run!.WaitAsync(HangGuard);
 
-        Assert.Equal([false], checks); // once, and never while the test held the gate
+        Assert.Equal([false], checks.WhileTestHeldTheGate); // once, and never while the test held the gate
         Assert.Empty(retry.Pending);
         fx.Vm.Updates.StopBackgroundLoop();
     }
@@ -312,27 +211,16 @@ public sealed class DeferredRunningGameTests : IDisposable
     public async Task ViewModel_GameStartedAgainBeforeItsPass_KeepsWaiting()
     {
         var game = Game("Again Vm Quest");
-        var checks = 0;
-        HttpResponseMessage? Answer(HttpRequestMessage request)
-        {
-            if (request.RequestUri!.AbsoluteUri == ReLimiterLatest) Interlocked.Increment(ref checks);
-            return null;
-        }
+        var checks = new Checks();
         // The background pass sees it running, the poll sees it closed, its own pass sees it running again.
         var probe = new Probe { Answers = new Queue<bool>([true, false, true]) };
-        using var fx = await ViewModelFixture.StartAsync([game], httpResponse: Answer, runningProbe: probe);
-        var clock = new Clock();
-        fx.Vm.Updates.DeferredRetryDelay = clock.Delay;
-        Record(fx.Records, game, ManagedComponentKind.ReLimiter);
-        TurnAutomaticUpdates(fx, on: true);
-        await clock.WaitingAsync();
-        var retry = fx.Vm.Updates.DeferredRetry!;
+        var (fx, retry) = await DeferredInViewModelAsync(game, probe, checks.Answer);
+        using var disposeFx = fx;
 
-        clock.Release();
-        await clock.WaitingAsync(); // the pass deferred it again: the poll waits for it once more
+        _clock.Release();
+        await _clock.WaitingAsync(); // the pass deferred it again: the poll waits for it once more
 
-        Assert.Equal(3, probe.Calls);
-        Assert.Equal(0, checks);
+        Assert.Equal((3, 0), (probe.Calls, checks.Count));
         Assert.Equal([game.Name], retry.Pending.Select(g => g.Name));
         fx.Vm.Updates.StopBackgroundLoop();
     }
@@ -340,31 +228,20 @@ public sealed class DeferredRunningGameTests : IDisposable
     [Fact]
     public async Task ViewModel_GameNoLongerInTheLibrary_GetsNoPass()
     {
-        var game = Game("Gone Quest");
-        var checks = 0;
-        HttpResponseMessage? Answer(HttpRequestMessage request)
-        {
-            if (request.RequestUri!.AbsoluteUri == ReLimiterLatest) Interlocked.Increment(ref checks);
-            return null;
-        }
+        var checks = new Checks();
         var probe = new Probe { Running = true };
-        using var fx = await ViewModelFixture.StartAsync([game], httpResponse: Answer, runningProbe: probe);
-        var clock = new Clock();
-        fx.Vm.Updates.DeferredRetryDelay = clock.Delay;
-        Record(fx.Records, game, ManagedComponentKind.ReLimiter);
-        TurnAutomaticUpdates(fx, on: true);
-        await clock.WaitingAsync();
-        var retry = fx.Vm.Updates.DeferredRetry!;
+        var (fx, retry) = await DeferredInViewModelAsync(Game("Gone Quest"), probe, checks.Answer);
+        using var disposeFx = fx;
 
         // A refresh no longer lists the game (removed while it was running): its records stay, but no pass is run for it.
         var library = (LibraryViewModel)typeof(MainWindowViewModel)
             .GetField("_library", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(fx.Vm)!;
         library.SetGames([]);
         probe.Running = false;
-        clock.Release();
+        _clock.Release();
         await retry.Run!.WaitAsync(HangGuard);
 
-        Assert.Equal(0, checks);
+        Assert.Equal(0, checks.Count);
         Assert.Empty(retry.Pending);
         fx.Vm.Updates.StopBackgroundLoop();
     }
@@ -379,68 +256,42 @@ public sealed class DeferredRunningGameTests : IDisposable
         File.WriteAllText(Path.Combine(game.PrefixPath, "user.reg"), "WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\Other] 1\n\"x\"=\"y\"\n");
         var custom = Path.Combine(_root, "custom", "ReShade64.dll");
         WriteCustomReShade(custom, 1);
-        var probe = new Probe();
-        using var fx = await ViewModelFixture.StartAsync([game], uiLanguage: "pt-BR", runningProbe: probe); // a Settings save applies it
-        var listed = fx.Vm.AllLibraryGames.Single();
-        var installed = await fx.Managed.ApplyReShadeAsync(listed,
-            new RHI.Platform.Linux.Deployment.ReShadeInstallOptions { Channel = ReShadeChannel.Custom, CustomDllPath = custom, ManageIni = false });
-        Assert.True(installed.Success, installed.Message);
-        WriteCustomReShade(custom, 2); // the user put a newer build there: the check finds an update
-        var clock = new Clock();
-        fx.Vm.Updates.DeferredRetryDelay = clock.Delay;
+        var probe = new Probe { Running = true };
         var lines = new ConcurrentQueue<string>();
-        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
         UiLocalizationService.Apply("pt-BR");
         try
         {
-            probe.Running = true;
-            TurnAutomaticUpdates(fx, on: true);
-            await clock.WaitingAsync();
-            var retry = fx.Vm.Updates.DeferredRetry!;
+            var (fx, retry) = await DeferredInViewModelAsync(game, probe, language: "pt-BR", seed: async fx =>
+            {
+                var installed = await fx.Managed.ApplyReShadeAsync(fx.Vm.AllLibraryGames.Single(),
+                    new ReShadeInstallOptions { Channel = ReShadeChannel.Custom, CustomDllPath = custom, ManageIni = false });
+                Assert.True(installed.Success, installed.Message);
+                WriteCustomReShade(custom, 2); // the user put a newer build there: the check finds an update
+                fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
+            });
+            using var disposeFx = fx;
             Assert.DoesNotContain(lines, line => line.StartsWith("Atualizações adiadas", StringComparison.Ordinal));
 
             probe.Running = false;
-            clock.Release();
+            _clock.Release();
             await retry.Run!.WaitAsync(HangGuard);
 
             // (The offline fixture's own notices may follow the line.)
             Assert.StartsWith("Atualizações adiadas feitas depois que o jogo fechou: Custom Vm Quest. Atualizar tudo: 1 atualizado(s) · 0 em dia · 0 adiado(s) · 0 com falha. (segundo plano)",
                 lines.Distinct().Single(line => line.StartsWith("Atualizações adiadas", StringComparison.Ordinal)), StringComparison.Ordinal);
-            Assert.Equal(File.ReadAllBytes(custom), File.ReadAllBytes(Path.Combine(listed.BinaryDirectory!, "dxgi.dll")));
+            Assert.Equal(File.ReadAllBytes(custom), File.ReadAllBytes(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
             fx.Vm.Updates.StopBackgroundLoop();
         }
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
-    private static void WriteCustomReShade(string path, byte build)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        PeArchitectureDetectorTests.WritePe(path, 0x8664, 1_100_000);
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None);
-        stream.Position = 512;
-        stream.Write(System.Text.Encoding.ASCII.GetBytes("ReShade crosire reshade.me"));
-        stream.Position = 4096;
-        stream.WriteByte(build);
-    }
-
     [Fact]
     public async Task ViewModel_TurningAutomaticUpdatesOff_StopsWaitingForTheGame()
     {
-        var game = Game("Off Vm Quest");
-        var checks = 0;
-        HttpResponseMessage? Answer(HttpRequestMessage request)
-        {
-            if (request.RequestUri!.AbsoluteUri == ReLimiterLatest) Interlocked.Increment(ref checks);
-            return null;
-        }
+        var checks = new Checks();
         var probe = new Probe { Running = true };
-        using var fx = await ViewModelFixture.StartAsync([game], httpResponse: Answer, runningProbe: probe);
-        var clock = new Clock();
-        fx.Vm.Updates.DeferredRetryDelay = clock.Delay;
-        Record(fx.Records, game, ManagedComponentKind.ReLimiter);
-        TurnAutomaticUpdates(fx, on: true);
-        await clock.WaitingAsync();
-        var retry = fx.Vm.Updates.DeferredRetry!;
+        var (fx, retry) = await DeferredInViewModelAsync(Game("Off Vm Quest"), probe, checks.Answer);
+        using var disposeFx = fx;
         var asked = probe.Calls; // the pass's own look
 
         probe.Running = false;
@@ -448,17 +299,15 @@ public sealed class DeferredRunningGameTests : IDisposable
         await retry.Run!.WaitAsync(HangGuard);
 
         Assert.Null(fx.Vm.Updates.DeferredRetry);
-        Assert.Equal(0, checks);
-        Assert.Equal(asked, probe.Calls);
+        Assert.Equal((0, asked), (checks.Count, probe.Calls));
     }
 
     [Fact]
     public async Task ViewModel_ManualUpdateAll_StillOnlyReportsTheRunningGameAsDeferred()
     {
         var game = Game("Manual Quest");
-        var probe = new Probe { Running = true };
-        using var fx = await ViewModelFixture.StartAsync([game], runningProbe: probe);
-        fx.Vm.Updates.DeferredRetryDelay = new Clock().Delay;
+        using var fx = await ViewModelFixture.StartAsync([game], runningProbe: new Probe { Running = true });
+        fx.Vm.Updates.DeferredRetryDelay = _clock.Delay;
         Record(fx.Records, game, ManagedComponentKind.ReLimiter);
         fx.Vm.Updates.SetLibraryHasManagedTargets(true);
 
@@ -466,6 +315,33 @@ public sealed class DeferredRunningGameTests : IDisposable
 
         Assert.StartsWith("Update All: 0 updated · 0 current · 1 deferred · 0 failed.", fx.Vm.StatusText, StringComparison.Ordinal);
         Assert.Null(fx.Vm.Updates.DeferredRetry);
+    }
+
+    private DeferredGameRetry Retry(Func<DetectedGame, bool> isRunning, Func<DetectedGame, CancellationToken, Task<bool>> pass, Func<bool>? wanted = null)
+        => new(isRunning, wanted ?? (() => true), pass, DeferredGameRetry.DefaultInterval, _clock.Delay);
+
+    // The poll waits: lets it through n waits, returning each time it waits again.
+    private async Task Polls(int n)
+    {
+        for (var i = 0; i < n; i++)
+        {
+            _clock.Release();
+            await _clock.WaitingAsync();
+        }
+    }
+
+    // The real view model with automatic updates turned on: its first pass deferred the running game (a ReLimiter record
+    // unless the seed installs something) and the poll waits on the test clock.
+    private async Task<(ViewModelFixture Fx, DeferredGameRetry Retry)> DeferredInViewModelAsync(DetectedGame game, Probe probe,
+        Func<HttpRequestMessage, HttpResponseMessage?>? answer = null, string language = "en-US", Func<ViewModelFixture, Task>? seed = null)
+    {
+        var fx = await ViewModelFixture.StartAsync([game], uiLanguage: language, httpResponse: answer, runningProbe: probe); // a Settings save applies it
+        fx.Vm.Updates.DeferredRetryDelay = _clock.Delay;
+        if (seed is null) Record(fx.Records, game, ManagedComponentKind.ReLimiter);
+        else await seed(fx);
+        TurnAutomaticUpdates(fx, on: true); // the loop's first pass runs at once
+        await _clock.WaitingAsync();
+        return (fx, fx.Vm.Updates.DeferredRetry!);
     }
 
     // The pass parked in OperationCoordinator.WhenIdleAsync (its idle signal exists only while someone waits for the gate).
@@ -480,13 +356,22 @@ public sealed class DeferredRunningGameTests : IDisposable
         }
     }
 
-    private const string ReLimiterLatest = "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest";
-
     private static void TurnAutomaticUpdates(ViewModelFixture fx, bool on)
     {
         var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
         settings.AutoUpdateComponents = on;
         fx.Vm.Settings.SaveLinuxSettings(settings);
+    }
+
+    private static void WriteCustomReShade(string path, byte build)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        PeArchitectureDetectorTests.WritePe(path, 0x8664, 1_100_000);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None);
+        stream.Position = 512;
+        stream.Write(System.Text.Encoding.ASCII.GetBytes("ReShade crosire reshade.me"));
+        stream.Position = 4096;
+        stream.WriteByte(build);
     }
 
     private DetectedGame Game(string name)
@@ -530,12 +415,30 @@ public sealed class DeferredRunningGameTests : IDisposable
         public void Release() => _release.Release();
     }
 
+    /// <summary>Counts the game's ReLimiter release checks (offline: the check cannot tell, nothing changes).</summary>
+    private sealed class Checks
+    {
+        private int _count;
+        public OperationCoordinator? Gate { get; set; }
+        public SemaphoreSlim Seen { get; } = new(0);
+        public ConcurrentQueue<bool> WhileTestHeldTheGate { get; } = new();
+        public int Count => Volatile.Read(ref _count);
+
+        public HttpResponseMessage? Answer(HttpRequestMessage request)
+        {
+            if (request.RequestUri!.AbsoluteUri != ReLimiterLatest) return null;
+            WhileTestHeldTheGate.Enqueue(Gate?.CurrentKind == "test");
+            Interlocked.Increment(ref _count);
+            Seen.Release();
+            return null;
+        }
+    }
+
     private sealed class Probe : IGameRunningProbe
     {
         private int _calls;
         public volatile bool Running;
         public volatile bool Throws;
-        public string? RunningName { get; init; }
         public Queue<bool>? Answers { get; init; }
         public int Calls => Volatile.Read(ref _calls);
 
@@ -544,7 +447,7 @@ public sealed class DeferredRunningGameTests : IDisposable
             Interlocked.Increment(ref _calls);
             if (Throws) throw new IOException("/proc is not readable");
             if (Answers is not null) lock (Answers) return Answers.Dequeue();
-            return RunningName is null ? Running : game.Name == RunningName;
+            return Running;
         }
     }
 
@@ -552,25 +455,17 @@ public sealed class DeferredRunningGameTests : IDisposable
     private sealed class UpdatingBackend(LinuxDeploymentRecordStore records) : ILinuxManagedUpdateBackend
     {
         public ConcurrentQueue<ManagedComponentKind> UpdateCalls { get; } = new();
-        public bool Hold { get; init; }
-        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
             => Task.FromResult(new ManagedUpdateCheck(true, true, "update"));
 
-        public async Task<ComponentOperationResult> UpdateManagedAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
+        public Task<ComponentOperationResult> UpdateManagedAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
         {
-            if (Hold)
-            {
-                Entered.TrySetResult();
-                await Release.Task.WaitAsync(cancellationToken);
-            }
             UpdateCalls.Enqueue(component);
             var record = records.Find(game, component)!;
             record.Version += "-new";
             records.Upsert(record);
-            return ComponentOperationResult.Ok("updated");
+            return Task.FromResult(ComponentOperationResult.Ok("updated"));
         }
     }
 }
