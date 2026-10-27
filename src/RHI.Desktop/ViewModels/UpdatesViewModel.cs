@@ -192,16 +192,20 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         UiExceptionGuard.Forget(_deferred.Add(games, loopToken), "deferred-update-retry");
     }
 
-    // One closed game's pass, with the same rules as the background pass (exclusions, holds, families). Waits for the gate;
-    // true = keep waiting (the game runs again, or another operation took the gate first).
+    // One closed game's pass, with the same rules as the background pass (exclusions, holds, families), once the gate is
+    // free (automatic updates turned off meanwhile cancel the loop's token). True = keep waiting: the game runs again.
     private async Task<bool> RunPassForClosedGameAsync(DetectedGame deferred, CancellationToken cancellationToken)
     {
-        await Host.Operations.WhenIdleAsync(cancellationToken); // automatic updates turned off meanwhile cancel the loop's token
+        OperationScope? claimed;
+        do
+        {
+            await Host.Operations.WhenIdleAsync(cancellationToken);
+            claimed = Host.Operations.TryBegin("background-update", linkedToken: cancellationToken);
+        } while (claimed is null);
+        using var op = claimed;
         // The library may have been refreshed meanwhile: the game as it is now, or nothing when it is gone.
         var game = Host.AllGames.FirstOrDefault(candidate => Key(candidate) == Key(deferred));
         if (game is null) return false;
-        using var op = Host.Operations.TryBegin("background-update", linkedToken: cancellationToken);
-        if (op is null) return true;
         try
         {
             var indexes = await PrepareUpdateIndexesAsync([game], op.Token);
@@ -215,7 +219,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
                 await InvalidateAllAndReprobeSelectedAsync();
                 StatusText = ClosedGamePassStatus(game, result) + Shell.F5Driver.UpdateAllNote([game], result) + T("Vm.Background");
             }
-            return result.AnotherPassRunning || result.RunningGames.Count > 0;
+            return result.RunningGames.Count > 0;
         }
         catch (OperationCanceledException) when (op.CancelRequested)
         {

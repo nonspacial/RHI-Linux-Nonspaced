@@ -60,8 +60,6 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
     /// <summary>#242: the games this pass left alone because they were running (each once): the background loop updates
     /// them once they close.</summary>
     public IReadOnlyList<DetectedGame> RunningGames { get; init; } = [];
-    /// <summary>#242: nothing ran because another Update All/background pass was already running.</summary>
-    public bool AnotherPassRunning { get; init; }
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
@@ -241,7 +239,7 @@ public sealed class LinuxUpdateAllService
             return new LinuxUpdateAllResult([
                 new LinuxUpdateItemResult("RHI Linux", ManagedComponentKind.ReShade, true, false, true,
                     "Another Update All/background pass is already running.")
-            ]) { AnotherPassRunning = true };
+            ]);
 
         var results = new List<LinuxUpdateItemResult>();
         var running = new List<DetectedGame>(); // #242
