@@ -4,7 +4,7 @@
 
 ### Native Linux port of RHI for Steam / Proton, Heroic, Lutris, Wine and Xbox / Game Pass
 
-[![Fork](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-main%20%C2%B7%20based%20on%200.9.23.4--beta.1-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
+[![Release](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-2.8.7-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)
 [![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.8.7-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
 [![Linux](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4?style=for-the-badge\&logo=dotnet)](https://dotnet.microsoft.com/)
@@ -15,10 +15,10 @@
 <br>
 
 [Status](#-status) ·
-[What this fork adds](#-what-this-fork-adds) ·
+[What it does](#-what-it-does) ·
 [Supported Launchers](#-supported-launchers) ·
 [Quick Start](#-quick-start) ·
-[Changes](#-changes-in-this-fork) ·
+[Changes](#-changes) ·
 [Compatibility](#️-compatibility) ·
 [Upstream](#-upstream) ·
 [License](#-license)
@@ -49,11 +49,11 @@
 
 ## 🚀 Status
 
-**This repository:** [nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced), a fork of [wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux)
-**Based on:** RHI Linux `v0.9.23.4-beta.1` (the app still reports this version; the fork has published no release of its own yet)
+**Project:** [nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced)
+**Release:** `v2.8.7` ([GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)), level with upstream RHI 2.8.7
 **Upstream target:** `RHI 2.8.7`
 
-RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton. This fork continues that port: it fixes problems found in a full code review, follows upstream RHI up to 2.8.7, and adds Linux-specific safety around installs, downloads and Wine prefixes.
+RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton. It follows upstream RHI up to 2.8.7 and adds Linux-specific safety around installs, downloads and Wine prefixes. It started from [wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux) (GPL-3.0).
 
 The project targets functional parity with upstream RHI where the same functionality can be implemented reliably on Linux.
 
@@ -71,11 +71,11 @@ It is still a **beta** while broader testing continues across different Linux di
 
 ---
 
-## ✨ What this fork adds
+## ✨ What it does
 
-Compared with the wizardkof beta it started from (`v0.9.23.4-beta.1`), this fork:
+RHI Linux Nonspaced:
 
-* **scans large libraries quickly and in little memory.** A single Lutris entry could make the old scan read every mounted drive through the Wine prefix's drive links, passing 2.8 GB of memory and still growing. A full scan of a 21-game library now takes about 1.4 s and 77 MB.
+* **scans large libraries quickly and in little memory.** It never follows a Wine prefix's drive links into every mounted drive; a full scan of a 21-game library takes about 1.4 s and 77 MB.
 * **never leaves a game half-modded.** Installs, updates and removals are journaled and roll back as a whole if anything fails, including after a crash or power cut.
 * **checks what it downloads.** Each download source has its own list of allowed hosts and a size limit, and published checksums are verified. A download that stops sending data is given up after a minute instead of holding up Update All.
 * **leaves your Wine prefixes alone while they run**, and keeps DLL overrides you set yourself.
@@ -97,7 +97,7 @@ Compared with the wizardkof beta it started from (`v0.9.23.4-beta.1`), this fork
 * **adds Nexus Mods and GitHub accounts, update notices, desktop shortcuts, a right-click menu on library cards, saved filters, masked log bundles and game reports.**
 * **fits any window size** from 640×480 up, landscape or portrait, in English or Brazilian Portuguese.
 
-The full list is under [Changes in this fork](#-changes-in-this-fork) and in [`CHANGELOG.md`](CHANGELOG.md).
+The full list is under [Changes](#-changes) and in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -166,7 +166,19 @@ Linux has no official Xbox app. RHI finds Xbox / Game Pass games from Xodus-form
 
 # ⚡ Quick Start
 
-## CachyOS / Arch Linux
+## From a release (AppImage)
+
+Download `RHI-Linux-v2.8.7-x86_64.AppImage` and `RHI-Linux-v2.8.7-x86_64.AppImage.sha256` from [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases) into the same folder, check the download, make it executable and run it:
+
+```bash
+sha256sum --check RHI-Linux-v2.8.7-x86_64.AppImage.sha256
+chmod +x RHI-Linux-v2.8.7-x86_64.AppImage
+./RHI-Linux-v2.8.7-x86_64.AppImage
+```
+
+`sha256sum --check` must print `OK`; if it does not, delete the file and download it again. The AppImage bundles the .NET runtime, so nothing from .NET needs installing (see [Runtime requirements](#runtime-requirements) for the archive tool some components need). RHI tells you when a newer release is published (Settings → Accounts & updates); it never downloads or installs one itself.
+
+## Building from source on CachyOS / Arch Linux
 
 Install the required packages:
 
@@ -176,7 +188,7 @@ sudo pacman -S --needed dotnet-sdk dotnet-runtime-8.0 7zip git
 
 Building from source needs a .NET 10 SDK (any 10.0 feature band, pinned by `global.json`) and the .NET 8 runtime the app targets. NuGet restores are locked by the committed `packages.lock.json` files; after changing a package reference, run `dotnet restore --force-evaluate` and commit the updated lock files.
 
-Clone this fork:
+Clone the repository:
 
 ```fish
 git clone https://github.com/nonspacial/RHI-Linux-Nonspaced.git
@@ -281,9 +293,9 @@ The script publishes a self-contained `linux-x64` build (it runs on hosts withou
 
 ---
 
-# 🧾 Changes in this fork
+# 🧾 Changes
 
-Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELOG.md`](CHANGELOG.md); how each upstream feature was adapted for Linux is in [`UPSTREAM.md`](UPSTREAM.md).
+Everything below is on the `main` branch. Dated entries are in [`CHANGELOG.md`](CHANGELOG.md); how each upstream feature was adapted for Linux is in [`UPSTREAM.md`](UPSTREAM.md).
 
 ## Performance
 
@@ -349,7 +361,7 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 * **RE Framework:** a button to delete its `_storage_` cache folder.
 * **Shader profiles:** save, load, rename, export and import named shader-pack selections.
 * **Accounts:** **Settings → Accounts & updates** has **Connect Nexus account** (API key), handling of Nexus "Mod Manager Download" links (each one confirmed before anything is downloaded), and a GitHub token field that checks the token before saving it.
-* **Update notices:** at start-up RHI checks this fork's releases and tells you when a newer one exists. It never downloads or installs anything itself.
+* **Update notices:** at start-up RHI checks this project's releases on GitHub and tells you when a newer one exists. It never downloads or installs anything itself.
 * **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu, with the game's own icon; created only when you choose it), **Nexus Mods page** for every game Nexus has a page for (no account needed), **Choose what Update All changes…**, **Discussion / instructions** and **Web pages** (PCGamingWiki, Ultra+, ultrawide fix, HDR Gaming Database, each only where the game has one), **Copy game report** and, for Xbox games, **Show in the app that installed it**.
 * **Edit game** can change the launch command, the name a game is shown under, the wiki mod name used to find its RenoDX mod, and its bitness.
 * **Support:** Settings → Support copies all logs as one zip with your home folder, user name, Steam IDs, tokens and saved keys masked, opens the logs folder and exports the library's game data.
@@ -410,10 +422,7 @@ Use game modifications only when permitted by the game and service involved.
 
 # 🔄 Upstream
 
-This fork builds on:
-
-* **[wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux)**, the native Linux port, which itself derives from
-* **[RankFTW/RHI](https://github.com/RankFTW/RHI)**, the original Windows application.
+RHI Linux Nonspaced ports **[RankFTW/RHI](https://github.com/RankFTW/RHI)**, the original Windows application, to Linux. It started from **[wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux)** (GPL-3.0).
 
 The current synchronization target is:
 
@@ -484,7 +493,7 @@ Third-party projects and components retain their respective original licenses.
 
 **Native Linux tooling for the RHI ecosystem.**
 
-Fork of `v0.9.23.4-beta.1` · upstream RHI `2.8.7`
+Release `v2.8.7` · level with upstream RHI `2.8.7`
 
 [Back to top](#rhi-linux)
 

@@ -16,7 +16,7 @@ public enum AppUpdateCheckResult
     /// <summary>A newer release is published; see <see cref="AppUpdateCheck.Latest"/>.</summary>
     UpdateAvailable,
 
-    /// <summary>Neither repository publishes a release this build can compare with.</summary>
+    /// <summary>The project publishes no release this build can compare with (or its repository is not found).</summary>
     NoReleases,
 
     /// <summary>GitHub could not be asked (offline, rate limit, unreadable answer).</summary>
@@ -31,29 +31,28 @@ public sealed record AppUpdateCheck(AppUpdateCheckResult Result, string CurrentV
 
 /// <summary>
 /// RHI-Linux's own update check (#100; upstream <c>UpdateService</c>, which checks RankFTW/RHI's releases and offers its
-/// installer). Owner decision: this fork's releases are checked and the user is only told — nothing is downloaded,
-/// swapped or installed; the owner installs builds himself. The fork (<see cref="PrimaryRepository"/>) is asked first;
-/// only when it publishes no release is the Linux port it comes from (<see cref="FallbackRepository"/>) asked. Release
-/// lists are read under <see cref="DownloadSources.GitHubApi"/> (so the session's ETag cache and the GitHub token
-/// apply); drafts are skipped and pre-releases count only while the running build is itself a pre-release (upstream
-/// offers betas only to beta opt-ins; every build of this fork so far is a beta).
+/// installer). Owner decision: only this project's releases (<see cref="Repository"/>) are checked and the user is only
+/// told — nothing is downloaded, swapped or installed; the owner installs builds himself. No other repository is ever
+/// asked (owner decision 2026-10-27: the project publishes its own releases; the port it started from is credited, not
+/// followed). Release lists are read under <see cref="DownloadSources.GitHubApi"/> (so the session's ETag cache and the
+/// GitHub token apply); drafts are skipped and pre-releases count only while the running build is itself a pre-release
+/// (upstream offers betas only to beta opt-ins; builds before 2.8.7 were betas, 2.8.7 and later releases carry no label).
 /// </summary>
 public sealed class AppUpdateCheckService
 {
-    public const string PrimaryRepository = "nonspacial/RHI-Linux-Nonspaced";
-    public const string FallbackRepository = "wizardkof/RHI-Linux";
+    public const string Repository = "nonspacial/RHI-Linux-Nonspaced";
 
     private readonly HttpClient _http;
     private readonly string _currentVersion;
-    private readonly IReadOnlyList<string> _repositories;
+    private readonly string _repository;
 
     /// <param name="currentVersion">Test seam (default: <see cref="RhiProductInfo.Version"/>).</param>
-    /// <param name="repositories">Test seam (default: the fork, then the port it comes from).</param>
-    public AppUpdateCheckService(HttpClient http, string? currentVersion = null, IReadOnlyList<string>? repositories = null)
+    /// <param name="repository">Test seam (default: <see cref="Repository"/>).</param>
+    public AppUpdateCheckService(HttpClient http, string? currentVersion = null, string? repository = null)
     {
         _http = http;
         _currentVersion = currentVersion ?? RhiProductInfo.Version;
-        _repositories = repositories ?? [PrimaryRepository, FallbackRepository];
+        _repository = repository ?? Repository;
     }
 
     public string CurrentVersion => _currentVersion;
@@ -63,27 +62,23 @@ public sealed class AppUpdateCheckService
     public async Task<AppUpdateCheck> CheckAsync(CancellationToken cancellationToken = default)
     {
         var current = AppVersion.TryParse(_currentVersion);
-        foreach (var repository in _repositories)
+        IReadOnlyList<AppRelease>? releases;
+        try
         {
-            IReadOnlyList<AppRelease>? releases;
-            try
-            {
-                releases = await ListAsync(repository, current, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UntrustedDownloadException
-                                           or InvalidDataException or JsonException or IOException)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                AppLog.Warn("app-update", $"Could not read the releases of {repository}", ex);
-                return new AppUpdateCheck(AppUpdateCheckResult.CouldNotCheck, _currentVersion);
-            }
-            if (releases is null || releases.Count == 0) continue; // this repository publishes nothing: ask the next
-
-            var newest = releases.MaxBy(release => AppVersion.TryParse(release.Version)!, AppVersion.Comparer)!;
-            var newer = current is null || AppVersion.Comparer.Compare(AppVersion.TryParse(newest.Version), current) > 0;
-            return new AppUpdateCheck(newer ? AppUpdateCheckResult.UpdateAvailable : AppUpdateCheckResult.UpToDate, _currentVersion, newest);
+            releases = await ListAsync(_repository, current, cancellationToken).ConfigureAwait(false);
         }
-        return new AppUpdateCheck(AppUpdateCheckResult.NoReleases, _currentVersion);
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UntrustedDownloadException
+                                       or InvalidDataException or JsonException or IOException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AppLog.Warn("app-update", $"Could not read the releases of {_repository}", ex);
+            return new AppUpdateCheck(AppUpdateCheckResult.CouldNotCheck, _currentVersion);
+        }
+        if (releases is null || releases.Count == 0) return new AppUpdateCheck(AppUpdateCheckResult.NoReleases, _currentVersion);
+
+        var newest = releases.MaxBy(release => AppVersion.TryParse(release.Version)!, AppVersion.Comparer)!;
+        var newer = current is null || AppVersion.Comparer.Compare(AppVersion.TryParse(newest.Version), current) > 0;
+        return new AppUpdateCheck(newer ? AppUpdateCheckResult.UpdateAvailable : AppUpdateCheckResult.UpToDate, _currentVersion, newest);
     }
 
     /// <summary>The comparable releases of <paramref name="repository"/>; null when the repository does not exist (404).</summary>
@@ -139,7 +134,7 @@ public sealed class AppUpdateCheckService
 }
 
 /// <summary>
-/// An RHI-Linux version (<c>0.9.23.4-beta.1</c>, tags <c>v0.9.23.4-beta.1</c>): up to four numbers, then an optional
+/// An RHI-Linux version (<c>2.8.7</c>, <c>2.8.7.1</c>, <c>0.9.23.4-beta.1</c>; tags <c>v2.8.7</c>): up to four numbers, then an optional
 /// SemVer pre-release label. Ordered as SemVer orders them: numbers first, a release above any pre-release of the same
 /// numbers, labels compared identifier by identifier (numbers numerically, below words; more identifiers above fewer).
 /// </summary>

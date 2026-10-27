@@ -687,7 +687,7 @@ internal static class UiStrings
         ("Parity.GitHubTokenNotCleared", "O token não pôde ser apagado: {0}", "The token could not be cleared: {0}"),
         ("Parity.LinkNotOpened", "O link não pôde ser aberto: {0}", "The link could not be opened: {0}"),
         ("Parity.AppUpdateHeading", "Atualizações do RHI-Linux", "RHI-Linux updates"),
-        ("Parity.AppUpdateNote", "O RHI procura uma versão mais nova nas versões publicadas deste fork e só avisa: nada é baixado nem instalado. Você instala a nova versão quando quiser.", "RHI looks for a newer version among this fork's published releases and only tells you: nothing is downloaded or installed. You install the new version when you choose."),
+        ("Parity.AppUpdateNote", "O RHI procura uma versão mais nova entre as versões do RHI-Linux Nonspaced publicadas no GitHub e só avisa: nada é baixado nem instalado. Você instala a nova versão quando quiser.", "RHI looks for a newer version among RHI-Linux Nonspaced's releases on GitHub and only tells you: nothing is downloaded or installed. You install the new version when you choose."),
         ("Parity.AppUpdateAtStartup", "Procurar uma versão mais nova ao iniciar", "Look for a newer version at start-up"),
         ("Parity.AppUpdateCheckNow", "Procurar agora", "Check now"),
         ("Parity.AppUpdateOpenPage", "Abrir a página da versão", "Open the release page"),
