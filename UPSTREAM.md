@@ -1085,6 +1085,13 @@ as every family. Upstream's "removed copies reinstalled" bug was latent here (th
 update of any GitHub add-on (ReLimiter, Display Commander, MFG Ada Unlock, the DLSS5 DX11 Bridge's version switch) never
 re-creates a file removed outside RHI; only Remove, then Install, puts it back. No start-up push (D1 = No).
 
+### #238 — DLSSG 20/30 Unlock and Ultimate ASI Loader in Update All
+
+Behavioural port of upstream `bb9b2fd` (DLSSG 20/30 deployed at start) and `a1a4e48` (ASI Loader updates reach games). Both are
+Update All families with their existing checks adapted (could not check when the lookup fails or the record lacks its proxy
+name; never a swap over a file removed or changed outside RHI), proxy names and bitness kept. Upstream's "x64 re-downloaded at
+every launch, x86 never updated" never existed here (per-architecture stamped cache); tests pin it. No start-up push (D1 = No).
+
 <!-- w12/shaders notes -->
 
 <!-- w12/update-all notes -->

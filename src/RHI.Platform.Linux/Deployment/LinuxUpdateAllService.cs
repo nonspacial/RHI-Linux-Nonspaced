@@ -174,6 +174,8 @@ public sealed class LinuxUpdateAllService
         // w12 lane rows: Update All families (each row ends with a comma)
         // w12/mfg rows
         ManagedComponentKind.MfgAdaUnlock, // #237 (upstream abf18c7 AddonPackService.RedeployToTrackedGames); after the other add-ons
+        ManagedComponentKind.Dlssg2030Unlock, // #238 (upstream bb9b2fd: DLSSG 20/30 deployed at start)
+        ManagedComponentKind.UltimateAsiLoader, // #238 (upstream a1a4e48: ASI Loader updates reach games); x86 and x64 each from their own asset
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows
@@ -344,6 +346,8 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.RtxEncore => 13,
         ManagedComponentKind.ReShadeAddonManager => 14, // #194
         ManagedComponentKind.MfgAdaUnlock => 15, // #237: after the other add-ons
+        ManagedComponentKind.Dlssg2030Unlock => 16, // #238
+        ManagedComponentKind.UltimateAsiLoader => 17, // #238
         _ => 99
     };
 }

@@ -133,6 +133,29 @@ public sealed class UltimateAsiLoaderDeploymentService
         }
     }
 
+    /// <summary>
+    /// #238: the Update All check, for the game's own architecture (x86 and x64 each from their own asset). The proxy removed
+    /// outside RHI is never put back (seen before any network call); the update is planned only while the proxy still holds
+    /// RHI's bytes (hashed only then); a failed lookup or an unknown architecture could not check.
+    /// </summary>
+    public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var record = GetRecord(game);
+        if (record is null)
+            return new ManagedUpdateCheck(false, false, "Ultimate ASI Loader is not RHI-managed.");
+        if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
+            return new ManagedUpdateCheck(true, false, "Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.",
+                record.Version, CouldNotCheck: true);
+        var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
+        if (ManagedUpdateFileGuard.Removed([targetPath], record.Version) is { } removed)
+            return removed;
+        var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
+        var planned = new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
+            CouldNotCheck: !status.Success);
+        var fileRecord = record.Files.FirstOrDefault(f => Path.GetFullPath(f.Path).Equals(Path.GetFullPath(targetPath), StringComparison.Ordinal));
+        return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(targetPath, fileRecord?.Sha256)], cancellationToken).ConfigureAwait(false);
+    }
+
     public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         string dllName,

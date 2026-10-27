@@ -79,6 +79,8 @@ public sealed partial class LinuxManagedComponentService
             // w12 lane rows: update checks (one arm each)
             // w12/mfg rows
             ManagedComponentKind.MfgAdaUnlock => await _mfgAdaUnlock.CheckUpdateAsync(game, cancellationToken: cancellationToken).ConfigureAwait(false), // #237
+            ManagedComponentKind.Dlssg2030Unlock => await _dlssg2030.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #238
+            ManagedComponentKind.UltimateAsiLoader => await _ultimateAsiLoader.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #238
             // w12/shaders rows
             // w12/update-all rows
             // w12/github-cache rows
@@ -156,6 +158,8 @@ public sealed partial class LinuxManagedComponentService
             // w12 lane rows: updates (one arm each)
             // w12/mfg rows
             ManagedComponentKind.MfgAdaUnlock => _mfgAdaUnlock.UpdateAsync(game, cancellationToken: cancellationToken), // #237
+            ManagedComponentKind.Dlssg2030Unlock => _dlssg2030.UpdateAsync(game, cancellationToken), // #238
+            ManagedComponentKind.UltimateAsiLoader => _ultimateAsiLoader.UpdateAsync(game, cancellationToken), // #238
             // w12/shaders rows
             // w12/update-all rows
             // w12/github-cache rows

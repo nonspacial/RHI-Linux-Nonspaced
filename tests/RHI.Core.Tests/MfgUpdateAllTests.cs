@@ -194,6 +194,7 @@ public sealed class MfgUpdateAllTests
     // (Install refused or re-created it behind the record before) and says why; Remove clears the record.
     [Theory]
     [InlineData(ManagedComponentKind.MfgAdaUnlock)]
+    [InlineData(ManagedComponentKind.Dlssg2030Unlock)]
     public async Task RowWithItsFileRemovedOutsideRhi_OffersRemove_WithANote_AndRemoveClearsTheRecord(ManagedComponentKind kind)
     {
         using var fx = await ViewModelFixture.StartAsync([]);
@@ -216,5 +217,54 @@ public sealed class MfgUpdateAllTests
         Assert.True(remove.Success, remove.Message);
         Assert.Null(fx.Records.Find(game, kind));
         Assert.False(File.Exists(missing));
+    }
+
+    // ---- Ultimate ASI Loader (#238) through the app's services ---------------------------------------------------------
+
+    private sealed class UalRelease
+    {
+        public string Active { get; set; } = "";
+        private readonly Dictionary<string, byte[]> _zips = new(StringComparer.Ordinal);
+
+        public UalRelease Add(string version, byte marker)
+        {
+            _zips[version] = ZipOf(("dinput8.dll", CacheForeignFileRejectionTests.Pe(0x8664, 64 * 1024, marker)));
+            Active = version;
+            return this;
+        }
+
+        private string Url => $"https://github.com/rhi-tests/ual-w12/{Active}/Ultimate-ASI-Loader_x64.zip";
+
+        public HttpResponseMessage? Answer(HttpRequestMessage request)
+        {
+            var url = request.RequestUri!.AbsoluteUri;
+            if (url == UltimateAsiLoaderDeploymentService.GitHubApiUrl)
+                return Text($$"""
+                    {"tag_name":"v{{Active}}","assets":[{"name":"Ultimate-ASI-Loader_x64.zip","browser_download_url":"{{Url}}",
+                      "digest":"sha256:{{Convert.ToHexString(SHA256.HashData(_zips[Active])).ToLowerInvariant()}}"}]}
+                    """);
+            return url == Url ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(_zips[Active]) } : null;
+        }
+    }
+
+    // The owner's one ASI Loader install: Update All now updates it (it used to be left out), keeps the proxy name, and the
+    // history reads the versions; with automatic updates on, the background pass does the same.
+    [Fact]
+    public async Task AsiLoader_UpdateAll_UpdatesItUnderItsProxyName_AndHistoryReadsTheVersions()
+    {
+        var release = new UalRelease().Add("9.8.0-w12mfg", 0x61).Add("9.8.1-w12mfg", 0x62);
+        release.Active = "9.8.0-w12mfg";
+        using var fx = await ViewModelFixture.StartAsync([], httpResponse: release.Answer);
+        var game = StreamlineGame(fx.Root, "ASI Loader Game");
+        var install = await fx.Managed.InstallUltimateAsiLoaderAsync(game, "winmm.dll");
+        Assert.True(install.Success, install.Message);
+        release.Active = "9.8.1-w12mfg";
+
+        var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new SwitchableRunning()).RunAsync([game], _ => [], LinuxUpdateRunMode.Background);
+
+        Assert.Equal((1, 0, 0), (result.ChangedCount, result.FailedCount, result.UncheckedCount));
+        Assert.Equal(CacheForeignFileRejectionTests.Pe(0x8664, 64 * 1024, 0x62), File.ReadAllBytes(Path.Combine(game.BinaryDirectory!, "winmm.dll")));
+        var update = Assert.Single(History(fx), entry => entry.Action == ComponentUpdateAction.Update);
+        Assert.Equal((ManagedComponentKind.UltimateAsiLoader, "9.8.0-w12mfg", "9.8.1-w12mfg"), (update.Component, update.FromVersion, update.ToVersion));
     }
 }

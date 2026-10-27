@@ -409,6 +409,31 @@ public sealed class Dlssg2030UnlockDeploymentService
         }
     }
 
+    /// <summary>
+    /// #238: the Update All check. The proxy or the INI removed outside RHI is never put back (seen before any network call);
+    /// the update is planned only while the proxy still holds RHI's bytes (hashed only then); a failed lookup could not check.
+    /// </summary>
+    public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(
+        DetectedGame game,
+        CancellationToken cancellationToken = default)
+    {
+        var record = GetRecord(game);
+        if (record is null)
+            return new ManagedUpdateCheck(false, false, "RTX 20 FG Unlock is not RHI-managed.");
+        var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
+        if (string.IsNullOrWhiteSpace(proxyName))
+            return new ManagedUpdateCheck(true, false, "Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.",
+                record.Version, CouldNotCheck: true);
+        var proxyPath = Path.Combine(record.BinaryDirectory, proxyName);
+        if (ManagedUpdateFileGuard.Removed([proxyPath, Path.Combine(record.BinaryDirectory, IniFileName)], record.Version) is { } removed)
+            return removed;
+        var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
+        var planned = new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, record.Version, status.LatestVersion,
+            CouldNotCheck: !status.Success);
+        var proxyRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
+        return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(proxyPath, proxyRecord?.Sha256)], cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ComponentOperationResult> UpdateAsync(
         DetectedGame game,
         CancellationToken cancellationToken = default)
