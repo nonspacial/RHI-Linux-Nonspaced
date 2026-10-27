@@ -320,12 +320,16 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
             => throw new InvalidOperationException("Network is not expected for the local custom shader pack.");
     }
 
+    // w12/shaders #239: every sync with a pack also stages ReShade's core headers (crosire's slim.zip), so this server
+    // answers that URL with the headers and every other one with the pack.
     private sealed class ZipHandler(byte[] payload) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new ByteArrayContent(payload)
+                Content = new ByteArrayContent(request.RequestUri?.AbsoluteUri.EndsWith("/slim.zip", StringComparison.OrdinalIgnoreCase) == true
+                    ? CreateCoreHeaderZip()
+                    : payload)
             });
     }
 

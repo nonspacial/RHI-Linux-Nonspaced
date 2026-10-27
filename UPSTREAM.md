@@ -288,7 +288,7 @@ build.
 
 - Shaders/Add-ons dialog → Shader packs tab, new **Shader profiles** panel at the top (upstream's shader-picker profile panel): pick a profile → **Load** (ticks its packs and restores each pack's file choices from **Files**; nothing reaches the game until the dialog's Apply) / **Delete**; type a name → **Save profile** (an existing name is updated in its saved spelling; blank updates the picked profile or creates "Profile N") / **Rename** the picked one; **Export zip**; **Import zip**. Buttons that do not apply are hidden.
 - Profiles are global, as upstream's (`~/.config/rhi-linux/shader-profiles.json`, upstream's JSON shape `Name` / `SelectedPacks` / `FileExclusions`; unreadable file copied aside and never saved over). File choices are per pack and global in both apps, so loading a profile sets them for those packs. A pack the catalogue no longer has is skipped with a count in the status line.
-- Export: upstream's zip layout (`Shaders/<pack>/…`, `Textures/<pack>/…`, `shader_import.json`) with each pack's files as a sync would deploy them (the user's and the global exclusions left out), written with `AtomicFile` into `~/.local/share/rhi-linux/Shader profiles/` (never into a game) as `RHI_Shaders_<profile>_<time>.zip`; the folder then opens. Upstream copies the zip to the clipboard to paste into Discord; on Linux "share" = the opened folder. Upstream also adds the `ReShade.fxh`/`ReShadeUI.fxh` headers; RHI-Linux fetches them itself whenever a pack needs them, so they are not in the zip.
+- Export: upstream's zip layout (`Shaders/<pack>/…`, `Textures/<pack>/…`, `shader_import.json`) with each pack's files as a sync would deploy them (the user's and the global exclusions left out), written with `AtomicFile` into `~/.local/share/rhi-linux/Shader profiles/` (never into a game) as `RHI_Shaders_<profile>_<time>.zip`; the folder then opens. Upstream copies the zip to the clipboard to paste into Discord; on Linux "share" = the opened folder. Upstream also adds the `ReShade.fxh`/`ReShadeUI.fxh` headers; RHI-Linux deploys them itself with every pack (#239), so they are not in the zip.
 - Import reads only `shader_import.json` (a profile named like an existing one becomes "Name (2)"). Upstream also unpacks the zip's shader files into its cache for packs it has not downloaded; RHI-Linux does not: packs come from their catalogue sources with their recorded hashes when applied, never from files someone sent (the cache-stamp rule). A zip without a profile is refused.
 - The panel's packs and files come through the one shader-pack service, now constructed once in `AppComposition` and shared with ReShade's deployment (same cache folder as before).
 
@@ -1063,6 +1063,11 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 <!-- w12/mfg notes -->
 
 <!-- w12/shaders notes -->
+
+### #239 — ReShade core headers with every shader pack
+
+- Ported (upstream `ShaderPackService.Deploy.cs` `EnsureReShadeHeaders`, `ShaderPackService.Mirror.cs` `AddPackFiles`, origin/main `c1076d3`): `ReShade.fxh` and `ReShadeUI.fxh` go into the game with every sync that deploys at least one shader pack (ReShade install and update, the shaders-only sync, the Vulkan layer and XNA paths, which all use the one prepared sync). Before, only ClshortfuseShaders and MaxG2DSimpleHDR brought them, so packs that include them without shipping a copy (Prod80 and many others) failed to compile ("could not open included file 'ReShade.fxh'").
+- Linux layout: the headers sit in RHI's own `reshade-shaders/RHI/_Core/Shaders` with that folder on ReShade.ini's `EffectSearchPaths` (each pack keeps its own folder; upstream copies everything into one `reshade-shaders/Shaders`). They are listed in `.rhi-manifest.json` like pack files, stay while one RHI pack remains and go with the last; a `ReShade.fxh` of the user's elsewhere is never touched. As upstream (a header missing from staging is skipped), headers that cannot be fetched never stop the packs (a local custom pack still works offline).
 
 <!-- w12/update-all notes -->
 

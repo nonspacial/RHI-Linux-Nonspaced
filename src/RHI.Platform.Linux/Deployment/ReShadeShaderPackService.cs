@@ -294,9 +294,10 @@ public sealed class ReShadeShaderPackService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var needsCoreHeaders = normalized.Any(id =>
-            id.Equals("ClshortfuseShaders", StringComparison.OrdinalIgnoreCase) ||
-            id.Equals("MaxG2DSimpleHDR", StringComparison.OrdinalIgnoreCase));
+        // #239 (upstream EnsureReShadeHeaders): ReShade.fxh/ReShadeUI.fxh go with every sync that deploys a pack — most
+        // packs include them and ship no copy (Prod80 failed to compile without them); owned through the manifest like a
+        // pack file, so they leave with the last RHI pack.
+        var needsCoreHeaders = normalized.Length > 0;
 
         var root = Path.Combine(gameDirectory, "reshade-shaders", "RHI");
         var manifestPath = Path.Combine(root, ".rhi-manifest.json");
@@ -325,8 +326,18 @@ public sealed class ReShadeShaderPackService
         string? coreHeadersStaged = null;
         if (needsCoreHeaders)
         {
-            coreHeadersStaged = await EnsurePackAsync(CoreHeadersPack, cancellationToken).ConfigureAwait(false);
-            EnsureCoreHeadersPresent(coreHeadersStaged);
+            try
+            {
+                var staged = await EnsurePackAsync(CoreHeadersPack, cancellationToken).ConfigureAwait(false);
+                EnsureCoreHeadersPresent(staged);
+                coreHeadersStaged = staged;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // As upstream (a header missing from its staging folder is skipped): the packs still go in — a local custom
+                // pack works offline — and the next sync that can stage the headers brings them.
+                AppLog.Warn("shaders", "ReShade's core headers (ReShade.fxh, ReShadeUI.fxh) could not be staged; the shader packs are deployed without them", ex);
+            }
         }
 
         var previousByPath = previous.Files.ToDictionary(f => f.RelativePath, StringComparer.OrdinalIgnoreCase);
@@ -350,7 +361,7 @@ public sealed class ReShadeShaderPackService
                 "Textures");
         }
 
-        if (needsCoreHeaders)
+        if (coreHeadersStaged is not null)
         {
             var targetCoreRoot = Path.Combine(root, "_Core", "Shaders");
             foreach (var header in CoreHeaderNames)
@@ -417,7 +428,7 @@ public sealed class ReShadeShaderPackService
             }
         }
 
-        if (needsCoreHeaders)
+        if (coreHeadersStaged is not null)
         {
             var targetCoreRoot = Path.Combine(root, "_Core", "Shaders");
             foreach (var header in CoreHeaderNames)
