@@ -611,6 +611,7 @@ public sealed class WaveOneMessageLocalizationTests
         // w12/mfg rows
         // w12/shaders rows
         // w12/update-all rows
+        yield return "Custom ReShade source file is unavailable; installed DLL remains untouched."; // #243
         // w12/github-cache rows
         // w12/luma rows
         // w12/epic rows

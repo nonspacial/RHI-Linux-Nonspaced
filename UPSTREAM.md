@@ -1081,6 +1081,18 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
   deferred. Difference: upstream queues only games whose update check found something; Linux defers before checking (as
   before), so the closed game's pass does the check.
 
+### #243 — Update All: a Custom-channel ReShade whose source DLL is gone is reported, not failed
+- Upstream `49d4473` (`UpdateOrchestrationService.UpdateAllReShade`): a `FileNotFoundException` from a Custom-channel game
+  whose DLL was removed from the Custom folder is caught; the card says "ReShade DLL not found — see Custom ReShade folder"
+  and no crash report is written.
+- Linux: manual Update All re-deploys ReShade without a check (#113), so such a game counted as a failed update. A
+  ReShade on the Custom channel is now checked first (`ILinuxManagedUpdateBackend.ChecksBeforeManualRefresh`; the check is
+  local: the chosen DLL is still there, and its hash): a source that is gone reads "could not be checked", with the
+  check's reason ("Custom ReShade source file is unavailable; installed DLL remains untouched.", PT-BR too) as the item's
+  message and on the ReShade row; nothing is touched. A source still there is refreshed as before. Stable, Nightly, No
+  Addons and Legacy still refresh unchecked on every manual Update All. The background pass already checked first and
+  said "could not be checked" (unchanged).
+
 <!-- w12/github-cache notes -->
 
 <!-- w12/luma notes -->

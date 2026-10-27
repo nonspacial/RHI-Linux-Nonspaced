@@ -88,6 +88,13 @@ public interface ILinuxManagedUpdateBackend
 
     /// <summary>#178: whether the update inclusion leaves this component of this game out of Update All.</summary>
     UpdateExclusion UpdateExclusionFor(DetectedGame game, ManagedComponentKind component) => UpdateExclusion.None;
+
+    /// <summary>
+    /// #243: whether manual Update All checks this component first although it refreshes it without a check (ReShade):
+    /// its check can find a local reason it cannot be checked (a Custom ReShade whose source DLL is gone), and the game
+    /// is then reported as not checked, with that reason, instead of a refresh that fails.
+    /// </summary>
+    bool ChecksBeforeManualRefresh(DetectedGame game, ManagedComponentKind component) => false;
 }
 
 public interface IGameRunningProbe
@@ -281,7 +288,10 @@ public sealed class LinuxUpdateAllService
                     using var unit = new OperationCancellation(cancellationToken);
                     try
                     {
-                        if (mode == LinuxUpdateRunMode.Background || !RefreshedInManualMode.Contains(component))
+                        // #243: a refreshed family is still checked first where its check can say "could not check" for a
+                        // local reason; only that answer stops its refresh.
+                        var refreshed = mode == LinuxUpdateRunMode.Manual && RefreshedInManualMode.Contains(component);
+                        if (!refreshed || _backend.ChecksBeforeManualRefresh(game, component))
                         {
                             var check = await _backend.CheckManagedUpdateAsync(game, component, files, unit.Token).ConfigureAwait(false);
                             if (check.Blocked)
@@ -294,7 +304,7 @@ public sealed class LinuxUpdateAllService
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false, check.Message, HeldBy: check.HeldBy));
                                 continue;
                             }
-                            if (!check.Managed || !check.UpdateAvailable)
+                            if (refreshed ? check.Managed && check.CouldNotCheck : !check.Managed || !check.UpdateAvailable)
                             {
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false,
                                     check.Message, Unchecked: check.Managed && check.CouldNotCheck));

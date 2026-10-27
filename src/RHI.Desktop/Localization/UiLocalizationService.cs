@@ -649,6 +649,9 @@ public static class UiLocalizationService
         // w12/mfg rows
         // w12/shaders rows
         // w12/update-all rows
+        // #243: a Custom ReShade whose source DLL is gone (the row's note and Update All's "could not be checked" item).
+        ("Custom ReShade source file is unavailable; installed DLL remains untouched.",
+            "O arquivo de origem do ReShade personalizado não está disponível; a DLL instalada continua intocada."),
         // w12/github-cache rows
         // w12/luma rows
         // w12/epic rows
