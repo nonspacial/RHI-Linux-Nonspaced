@@ -289,6 +289,38 @@ public sealed class DeferredRunningGameTests : IDisposable
     }
 
     [Fact]
+    public async Task ViewModel_GameNoLongerInTheLibrary_GetsNoPass()
+    {
+        var game = Game("Gone Quest");
+        var checks = 0;
+        HttpResponseMessage? Answer(HttpRequestMessage request)
+        {
+            if (request.RequestUri!.AbsoluteUri == ReLimiterLatest) Interlocked.Increment(ref checks);
+            return null;
+        }
+        var probe = new Probe { Running = true };
+        using var fx = await ViewModelFixture.StartAsync([game], httpResponse: Answer, runningProbe: probe);
+        var clock = new Clock();
+        fx.Vm.Updates.DeferredRetryDelay = clock.Delay;
+        Record(fx.Records, game, ManagedComponentKind.ReLimiter);
+        TurnAutomaticUpdates(fx, on: true);
+        await clock.WaitingAsync();
+        var retry = fx.Vm.Updates.DeferredRetry!;
+
+        // A refresh no longer lists the game (removed while it was running): its records stay, but no pass is run for it.
+        var library = (LibraryViewModel)typeof(MainWindowViewModel)
+            .GetField("_library", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(fx.Vm)!;
+        library.SetGames([]);
+        probe.Running = false;
+        clock.Release();
+        await retry.Run!.WaitAsync(HangGuard);
+
+        Assert.Equal(0, checks);
+        Assert.Empty(retry.Pending);
+        fx.Vm.Updates.StopBackgroundLoop();
+    }
+
+    [Fact]
     public async Task ViewModel_TurningAutomaticUpdatesOff_StopsWaitingForTheGame()
     {
         var game = Game("Off Vm Quest");

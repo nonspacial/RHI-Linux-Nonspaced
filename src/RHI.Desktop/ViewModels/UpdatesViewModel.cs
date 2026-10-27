@@ -196,8 +196,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     // true = keep waiting (the game runs again, or another operation took the gate first).
     private async Task<bool> RunPassForClosedGameAsync(DetectedGame deferred, CancellationToken cancellationToken)
     {
-        await Host.Operations.WhenIdleAsync(cancellationToken);
-        if (!Host.Settings.AutoUpdateComponents) return false;
+        await Host.Operations.WhenIdleAsync(cancellationToken); // automatic updates turned off meanwhile cancel the loop's token
         // The library may have been refreshed meanwhile: the game as it is now, or nothing when it is gone.
         var game = Host.AllGames.FirstOrDefault(candidate => Key(candidate) == Key(deferred));
         if (game is null) return false;
