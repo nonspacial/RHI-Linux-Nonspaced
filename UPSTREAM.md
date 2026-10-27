@@ -1075,3 +1075,18 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 <!-- w12/nr-logs notes -->
 
 <!-- w12/pins notes -->
+
+### #249 — Regression pins for upstream 2.8.8 bugs that never existed here
+
+Upstream v2.8.8 Beta fixed these in `713c222`, `d61a696`, `e634e52`, `79f5680`, `feb126c`, `49d4473`, `abf18c7`,
+`a1a4e48`, `b8094e6`, `1b51cb2`, `f170aa6`/`865f784`. The rewrite never had them; tests (`Upstream288Pins*.cs`, plus the
+existing tests named in the lane's report) pin today's behaviour, each proved by a mutant of the line it guards: numeric
+DLSS version equality and the DLSS section re-read after a swap; a failed swap rolled back and the DLSS batch carrying on
+past a failing game; OptiScaler Stable / DLSS NR / F5 updates keeping their variant, reporting the new version and
+landing in Update History, as Luma updates do; the ReShade nightly reused for an unchanged Actions run; unchanged RenoDX
+snapshots judged by HEAD validators; concurrent ledger writes; Luma TAA kept across a display-name change; the GitHub
+token only on `https://api.github.com` and not carried through a redirect to `codeload.github.com`; Luma and shader
+archive members with `..` or an absolute path refused; Luma removal deleting only its recorded files; the Ultimate ASI
+Loader cache per architecture; Follow newest and the Streamline dropdown with `2.14.16.0-v2`.
+Two pins found gaps and are kept skipped until the owner decides: the DLSS batch's result line counts a failed game but
+does not name it, and Luma removal has no inside-the-game check on the paths its record lists.

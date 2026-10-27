@@ -25,6 +25,11 @@ public sealed class PcgwCentralDataTests : IDisposable
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-pcgw-data-" + Guid.NewGuid().ToString("N"));
 
+    // #249 item 13: tests that need the data file's answer wait for its load, not for the production selection budget
+    // (3 s wall clock; under a loaded machine the in-memory fake answered after it and the engine was not applied). The
+    // bound is only a hang guard; the budget's own behaviour is pinned in PcgwCentralDataLoadTests with a short one.
+    private static readonly TimeSpan DataLoadHangGuard = TimeSpan.FromMinutes(2);
+
     public PcgwCentralDataTests() => Directory.CreateDirectory(_root);
 
     [Fact]
@@ -59,7 +64,8 @@ public sealed class PcgwCentralDataTests : IDisposable
         }));
         var probe = new LinuxGameRuntimeProbe(
             pcGamingWiki: new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "api.json"), minRequestGap: TimeSpan.Zero),
-            pcgwData: new PcgwCentralDataService(http, Path.Combine(_root, "pcgw_data.json"), "https://example.test/pcgw_data.json", fallbackUrl: null));
+            pcgwData: new PcgwCentralDataService(http, Path.Combine(_root, "pcgw_data.json"), "https://example.test/pcgw_data.json", fallbackUrl: null),
+            pcgwDataSelectionBudget: DataLoadHangGuard);
 
         await probe.ProbeAsync(game, GameFileIndexer.Build(gameDir));
 
@@ -191,7 +197,8 @@ public sealed class PcgwCentralDataTests : IDisposable
         }));
         var probe = new LinuxGameRuntimeProbe(
             pcGamingWiki: new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "api-engine.json"), minRequestGap: TimeSpan.Zero),
-            pcgwData: new PcgwCentralDataService(http, Path.Combine(_root, "pcgw_engine.json"), "https://example.test/pcgw_data.json", fallbackUrl: null));
+            pcgwData: new PcgwCentralDataService(http, Path.Combine(_root, "pcgw_engine.json"), "https://example.test/pcgw_data.json", fallbackUrl: null),
+            pcgwDataSelectionBudget: DataLoadHangGuard);
 
         await probe.ProbeAsync(game, GameFileIndexer.Build(gameDir));
 
