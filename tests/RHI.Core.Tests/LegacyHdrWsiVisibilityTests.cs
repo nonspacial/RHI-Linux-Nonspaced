@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using RHI.Desktop.Localization;
+using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Hdr;
 
 namespace RHI.Core.Tests;
@@ -50,6 +51,51 @@ public sealed class LegacyHdrWsiVisibilityTests : IDisposable
             }
     }
 
+    public static TheoryData<string?, string, string> PastedTexts()
+    {
+        var data = new TheoryData<string?, string, string>();
+        foreach (var driver in new[] { LegacyHdrWsiViewModelTests.Modern, LegacyHdrWsiViewModelTests.Older, null })
+            foreach (var (source, command) in new[]
+                     {
+                         ("Steam", "steam -applaunch 1449560"),
+                         ("Heroic/Epic", "xdg-open 'heroic://launch?appName=Fortnite&runner=legendary'"),
+                         ("Lutris", "lutris 'lutris:rungame/game'"),
+                         ("Manual", "flatpak run com.usebottles.bottles -b Games -p Game")
+                     })
+                data.Add(driver, source, command);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(PastedTexts))]
+    public void EveryTextShownForPasting_FollowsTheHost(string? driver, string source, string command)
+    {
+        // Coordinator decision 4: every line RHI shows for pasting into a launcher (the copied launch options, the hand-off
+        // steps of Steam, Heroic, Lutris or another launcher, the NVIDIA dialog's line) follows the same rule.
+        var service = LegacyHdrWsiPlanTests.Service(driver);
+        var game = LegacyHdrWsiPlanTests.Game("direct");
+        game.Source = source;
+        game.LaunchCommand = command;
+        var plan = service.BuildPlan(game, new LinuxHdrGameProfile
+        {
+            Mode = LinuxHdrModes.Gamescope, EnableLegacyWsi = true, Nvidia = new NvidiaGameSettings { SuperResolutionPreset = 11 }
+        }, service.ProbeHost() with { Gpu = new NvidiaGpuFacts(true, false, "NVIDIA GeForce RTX 4090") }, new NvidiaDlssFamilies(true, false, false));
+        var used = driver == LegacyHdrWsiViewModelTests.Older;
+
+        Assert.NotEqual(RHI.Platform.Linux.Launch.LaunchHandoff.None, plan.Handoff);
+        foreach (var language in new[] { "en-US", "pt-BR" })
+        {
+            UiLocalizationService.Apply(language);
+            try
+            {
+                foreach (var text in new[] { plan.LaunchOptions, HdrLaunchText.HandoffNotice(plan, game) ?? "", HdrLaunchText.ApplyInLauncher(plan, game),
+                             HdrLaunchText.Copied(plan, game), NvidiaLaunchText.ApplyInLauncher(plan, game) })
+                    Assert.True(used == text.Contains("ENABLE_HDR_WSI", StringComparison.Ordinal), $"{language}: '{text}'");
+            }
+            finally { UiLocalizationService.Apply("en-US"); }
+        }
+    }
+
     [Theory]
     [InlineData(LegacyHdrWsiViewModelTests.Modern, false)]
     [InlineData(LegacyHdrWsiViewModelTests.Older, true)]
@@ -98,7 +144,7 @@ public sealed class LegacyHdrWsiVisibilityTests : IDisposable
         }
         runtime.PropertyChanged += OnChanged;
         var analysed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnCompleted(RHI.Desktop.ViewModels.AnalysisOutcome outcome)
+        void OnCompleted(AnalysisOutcome outcome)
         {
             if (outcome.Game.Name == second.Name) analysed.TrySetResult();
         }
