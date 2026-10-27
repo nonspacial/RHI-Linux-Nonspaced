@@ -57,6 +57,11 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
     public IReadOnlyList<LinuxUpdateItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred).ToArray();
     /// <summary>w8 final review 1: the games with an update whose save reported an error after it was written, once each.</summary>
     public IReadOnlyList<string> LandedGames => Items.Where(item => item.Landed).Select(item => item.GameName).Distinct(StringComparer.Ordinal).ToArray();
+    /// <summary>#242: the games this pass left alone because they were running (each once): the background loop updates
+    /// them once they close.</summary>
+    public IReadOnlyList<DetectedGame> RunningGames { get; init; } = [];
+    /// <summary>#242: nothing ran because another Update All/background pass was already running.</summary>
+    public bool AnotherPassRunning { get; init; }
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
@@ -190,7 +195,6 @@ public sealed class LinuxUpdateAllService
 
     private readonly LinuxDeploymentRecordStore _records;
     private readonly ILinuxManagedUpdateBackend _backend;
-    private readonly IGameRunningProbe _running;
     private int _runningPass;
 
     public LinuxUpdateAllService(
@@ -200,8 +204,14 @@ public sealed class LinuxUpdateAllService
     {
         _records = records;
         _backend = backend;
-        _running = runningProbe ?? new LinuxGameRunningProbe();
+        RunningProbe = runningProbe ?? new LinuxGameRunningProbe();
     }
+
+    /// <summary>Tells whether a game is running (a test sets a fake one).</summary>
+    internal IGameRunningProbe RunningProbe { get; set; }
+
+    /// <summary>#242: whether the game runs now, by the same probe a pass defers it with.</summary>
+    public bool IsRunning(DetectedGame game) => RunningProbe.IsRunning(game);
 
     public static IReadOnlyList<ManagedComponentKind> SupportedComponents => SupportedReadOnly;
 
@@ -224,9 +234,10 @@ public sealed class LinuxUpdateAllService
             return new LinuxUpdateAllResult([
                 new LinuxUpdateItemResult("RHI Linux", ManagedComponentKind.ReShade, true, false, true,
                     "Another Update All/background pass is already running.")
-            ]);
+            ]) { AnotherPassRunning = true };
 
         var results = new List<LinuxUpdateItemResult>();
+        var running = new List<DetectedGame>(); // #242
         try
         {
             foreach (var game in games)
@@ -252,8 +263,9 @@ public sealed class LinuxUpdateAllService
                 targets = targets.Except(excluded).ToArray();
                 if (targets.Length == 0) continue;
 
-                if (_running.IsRunning(game))
+                if (RunningProbe.IsRunning(game))
                 {
+                    running.Add(game);
                     foreach (var component in targets)
                         results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, true,
                             "Game is running; update deferred until a later Update All/background pass."));
@@ -317,7 +329,7 @@ public sealed class LinuxUpdateAllService
         {
             Interlocked.Exchange(ref _runningPass, 0);
         }
-        return new LinuxUpdateAllResult(results);
+        return new LinuxUpdateAllResult(results) { RunningGames = running };
     }
 
     public static bool IsSupported(ManagedComponentKind component) => Supported.Contains(component);

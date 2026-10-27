@@ -18,7 +18,12 @@ public sealed partial class UpdatesViewModel : PanelViewModel
 
     internal UpdatesViewModel(IPanelHost host, LinuxUpdateAllService updateAll) : base(host) => _updateAll = updateAll;
 
+    /// <summary>The Update All service (tests reach its running probe).</summary>
+    internal LinuxUpdateAllService UpdateAll => _updateAll;
+
     private CancellationTokenSource? _backgroundUpdateCts;
+    // #242: the running games the loop's passes deferred, polled until they close (one per loop run).
+    private DeferredGameRetry? _deferred;
     // #177: stops a Follow newest pass a Full Refresh started when the shell closes.
     private readonly CancellationTokenSource _followCts = new();
     private Task? _followRequest;
@@ -48,6 +53,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         catch (ObjectDisposedException) { /* already stopped */ }
         _backgroundUpdateCts?.Dispose();
         _backgroundUpdateCts = null;
+        _deferred = null;
     }
 
     public bool CanUpdateAll => !IsBusy && _libraryHasManagedTargets;
@@ -120,6 +126,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         try { _backgroundUpdateCts?.Cancel(); } catch { }
         _backgroundUpdateCts?.Dispose();
         _backgroundUpdateCts = null;
+        _deferred = null; // #242: a restarted loop's first pass defers the running games again
         if (!LoopWanted(Host.Settings)) return;
         _backgroundUpdateCts = new CancellationTokenSource();
         UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
@@ -152,6 +159,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
                 game => indexes.TryGetValue(Key(game), out var files) ? files : Array.Empty<string>(),
                 LinuxUpdateRunMode.Background,
                 op.Token);
+            if (result.RunningGames.Count > 0) DeferUntilClosed(result.RunningGames, cancellationToken); // #242
             if (result.ChangedCount > 0)
             {
                 await InvalidateAllAndReprobeSelectedAsync();
@@ -165,6 +173,62 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             StatusText = OperationCancelledText() + T("Vm.Background");
         }
     }
+
+    /// <summary>#242: time between two looks at the deferred running games (a test shortens it).</summary>
+    internal TimeSpan DeferredRetryInterval { get; set; } = DeferredGameRetry.DefaultInterval;
+
+    /// <summary>#242: the wait between those looks; <see cref="Task.Delay(TimeSpan, CancellationToken)"/> unless a test drives it.</summary>
+    internal Func<TimeSpan, CancellationToken, Task>? DeferredRetryDelay { get; set; }
+
+    /// <summary>#242: the running games the background loop waits for (null before its first deferral).</summary>
+    internal DeferredGameRetry? DeferredRetry => _deferred;
+
+    // #242: games a background pass deferred because they were running get a pass of their own once they close, while
+    // automatic updates stay on. Manual Update All only reports them as deferred, as before.
+    private void DeferUntilClosed(IReadOnlyList<DetectedGame> games, CancellationToken loopToken)
+    {
+        _deferred ??= new DeferredGameRetry(_updateAll.IsRunning, () => Host.Settings.AutoUpdateComponents, RunPassForClosedGameAsync,
+            DeferredRetryInterval, DeferredRetryDelay);
+        UiExceptionGuard.Forget(_deferred.Add(games, loopToken), "deferred-update-retry");
+    }
+
+    // One closed game's pass, with the same rules as the background pass (exclusions, holds, families). Waits for the gate;
+    // true = keep waiting (the game runs again, or another operation took the gate first).
+    private async Task<bool> RunPassForClosedGameAsync(DetectedGame deferred, CancellationToken cancellationToken)
+    {
+        await Host.Operations.WhenIdleAsync(cancellationToken);
+        if (!Host.Settings.AutoUpdateComponents) return false;
+        // The library may have been refreshed meanwhile: the game as it is now, or nothing when it is gone.
+        var game = Host.AllGames.FirstOrDefault(candidate => Key(candidate) == Key(deferred));
+        if (game is null) return false;
+        using var op = Host.Operations.TryBegin("background-update", linkedToken: cancellationToken);
+        if (op is null) return true;
+        try
+        {
+            var indexes = await PrepareUpdateIndexesAsync([game], op.Token);
+            var result = await _updateAll.RunAsync(
+                [game],
+                candidate => indexes.TryGetValue(Key(candidate), out var files) ? files : Array.Empty<string>(),
+                LinuxUpdateRunMode.Background,
+                op.Token);
+            if (result.ChangedCount > 0)
+            {
+                await InvalidateAllAndReprobeSelectedAsync();
+                StatusText = ClosedGamePassStatus(game, result) + Shell.F5Driver.UpdateAllNote([game], result) + T("Vm.Background");
+            }
+            return result.AnotherPassRunning || result.RunningGames.Count > 0;
+        }
+        catch (OperationCanceledException) when (op.CancelRequested)
+        {
+            await InvalidateAllAndReprobeSelectedAsync();
+            StatusText = OperationCancelledText() + T("Vm.Background");
+            return false;
+        }
+    }
+
+    /// <summary>#242: the status line of a closed game's pass: what ran and why, then the usual Update All counts.</summary>
+    internal static string ClosedGamePassStatus(DetectedGame game, LinuxUpdateAllResult result)
+        => UiLocalizationService.Format("Ua.DeferredUpdatesRan", game.Name) + " " + UiLocalizationService.UpdateAllSummary(result);
 
     /// <summary>#177: the background loop runs while component updates or either Follow newest toggle is on.</summary>
     internal static bool LoopWanted(LinuxAppSettings settings)

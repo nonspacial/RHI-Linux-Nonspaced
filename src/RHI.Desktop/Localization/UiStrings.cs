@@ -1455,6 +1455,7 @@ internal static class UiStrings
         // w12/mfg rows
         // w12/shaders rows
         // w12/update-all rows
+        ("Ua.DeferredUpdatesRan", "Atualizações adiadas feitas depois que o jogo fechou: {0}.", "Deferred updates ran after the game closed: {0}."),
         // w12/github-cache rows
         // w12/luma rows
         // w12/epic rows

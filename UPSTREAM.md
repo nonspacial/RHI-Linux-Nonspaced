@@ -1066,6 +1066,21 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 
 <!-- w12/update-all notes -->
 
+### #242 — A game deferred because it was running is updated soon after it closes
+- Upstream `79f5680` (`AutoUpdateService.EnqueueRetry`, `RetryPassAsync`): Automatic Updates queue the running games and a 60 s
+  timer updates each one alone once it is no longer running.
+- Linux: the background pass reports the games it deferred (`LinuxUpdateAllResult.RunningGames`); the loop keeps them in
+  `DeferredGameRetry` and, every 60 s while any is left and "Automatically update RHI-managed components" is on, asks the
+  existing running-game probe (`/proc`, no process started) about each. A game that has closed gets a pass of its own with
+  the background pass's rules (update inclusion, holds, families, check first), once the busy gate is free. A game that
+  runs again before its pass waits for the next poll; one whose pass ran is done (a failure is left to the next scheduled
+  pass, as upstream drops it). Turning automatic updates off, or any change that restarts the loop, forgets the list (the
+  restarted loop's first pass defers them again). A probe error is logged once and only means "ask again next poll"; every
+  poll waits the full minute first. A pass that changed something writes "Deferred updates ran after the game closed:
+  <game>." followed by the usual Update All counts. Manual Update All is unchanged: a running game is reported as
+  deferred. Difference: upstream queues only games whose update check found something; Linux defers before checking (as
+  before), so the closed game's pass does the check.
+
 <!-- w12/github-cache notes -->
 
 <!-- w12/luma notes -->
