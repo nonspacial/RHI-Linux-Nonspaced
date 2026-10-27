@@ -394,7 +394,7 @@ public sealed class ReShadeShaderPackService
                 await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
             if (!FileCleanup.TryDelete(manifestPath, out var manifestError))
                 AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", manifestError);
-            FileCleanup.TryDeleteEmptyTree(root);
+            PruneOwnedFolders(root, [], includeRoot: true, operation); // #240: RHI's folder goes with its last file
             return new(root, [], [], []);
         }
 
@@ -470,7 +470,7 @@ public sealed class ReShadeShaderPackService
         if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
         if (!FileCleanup.TryDelete(manifestPath, out var removeError))
             AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
-        FileCleanup.TryDeleteEmptyTree(root);
+        PruneOwnedFolders(root, [], includeRoot: true, operation); // #240: RHI's folder goes with its last file
     }
 
     internal static IReadOnlyList<string> ExpandDependencies(
@@ -1150,6 +1150,8 @@ public sealed class ReShadeShaderPackService
                 var path = Path.GetFullPath(Path.Combine(root, file.RelativePath));
                 var rootWithSep = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
                 if (!path.StartsWith(rootWithSep, StringComparison.Ordinal) || !File.Exists(path)) continue;
+                // #240: never through a folder link (it leads out of RHI's tree), never a link RHI did not place.
+                if (IsLinkedBelow(root, path)) continue;
                 if (!string.Equals(FileHash.Sha256Hex(path), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
                 if (operation is not null) await operation.TrackFileAsync(path, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
                 AtomicFile.Delete(path);
@@ -1161,12 +1163,60 @@ public sealed class ReShadeShaderPackService
             }
         }
 
-        if (Directory.Exists(root))
+        PruneOwnedFolders(root, manifest.Files.Select(f => f.RelativePath), includeRoot: false, operation);
+    }
+
+    /// <summary>
+    /// #240: removes the folders under <paramref name="root"/> (<c>reshade-shaders/RHI</c>) that held RHI's files
+    /// <paramref name="relativeFiles"/> and are now empty, deepest first (and <paramref name="root"/> itself with
+    /// <paramref name="includeRoot"/>). Never a folder holding anything (a user's file keeps its folder), never one behind or
+    /// itself a folder link, never anything outside the root. Inside <paramref name="operation"/> this waits until it
+    /// committed: the journal's copy of each removed file sits beside it until then, and a rollback needs the folder.
+    /// </summary>
+    private static void PruneOwnedFolders(string root, IEnumerable<string> relativeFiles, bool includeRoot, DeploymentOperation? operation)
+    {
+        var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        var rootWithSep = rootFull + Path.DirectorySeparatorChar;
+        var folders = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var relative in relativeFiles)
         {
-            List<string> directories;
-            try { directories = SafeFileEnumeration.Directories(root).ToList(); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
-            FileCleanup.TryDeleteEmptyDirectories(directories);
+            string? folder;
+            try { folder = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(rootFull, relative))); }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { continue; }
+            for (; folder is not null && folder.StartsWith(rootWithSep, StringComparison.Ordinal); folder = Path.GetDirectoryName(folder))
+                folders.Add(folder);
         }
+        var ordered = folders.OrderByDescending(path => path.Length).ToList();
+        if (includeRoot) ordered.Add(rootFull);
+
+        void Prune()
+        {
+            foreach (var folder in ordered)
+            {
+                if (IsLinkedBelow(rootFull, folder) || (folder == rootFull && IsLink(rootFull))) continue;
+                if (!FileCleanup.TryDeleteEmptyDirectory(folder))
+                    AppLog.Warn("shaders", $"Could not remove the empty shader folder {folder}");
+            }
+        }
+
+        if (operation is null) Prune();
+        else operation.AfterCommit("remove the empty shader-pack folders", Prune);
+    }
+
+    /// <summary>True when <paramref name="path"/> or a folder between it and <paramref name="root"/> is a symlink (or cannot be told).</summary>
+    private static bool IsLinkedBelow(string root, string path)
+    {
+        var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        for (var current = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+             current.Length > rootFull.Length && current.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+             current = Path.GetDirectoryName(current)!)
+            if (IsLink(current)) return true;
+        return false;
+    }
+
+    private static bool IsLink(string path)
+    {
+        try { return new FileInfo(path).LinkTarget is not null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; } // cannot vouch for it: treated as a link
     }
 }

@@ -1,0 +1,152 @@
+using System.Text.Json.Nodes;
+using RHI.Core.Deployment;
+using RHI.Core.Models;
+using RHI.Platform.Linux.Deployment;
+
+namespace RHI.Core.Tests;
+
+/// <summary>
+/// w12/shaders #240: a sync (or ReShade's removal) that takes a pack out leaves no empty folder of RHI's behind — the
+/// owner's Borderlands 3 kept empty <c>reshade-shaders/RHI/Prod80/{Shaders,Textures}</c>, because the journal's copy of
+/// each removed file sat beside it while the folders were pruned; they are pruned after the commit now. Only folders that
+/// held RHI's files, only empty ones, never through or of a folder link, never outside <c>reshade-shaders/RHI</c>; a
+/// failure or a crash before the commit puts every file back in its folder.
+/// </summary>
+public sealed partial class ReShadeChannelTests
+{
+    /// <summary>A journaled ReShade with CrosireMaster and CrosireLegacy deployed through the shaders-only sync.</summary>
+    private async Task<RrFx> TwoPackGameAsync(string name)
+    {
+        var fx = RrFixture(name);
+        SeedShaderCache(fx.Cache, "CrosireLegacy");
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var sync = await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster", "CrosireLegacy"]);
+        Assert.True(sync.Success, sync.Message);
+        Assert.True(File.Exists(PackFile(fx.Game, "CrosireLegacy")));
+        return fx;
+    }
+
+    // Prove-first (red on 8f15e44): the owner's case — a pack taken out leaves its folders behind.
+    [Fact]
+    public async Task Prune_PackTakenOut_LeavesNoEmptyFolder_AndOffLeavesNoRhiFolder()
+    {
+        var fx = await TwoPackGameAsync("prune-out");
+
+        var one = await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"]);
+        Assert.True(one.Success, one.Message);
+        Assert.False(Directory.Exists(RhiDir(fx.Game, "CrosireLegacy")));
+        Assert.True(File.Exists(PackFile(fx.Game)));
+
+        var off = await fx.Service.SyncShaderPacksAsync(fx.Game, []);
+        Assert.True(off.Success, off.Message);
+        Assert.False(Directory.Exists(RhiDir(fx.Game)));
+    }
+
+    [Fact]
+    public async Task Prune_ReShadeRemoval_LeavesNoEmptyShaderFolder()
+    {
+        var fx = await TwoPackGameAsync("prune-removal");
+
+        var removal = await fx.Service.RemoveAsync(fx.Game);
+
+        Assert.True(removal.Success, removal.Message);
+        Assert.False(Directory.Exists(RhiDir(fx.Game)));
+    }
+
+    [Fact]
+    public async Task Prune_UsersFileKeepsItsFolder_AndTheUsersOwnEmptyFolderIsLeftAlone()
+    {
+        var fx = await TwoPackGameAsync("prune-user");
+        var mine = Path.Combine(RhiDir(fx.Game, "CrosireLegacy", "Shaders"), "Mine.fx");
+        File.WriteAllText(mine, "// the user's own effect");
+        var ownEmpty = Directory.CreateDirectory(RhiDir(fx.Game, "MyEmptyFolder")).FullName;
+
+        Assert.True((await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"])).Success);
+        Assert.Equal("// the user's own effect", File.ReadAllText(mine));
+        Assert.False(File.Exists(PackFile(fx.Game, "CrosireLegacy")));
+        Assert.True(Directory.Exists(ownEmpty));
+
+        Assert.True((await fx.Service.SyncShaderPacksAsync(fx.Game, [])).Success);
+        Assert.Equal("// the user's own effect", File.ReadAllText(mine));
+        Assert.True(Directory.Exists(ownEmpty)); // RHI never made it: not RHI's to prune
+    }
+
+    // A pack folder the user turned into a link: nothing behind it is removed (the files there are the user's now, even
+    // when they hold the bytes RHI placed), and the link itself stays — also when what it points at is empty.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Prune_LinkedPackFolder_IsNeverFollowedNorRemoved(bool targetHoldsTheFiles)
+    {
+        var fx = await TwoPackGameAsync($"prune-link-{targetHoldsTheFiles}");
+        var linked = RhiDir(fx.Game, "CrosireLegacy", "Shaders");
+        var elsewhere = Path.Combine(_root, $"prune-link-{targetHoldsTheFiles}", "elsewhere");
+        if (targetHoldsTheFiles) Directory.Move(linked, elsewhere);
+        else
+        {
+            Directory.CreateDirectory(elsewhere);
+            File.Delete(Path.Combine(linked, "Test.fx"));
+            Directory.Delete(linked);
+        }
+        Directory.CreateSymbolicLink(linked, elsewhere);
+
+        var result = await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"]);
+
+        Assert.True(result.Success, result.Message);
+        Assert.NotNull(new DirectoryInfo(linked).LinkTarget);
+        Assert.True(Directory.Exists(elsewhere));
+        Assert.Equal(targetHoldsTheFiles, File.Exists(Path.Combine(elsewhere, "Test.fx")));
+    }
+
+    // A manifest entry that points outside RHI's folder (edited by hand) never lets the prune climb out of it.
+    [Fact]
+    public async Task Prune_NeverLeavesRhisFolder()
+    {
+        var fx = await TwoPackGameAsync("prune-outside");
+        var outside = Directory.CreateDirectory(Path.Combine(fx.Game.BinaryDirectory!, "reshade-shaders", "UserFolder", "Empty")).FullName;
+        var manifestPath = RhiDir(fx.Game, ".rhi-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!;
+        manifest["Files"]!.AsArray().Add(new JsonObject { ["RelativePath"] = "../UserFolder/Empty/x.fx", ["Sha256"] = "00" });
+        File.WriteAllText(manifestPath, manifest.ToJsonString());
+
+        Assert.True((await fx.Service.SyncShaderPacksAsync(fx.Game, [])).Success);
+
+        Assert.True(Directory.Exists(outside));
+        Assert.False(Directory.Exists(RhiDir(fx.Game)));
+    }
+
+    // A failed sync puts every file back in its folder (the folders are pruned only after the commit).
+    [Fact]
+    [Trait("Category", "CommitPoint")]
+    public async Task Prune_FailedSync_RollbackPutsEveryFileBackInItsFolder()
+    {
+        var fx = await TwoPackGameAsync("prune-rollback");
+        var before = CancelAtWritePhase.Snapshot(fx.Game.BinaryDirectory!);
+        fx.Store.SaveFaultForTesting = () => new IOException("disk full (prune)");
+
+        var result = await fx.Service.SyncShaderPacksAsync(fx.Game, []);
+        fx.Store.SaveFaultForTesting = null;
+
+        Assert.False(result.Success);
+        CancelAtWritePhase.AssertUnchanged(before, fx.Game.BinaryDirectory!);
+        Assert.Empty(Directory.GetFiles(fx.JournalDir, "*.json"));
+    }
+
+    [Fact]
+    [Trait("Category", "CommitPoint")]
+    public async Task Prune_CrashAtTheCommitPoint_RecoveryPutsEveryFileBackInItsFolder()
+    {
+        var fx = await TwoPackGameAsync("prune-crash");
+        var before = CancelAtWritePhase.Snapshot(fx.Game.BinaryDirectory!);
+        using (var death = new SimulatedDeath(fx.Journal))
+        {
+            fx.Store.SaveFaultForTesting = death.Die;
+            var (died, run) = await death.RunUntilDeathAsync(() => fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"]));
+            Assert.True(died, run.IsCompleted ? (await run).Message : "running");
+            Assert.False(File.Exists(PackFile(fx.Game, "CrosireLegacy")));
+            var report = await SimulatedDeath.RecoverAsync(fx.JournalDir, fx.Ledger);
+            Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+            CancelAtWritePhase.AssertUnchanged(before, fx.Game.BinaryDirectory!);
+        }
+    }
+}

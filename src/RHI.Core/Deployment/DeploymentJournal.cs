@@ -731,7 +731,31 @@ public sealed class DeploymentOperation : IAsyncDisposable
         }
         // The lock file only matters while the entry exists; snapshots that could not be removed are swept later.
         ReleaseLock(deleteLockFile: !File.Exists(_journal.EntryPath(Id)));
+        RunAfterCommit();
         return problems;
+    }
+
+    private readonly List<(string What, Action Action)> _afterCommit = [];
+
+    /// <summary>
+    /// w12/shaders (#240): runs <paramref name="action"/> once the operation is committed and its snapshots are gone (after
+    /// <see cref="CommitAsync"/>, or a landed commit write found by <see cref="SettleAfterFailureAsync"/>); never after a
+    /// rollback, and a crash before it skips it. For tidying the snapshots stand in the way of — removing folders a
+    /// removal emptied (a snapshot sits beside each file it took out). Best effort: a failure is logged, never thrown.
+    /// </summary>
+    public void AfterCommit(string what, Action action) => _afterCommit.Add((what, action));
+
+    private void RunAfterCommit()
+    {
+        foreach (var (what, action) in _afterCommit)
+        {
+            try { action(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RHI.Core.Services.AppLog.Warn("deployment-journal", $"After {Description}: could not {what}", ex);
+            }
+        }
+        _afterCommit.Clear();
     }
 
     /// <summary>
