@@ -594,6 +594,7 @@
                                     Click="IniSettings_Click" ToolTip.Tip="{Binding IniSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasDxvkHdrSettings}"
                                     Click="DxvkHdrSettings_Click" ToolTip.Tip="{Binding DxvkHdrSettingsTip}" ToolTip.ShowDelay="2000" Padding="10,6"/>
+                            <Button Grid.Column="3" Classes="rhi" Content="{Binding LumaNexus.Label}" IsVisible="{Binding LumaNexus.IsVisible}" Command="{Binding LumaNexus.Command}" CommandParameter="{Binding LumaNexus.Url}" ToolTip.Tip="{Binding LumaNexus.Tip}" ToolTip.ShowDelay="2000" Padding="10,6"/><!-- w12/luma (#245): Nexus-only Luma mod; opens its Nexus page, downloads nothing -->
                             <Button Grid.Column="4" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"
                                     Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" Command="{Binding Command}"
                                     CommandParameter="{Binding CommandParameter}" ToolTip.Tip="{Binding Note}" MinWidth="80" IsVisible="{Binding HasAction}"/>

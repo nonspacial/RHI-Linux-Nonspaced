@@ -192,6 +192,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w12/update-all rows
     // w12/github-cache rows
     // w12/luma rows
+    public LumaNexusUpdatePresenter LumaNexus => LumaNexusUpdatePresenter.For(this, _managedComponents); // #245: Nexus-only Luma rows
     // w12/epic rows
     // w12/nr-logs rows
     // w12/pins rows

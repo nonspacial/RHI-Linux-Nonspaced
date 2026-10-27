@@ -1457,6 +1457,10 @@ internal static class UiStrings
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows
+        ("Lu.UpdateOnNexus", "Atualizar no Nexus", "Update on Nexus"),
+        ("Lu.UpdateOnNexusTip", "Abre a página deste mod no Nexus Mods; o RHI não pode baixá-lo por você.", "Opens this mod's page on Nexus Mods; RHI cannot download it for you."),
+        ("Lu.OpenOnNexus", "Abrir no Nexus", "Open on Nexus"),
+        ("Lu.OpenOnNexusNoKeyTip", "Abre a página deste mod no Nexus Mods. O RHI só verifica se há atualizações dele com uma conta do Nexus conectada: Configurações → Contas e atualizações → Conectar conta do Nexus.", "Opens this mod's page on Nexus Mods. RHI checks it for updates only with a connected Nexus account: Settings → Accounts & updates → Connect Nexus account."),
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

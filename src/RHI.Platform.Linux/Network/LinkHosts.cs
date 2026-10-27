@@ -26,6 +26,9 @@ public static class LinkHosts
     /// <summary>A RenoDX mod published as a page RHI cannot download from: Nexus Mods or GameBanana.</summary>
     public static readonly IReadOnlySet<string> ModPage = Set("www.nexusmods.com", "nexusmods.com", "gamebanana.com", "www.gamebanana.com");
 
+    /// <summary>#245: a mod's own page on Nexus Mods (a Luma mod the Luma wiki lists only there).</summary>
+    public static readonly IReadOnlySet<string> NexusMod = Set("www.nexusmods.com", "nexusmods.com");
+
     /// <summary>A RenoDX mod published only on Discord.</summary>
     public static readonly IReadOnlySet<string> Discord = Set("discord.com", "www.discord.com", "discord.gg");
 

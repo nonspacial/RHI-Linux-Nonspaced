@@ -1070,6 +1070,22 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 
 <!-- w12/luma notes -->
 
+### #245 — Luma: Nexus-only mods are checked on Nexus, never updated from a GitHub build
+- Upstream 2.8.8 Beta `20d3297` (`UpdateOrchestrationService` leaves Nexus-only Luma mods out of the GitHub build check
+  and clears the stale badge; `MainViewModel.CheckLumaNexusUpdatesAsync` compares Nexus with a baseline). Behavioural
+  port: the wiki's Download Link cell gives a download link, a Nexus Mods link, or both, in either order; a Nexus link is
+  the mod's page, never its download (`LumaCatalogEntry.NexusUrl`, `IsNexusOnly`), and the release merge never fills a
+  Nexus-only row from a same-named GitHub build. Before this the fork took the first link as the download, so a
+  Nexus-only mod could never be checked (could not check, forever) and a GitHub mod listed Nexus-first was unusable.
+- The check (`Network/NexusModUpdateCheck`, the one Nexus "newer file" check; #198 reuses it) uses the connected
+  account's API key only (owner rule; upstream asks the anonymous GraphQL API), Nexus's v1 file list, and compares the
+  newest MAIN/UPDATE file's upload time with the install time (upstream's baseline; no Luma install records a Nexus file
+  id). No account / Nexus error / rate limit = could not check. One file list per mod is kept for an hour.
+- Update never downloads it: Update All and the background pass count it as could not be checked (never failed). The
+  Luma row shows "Update on Nexus" (opens the page through `LinkHosts.NexusMod`) only when Nexus has a newer file, and
+  "Open on Nexus" with a tooltip naming Connect Nexus account when no account is connected. The fork's rows have no
+  per-row Update button, so this is a row button in the ⚙ slot (Luma rows have no ⚙).
+
 <!-- w12/epic notes -->
 
 <!-- w12/nr-logs notes -->

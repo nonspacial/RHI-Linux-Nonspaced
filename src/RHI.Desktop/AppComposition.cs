@@ -396,6 +396,7 @@ internal sealed class AppComposition
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows
+        lumaFramework.NexusUpdates = new NexusModUpdateCheck(nexusApi, nexusAccount.UsableKey); // #245: Nexus-only Luma mods are checked on Nexus (account key only)
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

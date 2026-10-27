@@ -5,13 +5,22 @@ using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
 
+/// <param name="NexusUrl">#245: the Nexus Mods link the wiki gives for the mod (as written; opened only through <c>LinkHosts.NexusMod</c>), else null.</param>
 public sealed record LumaCatalogEntry(
     string Name,
     string Author,
     string? DownloadUrl,
     string Status,
     string? SpecialNotes,
-    string? FeatureNotes);
+    string? FeatureNotes,
+    string? NexusUrl = null)
+{
+    /// <summary>
+    /// #245 (upstream 2.8.8 <c>20d3297</c>): the wiki lists this mod on Nexus Mods and gives no download link, so RHI
+    /// never downloads it (never from a same-named GitHub build): its update check asks Nexus, its update opens the page.
+    /// </summary>
+    public bool IsNexusOnly => NexusUrl is not null && string.IsNullOrWhiteSpace(DownloadUrl);
+}
 
 public sealed record LumaEngineIniEntry(string Section, string Key, string Value);
 
@@ -133,7 +142,11 @@ public sealed class LumaCatalogService
         return result;
     }
 
-    /// <summary>Upstream's wiki-wins merge (<c>LumaService.MergeLumaMods</c>), matched by the catalogue's own name normalisation.</summary>
+    /// <summary>
+    /// Upstream's wiki-wins merge (<c>LumaService.MergeLumaMods</c>), matched by the catalogue's own name normalisation. A
+    /// wiki row takes a release asset only when it has neither a download nor a Nexus link (#245: a Nexus-only mod is
+    /// never filled from a same-named GitHub build).
+    /// </summary>
     internal static IReadOnlyList<LumaCatalogEntry> MergeReleaseMods(IReadOnlyList<LumaCatalogEntry> wiki, IReadOnlyList<LumaCatalogEntry> releases)
     {
         var byName = new Dictionary<string, LumaCatalogEntry>(StringComparer.Ordinal);
@@ -144,7 +157,7 @@ public sealed class LumaCatalogService
         {
             var key = NormalizeName(entry.Name);
             wikiNames.Add(key);
-            merged.Add(string.IsNullOrWhiteSpace(entry.DownloadUrl) && byName.TryGetValue(key, out var release)
+            merged.Add(string.IsNullOrWhiteSpace(entry.DownloadUrl) && entry.NexusUrl is null && byName.TryGetValue(key, out var release)
                 ? entry with { DownloadUrl = release.DownloadUrl }
                 : entry);
         }
@@ -296,17 +309,19 @@ public sealed class LumaCatalogService
             if (string.IsNullOrWhiteSpace(name)) continue;
 
             var author = cells.Count > 1 ? Clean(cells[1].InnerText) : "";
+            // Upstream's rule (LumaService): the cell holds a download link, a Nexus Mods link, or both (either order); a
+            // Nexus link is the mod's page, never its download (#245). It is kept as written: whatever opens or asks
+            // Nexus about it checks it against LinkHosts.NexusMod first.
             string? downloadUrl = null;
+            string? nexusUrl = null;
             if (cells.Count > 2)
             {
                 foreach (var link in cells[2].SelectNodes(".//a[@href]") ?? Enumerable.Empty<HtmlNode>())
                 {
                     var href = HtmlEntity.DeEntitize(link.GetAttributeValue("href", "")).Trim();
-                    if (href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                    {
-                        downloadUrl = href;
-                        break;
-                    }
+                    if (!href.StartsWith("http", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (IsNexusLink(href)) nexusUrl ??= href;
+                    else downloadUrl ??= href;
                 }
             }
 
@@ -330,7 +345,7 @@ public sealed class LumaCatalogService
             }
             if (!string.IsNullOrWhiteSpace(anchor)) allAnchors.Add(anchor);
 
-            raw.Add((new LumaCatalogEntry(name, author, downloadUrl, status, specialNotes, null), anchor));
+            raw.Add((new LumaCatalogEntry(name, author, downloadUrl, status, specialNotes, null, nexusUrl), anchor));
         }
 
         var result = new List<LumaCatalogEntry>(raw.Count);
@@ -439,6 +454,12 @@ public sealed class LumaCatalogService
     }
 
     public static string NormalizeName(string name) => RenoDxCatalogService.NormalizeName(name);
+
+    // Any link to Nexus Mods' site (a page, whichever host form); never taken as a download link.
+    private static bool IsNexusLink(string href)
+        => Uri.TryCreate(href, UriKind.Absolute, out var uri)
+           && (uri.Host.Equals("nexusmods.com", StringComparison.OrdinalIgnoreCase)
+               || uri.Host.EndsWith(".nexusmods.com", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsPositiveFlag(string? text)
         => (text ?? "").Contains("✅", StringComparison.Ordinal) ||

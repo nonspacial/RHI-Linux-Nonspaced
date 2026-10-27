@@ -651,6 +651,11 @@ public static class UiLocalizationService
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows
+        (RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage,
+            "O RHI só verifica se há atualizações deste mod no Nexus Mods com uma conta do Nexus conectada: Configurações → Contas e atualizações → Conectar conta do Nexus."),
+        (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusCurrentMessage, "Não há um arquivo Luma mais novo no Nexus Mods."),
+        (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusOnlyInstallMessage,
+            "O mod Luma deste jogo é publicado só no Nexus Mods, então o RHI não pode baixá-lo. Baixe-o na página dele no Nexus Mods e solte o arquivo no RHI para instalá-lo."),
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
@@ -1681,6 +1686,12 @@ public static class UiLocalizationService
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows
+        (RHI.Platform.Linux.Network.NexusModUpdateCheck.FailedPrefix, "Não foi possível perguntar ao Nexus Mods sobre este mod agora: "),
+        (RHI.Platform.Linux.Network.NexusModUpdateCheck.NotAModPageMessage, "O link não é a página de um mod no Nexus Mods."),
+        (RHI.Platform.Linux.Network.NexusModUpdateCheck.NoDatedFileMessage, "O Nexus Mods não lista um arquivo principal com data para este mod."),
+        (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusNewerPrefix, "Há um arquivo Luma mais novo no Nexus Mods: "),
+        (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusOnlyUpdatePrefix,
+            "Este mod Luma é publicado só no Nexus Mods, então o RHI não o baixa; pegue o arquivo mais novo na página dele: "),
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

@@ -90,10 +90,72 @@ public sealed class LumaFrameworkDeploymentService
     public LinuxDeploymentRecord? GetRecord(DetectedGame game)
         => _records.Find(game, ManagedComponentKind.LumaFramework);
 
+    /// <summary>
+    /// #245: asks Nexus Mods whether a Nexus-only Luma mod has a newer file (the app wires the connected account's key;
+    /// unset = no account). Upstream asks Nexus on its start-up/interval update check; here the update check does
+    /// (Update All, the background pass, and the selected game's Luma row).
+    /// </summary>
+    public RHI.Platform.Linux.Network.NexusModUpdateCheck? NexusUpdates { get; set; }
+
+    // Fixed messages (PT-BR presentation pairs); values come last.
+    public const string NexusNewerPrefix = "A newer Luma file is on Nexus Mods: ";
+    public const string NexusCurrentMessage = "No newer Luma file is on Nexus Mods.";
+    public const string NexusOnlyUpdatePrefix = "This Luma mod is published on Nexus Mods only, so RHI does not download it; get the newer file from its page: ";
+    public const string NexusOnlyInstallMessage = "This game's Luma mod is published on Nexus Mods only, so RHI cannot download it. Download it from its Nexus Mods page and drop the file on RHI to install it.";
+
+    /// <summary>#245: the game's Luma mod as the wiki lists it when it is Nexus-only (resolved now if needed), else null.</summary>
+    private async Task<LumaCatalogEntry?> NexusOnlyEntryAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _catalog.ResolveAsync(game, cancellationToken).ConfigureAwait(false) is { IsNexusOnly: true } entry ? entry : null;
+        }
+        catch when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// #245 (upstream <c>CheckLumaNexusUpdatesAsync</c>): what Nexus says about the game's installed Luma mod when the wiki
+    /// now lists it only there; null when RHI has no Luma record for the game or the mod is not Nexus-only. The baseline is
+    /// the install time (no Luma install records a Nexus file id: a Nexus download installs through the local-package path).
+    /// </summary>
+    public async Task<RHI.Platform.Linux.Network.NexusModUpdateAnswer?> AskNexusAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => GetRecord(game) is { } record && await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is { } entry
+            ? await AskNexusAsync(record, entry, cancellationToken).ConfigureAwait(false)
+            : null;
+
+    private Task<RHI.Platform.Linux.Network.NexusModUpdateAnswer> AskNexusAsync(LinuxDeploymentRecord record, LumaCatalogEntry entry, CancellationToken cancellationToken)
+        => NexusUpdates is { } nexus
+            ? nexus.CheckAsync(entry.NexusUrl!, new DateTimeOffset(DateTime.SpecifyKind(record.InstalledAtUtc, DateTimeKind.Utc)), null, cancellationToken)
+            : Task.FromResult(new RHI.Platform.Linux.Network.NexusModUpdateAnswer(RHI.Platform.Linux.Network.NexusModUpdateOutcome.NoKey, entry.NexusUrl!,
+                RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage));
+
+    /// <summary>#245: the Nexus answer as an update check: newer = an update (never downloaded); no account / Nexus error = could not check.</summary>
+    private async Task<ManagedUpdateCheck> CheckOnNexusAsync(LinuxDeploymentRecord record, LumaCatalogEntry entry, CancellationToken cancellationToken)
+    {
+        var answer = await AskNexusAsync(record, entry, cancellationToken).ConfigureAwait(false);
+        return answer.Outcome switch
+        {
+            RHI.Platform.Linux.Network.NexusModUpdateOutcome.Newer => new ManagedUpdateCheck(true, true,
+                NexusNewerPrefix + NexusFileLabel(answer.Newest!), record.Version, answer.Newest!.Version ?? answer.Newest.Name),
+            RHI.Platform.Linux.Network.NexusModUpdateOutcome.Current => new ManagedUpdateCheck(true, false, NexusCurrentMessage, record.Version,
+                answer.Newest?.Version),
+            _ => new ManagedUpdateCheck(true, false, answer.Message, record.Version, CouldNotCheck: true)
+        };
+    }
+
+    private static string NexusFileLabel(RHI.Platform.Linux.Network.NexusModFile file)
+        => string.IsNullOrWhiteSpace(file.Version) ? file.Name : $"{file.Name} {file.Version}";
+
     public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var record = GetRecord(game);
         if (record is null) return new ManagedUpdateCheck(false, false, "Luma Framework is not managed by RHI Linux.");
+        // #245: before every GitHub path (a local package included: a Nexus download installs as one).
+        if (await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is { } nexusOnly)
+            return await CheckOnNexusAsync(record, nexusOnly, cancellationToken).ConfigureAwait(false);
         if (record.Metadata.GetValueOrDefault(MetaLocalPackage) == "1")
             return new ManagedUpdateCheck(true, false,
                 "This Luma package was installed from a local drag/drop file. Drop a Luma archive/add-on onto the game again to reinstall or change it; automatic update has no trusted source URL.",
@@ -119,15 +181,19 @@ public sealed class LumaFrameworkDeploymentService
         }
     }
 
-    public Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    public async Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var record = GetRecord(game);
         if (record is null)
-            return Task.FromResult(ComponentOperationResult.Fail("Luma Framework is not managed by RHI Linux."));
+            return ComponentOperationResult.Fail("Luma Framework is not managed by RHI Linux.");
+        // #245: a Nexus-only mod is never downloaded (from GitHub or anywhere); Update All counts it as could not be
+        // checked, never failed, and the row opens the Nexus page instead.
+        if (await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is { } nexusOnly)
+            return ComponentOperationResult.Unavailable(NexusOnlyUpdatePrefix + nexusOnly.NexusUrl);
         if (record.Metadata.GetValueOrDefault(MetaLocalPackage) == "1")
-            return Task.FromResult(ComponentOperationResult.Fail(
-                "This Luma install came from a local drag/drop package and has no trusted automatic download URL. Drop the Luma archive/add-on onto the game again to reinstall it."));
-        return InstallAsync(game, cancellationToken);
+            return ComponentOperationResult.Fail(
+                "This Luma install came from a local drag/drop package and has no trusted automatic download URL. Drop the Luma archive/add-on onto the game again to reinstall it.");
+        return await InstallAsync(game, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task PrimeNamedMatchAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -210,6 +276,7 @@ public sealed class LumaFrameworkDeploymentService
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return "Luma Framework is a Windows injection component and is not deployed to native Linux games.";
+        if (entry.IsNexusOnly) return NexusOnlyInstallMessage; // #245
         if (string.IsNullOrWhiteSpace(entry.DownloadUrl))
             return $"Named Luma match '{entry.Name}' has no downloadable package in the upstream Completed Mods table.";
         if (!IsTrustedFiloppiUrl(entry.DownloadUrl))
