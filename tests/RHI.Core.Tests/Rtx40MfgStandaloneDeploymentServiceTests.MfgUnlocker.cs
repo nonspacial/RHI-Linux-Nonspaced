@@ -81,6 +81,10 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
         using var http = new HttpClient(handler);
         var (service, records, _, journalDir, _, _) = JournaledService(fixture, http);
         Assert.True((await service.InstallAsync(fixture.Game, "dinput8.dll")).Success);
+        // A v1.4.x record as an earlier build wrote it: it names the old repository.
+        var old = records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone)!;
+        old.Metadata["RTX40MFG.Upstream"] = "https://github.com/dashdogy/RTX40MFG-Unlock";
+        records.Upsert(old);
         handler.ActiveVersion = "1.7.0";
 
         var result = await service.UpdateAsync(fixture.Game);
@@ -249,8 +253,10 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
         var target = Path.Combine(fixture.Bin, "winmm.dll");
         File.Delete(target);
         handler.ActiveVersion = "1.7.0";
+        var requests = handler.RequestCount;
 
         var check = await service.CheckManagedUpdateAsync(fixture.Game);
+        Assert.Equal(requests, handler.RequestCount); // seen before any lookup
         var update = await service.UpdateAsync(fixture.Game);
 
         Assert.True(check.Managed);
