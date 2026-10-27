@@ -136,10 +136,15 @@ public sealed partial class HdrSupportService
         var key = LookupKey(game);
         lock (_running)
         {
-            if (_running.TryGetValue(key, out var running)) return running;
+            // A finished lookup is never handed out again (its removal may still be queued): a Refresh asks anew.
+            if (_running.TryGetValue(key, out var running) && !running.IsCompleted) return running;
             var task = Task.Run(() => ResolveUncachedAsync(game, key, cancellationToken), CancellationToken.None);
             _running[key] = task;
-            _ = task.ContinueWith(_ => { lock (_running) _running.Remove(key); }, TaskScheduler.Default);
+            _ = task.ContinueWith(done =>
+            {
+                lock (_running)
+                    if (_running.TryGetValue(key, out var current) && ReferenceEquals(current, done)) _running.Remove(key);
+            }, TaskScheduler.Default);
             return task;
         }
     }

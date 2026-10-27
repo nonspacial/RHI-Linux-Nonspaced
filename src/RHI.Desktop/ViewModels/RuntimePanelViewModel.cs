@@ -477,7 +477,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     {
         get
         {
-            if (SelectedGame is null) return null;
+            if (SelectedGame is null || !ShowHdrSection) return null;
             var evidence = _hdrSupportEvidence ?? HdrSupportEvidence.Unchecked;
             if (evidence.Answer != HdrSupportAnswer.Yes && InstalledHdrMod is { } mod) return TF("Hw.HdrTipMod", mod.DisplayName);
             return T(evidence.Source switch

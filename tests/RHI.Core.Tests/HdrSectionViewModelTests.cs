@@ -39,7 +39,7 @@ public sealed class HdrSectionViewModelTests : IDisposable
         using var fx = await StartAsync(game, Wiki(game, hdr));
 
         Assert.Equal(shown, fx.Vm.Runtime.ShowHdrSection);
-        if (shown) Assert.Equal(tip, fx.Vm.Runtime.HdrSectionTip);
+        Assert.Equal(tip, fx.Vm.Runtime.HdrSectionTip); // none while hidden
     }
 
     [Fact]
