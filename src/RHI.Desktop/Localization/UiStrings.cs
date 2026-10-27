@@ -1452,5 +1452,13 @@ internal static class UiStrings
         ("Nrc.SigFeatureNotSupported", "recurso não suportado (0xBAD00001)", "feature not supported (0xBAD00001)"),
         ("Nrc.SigShaderCompiler", "o compilador de shaders não conseguiu compilar os shaders", "the shader compiler could not build the shaders"),
         ("Nrc.SigCrash", "uma falha de acesso ou a perda do dispositivo gráfico", "an access violation or a lost graphics device"),
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
     ];
 }

@@ -1057,3 +1057,21 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 - Not ported: wizardkof's "Install recommended setup (trial)" button (owner decision: read-only page, no install
   wording), its CUDA-fatbin model check (passes the wrong DLL on real files; #229 judges by the manifest label) and its
   `nvidia-smi` compute-capability query (the fork never runs `nvidia-smi`).
+
+## Parity notes (upstream 2.8.8)
+
+<!-- w12/mfg notes -->
+
+<!-- w12/shaders notes -->
+
+<!-- w12/update-all notes -->
+
+<!-- w12/github-cache notes -->
+
+<!-- w12/luma notes -->
+
+<!-- w12/epic notes -->
+
+<!-- w12/nr-logs notes -->
+
+<!-- w12/pins notes -->

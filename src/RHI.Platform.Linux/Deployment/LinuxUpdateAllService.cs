@@ -171,6 +171,15 @@ public sealed class LinuxUpdateAllService
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         ManagedComponentKind.DxvkHdr, // #200 DX9 HDR: d3d9.dll only
+        // w12 lane rows: Update All families (each row ends with a comma)
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);

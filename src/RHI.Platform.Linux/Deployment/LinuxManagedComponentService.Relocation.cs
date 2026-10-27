@@ -59,6 +59,14 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }

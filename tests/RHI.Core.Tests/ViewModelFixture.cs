@@ -68,6 +68,14 @@ internal sealed class ViewModelFixture : IDisposable
         , Func<RHI.Platform.Linux.Hdr.NvidiaGpuFacts>? nvidiaGpu = null
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
         )
     {
         _hang.When = hangWhen;
@@ -113,6 +121,14 @@ internal sealed class ViewModelFixture : IDisposable
             , nvidiaGpu
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             );
         // w3/scan Settings row (#90): the fixture's own "Xbox / Game Pass folders" list (w3 integration).
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
@@ -139,6 +155,14 @@ internal sealed class ViewModelFixture : IDisposable
         if (nvidiaGpu is not null) Managed.NvidiaGpu = nvidiaGpu; // #229/#231: the fake card and driver (never the real /proc)
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
@@ -187,6 +211,14 @@ internal sealed class ViewModelFixture : IDisposable
         , Func<RHI.Platform.Linux.Hdr.NvidiaGpuFacts>? nvidiaGpu = null
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -224,6 +256,14 @@ internal sealed class ViewModelFixture : IDisposable
             , nvidiaGpu
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
@@ -306,6 +346,14 @@ internal sealed class ViewModelFixture : IDisposable
         , Func<RHI.Platform.Linux.Hdr.NvidiaGpuFacts>? nvidiaGpu
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
         )
     {
         var http = new HttpClient(gitHubCache ? new GitHubConditionalCacheHandler(new OfflineHandler(httpFailure, httpResponse, hang)) : new OfflineHandler(httpFailure, httpResponse, hang)); // w11/download-idle: the app's GitHub API cache in front (#233)
@@ -388,6 +436,14 @@ internal sealed class ViewModelFixture : IDisposable
         if (nvidiaGpu is not null) dlss.CardGeneration = () => nvidiaGpu().Generation;
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
         var managed = new LinuxManagedComponentService(
             records, reshade, new ReShadeAddonManagerService(http, upstreamManifest, Path.Combine(cacheDir, "addons"), Path.Combine(prefs, "custom-addons"), Path.Combine(prefs, "addon-manager.json"), records), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
@@ -420,6 +476,14 @@ internal sealed class ViewModelFixture : IDisposable
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             );
         managed.ShaderSets = shaderSets; // w7/shader-sets (#179): after construction, as the app's composition does
         built(managed);

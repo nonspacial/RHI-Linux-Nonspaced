@@ -69,6 +69,15 @@ public sealed class SettingsViewModel : PanelViewModel
     // w11/nr-gpu rows
     // w11/nightly-switch rows
     // w11/nr-check rows
+    // w12 lane rows: Settings hooks (one member each)
+    // w12/mfg rows
+    // w12/shaders rows
+    // w12/update-all rows
+    // w12/github-cache rows
+    // w12/luma rows
+    // w12/epic rows
+    // w12/nr-logs rows
+    // w12/pins rows
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
@@ -137,6 +146,15 @@ public sealed class SettingsViewModel : PanelViewModel
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

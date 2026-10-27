@@ -76,6 +76,15 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12 lane rows: update checks (one arm each)
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -143,6 +152,15 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12 lane rows: updates (one arm each)
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -206,6 +224,15 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12 lane rows: installs (one arm each)
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -284,6 +311,15 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12 lane rows: removals (one arm each)
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

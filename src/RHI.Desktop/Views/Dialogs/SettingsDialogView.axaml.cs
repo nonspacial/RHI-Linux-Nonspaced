@@ -120,6 +120,15 @@ public sealed partial class SettingsDialogView : UserControl
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12 lane rows: Settings rows (build the row, Fill its slot, Host its values)
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;
@@ -145,5 +154,14 @@ public sealed partial class SettingsDialogView : UserControl
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12 lane rows: Settings tabs (after Maintenance)
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
     }
 }

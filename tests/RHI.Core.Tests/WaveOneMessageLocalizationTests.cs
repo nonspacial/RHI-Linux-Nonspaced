@@ -608,6 +608,14 @@ public sealed class WaveOneMessageLocalizationTests
         yield return OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix
             + DownloadStalledException.MessageFor("OptiScaler", TimeSpan.FromSeconds(60));
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must

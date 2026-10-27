@@ -89,6 +89,15 @@ public sealed class LinuxAppSettings
     // w11/nr-gpu rows
     // w11/nightly-switch rows
     // w11/nr-check rows
+    // w12 lane rows: settings fields (one per line; add its Normalize line below)
+    // w12/mfg rows
+    // w12/shaders rows
+    // w12/update-all rows
+    // w12/github-cache rows
+    // w12/luma rows
+    // w12/epic rows
+    // w12/nr-logs rows
+    // w12/pins rows
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -151,6 +160,15 @@ public sealed class LinuxAppSettings
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12 lane rows: Normalize
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
         return this;
     }
 

@@ -646,6 +646,14 @@ public static class UiLocalizationService
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1668,6 +1676,14 @@ public static class UiLocalizationService
         ("OptiScaler update rolled back: ", "A atualização do OptiScaler foi desfeita: "),
         ("New OptiScaler package file collides with an external/untracked file: ", "Um arquivo do novo pacote do OptiScaler colide com um arquivo externo/não rastreado: "),
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

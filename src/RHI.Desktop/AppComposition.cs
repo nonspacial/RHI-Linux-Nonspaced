@@ -81,6 +81,14 @@ internal sealed class AppComposition
     // w11/nr-gpu rows
     // w11/nightly-switch rows
     // w11/nr-check rows
+    // w12/mfg rows
+    // w12/shaders rows
+    // w12/update-all rows
+    // w12/github-cache rows
+    // w12/luma rows
+    // w12/epic rows
+    // w12/nr-logs rows
+    // w12/pins rows
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -265,6 +273,15 @@ internal sealed class AppComposition
         // w11/nr-gpu rows
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12 lane rows: services LinuxManagedComponentService takes (named args below)
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
@@ -298,6 +315,15 @@ internal sealed class AppComposition
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12 lane rows: named arguments, each line starting with a comma
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
             );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
@@ -365,6 +391,14 @@ internal sealed class AppComposition
         managedComponents.NvidiaGpu = () => nvidiaGpu.Value;
         // w11/nightly-switch rows
         // w11/nr-check rows
+        // w12/mfg rows
+        // w12/shaders rows
+        // w12/update-all rows
+        // w12/github-cache rows
+        // w12/luma rows
+        // w12/epic rows
+        // w12/nr-logs rows
+        // w12/pins rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -426,6 +460,14 @@ internal sealed class AppComposition
             // w11/nr-gpu rows
             // w11/nightly-switch rows
             // w11/nr-check rows
+            // w12/mfg rows
+            // w12/shaders rows
+            // w12/update-all rows
+            // w12/github-cache rows
+            // w12/luma rows
+            // w12/epic rows
+            // w12/nr-logs rows
+            // w12/pins rows
         };
     }
 }
