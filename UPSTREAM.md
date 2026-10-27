@@ -1077,6 +1077,14 @@ automatic updates are on, with a game that was running caught up at the next pas
 removed outside RHI (never put back) or changed outside RHI as "could not be checked" with a line saying why, and the row keeps
 Remove for a removed proxy.
 
+### #237 — MFG Ada Unlock updates
+
+Behavioural port of upstream `abf18c7` (`AddonPackService.RedeployToTrackedGames`, `UntrackAddonDeployment`) and the add-on part
+of `49d4473`. MFG Ada Unlock is an Update All family (after the other add-ons), with exclusions, No Addons holds and journal holds
+as every family. Upstream's "removed copies reinstalled" bug was latent here (the generic add-on update re-ran the install): an
+update of any GitHub add-on (ReLimiter, Display Commander, MFG Ada Unlock, the DLSS5 DX11 Bridge's version switch) never
+re-creates a file removed outside RHI; only Remove, then Install, puts it back. No start-up push (D1 = No).
+
 <!-- w12/shaders notes -->
 
 <!-- w12/update-all notes -->

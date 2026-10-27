@@ -164,7 +164,7 @@ internal sealed class ManagedComponentRowDecorator
 
                 // #236/#237/#238: RHI's record alone makes the row Installed, so Remove is offered after the user deleted
                 // the file (an update never puts it back, and Install refuses or would re-create it behind the record).
-                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone && record is not null &&
+                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock && record is not null &&
                     component.Availability == ComponentAvailability.Available)
                 {
                     component.Availability = ComponentAvailability.Installed;
@@ -785,7 +785,7 @@ internal sealed class ManagedComponentRowDecorator
                         component.Note = RtxEncoreDeploymentService.NotYetConfirmedNote;
                     // #236/#237/#238: a file of RHI's removed outside RHI is never put back by an update; the row (Installed
                     // through the record above) says so beside its Remove.
-                    if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone
+                    if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock
                         && record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path) && !File.Exists(file.Path)))
                         component.Note = ManagedUpdateFileGuard.RemovedOutsideRhiRowNote;
                 }

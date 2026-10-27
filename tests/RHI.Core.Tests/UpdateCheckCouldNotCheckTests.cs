@@ -27,6 +27,7 @@ public sealed class UpdateCheckCouldNotCheckTests
         // #195: a RenoDX add-on dropped on RHI (or found by the watch folder) has no source to compare with.
         data.Add(ManagedComponentKind.RenoDX, "renodx-local-package");
         // w12/mfg (#236): installed as on disk (file there, proxy name recorded); only the release lookup cannot answer.
+        data.Add(ManagedComponentKind.MfgAdaUnlock, "installed");
         data.Add(ManagedComponentKind.Rtx40MfgStandalone, "installed");
         return data;
     }

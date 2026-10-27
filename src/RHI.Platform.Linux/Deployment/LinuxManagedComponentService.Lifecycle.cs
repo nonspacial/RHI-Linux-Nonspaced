@@ -78,6 +78,7 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-check rows
             // w12 lane rows: update checks (one arm each)
             // w12/mfg rows
+            ManagedComponentKind.MfgAdaUnlock => await _mfgAdaUnlock.CheckUpdateAsync(game, cancellationToken: cancellationToken).ConfigureAwait(false), // #237
             // w12/shaders rows
             // w12/update-all rows
             // w12/github-cache rows
@@ -154,6 +155,7 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-check rows
             // w12 lane rows: updates (one arm each)
             // w12/mfg rows
+            ManagedComponentKind.MfgAdaUnlock => _mfgAdaUnlock.UpdateAsync(game, cancellationToken: cancellationToken), // #237
             // w12/shaders rows
             // w12/update-all rows
             // w12/github-cache rows

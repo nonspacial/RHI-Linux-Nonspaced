@@ -188,4 +188,33 @@ public sealed class MfgUpdateAllTests
         Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")),
             Path.GetFileNameWithoutExtension(proxy), "Game.exe"));
     }
+    // ---- MFG Ada Unlock (#237) and DLSSG 20/30 (#238) rows ------------------------------------------------------------
+
+    // A file the user removed is never put back by an update: the row stays Installed through RHI's record, offers Remove
+    // (Install refused or re-created it behind the record before) and says why; Remove clears the record.
+    [Theory]
+    [InlineData(ManagedComponentKind.MfgAdaUnlock)]
+    public async Task RowWithItsFileRemovedOutsideRhi_OffersRemove_WithANote_AndRemoveClearsTheRecord(ManagedComponentKind kind)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = StreamlineGame(fx.Root, "Row " + kind);
+        var missing = Path.Combine(game.BinaryDirectory!, kind == ManagedComponentKind.MfgAdaUnlock ? "renodx-mfgunlock.addon64" : "winmm.dll");
+        var record = new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind, BinaryDirectory = game.BinaryDirectory!,
+            Version = "0.5", Files = [new LinuxDeployedFile { Path = missing, Sha256 = new string('a', 64) }]
+        };
+        if (kind == ManagedComponentKind.Dlssg2030Unlock) record.Metadata["FG2030.ProxyName"] = "winmm.dll";
+        fx.Records.Upsert(record);
+
+        var row = Row(fx, game, kind);
+
+        Assert.Equal(ComponentAvailability.Installed, row.Availability);
+        Assert.True(new ComponentRowViewModel(row, null!).OffersRemove);
+        Assert.Equal(ManagedUpdateFileGuard.RemovedOutsideRhiRowNote, row.Note);
+        var remove = await fx.Managed.RemoveAsync(game, kind);
+        Assert.True(remove.Success, remove.Message);
+        Assert.Null(fx.Records.Find(game, kind));
+        Assert.False(File.Exists(missing));
+    }
 }

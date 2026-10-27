@@ -64,6 +64,9 @@ public sealed class GitHubReShadeAddonDeploymentService
         var record = _records.Find(game, _definition.Kind);
         if (record is null)
             return new ManagedUpdateCheck(false, false, $"{_definition.DisplayName} is not managed by RHI Linux.");
+        // #237: an add-on the user deleted is never put back by an update (seen before any network call).
+        if (ManagedUpdateFileGuard.Removed(record.Files.Select(file => file.Path), record.Version) is { } removed)
+            return removed;
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return new ManagedUpdateCheck(true, false, "Game executable is unavailable; update check skipped.", record.Version, CouldNotCheck: true);
         var architecture = GameArchitecture.Of(game);
@@ -75,11 +78,14 @@ public sealed class GitHubReShadeAddonDeploymentService
             var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase)
                          || !string.Equals(record.SourceUrl, latest.AssetUrl, StringComparison.OrdinalIgnoreCase);
             var mode = string.IsNullOrWhiteSpace(releaseTag) ? "latest" : $"pinned {releaseTag}";
-            return new ManagedUpdateCheck(true, update,
+            var planned = new ManagedUpdateCheck(true, update,
                 update
                     ? $"{_definition.DisplayName} {mode}: {record.Version ?? "unknown"} → {latest.Version}."
                     : $"{_definition.DisplayName} {record.Version ?? latest.Version} is current ({mode}).",
                 record.Version, latest.Version);
+            // #237 (w11 lesson): a swap is planned only while every add-on file still holds RHI's bytes (hashed only then).
+            return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, record.Files.Select(file => (file.Path, file.Sha256)), cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -90,10 +96,23 @@ public sealed class GitHubReShadeAddonDeploymentService
     public Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
         => UpdateAsync(game, releaseTag: null, cancellationToken);
 
-    public Task<ComponentOperationResult> UpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
-        => _records.Find(game, _definition.Kind) is null
-            ? Task.FromResult(ComponentOperationResult.Fail($"{_definition.DisplayName} is not managed by RHI Linux."))
-            : InstallAsync(game, releaseTag, cancellationToken);
+    /// <summary>
+    /// The install over RHI's record, except that an update never re-creates an add-on file the user removed (#237, upstream
+    /// abf18c7 "removed copies reinstalled"): only Remove, then Install, puts it back. Every caller (Update All for ReLimiter,
+    /// Display Commander, MFG Ada Unlock; the DLSS5 DX11 Bridge's version switch) gets that rule.
+    /// </summary>
+    public async Task<ComponentOperationResult> UpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
+    {
+        var record = _records.Find(game, _definition.Kind);
+        if (record is null)
+            return ComponentOperationResult.Fail($"{_definition.DisplayName} is not managed by RHI Linux.");
+        // A game held by its own earlier undo gets the hold's restart text, not a refusal about its half-undone files.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, _definition.Kind).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
+        if (record.Files.FirstOrDefault(file => !File.Exists(file.Path)) is { } removed)
+            return ComponentOperationResult.Fail(ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + removed.Path);
+        return await InstallAsync(game, releaseTag, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
         => InstallAsync(game, releaseTag: null, cancellationToken);

@@ -173,6 +173,7 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.DxvkHdr, // #200 DX9 HDR: d3d9.dll only
         // w12 lane rows: Update All families (each row ends with a comma)
         // w12/mfg rows
+        ManagedComponentKind.MfgAdaUnlock, // #237 (upstream abf18c7 AddonPackService.RedeployToTrackedGames); after the other add-ons
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows
@@ -342,6 +343,7 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.ShortFuse => 12,
         ManagedComponentKind.RtxEncore => 13,
         ManagedComponentKind.ReShadeAddonManager => 14, // #194
+        ManagedComponentKind.MfgAdaUnlock => 15, // #237: after the other add-ons
         _ => 99
     };
 }
