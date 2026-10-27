@@ -610,6 +610,8 @@ public sealed class WaveOneMessageLocalizationTests
         // w11/nr-check rows
         // w12/mfg rows
         // w12/shaders rows
+        yield return ReShadeDeploymentService.ShaderSyncFailedPrefix + ReShadeShaderPackService.LinkedShaderFolderPrefix + P;
+        yield return ReShadeDeploymentService.ShaderSyncFailedPrefix + ReShadeShaderPackService.ProtectedShaderFilePrefix + P;
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows

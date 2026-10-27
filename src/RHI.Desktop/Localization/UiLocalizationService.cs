@@ -1678,6 +1678,10 @@ public static class UiLocalizationService
         // w11/nr-check rows
         // w12/mfg rows
         // w12/shaders rows
+        (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.ProtectedShaderFilePrefix,
+            "Um arquivo de shader protegido na pasta do RHI foi alterado ou pertence a outro programa: "),
+        (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.LinkedShaderFolderPrefix,
+            "Uma pasta dentro da pasta de shaders do RHI é um link, então o RHI não grava através dela: "),
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows

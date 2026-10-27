@@ -542,7 +542,6 @@ public sealed partial class ReShadeDeploymentService
             {
                 CleanupManagedIni(existingRecord, game.InstallPath); // w5/ini-presets hook (review 8)
                 await DeclareIniWritesAsync().ConfigureAwait(false);
-                await _shaderPacks.CleanupAsync(game.BinaryDirectory, operation).ConfigureAwait(false); // #169: tracked
             }
 
             // For an update of an RHI-created proxy there is intentionally no long-lived .original.
