@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
@@ -54,48 +53,28 @@ public sealed class CustomReShadeUpdateAllTests
     }
 
     [Theory]
-    [InlineData(false)] // Custom source still there and unchanged: refreshed as before
-    [InlineData(true)] // the source changed: refreshed
-    public async Task ManualRefresh_CheckedFirst_StillRefreshes_WhenTheCheckCouldTell(bool updateAvailable)
+    [InlineData(true, false, false, true)] // Custom source still there and unchanged: refreshed as before
+    [InlineData(true, true, false, true)] // the source changed: refreshed
+    [InlineData(true, false, true, false)] // the check could not tell: not refreshed, counted as not checked
+    [InlineData(false, false, true, true)] // Stable/Nightly (not checked first): refreshed unchecked, as since #113
+    public async Task ManualRefresh_IsStoppedOnlyByACheckThatCouldNotTell(bool checkFirst, bool update, bool couldNotCheck, bool refreshed)
     {
-        var fake = new FakeBackend { CheckFirst = true, Answer = new ManagedUpdateCheck(true, updateAvailable, "checked") };
-        using var fixture = new LocalFixture();
-        var service = new LinuxUpdateAllService(fixture.Records(fake), fake, new NeverRunning());
+        var root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-custom-ua-" + Guid.NewGuid().ToString("N"))).FullName;
+        try
+        {
+            var game = Game(root);
+            var records = new LinuxDeploymentRecordStore(Path.Combine(root, "deployments.json"));
+            records.Upsert(Record(game, nameof(ReShadeChannel.Custom)));
+            var fake = new FakeBackend(records, checkFirst, new ManagedUpdateCheck(true, update, SourceGone, CouldNotCheck: couldNotCheck));
 
-        var result = await service.RunAsync([fixture.Game], _ => [], LinuxUpdateRunMode.Manual);
+            var result = await new LinuxUpdateAllService(records, fake, new NeverRunning()).RunAsync([game], _ => [], LinuxUpdateRunMode.Manual);
 
-        Assert.Equal([ManagedComponentKind.ReShade], fake.Checks);
-        Assert.Equal([ManagedComponentKind.ReShade], fake.Updates);
-        Assert.Equal((1, 0, 0), (result.ChangedCount, result.FailedCount, result.UncheckedCount));
-    }
-
-    [Fact]
-    public async Task ManualRefresh_CheckThatCouldNotTell_IsNotRefreshed_AndCountsAsCouldNotBeChecked()
-    {
-        var fake = new FakeBackend { CheckFirst = true, Answer = new ManagedUpdateCheck(true, false, SourceGone, CouldNotCheck: true) };
-        using var fixture = new LocalFixture();
-        var service = new LinuxUpdateAllService(fixture.Records(fake), fake, new NeverRunning());
-
-        var result = await service.RunAsync([fixture.Game], _ => [], LinuxUpdateRunMode.Manual);
-
-        Assert.Empty(fake.Updates);
-        Assert.Equal((0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount));
-        Assert.Equal(SourceGone, Assert.Single(result.Items).Message);
-    }
-
-    [Fact]
-    public async Task ManualRefresh_NotCheckedFirst_RefreshesWithoutACheck()
-    {
-        // Stable/Nightly ReShade (the backend's default answer): unchanged since #113, no check before the refresh.
-        var fake = new FakeBackend { Answer = new ManagedUpdateCheck(true, false, "never asked", CouldNotCheck: true) };
-        using var fixture = new LocalFixture();
-        var service = new LinuxUpdateAllService(fixture.Records(fake), fake, new NeverRunning());
-
-        var result = await service.RunAsync([fixture.Game], _ => [], LinuxUpdateRunMode.Manual);
-
-        Assert.Empty(fake.Checks);
-        Assert.Equal([ManagedComponentKind.ReShade], fake.Updates);
-        Assert.Equal((1, 0, 0), (result.ChangedCount, result.FailedCount, result.UncheckedCount));
+            Assert.Equal(checkFirst ? 1 : 0, fake.Checks);
+            Assert.Equal(refreshed ? [ManagedComponentKind.ReShade] : [], fake.Updates);
+            Assert.Equal(refreshed ? (1, 0, 0) : (0, 0, 1), (result.ChangedCount, result.FailedCount, result.UncheckedCount));
+            if (!refreshed) Assert.Equal(SourceGone, Assert.Single(result.Items).Message);
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     [Theory]
@@ -139,46 +118,25 @@ public sealed class CustomReShadeUpdateAllTests
         public bool IsRunning(DetectedGame game) => false;
     }
 
-    private sealed class LocalFixture : IDisposable
+    private sealed class FakeBackend(LinuxDeploymentRecordStore records, bool checkFirst, ManagedUpdateCheck answer) : ILinuxManagedUpdateBackend
     {
-        private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-custom-ua-" + Guid.NewGuid().ToString("N"))).FullName;
-        public DetectedGame Game { get; }
+        public int Checks { get; private set; }
+        public List<ManagedComponentKind> Updates { get; } = [];
 
-        public LocalFixture() => Game = CustomReShadeUpdateAllTests.Game(_root);
-
-        public LinuxDeploymentRecordStore Records(FakeBackend fake)
-        {
-            var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
-            records.Upsert(Record(Game, nameof(ReShadeChannel.Custom)));
-            fake.Store = records;
-            return records;
-        }
-
-        public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
-    }
-
-    private sealed class FakeBackend : ILinuxManagedUpdateBackend
-    {
-        public bool CheckFirst { get; init; }
-        public required ManagedUpdateCheck Answer { get; init; }
-        public LinuxDeploymentRecordStore? Store { get; set; }
-        public ConcurrentQueue<ManagedComponentKind> Checks { get; } = new();
-        public ConcurrentQueue<ManagedComponentKind> Updates { get; } = new();
-
-        public bool ChecksBeforeManualRefresh(DetectedGame game, ManagedComponentKind component) => CheckFirst;
+        public bool ChecksBeforeManualRefresh(DetectedGame game, ManagedComponentKind component) => checkFirst;
 
         public Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
         {
-            Checks.Enqueue(component);
-            return Task.FromResult(Answer);
+            Checks++;
+            return Task.FromResult(answer);
         }
 
         public Task<ComponentOperationResult> UpdateManagedAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
         {
-            Updates.Enqueue(component);
-            var record = Store!.Find(game, component)!;
+            Updates.Add(component);
+            var record = records.Find(game, component)!;
             record.Version += "-new";
-            Store.Upsert(record);
+            records.Upsert(record);
             return Task.FromResult(ComponentOperationResult.Ok("refreshed"));
         }
     }
