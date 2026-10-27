@@ -86,7 +86,7 @@ public sealed class LegacyHdrWsiViewModelTests : IDisposable
         var launch = Assert.Single(launcher.Launches);
         Assert.NotNull(launch.Options);
         Assert.Equal("gamescope --hdr-enabled --", launch.Options!.CommandPrefix);
-        Assert.Equal(used, launch.Options.Environment.ContainsKey(Variable));
+        Assert.Equal(used, launch.Options!.Environment?.ContainsKey(Variable) == true);
         Assert.Equal(seeded, File.ReadAllBytes(fx.Library.LibraryPath));
     }
 
