@@ -199,6 +199,8 @@ internal static class PlatformMessageTranslations
         // w11/nightly-switch rows
         // w11/nr-check rows
         // w12/mfg rows
+        ("O arquivo deste componente foi removido fora do RHI, e as atualizações nunca o colocam de volta. Remover limpa o registro do RHI; depois, Instalar o coloca de novo.",
+            "This component's file was removed outside RHI, and updates never put it back. Remove clears RHI's record; Install then puts it back."), // #236/#237/#238
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows

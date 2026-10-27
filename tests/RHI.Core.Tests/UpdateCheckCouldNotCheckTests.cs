@@ -26,6 +26,8 @@ public sealed class UpdateCheckCouldNotCheckTests
         data.Add(ManagedComponentKind.ReShade, "no-addons");
         // #195: a RenoDX add-on dropped on RHI (or found by the watch folder) has no source to compare with.
         data.Add(ManagedComponentKind.RenoDX, "renodx-local-package");
+        // w12/mfg (#236): installed as on disk (file there, proxy name recorded); only the release lookup cannot answer.
+        data.Add(ManagedComponentKind.Rtx40MfgStandalone, "installed");
         return data;
     }
 
@@ -53,6 +55,7 @@ public sealed class UpdateCheckCouldNotCheckTests
             File.WriteAllBytes(d3d9, CacheForeignFileRejectionTests.Pe(0x8664, 4096, 9));
             record.Files.Add(new LinuxDeployedFile { Path = d3d9, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(d3d9) });
         }
+        if (variant == "installed") InstalledAsOnDisk(game, record);
         fx.Records.Upsert(record);
 
         var check = await fx.Managed.CheckManagedUpdateAsync(game, kind, []);
@@ -191,6 +194,25 @@ public sealed class UpdateCheckCouldNotCheckTests
             Assert.Equal((0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount));
         }
         Assert.Equal(NrGpuTestKit.Dll(NrGpuTestKit.ForAll), File.ReadAllBytes(nr));
+    }
+
+    // w12/mfg: the family's own file on disk under the name its record gives (a missing one is never "could not check" by
+    // lookup: it says it was removed outside RHI before any lookup).
+    private static void InstalledAsOnDisk(DetectedGame game, LinuxDeploymentRecord record)
+    {
+        var (name, nameKey) = record.Component switch
+        {
+            ManagedComponentKind.MfgAdaUnlock => ("renodx-mfgunlock.addon64", null),
+            ManagedComponentKind.Dlssg2030Unlock => ("winmm.dll", "FG2030.ProxyName"),
+            ManagedComponentKind.UltimateAsiLoader => ("winmm.dll", "UAL.ProxyName"),
+            _ => ("winmm.dll", "UniversalMFG.ProxyName")
+        };
+        var path = Path.Combine(game.BinaryDirectory!, name);
+        File.WriteAllBytes(path, CacheForeignFileRejectionTests.Pe(0x8664, 512 * 1024, 5));
+        record.Files.Add(new LinuxDeployedFile { Path = path, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(path) });
+        if (nameKey is not null) record.Metadata[nameKey] = name;
+        if (record.Component == ManagedComponentKind.Dlssg2030Unlock)
+            File.WriteAllText(Path.Combine(game.BinaryDirectory!, Dlssg2030UnlockDeploymentService.IniFileName), "[Compatibility]\nRouter=SM75\n");
     }
 
     private static DetectedGame Game(string root, string variant)

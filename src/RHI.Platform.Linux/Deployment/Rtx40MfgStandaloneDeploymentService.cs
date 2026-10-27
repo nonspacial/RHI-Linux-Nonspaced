@@ -11,18 +11,35 @@ using RHI.Platform.Linux.Persistence;
 namespace RHI.Platform.Linux.Deployment;
 
 /// <summary>
-/// Linux/Wine deployment of Universal RTXMFG for RTX 40 and experimental RTX 30.
-/// Upstream dashdogy/RTX40MFG-Unlock v1.3+ ships one RTXMFG.dll which is renamed
-/// to a supported proxy beside the confirmed Patch Target. RTX 30 is DX12-only and
+/// Linux/Wine deployment of Universal MFG (the publisher's MFG Unlocker) for RTX 40 and experimental RTX 30.
+/// Upstream dashdogy/MFG-Unlocker (formerly RTX40MFG-Unlock) ships one DLL — MFGUnlocker.dll since v1.5.0,
+/// RTXMFG.dll before — which is renamed to a supported proxy beside the confirmed Patch Target. RTX 30 is DX12-only and
 /// remains explicitly experimental upstream. RHI-Linux validates the official release
 /// digest/checksum when available, validates PE x64, applies a per-game Wine
 /// native,builtin override, and hash-guards update/removal.
 /// </summary>
 public sealed class Rtx40MfgStandaloneDeploymentService
 {
-    public const string ReleasesApiUrl = "https://api.github.com/repos/dashdogy/RTX40MFG-Unlock/releases/latest";
-    public const string RepositoryUrl = "https://github.com/dashdogy/RTX40MFG-Unlock";
+    // #236: the repository was renamed (dashdogy/RTX40MFG-Unlock → dashdogy/MFG-Unlocker); the old API URL answers 301.
+    public const string ReleasesApiUrl = "https://api.github.com/repos/dashdogy/MFG-Unlocker/releases/latest";
+    public const string RepositoryUrl = "https://github.com/dashdogy/MFG-Unlocker";
+    /// <summary>The name the payload is cached under, whatever the release calls it (upstream stages it as RTXMFG.dll too).</summary>
     public const string InnerDllName = "RTXMFG.dll";
+
+    /// <summary>#236 (upstream bb9b2fd <c>ReleaseDllNames</c>): DLL names accepted inside a release zip, newest naming first.</summary>
+    public static readonly IReadOnlyList<string> ReleaseDllNames = ["MFGUnlocker.dll", "RTXMFG.dll"];
+
+    /// <summary>#236: release zip names, newest naming first (MFGUnlocker-v1.7.0.zip; RTXMFG-v1.4.2.zip and older).</summary>
+    public static readonly IReadOnlyList<string> ReleaseAssetPrefixes = ["MFGUnlocker-", "RTXMFG-"];
+
+    /// <summary>#236: a release listing more than one zip of the chosen naming; the naming follows.</summary>
+    public const string SeveralAssetsPrefix = "Universal MFG release refused: it lists several assets named ";
+    /// <summary>#236: a release without a zip of either naming.</summary>
+    public const string NoAssetMessage = "Universal MFG release refused: it has neither an MFGUnlocker-*.zip nor an RTXMFG-*.zip asset.";
+    /// <summary>#236: a zip holding more than one DLL of the chosen name; the name follows.</summary>
+    public const string SeveralDllsPrefix = "Universal MFG archive refused as ambiguous: it holds several entries named ";
+    /// <summary>#236: a zip holding neither DLL name.</summary>
+    public const string NoDllMessage = "Universal MFG archive refused: it holds neither MFGUnlocker.dll nor RTXMFG.dll.";
     public const string DefaultProxyName = "version.dll";
     public const string GpuGenRtx40 = "RTX 40 Series";
     public const string GpuGenRtx30 = "RTX 30 Series";
@@ -67,6 +84,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
     /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
     internal Settings.IGameStateStore GameState => _preferences;
     private readonly string _cacheRoot;
+
+    /// <summary>The release API the service asks (tests point it at the old repository URL to follow GitHub's 301).</summary>
+    internal string ReleasesApi { get; init; } = ReleasesApiUrl;
 
     public Rtx40MfgStandaloneDeploymentService(
         HttpClient http,
@@ -455,6 +475,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             record.Metadata[MetaAssetName] = latest.AssetName;
             record.Metadata[MetaAssetSha256] = latest.AssetSha256 ?? "";
             record.Metadata[MetaPayloadSha256] = newHash;
+            record.Metadata[MetaUpstream] = RepositoryUrl; // #236: the renamed repository
             VerifiedDownload.Record(record.Metadata, newHash, digestVerified: true);
             _records.Upsert(scope.Stamp(record));
         }
@@ -477,14 +498,29 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return new ManagedUpdateCheck(false, false, "Universal MFG is not RHI-managed.");
+        // #236: the proxy the user deleted is never put back by an update; seen before any network call.
+        var proxyPath = ProxyPathOf(record);
+        if (proxyPath is not null && ManagedUpdateFileGuard.Removed([proxyPath], record.Version) is { } removed)
+            return removed;
         var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
-        return new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
+        var planned = new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
             CouldNotCheck: !status.Success);
+        // w11 lesson: a swap is planned only while the proxy still holds RHI's bytes (hashed only then).
+        var fileRecord = proxyPath is null ? null : record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
+        return fileRecord is null
+            ? planned
+            : await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(fileRecord.Path, fileRecord.Sha256)], cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string? ProxyPathOf(LinuxDeploymentRecord record)
+    {
+        var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName) ?? record.Metadata.GetValueOrDefault(LegacyMetaProxyName);
+        return string.IsNullOrWhiteSpace(proxyName) ? null : Path.Combine(record.BinaryDirectory, proxyName);
     }
 
     internal async Task<Rtx40MfgReleaseInfo> ResolveLatestReleaseAsync(CancellationToken cancellationToken)
     {
-        var json = await TrustedDownload.GetStringAsync(_http, ReleasesApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, ReleasesApi, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Object)
             throw new InvalidDataException("RTX40MFG latest release API returned an unexpected JSON shape.");
@@ -500,10 +536,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             throw new InvalidDataException("RTX40MFG latest release did not publish a tag.");
         var versionText = NormalizePublishedReleaseVersion(tag);
 
-        string? assetName = null;
-        string? assetUrl = null;
-        string? assetSha = null;
         string? checksumsUrl = null;
+        var zips = new List<(string Name, string? Url, string? Sha)>();
         if (release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
         {
             foreach (var asset in assets.EnumerateArray())
@@ -516,18 +550,30 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                     checksumsUrl = url;
                     continue;
                 }
-                if (!name.StartsWith("RTXMFG-", StringComparison.OrdinalIgnoreCase) || !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                assetName = name;
-                assetUrl = url;
+                if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
                 var digest = asset.TryGetProperty("digest", out var digestEl) ? digestEl.GetString() : null;
-                if (!string.IsNullOrWhiteSpace(digest) && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
-                    assetSha = digest["sha256:".Length..].Trim().ToLowerInvariant();
+                zips.Add((name, url,
+                    !string.IsNullOrWhiteSpace(digest) && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
+                        ? digest["sha256:".Length..].Trim().ToLowerInvariant()
+                        : null));
             }
         }
 
+        // #236: the newest naming first (MFGUnlocker-*.zip since v1.5.0, then RTXMFG-*.zip); exactly one zip of that naming.
+        (string Name, string? Url, string? Sha)? chosen = null;
+        foreach (var prefix in ReleaseAssetPrefixes)
+        {
+            var matches = zips.Where(zip => zip.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length == 0) continue;
+            if (matches.Length > 1)
+                throw new InvalidDataException(SeveralAssetsPrefix + prefix + "*.zip");
+            chosen = matches[0];
+            break;
+        }
+        var (assetName, assetUrl, assetSha) = chosen ?? default;
+
         if (string.IsNullOrWhiteSpace(assetName) || string.IsNullOrWhiteSpace(assetUrl))
-            throw new InvalidDataException("RTX40MFG release contains no usable RTXMFG-*.zip asset.");
+            throw new InvalidDataException(NoAssetMessage);
         if (string.IsNullOrWhiteSpace(assetSha) && string.IsNullOrWhiteSpace(checksumsUrl))
             throw new InvalidDataException("RTX40MFG release exposes no published SHA-256 authority (GitHub digest or SHA256SUMS.txt); deployment refused.");
 
@@ -598,16 +644,26 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
         using (var zip = ZipFile.OpenRead(download.Path))
         {
-            var entries = zip.Entries
-                .Where(entry => entry.Name.Equals(InnerDllName, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-            if (entries.Length != 1)
-                throw new InvalidDataException(entries.Length == 0
-                    ? $"{InnerDllName} was not found in the RTX40MFG archive."
-                    : $"RTX40MFG archive contains multiple ambiguous {InnerDllName} entries.");
+            // #236 (upstream bb9b2fd): MFGUnlocker.dll first, else RTXMFG.dll; exactly one entry of the name taken.
+            ZipArchiveEntry? payload = null;
+            foreach (var dllName in ReleaseDllNames)
+            {
+                var entries = zip.Entries
+                    .Where(entry => entry.Name.Equals(dllName, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                if (entries.Length > 1)
+                    throw new InvalidDataException(SeveralDllsPrefix + dllName);
+                if (entries.Length == 1)
+                {
+                    payload = entries[0];
+                    break;
+                }
+            }
+            if (payload is null)
+                throw new InvalidDataException(NoDllMessage);
 
             // Checked extraction (declared-size cap, fixed mode, length + CRC-32, atomic rename); never ExtractToFile (Refs #42).
-            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entries[0], dllPath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(payload, dllPath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
         try { ValidatePayload(dllPath); }
         catch

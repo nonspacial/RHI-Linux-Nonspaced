@@ -1062,6 +1062,21 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 
 <!-- w12/mfg notes -->
 
+### #236 — Universal MFG accepts MFG Unlocker releases
+
+Behavioural port of upstream `bb9b2fd` (`Rtx40MfgService.ReleaseDllNames`) and the Rtx40Mfg part of `1b51cb2`. The publisher
+renamed the project (`dashdogy/RTX40MFG-Unlock` → `dashdogy/MFG-Unlocker`; the old API URL answers 301): from v1.5.0 the
+release ships `MFGUnlocker-v<ver>.zip` holding `MFGUnlocker.dll`, so every release since v1.5.0 was refused. RHI now asks the
+new repository, takes the `MFGUnlocker-*.zip` asset first and `RTXMFG-*.zip` second (exactly one zip of the chosen naming), and
+inside it `MFGUnlocker.dll` first, `RTXMFG.dll` second (exactly one entry of the chosen name). The fail-closed SHA rule (GitHub
+digest or `SHA256SUMS.txt`), PE x64, size and the per-release cache stamp are unchanged. A v1.4.x install updates in place under
+its proxy name through the journaled update (history `1.4.2 → 1.7.0`). Upstream's staging-format bump fixes a bug the fork
+never had (the cache stamp is written only after a verified extraction). Upstream pushes these at start and compares file
+contents (`IsOutdatedIn`); the fork keeps its one rule (owner decision D1 = No): Update All, and the background pass when
+automatic updates are on, with a game that was running caught up at the next pass. Fork-only: the check reports a proxy
+removed outside RHI (never put back) or changed outside RHI as "could not be checked" with a line saying why, and the row keeps
+Remove for a removed proxy.
+
 <!-- w12/shaders notes -->
 
 <!-- w12/update-all notes -->
