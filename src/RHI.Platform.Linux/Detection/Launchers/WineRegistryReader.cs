@@ -26,9 +26,17 @@ internal sealed class WineRegistryReader
     public static WineRegistryReader Load(string hivePath, IReadOnlyCollection<string> roots)
     {
         if (!File.Exists(hivePath)) return Empty;
-        if (new FileInfo(hivePath).Length > MaxHiveBytes)
+        // #247: only a regular file, opened without blocking (a FIFO would hang the scan, a device never ends).
+        using var handle = RHI.Core.Deployment.FileKind.OpenRegularFileForReading(hivePath)
+                           ?? throw new IOException($"Wine registry {hivePath} is not a regular file or cannot be opened; not read.");
+        var length = RandomAccess.GetLength(handle);
+        if (length > MaxHiveBytes)
             throw new IOException($"Wine registry {hivePath} is larger than {MaxHiveBytes} bytes; not read.");
-        return Parse(File.ReadAllBytes(hivePath), roots);
+        var bytes = new byte[length];
+        var filled = 0;
+        while (filled < bytes.Length && RandomAccess.Read(handle, bytes.AsSpan(filled), filled) is var read and > 0) filled += read;
+        // Bounded by the length read on the open file: a hive Wine extends meanwhile is read whole on the next scan.
+        return Parse(bytes.AsSpan(0, filled), roots);
     }
 
     internal static WineRegistryReader Parse(TextReader reader, IReadOnlyCollection<string> roots)

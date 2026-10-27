@@ -1072,6 +1072,12 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 
 <!-- w12/epic notes -->
 
+### #247 — Epic Games Launcher in a Wine/Lutris prefix (classic manifests and the new launcher)
+- Upstream (`c1076d3`, `GameDetectionService.Epic.cs`; classic manifests since before 2.8.5) reads the classic launcher's `ProgramData\Epic\EpicGamesLauncher\Data\Manifests\*.item` and the new launcher's (`com.epicgames.eglv2`) `%LOCALAPPDATA%\com.epicgames.eglv2\installations.jsonl` (last entry per installationId wins, only `complete: true`), naming its games from `HKCU\…\Uninstall\EpicGames-<artifactId>`, then the migrated `import-scan\v1-items\<installationId>.item`; uninstall entries the log does not mention are listed too; de-duplicated by path. The fork reads the same records inside every Wine prefix (standalone, Lutris, Heroic, Steam non-Steam shortcut), read-only, through the #90 store-launcher reader: `user.reg` only where the prefix holds Epic data; regular files only, opened without blocking, capped (manifest 4 MiB, log 32 MiB); a malformed log line is skipped with one scan warning per file; folders go through the prefix's drive links and the root-folder guard.
+- Launch: upstream starts `com.epicgames.launcher://apps/<AppName>?action=launch&silent=true` (AppName = the new launcher's artifactId). The fork hands that URI to the launcher exe in the prefix (the `com.epicgames.launcher` URL handler's program from the registry, else the classic launcher's default places), with the #90 parent rules (Lutris: the launcher's own config, else the prefix's parent launcher; Steam shortcut to the launcher: started through Steam; Heroic: its sideloaded launcher, else no command). A store id that is not plain letters/digits/`_ . -` never reaches the command (the launcher only opens).
+- Differences, all small: a game with no name anywhere keeps its folder name (upstream skips it); a DLC's classic manifest never names its game's card; upstream's `HKCU\Software\Epic Games\EpicGamesLauncher\AppDataPath` data-folder override is not read (only the launchers' default places; a relocated data folder inside a prefix is not found); a folder another store's record names keeps that store's hand-off.
+- Not covered: the new launcher's native Linux build (`~/.local/share/com.epicgames.eglv2`, Proton-run Windows games) is not read; Epic games installed through Heroic/Legendary are unchanged.
+
 <!-- w12/nr-logs notes -->
 
 <!-- w12/pins notes -->

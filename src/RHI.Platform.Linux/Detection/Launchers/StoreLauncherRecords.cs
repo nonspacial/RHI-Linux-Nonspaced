@@ -12,7 +12,8 @@ internal enum StoreLauncher
     UbisoftConnect,
     BattleNet,
     Rockstar,
-    Itch
+    Itch,
+    Epic
 }
 
 /// <summary>
@@ -41,6 +42,8 @@ internal sealed record StoreLauncherGame(
 /// keys (its <c>titles.dat</c> is encrypted on current launchers). Launch arguments follow Lutris' store services (the
 /// Linux reference): <c>uplay://launch/&lt;id&gt;</c>, <c>--exec="launch &lt;code&gt;"</c>,
 /// <c>origin2://game/launch?offerIds=&lt;id&gt;&amp;autoDownload=1</c>, and Rockstar's <c>-launchTitleInFolder &lt;dir&gt;</c>.
+/// The Epic Games Launcher's records (classic manifests and the new launcher's install log, #247) are read by
+/// <see cref="EpicLauncherRecords"/>.
 /// Read only; a record whose folder is missing, refused by <see cref="GameRootGuard"/> or is the prefix itself is skipped.
 /// </summary>
 internal static class StoreLauncherRecords
@@ -63,6 +66,7 @@ internal static class StoreLauncherRecords
         StoreLauncher.BattleNet => "Battle.net",
         StoreLauncher.Rockstar => "Rockstar Games Launcher",
         StoreLauncher.Itch => "itch",
+        StoreLauncher.Epic => "Epic Games Launcher",
         _ => store.ToString()
     };
 
@@ -74,6 +78,7 @@ internal static class StoreLauncherRecords
         StoreLauncher.BattleNet => "Battle.net",
         StoreLauncher.Rockstar => "Rockstar",
         StoreLauncher.Itch => "itch",
+        StoreLauncher.Epic => "Epic",
         _ => store.ToString()
     };
 
@@ -97,7 +102,9 @@ internal static class StoreLauncherRecords
                      (StoreLauncher.BattleNet, BattleNet),
                      (StoreLauncher.EaApp, Ea),
                      (StoreLauncher.Rockstar, Rockstar),
-                     (StoreLauncher.Itch, Itch)
+                     (StoreLauncher.Itch, Itch),
+                     // Last: a game another store's record names keeps that store's hand-off, as before #247.
+                     (StoreLauncher.Epic, EpicLauncherRecords.Read)
                  })
         {
             try
@@ -121,10 +128,11 @@ internal static class StoreLauncherRecords
         Uninstall, Uninstall32,
         @"Software\Origin Games", @"Software\Wow6432Node\Origin Games",
         .. EaPublisherKeys.SelectMany(key => new[] { @"Software\" + key, @"Software\Wow6432Node\" + key }),
-        @"Software\Rockstar Games", @"Software\Wow6432Node\Rockstar Games"
+        @"Software\Rockstar Games", @"Software\Wow6432Node\Rockstar Games",
+        EpicLauncherRecords.UrlHandlerKey
     ];
 
-    private sealed record Context(string Prefix, string Home, WineRegistryReader Registry)
+    internal sealed record Context(string Prefix, string Home, WineRegistryReader Registry)
     {
         public string DriveC => Path.Combine(Prefix, "drive_c");
 
