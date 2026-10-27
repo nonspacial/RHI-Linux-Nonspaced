@@ -1086,6 +1086,13 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
   "Open on Nexus" with a tooltip naming Connect Nexus account when no account is connected. The fork's rows have no
   per-row Update button, so this is a row button in the ⚙ slot (Luma rows have no ⚙).
 
+### #246 — Luma mode: no manifest default (upstream removed lumaDefaultGames)
+- Upstream 2.8.8 Beta `230ac6a` removed `lumaDefaultGames` from `manifest.json` (no upstream consumer since at least
+  2.7.5). The fork still read it, so with the live manifest (no key) no game defaulted to Luma mode while the pinned 2.8.7
+  fallback (offline) turned it on for 35 games. Now `LumaPolicyService` reads only `lumaRenodxCompat`: Luma mode is on
+  only where the user chose Enabled, off for Disabled and Automatic, whichever manifest answers; saved choices are kept.
+  The Luma library filter still lists games with RHI's Luma installed (record) or Luma mode turned on by the user.
+
 <!-- w12/epic notes -->
 
 <!-- w12/nr-logs notes -->

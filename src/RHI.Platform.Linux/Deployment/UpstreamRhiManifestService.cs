@@ -407,14 +407,6 @@ public sealed partial class UpstreamRhiManifestService
         return matches.Length == 1 ? matches[0].Value : null;
     }
 
-    public async Task<IReadOnlySet<string>> FetchLumaDefaultGamesAsync(CancellationToken cancellationToken = default)
-    {
-        var manifest = await FetchDocumentAsync(cancellationToken).ConfigureAwait(false);
-        return new HashSet<string>(
-            (manifest.LumaDefaultGames ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()),
-            StringComparer.OrdinalIgnoreCase);
-    }
-
     public async Task<IReadOnlySet<string>> FetchLumaRenoDxCompatAsync(CancellationToken cancellationToken = default)
     {
         var manifest = await FetchDocumentAsync(cancellationToken).ConfigureAwait(false);

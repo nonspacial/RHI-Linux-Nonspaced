@@ -728,7 +728,6 @@ public sealed class LumaFrameworkDeploymentService
                         ["LumaFramework.UeVersion"] = selection.GenericMetadata?.UeVersion ?? "",
                         ["LumaFramework.EngineIniProjectOverride"] = game.EngineIniProjectOverride ?? "",
                         ["LumaFramework.PolicyAuthority"] = _policy?.GetCachedOrDefault(game).Authority ?? "",
-                        ["LumaFramework.ManifestDefault"] = _policy is null ? "" : (_policy.GetCachedOrDefault(game).ManifestDefault ? "1" : "0"),
                         ["LumaFramework.RenoDxCompatible"] = _policy is null ? "" : (_policy.GetCachedOrDefault(game).RenoDxCompatible ? "1" : "0"),
                         ["LumaFramework.UserPreference"] = _policy?.GetCachedOrDefault(game).UserPreference.ToString() ?? "",
                         [MetaDx9Migration] = dx9Migration is null ? "" : JsonSerializer.Serialize(dx9Migration),

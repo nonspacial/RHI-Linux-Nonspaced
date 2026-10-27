@@ -890,7 +890,6 @@ public static class UiLocalizationService
         ("Luma mode not enabled", "Modo Luma não ativado"),
         ("authority: user enabled", "autoridade: ativado pelo usuário"),
         ("authority: user disabled", "autoridade: desativado pelo usuário"),
-        ("authority: upstream lumaDefaultGames", "autoridade: lumaDefaultGames do upstream"),
         ("authority: automatic/no default", "autoridade: automático/sem padrão"),
         ("authority: automatic/not primed", "autoridade: automático/ainda não carregado"),
         ("RenoDX coexistence allowed by lumaRenodxCompat", "coexistência com RenoDX permitida por lumaRenodxCompat"),
