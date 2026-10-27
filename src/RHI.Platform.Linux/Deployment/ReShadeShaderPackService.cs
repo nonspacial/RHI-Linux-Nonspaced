@@ -394,7 +394,7 @@ public sealed class ReShadeShaderPackService
                 await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
             if (!FileCleanup.TryDelete(manifestPath, out var manifestError))
                 AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", manifestError);
-            PruneOwnedFolders(root, [], includeRoot: true, operation); // #240: RHI's folder goes with its last file
+            PruneOwnedFolders(root, [], includeRoot: true, operation, PackFolderNames()); // #240: RHI's folder goes with its last file
             return new(root, [], [], []);
         }
 
@@ -441,6 +441,7 @@ public sealed class ReShadeShaderPackService
             effectPaths.Add(@".\reshade-shaders\RHI\_Core\Shaders\**");
         }
 
+        PruneOwnedFolders(root, [], includeRoot: false, operation, PackFolderNames()); // #240: empty pack folders an older build left
         var manifestFile = new JsonFileStore<Manifest>(manifestPath);
         if (operation is null) manifestFile.Save(outputManifest);
         else
@@ -470,7 +471,7 @@ public sealed class ReShadeShaderPackService
         if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
         if (!FileCleanup.TryDelete(manifestPath, out var removeError))
             AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
-        PruneOwnedFolders(root, [], includeRoot: true, operation); // #240: RHI's folder goes with its last file
+        PruneOwnedFolders(root, [], includeRoot: true, operation, PackFolderNames()); // #240: RHI's folder goes with its last file
     }
 
     internal static IReadOnlyList<string> ExpandDependencies(
@@ -1173,7 +1174,8 @@ public sealed class ReShadeShaderPackService
     /// itself a folder link, never anything outside the root. Inside <paramref name="operation"/> this waits until it
     /// committed: the journal's copy of each removed file sits beside it until then, and a rollback needs the folder.
     /// </summary>
-    private static void PruneOwnedFolders(string root, IEnumerable<string> relativeFiles, bool includeRoot, DeploymentOperation? operation)
+    private static void PruneOwnedFolders(string root, IEnumerable<string> relativeFiles, bool includeRoot, DeploymentOperation? operation,
+        IReadOnlyCollection<string>? packFolders = null)
     {
         var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
         var rootWithSep = rootFull + Path.DirectorySeparatorChar;
@@ -1191,6 +1193,16 @@ public sealed class ReShadeShaderPackService
 
         void Prune()
         {
+            // An empty pack folder of RHI's (named after a catalogue pack, or _Core) that an older build left behind: its
+            // prune ran while the journal's copies still filled it, and its manifest no longer lists it.
+            foreach (var name in packFolders ?? [])
+            {
+                var packFolder = Path.Combine(rootFull, name);
+                if (!Directory.Exists(packFolder) || IsLink(packFolder)) continue;
+                try { ordered.AddRange(SafeFileEnumeration.Directories(packFolder).Append(packFolder)); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Warn("shaders", $"Could not list {packFolder}", ex); }
+            }
+            ordered = ordered.Distinct(StringComparer.Ordinal).OrderByDescending(path => path.Length).ThenBy(path => path == rootFull ? 1 : 0).ToList();
             foreach (var folder in ordered)
             {
                 if (IsLinkedBelow(rootFull, folder) || (folder == rootFull && IsLink(rootFull))) continue;
@@ -1202,6 +1214,10 @@ public sealed class ReShadeShaderPackService
         if (operation is null) Prune();
         else operation.AfterCommit("remove the empty shader-pack folders", Prune);
     }
+
+    /// <summary>The names RHI gives its pack folders under <c>reshade-shaders/RHI</c> (every catalogue pack, and <c>_Core</c>).</summary>
+    private IReadOnlyCollection<string> PackFolderNames()
+        => _packs.Select(pack => SafePackDirectoryName(pack.Id)).Append("_Core").Distinct(StringComparer.Ordinal).ToArray();
 
     /// <summary>True when <paramref name="path"/> or a folder between it and <paramref name="root"/> is a symlink (or cannot be told).</summary>
     private static bool IsLinkedBelow(string root, string path)

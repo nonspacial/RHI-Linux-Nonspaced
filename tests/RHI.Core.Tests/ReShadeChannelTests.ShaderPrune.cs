@@ -98,6 +98,27 @@ public sealed partial class ReShadeChannelTests
         Assert.Equal(targetHoldsTheFiles, File.Exists(Path.Combine(elsewhere, "Test.fx")));
     }
 
+    // An older build left empty pack folders its manifest no longer lists (the owner's Borderlands 3: Prod80/Shaders and
+    // Prod80/Textures): the next sync tidies them too, while a folder of the user's and a linked pack folder stay.
+    [Fact]
+    public async Task Prune_EmptyPackFoldersAnOlderBuildLeft_GoAtTheNextSync()
+    {
+        var fx = await TwoPackGameAsync("prune-leftover");
+        Directory.CreateDirectory(RhiDir(fx.Game, "Prod80", "Shaders"));
+        Directory.CreateDirectory(RhiDir(fx.Game, "Prod80", "Textures"));
+        var ownEmpty = Directory.CreateDirectory(RhiDir(fx.Game, "MyEmptyFolder")).FullName;
+        var elsewhere = Directory.CreateDirectory(Path.Combine(_root, "prune-leftover", "elsewhere")).FullName;
+        var linked = RhiDir(fx.Game, "Azen");
+        Directory.CreateSymbolicLink(linked, elsewhere);
+
+        Assert.True((await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster", "CrosireLegacy"])).Success);
+
+        Assert.False(Directory.Exists(RhiDir(fx.Game, "Prod80")));
+        Assert.True(Directory.Exists(ownEmpty));
+        Assert.NotNull(new DirectoryInfo(linked).LinkTarget);
+        Assert.True(File.Exists(PackFile(fx.Game, "CrosireLegacy")));
+    }
+
     // A manifest entry that points outside RHI's folder (edited by hand) never lets the prune climb out of it.
     [Fact]
     public async Task Prune_NeverLeavesRhisFolder()
