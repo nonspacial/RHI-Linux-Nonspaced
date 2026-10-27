@@ -155,6 +155,28 @@ public sealed class ShaderPackMirrorTests : IDisposable
         Assert.Equal("v1 " + new string('1', 900), File.ReadAllText(Path.Combine(elsewhere, "Effect.fx")));
     }
 
+    // A link made between the prepare (before the write gate) and the apply: the apply checks again and never writes
+    // through it.
+    [Fact]
+    public async Task LinkMadeAfterThePrepare_ApplyStillNeverWritesThroughIt()
+    {
+        var fx = Fixture("late-link");
+        fx.Server.Packs["prod80"] = () => ShaderPackCoreHeadersTests.PackServer.Zip(("p-master/Shaders/Effect.fx", "v1 " + new string('1', 900)));
+        await fx.Service.SyncAsync(fx.Game, ["Prod80"]);
+        fx.Server.Packs["prod80"] = () => ShaderPackCoreHeadersTests.PackServer.Zip(("p-master/Shaders/Effect.fx", "v2 " + new string('2', 900)));
+        Directory.Delete(Path.Combine(fx.Cache, "Prod80"), true);
+        var prepared = await fx.Service.PrepareSyncAsync(fx.Game, ["Prod80"]);
+        var linked = Rhi(fx.Game, "Prod80", "Shaders");
+        var elsewhere = Path.Combine(_root, "late-link", "elsewhere");
+        Directory.Move(linked, elsewhere);
+        Directory.CreateSymbolicLink(linked, elsewhere);
+
+        var error = await Assert.ThrowsAsync<IOException>(() => fx.Service.ApplySyncAsync(prepared, operation: null));
+
+        Assert.StartsWith(ReShadeShaderPackService.LinkedShaderFolderPrefix, error.Message, StringComparison.Ordinal);
+        Assert.Equal("v1 " + new string('1', 900), File.ReadAllText(Path.Combine(elsewhere, "Effect.fx")));
+    }
+
     // The messages a refused sync shows (behind "The shader packs were not changed: ") read in Portuguese.
     public static TheoryData<string, string> RefusalTexts => new()
     {
