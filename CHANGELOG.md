@@ -1,15 +1,30 @@
 # Changelog
 
-Changes in this fork ([nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced)) since the
-wizardkof RHI Linux beta it started from, `v0.9.23.4-beta.1`. Newest first. Each entry is the date it reached `main`.
+Changes in RHI Linux Nonspaced ([nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced)).
+Newest first. Each entry is the date it reached `main`. The project started from
+[wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux) (GPL-3.0).
 How each upstream RHI feature was adapted for Linux is described in [`UPSTREAM.md`](UPSTREAM.md); download sources are
 listed in [`docs/download-trust.md`](docs/download-trust.md).
 
-The app still reports version `0.9.23.4-beta.1`; the fork has not published a release yet.
+Releases are published on [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases). The first,
+`2.8.7`, is level with upstream RHI 2.8.7 and takes its number; later releases of this project alone add a fourth
+number (`2.8.7.1`), and the port of the next upstream release takes that release's number (`2.8.8`).
 
 ## In progress
 
 Not on `main` yet: nothing at the moment.
+
+## 2.8.7 — 2026-10-27: first release
+
+- The first published release: an AppImage with its `.sha256` file on GitHub Releases. It holds everything in the
+  wave entries below, up to and including wave 11, and is level with upstream RHI 2.8.7 (how each upstream feature was
+  adapted for Linux: [`UPSTREAM.md`](UPSTREAM.md)). It is still a beta.
+- The app now reports version `2.8.7`. Earlier builds reported `0.9.23.4-beta.1`, so they announce this release as
+  newer.
+- The update check (Settings → Accounts & updates) reads only this project's releases on GitHub; no other repository
+  is asked, also when nothing is published. Releases marked as pre-releases on GitHub are not offered to this build.
+- Going back to the wave-11 build needs nothing removed first: only the version, the update check and the documents
+  changed.
 
 ## Wave 11 — 2026-10-22: NR DLL per card, Check Neural Rendering, F5 driver warning, Nightly switch, stalled downloads
 

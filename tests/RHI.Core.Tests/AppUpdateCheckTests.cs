@@ -6,37 +6,69 @@ using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
 
-/// <summary>#100: RHI-Linux checks this fork's releases and only tells the user (owner decision: never installs).</summary>
+/// <summary>
+/// #100: RHI-Linux checks its own releases only and only tells the user (owner decision: never installs). Owner decision
+/// 2026-10-27: no other repository is ever asked, not even when the project has published nothing.
+/// </summary>
 public sealed class AppUpdateCheckServiceTests
 {
-    private const string Fork = "rhi-tests/fork";
-    private const string Port = "rhi-tests/port";
+    private const string Project = "rhi-tests/project";
 
     private static string Release(string tag, bool prerelease = false, bool draft = false, string? html = null)
-        => $$"""{"tag_name":"{{tag}}","name":"","draft":{{(draft ? "true" : "false")}},"prerelease":{{(prerelease ? "true" : "false")}},"html_url":"{{html ?? $"https://github.com/{Fork}/releases/tag/{tag}"}}","assets":[{"name":"RHI-Linux-{{tag}}-x86_64.AppImage","browser_download_url":"https://github.com/{{Fork}}/releases/download/{{tag}}/RHI-Linux-{{tag}}-x86_64.AppImage"}]}""";
+        => $$"""{"tag_name":"{{tag}}","name":"","draft":{{(draft ? "true" : "false")}},"prerelease":{{(prerelease ? "true" : "false")}},"html_url":"{{html ?? $"https://github.com/{Project}/releases/tag/{tag}"}}","assets":[{"name":"RHI-Linux-{{tag}}-x86_64.AppImage","browser_download_url":"https://github.com/{{Project}}/releases/download/{{tag}}/RHI-Linux-{{tag}}-x86_64.AppImage"}]}""";
 
     private static (AppUpdateCheckService Service, Releases Http) Build(string current, Func<string, HttpResponseMessage> byRepo)
     {
         var http = new Releases(byRepo);
-        return (new AppUpdateCheckService(new HttpClient(http), current, [Fork, Port]), http);
+        return (new AppUpdateCheckService(new HttpClient(http), current, Project), http);
     }
 
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
 
     [Fact]
-    public async Task ForkPublishesNothing_AsksThePortItComesFrom_AndSameVersionIsUpToDate()
+    public async Task TheShippedCheck_AsksOnlyThisProjectsRepository()
     {
-        var (service, http) = Build("0.9.23.4-beta.1", repo => Json(repo == Fork ? "[]" : $"[{Release("v0.9.23.4-beta.1", prerelease: true)}]"));
+        Assert.Equal("nonspacial/RHI-Linux-Nonspaced", AppUpdateCheckService.Repository);
+        var http = new Releases(_ => Json("[]"));
 
-        var check = await service.CheckAsync();
+        var check = await new AppUpdateCheckService(new HttpClient(http)).CheckAsync();
 
-        Assert.Equal(AppUpdateCheckResult.UpToDate, check.Result);
-        Assert.Equal([Fork, Port], http.Repositories);
-        Assert.Equal("0.9.23.4-beta.1", check.Latest!.Version);
+        Assert.Equal(AppUpdateCheckResult.NoReleases, check.Result);
+        Assert.Equal([AppUpdateCheckService.Repository], http.Repositories);
     }
 
     [Fact]
-    public async Task ForkPublishesANewerRelease_IsReportedWithItsPage_AndThePortIsNotAsked()
+    public async Task NothingPublished_NoReleases_AndNoOtherRepositoryIsAsked()
+    {
+        var (service, http) = Build("2.8.7", _ => Json("[]"));
+
+        var check = await service.CheckAsync();
+
+        Assert.Equal(AppUpdateCheckResult.NoReleases, check.Result);
+        Assert.Null(check.Latest);
+        Assert.Equal([Project], http.Repositories);
+    }
+
+    [Fact]
+    public async Task RepositoryMissing404_NoReleases()
+    {
+        var (service, http) = Build("2.8.7", _ => new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        Assert.Equal(AppUpdateCheckResult.NoReleases, (await service.CheckAsync()).Result);
+        Assert.Equal([Project], http.Repositories);
+    }
+
+    [Fact]
+    public async Task OnlyPrereleasesPublished_AStableBuildSeesNoReleases()
+    {
+        var (service, http) = Build("2.8.7", _ => Json($"[{Release("v2.8.8-beta.1", prerelease: true)}]"));
+
+        Assert.Equal(AppUpdateCheckResult.NoReleases, (await service.CheckAsync()).Result);
+        Assert.Equal([Project], http.Repositories);
+    }
+
+    [Fact]
+    public async Task ANewerRelease_IsReportedWithItsPage()
     {
         var (service, http) = Build("0.9.23.4-beta.1", _ => Json($"[{Release("v0.9.23.4-beta.2", prerelease: true)},{Release("v0.9.23.3")}]"));
 
@@ -44,48 +76,29 @@ public sealed class AppUpdateCheckServiceTests
 
         Assert.Equal(AppUpdateCheckResult.UpdateAvailable, check.Result);
         Assert.Equal("0.9.23.4-beta.2", check.Latest!.Version);
-        Assert.Equal($"https://github.com/{Fork}/releases/tag/v0.9.23.4-beta.2", check.Latest.PageUrl);
-        Assert.Equal([Fork], http.Repositories);
+        Assert.Equal($"https://github.com/{Project}/releases/tag/v0.9.23.4-beta.2", check.Latest.PageUrl);
+        Assert.Equal([Project], http.Repositories);
     }
 
     [Fact]
-    public async Task NeverDownloadsAnything_OnlyTheReleaseListsAreRead()
+    public async Task NeverDownloadsAnything_OnlyTheReleaseListIsRead()
     {
-        var (service, http) = Build("0.9.23.4-beta.1", repo => Json(repo == Fork ? "[]" : $"[{Release("v1.0.0")}]"));
+        var (service, http) = Build("2.8.7", _ => Json($"[{Release("v2.8.8")}]"));
 
         await service.CheckAsync();
 
-        Assert.All(http.Uris, uri => Assert.Matches(@"^https://api\.github\.com/repos/rhi-tests/(fork|port)/releases\?per_page=20$", uri.AbsoluteUri));
+        Assert.All(http.Uris, uri => Assert.Equal("https://api.github.com/repos/rhi-tests/project/releases?per_page=20", uri.AbsoluteUri));
     }
 
     [Fact]
-    public async Task ForkRepositoryMissing404_AsksThePort()
+    public async Task Offline_CouldNotCheck()
     {
-        var (service, http) = Build("0.9.23.4-beta.1", repo => repo == Fork ? new HttpResponseMessage(HttpStatusCode.NotFound) : Json($"[{Release("v0.9.24")}]"));
-
-        var check = await service.CheckAsync();
-
-        Assert.Equal(AppUpdateCheckResult.UpdateAvailable, check.Result);
-        Assert.Equal(Port, check.Latest!.Repository);
-    }
-
-    [Fact]
-    public async Task Offline_CouldNotCheck_AndDoesNotFallBack()
-    {
-        var (service, http) = Build("0.9.23.4-beta.1", _ => throw new HttpRequestException("offline test"));
+        var (service, http) = Build("2.8.7", _ => throw new HttpRequestException("offline test"));
 
         var check = await service.CheckAsync();
 
         Assert.Equal(AppUpdateCheckResult.CouldNotCheck, check.Result);
-        Assert.Equal([Fork], http.Repositories);
-    }
-
-    [Fact]
-    public async Task NeitherPublishes_NoReleases()
-    {
-        var (service, _) = Build("0.9.23.4-beta.1", _ => Json("[]"));
-
-        Assert.Equal(AppUpdateCheckResult.NoReleases, (await service.CheckAsync()).Result);
+        Assert.Equal([Project], http.Repositories);
     }
 
     [Fact]
@@ -99,12 +112,46 @@ public sealed class AppUpdateCheckServiceTests
         Assert.Equal("1.1.0-beta.1", (await beta.CheckAsync()).Latest!.Version);
     }
 
+    // The first release, 2.8.7 (level with upstream RHI 2.8.7): releases of this project alone follow as 2.8.7.1, the
+    // next upstream port as 2.8.8.
+    [Fact]
+    public async Task Release2_8_7_SeesItsOwnReleaseAsUpToDate_AndLaterReleasesAsNewer()
+    {
+        var (same, _) = Build("2.8.7", _ => Json($"[{Release("v2.8.7")}]"));
+        var upToDate = await same.CheckAsync();
+        Assert.Equal(AppUpdateCheckResult.UpToDate, upToDate.Result);
+        Assert.Equal("2.8.7", upToDate.Latest!.Version);
+
+        foreach (var next in new[] { "2.8.7.1", "2.8.8" })
+        {
+            var (service, _) = Build("2.8.7", _ => Json($"[{Release("v" + next)},{Release("v2.8.7")}]"));
+            var check = await service.CheckAsync();
+            Assert.Equal(AppUpdateCheckResult.UpdateAvailable, check.Result);
+            Assert.Equal(next, check.Latest!.Version);
+        }
+    }
+
+    [Fact]
+    public async Task EarlierBuilds_SeeRelease2_8_7AsNewer()
+    {
+        var (service, _) = Build("0.9.23.4-beta.1", _ => Json($"[{Release("v2.8.7")}]"));
+
+        var check = await service.CheckAsync();
+
+        Assert.Equal(AppUpdateCheckResult.UpdateAvailable, check.Result);
+        Assert.Equal("2.8.7", check.Latest!.Version);
+    }
+
+    [Fact]
+    public void TheRunningBuildsVersion_IsComparable()
+        => Assert.NotNull(AppVersion.TryParse(RhiProductInfo.Version)); // otherwise every release would read as newer
+
     [Fact]
     public async Task ReleasePageOffGitHub_IsReplacedByTheTagPageOnGitHub()
     {
         var (service, _) = Build("0.1.0", _ => Json($"[{Release("v0.2.0", html: "https://evil.example/releases/v0.2.0")}]"));
 
-        Assert.Equal($"https://github.com/{Fork}/releases/tag/v0.2.0", (await service.CheckAsync()).Latest!.PageUrl);
+        Assert.Equal($"https://github.com/{Project}/releases/tag/v0.2.0", (await service.CheckAsync()).Latest!.PageUrl);
     }
 
     [Theory]
@@ -116,6 +163,9 @@ public sealed class AppUpdateCheckServiceTests
     [InlineData("v0.9.23.4-alpha", "v0.9.23.4-beta")]
     [InlineData("1.0.0-beta", "1.0.0-beta.1")]
     [InlineData("1.0.0-1", "1.0.0-alpha")]
+    [InlineData("0.9.25.0-beta.1", "2.8.7")]
+    [InlineData("2.8.7", "2.8.7.1")]
+    [InlineData("2.8.7.1", "2.8.8")]
     public void Versions_OrderAsSemVer(string older, string newer)
     {
         var a = AppVersion.TryParse(older);
@@ -169,7 +219,7 @@ public sealed class AppUpdatePresenterTests : IDisposable
     {
         var http = new AppUpdateCheckServiceTests.Releases(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(listJson) });
         var opened = new List<string>();
-        var presenter = new AppUpdatePresenter(new AppUpdateCheckService(new HttpClient(http), "0.9.23.4-beta.1", ["rhi-tests/fork"]),
+        var presenter = new AppUpdatePresenter(new AppUpdateCheckService(new HttpClient(http), "0.9.23.4-beta.1", "rhi-tests/fork"),
             new AccountsPreferenceStore(Path.Combine(_root, "accounts.json")), url => { opened.Add(url); return (true, null); });
         return (presenter, http, opened);
     }

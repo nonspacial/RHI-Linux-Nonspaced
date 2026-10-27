@@ -8,7 +8,7 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>
-/// Settings → Accounts &amp; updates → RHI-Linux updates (#100): check this fork's releases at start-up (when chosen) and
+/// Settings → Accounts &amp; updates → RHI-Linux updates (#100): check this project's releases at start-up (when chosen) and
 /// on demand, and only tell the user (owner decision: nothing is downloaded or installed; the release page opens in the
 /// browser on request).
 /// </summary>
