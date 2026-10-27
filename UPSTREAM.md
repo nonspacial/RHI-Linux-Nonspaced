@@ -1073,5 +1073,22 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 <!-- w12/epic notes -->
 
 <!-- w12/nr-logs notes -->
+### #248 — Check Neural Rendering: three DLSS5 Feeder failures in plain words
+
+Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in `b057033..c1076d3`). Extends #234's
+**Log findings** (same rows: log, line, plain headline, a "Fix:" line; the matching text and path in the ~2 s tooltip).
+
+- `0xBAD00012` (NotImplemented) for NGX feature 18 / neural rendering: the driver and Proton (dxvk-nvapi) do not offer
+  neural rendering yet; nothing to change in RHI or the game; DLSS Super Resolution still works. The same code for another
+  feature is no finding.
+- The Feeder's depth probe "depth is FLAT while the scene moves": a setting in ReShade's in-game overlay (Add-ons tab →
+  Generic Depth → the buffer that moves with the scene), stated plainly as not an RHI control. Its "sampled depth is
+  flat" line (a still scene or a menu) is no finding.
+- The Feeder's "stopped: the DLSS evaluate crashed" after a change of the game's picture (swapchain colour space,
+  ReShade's effect runtime made again, the feature rebuilt) that no delivered frame has come through yet, since the
+  feature was ready in that run: restart the game with its final display mode (HDR, resolution) set in the game's own
+  options. This row replaces the generic `0xC0000005` row of the same crash; the generic row ("remove the method")
+  stays for every other crash, including a Feeder crash on its first build.
+- Every hint is a plain step (no RHI control named). Reads stay bounded; nothing is written.
 
 <!-- w12/pins notes -->

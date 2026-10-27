@@ -1,0 +1,173 @@
+18:54:03.657  dlss5-feed 1.19.0 commit 3c09eab (built Oct 11 2026 07:49:26) attached.
+18:54:03.657    host: D:\Games\Borderlands 3\OakGame\Binaries\Win64\Borderlands3.exe
+18:54:03.671  [feed] DLSS 5 add-on: renodx-dlss5.addon64 v8.5.0-rc5 (file version 0.2026.926.210) -- v4.7+ (per-present rescan, lazy adoption, reversible colour bridge, fenced workset pool) engine
+18:54:03.671  [feed] EnableHooks=2 (user-set; leaving it alone)
+18:54:03.671  [feed] NeuralUplift=1 (user-set; leaving it alone)
+18:54:03.671  [feed] NREnableUpscaling=0 (user-set; leaving it alone)
+18:54:03.672  [feed] Alex's Toolkit: not present -- DLSS 5 runs a single neural pass
+18:54:03.672  [feed] Deep Fried Chicken: not present
+18:54:03.673  [feed] OptiScaler: not present
+18:54:11.205  [feed] swapchain colour space: sRGB G2.2 BT.709 (SDR)
+18:54:11.208  [feed] effect runtime 0000000030D7B050 initialised (device 0000000033F50080, window class 'UnrealWindow'; 1 runtime in this process)
+18:54:11.208  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=0 (texMotionVectors) -> none (not installed), depth reversed=1
+18:54:11.208  [feed] DLSS5_Feed.fx has not resolved yet (ReShade may still be compiling); waiting 10 s before calling it missing
+18:54:11.221  [feed] effect runtime 0000000030D7B050 destroyed -- it was the bound one (0 runtimes left)
+18:54:11.222  [feed] swapchain colour space: sRGB G2.2 BT.709 (SDR)
+18:54:11.224  [feed] effect runtime 0000000030D7B050 initialised (device 0000000033F50080, window class 'UnrealWindow'; 1 runtime in this process)
+18:54:19.112  [feed] effects: DLSS5_Feed.fx technique found, ColorInput found, DLSS5_MV found, DLSS5_Depth found, DLSS5_Mask found, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> Lumenite_Kernel (enabled), depth reversed=1
+18:54:19.112  [feed] first frame fed from thread 1060
+18:54:19.113  ################ feed: opening same-device D3D12 session ################
+18:54:19.114  [feed] same (the game's) device adapter: NVIDIA GeForce RTX 4090  LUID 00000000:000003F2  PCI 10DE:2684  driver 999.99
+18:54:19.114  [feed] NGX init: transport same-device D3D12, device created with none -- this is the game's own device, not one we created, DRED not armed, D3D12 debug layer off (#47: these are the variables that differ between this call and the one host64 makes)
+18:54:19.114  [feed] NGX runtime nvngx_dlssnr.dll: 310.9.16.0, NVIDIA DLSSNR | NVIDIA DLSSNR - DVS PRODUCTION, build CL 39025366
+18:54:19.142  [feed] NGX runtime nvngx_dlss.dll: 310.9.16.0, NVIDIA Deep Learning SuperSampling | NVIDIA DLSS - DVS PRODUCTION, build CL 38955375
+18:54:19.747  [feed] NGX feature requirements: SuperSampling (DLSS, what this project creates) -> supported (min GPU architecture 0x160, min OS 10.0.0)
+18:54:19.748  [feed] NGX feature requirements: feature 18 (neural rendering, what nvngx_dlssnr.dll backs) -> the query itself failed 0xBAD00012 (NotImplemented)
+18:54:19.751  [feed] NGX init attempt 1/2: data path D:\Games\Borderlands 3\OakGame\Binaries\Win64\ (the add-on's folder (what every build before this one used); writable)
+18:54:20.129  [feed] NVSDK_NGX_D3D12_Init -> 0x00000001 (Success)
+18:54:20.129  [feed] NGX SuperSampling.FeatureInitResult: 0x00000001 (Success)
+18:54:20.129  [feed] NGX capabilities: SuperSampling.Available=1 SuperSamplingDenoising.Available=0 NeedsUpdatedDriver=0 MinDriver=470.0
+18:54:20.130  [feed] session ready (same-device): dev=0000000033F50080 queue=0000000000FC22E0 list=0000000051DB8560 fence=000000004BC2D2D0
+18:54:20.130  ############# feed: session open (same-device D3D12) #############
+18:54:20.131  [feed] holding the feature (re)build for 60 frames (the DLSS 5 add-on re-arms its hooks asynchronously)
+18:54:20.166  [feed] STALL frame 0: interval 1052.6 ms | feed 0.34 ms (of which NGX evaluate 0.00 ms) | outside the feed 1052.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:20.166  [feed] VRAM at this stall: this process uses 1417 MB of a 22557 MB budget (adapter 24564 MB)
+18:54:21.098  [feed] building: 3840x2160 backbuffer R10G10B10A2_UNORM (same-device D3D12, depth reversed=1)
+18:54:21.099  [feed] HDR10 bridge off (the swapchain is not PQ BT.2020); colour space is sRGB G2.2 BT.709 (SDR)
+18:54:21.100  [feed] Color  3840x2160 R10G10B10A2_UNORM on the game's device
+18:54:21.100  [feed] Output 3840x2160 R10G10B10A2_UNORM on the game's device (UAV)
+18:54:21.101  [feed] GPU timing on (queue timestamp frequency 1000000000 Hz)
+18:54:21.235  [feed] feature ready: 3840x2160 DLAA, flags=74 (SDR MVLowRes DepthInverted AutoExposure), color R10G10B10A2_UNORM -> output R10G10B10A2_UNORM, depth R32_FLOAT (reversed), mv R16G16_FLOAT
+18:54:21.238  [feed] frame 1 delivered (3840x2160, reset=1, same-device)
+18:54:22.059  [feed] frame 2 delivered (3840x2160, reset=0, same-device)
+18:54:22.059  [feed] STALL frame 2: interval 144.7 ms | feed 816.83 ms (of which NGX evaluate 816.22 ms) | outside the feed -672.1 ms -- most of it was INSIDE the NGX evaluate -- the neural consumer's detour
+18:54:22.081  [feed] frame 3 delivered (3840x2160, reset=0, same-device)
+18:54:22.082  [feed] STALL frame 3: interval 835.1 ms | feed 4.32 ms (of which NGX evaluate 3.70 ms) | outside the feed 830.8 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:22.554  [feed] STALL frame 24: interval 55.5 ms | feed 1.83 ms (of which NGX evaluate 1.62 ms) | outside the feed 53.7 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:24.074  [feed] STALL frame 114: interval 58.3 ms | feed 1.81 ms (of which NGX evaluate 1.61 ms) | outside the feed 56.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:24.948  [feed] STALL frame 122: interval 771.1 ms | feed 1.13 ms (of which NGX evaluate 1.01 ms) | outside the feed 770.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:26.309  [feed] STALL frame 204: interval 54.0 ms | feed 1.66 ms (of which NGX evaluate 1.49 ms) | outside the feed 52.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:29.310  [feed] STALL frame 384: interval 54.0 ms | feed 1.65 ms (of which NGX evaluate 1.51 ms) | outside the feed 52.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:31.868  [feed] 600 frames: feed CPU 4.75 ms/frame | frame interval 21.26 ms (47.0 fps) | feed CPU is 22% of the frame | feed GPU 7.55 ms/frame (36% of the frame) | worst frame 1052.6 ms (feed 1018.19, evaluate 816.22) | stalls 9
+18:54:31.880  [feed] (1 further stall lines suppressed in that window)
+18:54:31.880  [feed] VRAM in that window: this process uses 3201 MB of a 22384 MB budget (adapter 24564 MB)
+18:54:32.897  [feed] STALL frame 551: interval 819.7 ms | feed 33.79 ms (of which NGX evaluate 33.66 ms) | outside the feed 785.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:33.142  [feed] STALL frame 564: interval 51.4 ms | feed 1.67 ms (of which NGX evaluate 1.52 ms) | outside the feed 49.7 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:33.735  [feed] MV probe (centre 64x64, frame 600): mean |mv| 0.001 px, max 0.00 px, 100% non-zero
+18:54:33.735  [feed] Depth probe (4x 32x32, frame 600): min 0, max 0, mean 0, variance 0, 100% finite  <-- sampled depth is flat; inspect the depth debug view / Generic Depth settings
+18:54:34.648  [feed] STALL frame 654: interval 58.2 ms | feed 1.65 ms (of which NGX evaluate 1.49 ms) | outside the feed 56.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:37.264  [feed] STALL frame 768: interval 739.5 ms | feed 2.03 ms (of which NGX evaluate 1.82 ms) | outside the feed 737.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:38.376  [feed] STALL frame 834: interval 63.7 ms | feed 2.05 ms (of which NGX evaluate 1.85 ms) | outside the feed 61.6 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:39.891  [feed] STALL frame 924: interval 63.8 ms | feed 1.69 ms (of which NGX evaluate 1.52 ms) | outside the feed 62.1 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:41.401  [feed] STALL frame 1014: interval 59.3 ms | feed 1.61 ms (of which NGX evaluate 1.46 ms) | outside the feed 57.7 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:42.913  [feed] STALL frame 1104: interval 74.3 ms | feed 1.75 ms (of which NGX evaluate 1.58 ms) | outside the feed 72.6 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:43.483  [feed] 600 frames: feed CPU 1.69 ms/frame | frame interval 19.36 ms (51.7 fps) | feed CPU is 9% of the frame | feed GPU 7.32 ms/frame (38% of the frame) | worst frame 819.7 ms (feed 33.79, evaluate 33.66) | stalls 8
+18:54:43.484  [feed] VRAM in that window: this process uses 3201 MB of a 22401 MB budget (adapter 24564 MB)
+18:54:44.426  [feed] STALL frame 1194: interval 57.1 ms | feed 2.13 ms (of which NGX evaluate 1.92 ms) | outside the feed 55.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:44.529  [feed] MV probe (centre 64x64, frame 1200): mean |mv| 17.392 px, max 17.39 px, 100% non-zero
+18:54:44.529  [feed] Depth probe (4x 32x32, frame 1200): min 0, max 0, mean 0, variance 0, 100% finite  <-- depth is FLAT while the scene moves: ReShade's Generic Depth is on the wrong buffer (Add-ons tab -> Generic Depth). DLSS and the neural pass get no dept
+18:54:45.924  [feed] STALL frame 1284: interval 57.5 ms | feed 1.64 ms (of which NGX evaluate 1.48 ms) | outside the feed 55.8 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:46.686  [feed] STALL frame 1288: interval 723.1 ms | feed 1.68 ms (of which NGX evaluate 1.52 ms) | outside the feed 721.4 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:48.108  [feed] STALL frame 1374: interval 52.1 ms | feed 2.19 ms (of which NGX evaluate 1.99 ms) | outside the feed 49.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:49.620  [feed] STALL frame 1464: interval 50.2 ms | feed 1.62 ms (of which NGX evaluate 1.47 ms) | outside the feed 48.6 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:51.124  [feed] STALL frame 1554: interval 56.2 ms | feed 1.64 ms (of which NGX evaluate 1.49 ms) | outside the feed 54.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:51.125  [feed] VRAM at this stall: this process uses 3201 MB of a 22401 MB budget (adapter 24564 MB)
+18:54:54.192  [feed] 600 frames: feed CPU 1.47 ms/frame | frame interval 17.85 ms (56.0 fps) | feed CPU is 8% of the frame | feed GPU 7.34 ms/frame (41% of the frame) | worst frame 723.1 ms (feed 3.23, evaluate 2.99) | stalls 6
+18:54:54.192  [feed] VRAM in that window: this process uses 3201 MB of a 22401 MB budget (adapter 24564 MB)
+18:54:55.177  [feed] frame 1800 delivered (3840x2160, reset=0, same-device)
+18:54:55.192  [feed] MV probe (centre 64x64, frame 1800): mean |mv| 7.140 px, max 7.15 px, 100% non-zero
+18:54:55.193  [feed] Depth probe (4x 32x32, frame 1800): min 0, max 0, mean 0, variance 0, 100% finite  <-- depth is FLAT while the scene moves: ReShade's Generic Depth is on the wrong buffer (Add-ons tab -> Generic Depth). DLSS and the neural pass get no dept
+18:54:56.094  [feed] STALL frame 1810: interval 755.6 ms | feed 1.65 ms (of which NGX evaluate 1.51 ms) | outside the feed 754.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:57.848  [feed] STALL frame 1914: interval 61.6 ms | feed 2.07 ms (of which NGX evaluate 1.89 ms) | outside the feed 59.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:54:59.340  [feed] STALL frame 2004: interval 54.8 ms | feed 1.65 ms (of which NGX evaluate 1.50 ms) | outside the feed 53.2 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:00.857  [feed] STALL frame 2094: interval 57.3 ms | feed 2.36 ms (of which NGX evaluate 2.21 ms) | outside the feed 55.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:02.360  [feed] STALL frame 2184: interval 60.1 ms | feed 3.15 ms (of which NGX evaluate 2.91 ms) | outside the feed 56.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:03.853  [feed] STALL frame 2274: interval 56.0 ms | feed 0.88 ms (of which NGX evaluate 0.78 ms) | outside the feed 55.1 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:05.472  [feed] STALL frame 2330: interval 739.3 ms | feed 1.26 ms (of which NGX evaluate 1.14 ms) | outside the feed 738.1 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:05.634  [feed] 600 frames: feed CPU 1.55 ms/frame | frame interval 19.07 ms (52.4 fps) | feed CPU is 8% of the frame | feed GPU 7.33 ms/frame (38% of the frame) | worst frame 755.6 ms (feed 3.33, evaluate 2.91) | stalls 7
+18:55:05.634  [feed] VRAM in that window: this process uses 3201 MB of a 22401 MB budget (adapter 24564 MB)
+18:55:06.059  [feed] STALL frame 2364: interval 54.3 ms | feed 1.62 ms (of which NGX evaluate 1.47 ms) | outside the feed 52.7 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:06.649  [feed] MV probe (centre 64x64, frame 2400): mean |mv| 3.574 px, max 3.57 px, 100% non-zero
+18:55:06.649  [feed] Depth probe (4x 32x32, frame 2400): min 0, max 0, mean 0, variance 0, 100% finite  <-- depth is FLAT while the scene moves: ReShade's Generic Depth is on the wrong buffer (Add-ons tab -> Generic Depth). DLSS and the neural pass get no dept
+18:55:12.089  [feed] STALL frame 2724: interval 54.3 ms | feed 2.35 ms (of which NGX evaluate 2.13 ms) | outside the feed 51.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:13.604  [feed] STALL frame 2814: interval 70.0 ms | feed 1.66 ms (of which NGX evaluate 1.50 ms) | outside the feed 68.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:14.918  [feed] STALL frame 2848: interval 787.8 ms | feed 1.21 ms (of which NGX evaluate 1.09 ms) | outside the feed 786.6 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:15.857  [feed] STALL frame 2904: interval 52.1 ms | feed 1.73 ms (of which NGX evaluate 1.54 ms) | outside the feed 50.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:16.433  [feed] 600 frames: feed CPU 1.23 ms/frame | frame interval 18.00 ms (55.6 fps) | feed CPU is 7% of the frame | feed GPU 7.34 ms/frame (41% of the frame) | worst frame 787.8 ms (feed 2.95, evaluate 2.79) | stalls 5
+18:55:16.444  [feed] VRAM in that window: this process uses 3201 MB of a 22401 MB budget (adapter 24564 MB)
+18:55:17.377  [feed] STALL frame 2994: interval 58.5 ms | feed 2.13 ms (of which NGX evaluate 1.93 ms) | outside the feed 56.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:17.478  [feed] MV probe (centre 64x64, frame 3000): mean |mv| 1.924 px, max 1.93 px, 100% non-zero
+18:55:17.479  [feed] Depth probe (4x 32x32, frame 3000): min 0, max 0, mean 0, variance 0, 100% finite  <-- depth is FLAT while the scene moves: ReShade's Generic Depth is on the wrong buffer (Add-ons tab -> Generic Depth). DLSS and the neural pass get no dept
+18:55:18.886  [feed] STALL frame 3084: interval 54.3 ms | feed 1.66 ms (of which NGX evaluate 1.50 ms) | outside the feed 52.7 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:20.386  [feed] STALL frame 3174: interval 55.8 ms | feed 1.63 ms (of which NGX evaluate 1.47 ms) | outside the feed 54.2 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:21.885  [feed] STALL frame 3264: interval 53.9 ms | feed 1.78 ms (of which NGX evaluate 1.60 ms) | outside the feed 52.1 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:21.885  [feed] VRAM at this stall: this process uses 3201 MB of a 22401 MB budget (adapter 24564 MB)
+18:55:21.985  [feed] STALL frame 3267: interval 73.9 ms | feed 1.63 ms (of which NGX evaluate 1.49 ms) | outside the feed 72.2 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:22.108  [feed] STALL frame 3268: interval 123.1 ms | feed 1.64 ms (of which NGX evaluate 1.47 ms) | outside the feed 121.4 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:22.238  [feed] STALL frame 3269: interval 130.0 ms | feed 1.62 ms (of which NGX evaluate 1.48 ms) | outside the feed 128.4 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:22.442  [feed] STALL frame 3275: interval 85.9 ms | feed 1.62 ms (of which NGX evaluate 1.49 ms) | outside the feed 84.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:27.637  [feed] 600 frames: feed CPU 1.68 ms/frame | frame interval 18.67 ms (53.6 fps) | feed CPU is 9% of the frame | feed GPU 7.35 ms/frame (39% of the frame) | worst frame 754.9 ms (feed 3.16, evaluate 2.66) | stalls 13
+18:55:27.649  [feed] (5 further stall lines suppressed in that window)
+18:55:27.649  [feed] VRAM in that window: this process uses 3425 MB of a 22401 MB budget (adapter 24564 MB)
+18:55:28.620  [feed] frame 3600 delivered (3840x2160, reset=0, same-device)
+18:55:28.636  [feed] MV probe (centre 64x64, frame 3600): mean |mv| 1.011 px, max 1.01 px, 100% non-zero
+18:55:28.636  [feed] Depth probe (4x 32x32, frame 3600): min 0, max 0, mean 0, variance 0, 100% finite  <-- depth is FLAT while the scene moves: ReShade's Generic Depth is on the wrong buffer (Add-ons tab -> Generic Depth). DLSS and the neural pass get no dept
+18:55:29.053  [feed] STALL frame 3624: interval 62.2 ms | feed 1.60 ms (of which NGX evaluate 1.45 ms) | outside the feed 60.6 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:30.565  [feed] STALL frame 3714: interval 60.0 ms | feed 1.68 ms (of which NGX evaluate 1.53 ms) | outside the feed 58.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:32.081  [feed] STALL frame 3804: interval 61.0 ms | feed 2.16 ms (of which NGX evaluate 1.97 ms) | outside the feed 58.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:33.725  [feed] STALL frame 3861: interval 739.0 ms | feed 1.05 ms (of which NGX evaluate 0.93 ms) | outside the feed 737.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:35.785  [feed] STALL frame 3984: interval 61.7 ms | feed 0.70 ms (of which NGX evaluate 0.63 ms) | outside the feed 61.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:38.351  [feed] 600 frames: feed CPU 1.24 ms/frame | frame interval 17.86 ms (56.0 fps) | feed CPU is 7% of the frame | feed GPU 7.31 ms/frame (41% of the frame) | worst frame 739.0 ms (feed 3.31, evaluate 2.48) | stalls 5
+18:55:38.352  [feed] VRAM in that window: this process uses 3425 MB of a 22401 MB budget (adapter 24564 MB)
+18:55:39.368  [feed] MV probe (centre 64x64, frame 4200): mean |mv| 0.508 px, max 0.51 px, 100% non-zero
+18:55:39.379  [feed] Depth probe (4x 32x32, frame 4200): min 0, max 0, mean 0, variance 0, 100% finite  <-- sampled depth is flat; inspect the depth debug view / Generic Depth settings
+18:55:40.290  [feed] STALL frame 4254: interval 52.0 ms | feed 1.60 ms (of which NGX evaluate 1.46 ms) | outside the feed 50.4 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:41.792  [feed] STALL frame 4344: interval 53.9 ms | feed 1.75 ms (of which NGX evaluate 1.60 ms) | outside the feed 52.2 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:43.154  [feed] STALL frame 4383: interval 755.7 ms | feed 0.96 ms (of which NGX evaluate 0.87 ms) | outside the feed 754.8 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:44.018  [feed] STALL frame 4434: interval 56.1 ms | feed 1.67 ms (of which NGX evaluate 1.52 ms) | outside the feed 54.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:45.523  [feed] STALL frame 4524: interval 61.4 ms | feed 2.15 ms (of which NGX evaluate 1.96 ms) | outside the feed 59.2 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:47.015  [feed] STALL frame 4614: interval 54.1 ms | feed 1.64 ms (of which NGX evaluate 1.50 ms) | outside the feed 52.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:49.086  [feed] 600 frames: feed CPU 1.36 ms/frame | frame interval 17.89 ms (55.9 fps) | feed CPU is 8% of the frame | feed GPU 7.35 ms/frame (41% of the frame) | worst frame 755.7 ms (feed 14.35, evaluate 2.37) | stalls 6
+18:55:49.087  [feed] VRAM in that window: this process uses 3425 MB of a 22401 MB budget (adapter 24564 MB)
+18:55:50.033  [feed] STALL frame 4794: interval 59.5 ms | feed 1.63 ms (of which NGX evaluate 1.48 ms) | outside the feed 57.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:50.134  [feed] MV probe (centre 64x64, frame 4800): mean |mv| 0.215 px, max 0.22 px, 100% non-zero
+18:55:50.134  [feed] Depth probe (4x 32x32, frame 4800): min 0, max 0, mean 0, variance 0, 100% finite  <-- sampled depth is flat; inspect the depth debug view / Generic Depth settings
+18:55:51.546  [feed] STALL frame 4884: interval 57.8 ms | feed 1.76 ms (of which NGX evaluate 1.60 ms) | outside the feed 56.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:52.565  [feed] STALL frame 4903: interval 739.0 ms | feed 1.05 ms (of which NGX evaluate 0.95 ms) | outside the feed 738.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:52.566  [feed] VRAM at this stall: this process uses 3425 MB of a 22401 MB budget (adapter 24564 MB)
+18:55:53.749  [feed] STALL frame 4974: interval 53.0 ms | feed 1.66 ms (of which NGX evaluate 1.49 ms) | outside the feed 51.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:58.244  [feed] STALL frame 5244: interval 50.9 ms | feed 2.05 ms (of which NGX evaluate 1.84 ms) | outside the feed 48.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:55:59.822  [feed] 600 frames: feed CPU 1.60 ms/frame | frame interval 17.89 ms (55.9 fps) | feed CPU is 9% of the frame | feed GPU 7.30 ms/frame (41% of the frame) | worst frame 739.0 ms (feed 5.00, evaluate 4.79) | stalls 5
+18:55:59.823  [feed] VRAM in that window: this process uses 3425 MB of a 22401 MB budget (adapter 24564 MB)
+18:56:00.807  [feed] frame 5400 delivered (3840x2160, reset=0, same-device)
+18:56:00.822  [feed] MV probe (centre 64x64, frame 5400): mean |mv| 0.061 px, max 0.06 px, 100% non-zero
+18:56:00.822  [feed] Depth probe (4x 32x32, frame 5400): min 0, max 0, mean 0, variance 0, 100% finite  <-- sampled depth is flat; inspect the depth debug view / Generic Depth settings
+18:56:01.250  [feed] STALL frame 5424: interval 55.7 ms | feed 1.65 ms (of which NGX evaluate 1.48 ms) | outside the feed 54.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:02.138  [feed] STALL frame 5425: interval 888.5 ms | feed 1.71 ms (of which NGX evaluate 1.56 ms) | outside the feed 886.8 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:03.646  [feed] STALL frame 5514: interval 51.7 ms | feed 1.60 ms (of which NGX evaluate 1.45 ms) | outside the feed 50.2 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:05.166  [feed] STALL frame 5604: interval 54.8 ms | feed 1.57 ms (of which NGX evaluate 1.40 ms) | outside the feed 53.2 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:06.666  [feed] STALL frame 5694: interval 55.1 ms | feed 1.77 ms (of which NGX evaluate 1.61 ms) | outside the feed 53.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:09.445  [feed] STALL frame 5737: interval 2093.2 ms | feed 1.81 ms (of which NGX evaluate 1.67 ms) | outside the feed 2091.4 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:10.348  [feed] STALL frame 5784: interval 52.9 ms | feed 1.65 ms (of which NGX evaluate 1.49 ms) | outside the feed 51.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:11.297  [feed] effect runtime 0000000030D7B050 destroyed -- it was the bound one (0 runtimes left)
+18:56:11.301  [feed] swapchain colour space: linear BT.709 (scRGB, HDR)
+18:56:11.303  [feed] effect runtime 0000000030D7B050 initialised (device 0000000033F50080, window class 'UnrealWindow'; 1 runtime in this process)
+18:56:11.304  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> none (not installed), depth reversed=1
+18:56:11.304  [feed] DLSS5_Feed.fx handles gone during an effect reload; waiting for the recompile
+18:56:11.309  [feed] effect runtime 0000000030D7B050 destroyed -- it was the bound one (0 runtimes left)
+18:56:11.309  [feed] swapchain colour space: linear BT.709 (scRGB, HDR)
+18:56:11.312  [feed] effect runtime 0000000030D7B050 initialised (device 0000000033F50080, window class 'UnrealWindow'; 1 runtime in this process)
+18:56:18.645  [feed] effects: DLSS5_Feed.fx technique found, ColorInput found, DLSS5_MV found, DLSS5_Depth found, DLSS5_Mask found, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> Lumenite_Kernel (enabled), depth reversed=1
+18:56:18.645  [feed] holding the feature (re)build for 60 frames (the DLSS 5 add-on re-arms its hooks asynchronously)
+18:56:18.646  [feed] STALL frame 5792: interval 8174.1 ms | feed 0.27 ms (of which NGX evaluate 0.00 ms) | outside the feed 8173.9 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or another add-on's hooks)
+18:56:19.651  [feed] building: 3840x2160 backbuffer R16G16B16A16_FLOAT (same-device D3D12, depth reversed=1)
+18:56:19.654  [feed] Color  3840x2160 R16G16B16A16_FLOAT on the game's device
+18:56:19.656  [feed] Output 3840x2160 R16G16B16A16_FLOAT on the game's device (UAV)
+18:56:19.744  [feed] feature ready: 3840x2160 DLAA, flags=75 (HDR MVLowRes DepthInverted AutoExposure), color R16G16B16A16_FLOAT -> output R16G16B16A16_FLOAT, depth R32_FLOAT (reversed), mv R16G16_FLOAT
+18:56:19.745  [feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)
+18:56:19.745  [feed] evaluate fault stack, by module (innermost first): d3d12core.dll <- dxgi.dll <- nvapi64.dll <- nvngx_dlss.dll <- renodx-dlss5.addon64 <- _nvngx.dll <- dlss5-feed.addon64 <- Borderlands3.exe <- kernel32.dll <- ntdll.dll
+18:56:19.746  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+18:56:19.746  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+19:10:32.562  [feed] effect runtime 0000000030D7B050 destroyed -- it was the bound one (0 runtimes left)
+19:10:42.682  [feed] timed out draining the queue before teardown
+19:10:42.685  shut down cleanly.

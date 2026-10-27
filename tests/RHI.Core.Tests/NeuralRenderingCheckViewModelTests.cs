@@ -463,6 +463,59 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         Assert.Equal(1, shown);
     }
 
+    // #248: the owner's Borderlands 3 dlss5-feed.log (fixture, paths anonymised) under the DLSS5 Feeder: three Feeder rows in
+    // plain words, each with a plain step that names no RHI control; no generic crash row and no "remove the Feeder" hint.
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task Bl3FeederLog_ShowsTheThreeFeederRows_WithTheirPlainSteps(string language)
+    {
+        var bl3 = Borderlands(ForAll);
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "bl3-dlss5-feed.log"), Path.Combine(bl3.Bin, "dlss5-feed.log"));
+        using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx40), language,
+            seed: fx => NrGpuGames.SeedOwner(fx.Records, Listed(fx, bl3.Game.Name), ManagedComponentKind.Dlss5Feeder, bl3.Nr, version: "0.13.1-beta.1"));
+        var watched = new[] { bl3.Folder, bl3.Prefix, fx.Root };
+        var before = Snapshot(watched);
+
+        var page = await OpenThroughPanelAsync(fx);
+
+        var pt = language == "pt-BR";
+        var logs = page.Sections[4].Lines;
+        Assert.Equal(pt
+            ? [
+                "3 erros conhecidos",
+                "dlss5-feed.log, linha 25: o Neural Rendering não está disponível com este driver e este Proton (0xBAD00012)",
+                "Como resolver: não há nada a mudar no RHI nem no jogo: este driver e o Proton (dxvk-nvapi) ainda não oferecem o Neural Rendering, então a etapa neural não roda. O DLSS Super Resolution continua funcionando.",
+                "dlss5-feed.log, linha 114: a profundidade fica plana enquanto a cena se move: o Generic Depth do ReShade está no buffer errado",
+                "Como resolver: isto se ajusta no overlay do ReShade dentro do jogo, não no RHI: no jogo, abra o overlay do ReShade, vá à aba Add-ons, abra Generic Depth e escolha o buffer de profundidade que se move com a cena.",
+                "dlss5-feed.log, linha 170: o DLSS5 Feeder parou depois que o modo de exibição do jogo mudou (HDR ou resolução)",
+                "Como resolver: reinicie o jogo com o modo de exibição que você quer (HDR e resolução) já escolhido nas opções do jogo, para que ele não mude enquanto o Feeder roda. Não há nada a mudar no RHI para isso."
+            ]
+            : [
+                "3 known errors",
+                "dlss5-feed.log, line 25: neural rendering is not available through this driver and Proton (0xBAD00012)",
+                "Fix: there is nothing to change in RHI or in the game: this driver and Proton (dxvk-nvapi) do not offer neural rendering yet, so the neural pass cannot run. DLSS Super Resolution still works.",
+                "dlss5-feed.log, line 114: the depth is flat while the scene moves: ReShade's Generic Depth is on the wrong buffer",
+                "Fix: this is set in ReShade's overlay inside the game, not in RHI: in the game, open the ReShade overlay, go to the Add-ons tab, open Generic Depth and pick the depth buffer that moves with the scene.",
+                "dlss5-feed.log, line 170: the DLSS5 Feeder stopped after the game's display mode changed (HDR or resolution)",
+                "Fix: restart the game with the display mode you want (HDR and resolution) already chosen in the game's options, so it does not change while the Feeder runs. There is nothing to change in RHI for this."
+            ], logs.Select(line => line.Text));
+        Assert.Equal([false, true, false, true, false, true, false], logs.Select(line => line.IsWarning));
+        Assert.Equal([false, false, true, false, true, false, true], logs.Select(line => line.IsDetail));
+        // The excerpt and the log's path stay in the ~2 s tooltip, as for every finding.
+        Assert.Contains("0xBAD00012 (NotImplemented)", logs[1].Tip);
+        Assert.Contains("depth is FLAT while the scene moves", logs[3].Tip);
+        Assert.Contains("stopped: the DLSS evaluate crashed", logs[5].Tip);
+        Assert.All(logs.Skip(1), line => Assert.StartsWith(Path.Combine(bl3.Bin, "dlss5-feed.log") + "\n", line.Tip));
+        // Each hint is a plain step: no RHI control named, and never the generic "remove the Feeder" advice.
+        foreach (var finding in page.Diagnosis.Findings)
+            Assert.Equal(NeuralRenderingCheckDialogViewModel.NoControl, NeuralRenderingCheckDialogViewModel.FixControl(finding.Fix, page.Diagnosis));
+        Assert.DoesNotContain(page.Diagnosis.Findings, f => f.Signature == NrLogSignature.CrashOrDeviceLost);
+        Assert.DoesNotContain(logs, line => line.Text.Contains(UiLocalizationService.Text("Nrc.SigCrash"), StringComparison.Ordinal));
+        Assert.DoesNotContain(logs, line => line.Text.Contains(UiLocalizationService.Format("Nrc.FixRemove", "DLSS5 Feeder"), StringComparison.Ordinal));
+        Assert.DoesNotContain(logs, line => line.Text.Contains("instal", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(before, Snapshot(watched));
+    }
+
     [Fact]
     public async Task OpeningThePage_WritesNothing_GameFolderPrefixOrRhiData()
     {

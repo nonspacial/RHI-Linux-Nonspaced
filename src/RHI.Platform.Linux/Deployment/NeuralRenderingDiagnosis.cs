@@ -87,7 +87,19 @@ public enum NrLogSignature
     /// <summary>The HLSL compiler in the prefix cannot build the shaders (<c>E5017</c>/<c>E5005</c>/<c>X3506</c>).</summary>
     ShaderCompiler,
     /// <summary>An access violation (<c>0xC0000005</c>) or a lost/removed GPU device.</summary>
-    CrashOrDeviceLost
+    CrashOrDeviceLost,
+    /// <summary>
+    /// #248: NGX answered <c>0xBAD00012</c> (NotImplemented) for feature 18, neural rendering: the driver/Proton stack does not
+    /// offer it (DLSS Super Resolution still runs).
+    /// </summary>
+    NeuralRenderingNotImplemented,
+    /// <summary>#248: the Feeder's depth probe saw a flat depth while the scene moved: ReShade's Generic Depth is on the wrong buffer.</summary>
+    FlatDepth,
+    /// <summary>
+    /// #248: the Feeder stopped because the DLSS evaluate crashed right after the game's swapchain or ReShade's effect runtime
+    /// changed (an HDR or resolution switch) — its own "stopped: the DLSS evaluate crashed" line in that context.
+    /// </summary>
+    EvaluateCrashAfterDisplayChange
 }
 
 /// <summary>The RHI control a fix hint names (the page words it; a test checks each control exists in the main window).</summary>
@@ -98,7 +110,13 @@ public enum NrFixHint
     /// <summary>The D3DCompiler 47 line of the ReShade profile section (Protontricks / Winetricks / Browse).</summary>
     NativeD3DCompiler,
     /// <summary>Remove the Neural Rendering method on its Managed components row.</summary>
-    RemoveNrMethod
+    RemoveNrMethod,
+    /// <summary>#248: a plain statement — nothing to change in RHI or the game (driver/Proton support is needed).</summary>
+    NothingToChangeInRhi,
+    /// <summary>#248: a plain step in ReShade's in-game overlay (Add-ons tab → Generic Depth), not an RHI control.</summary>
+    GenericDepthInReShade,
+    /// <summary>#248: a plain step — restart the game with its final display mode (HDR, resolution) already set.</summary>
+    RestartWithDisplayModeSet
 }
 
 /// <summary>One known error: the log, its line (null when only the end of a large log was read) and the matching text.</summary>
@@ -156,18 +174,38 @@ public static class NeuralRenderingDiagnosis
     // wizardkof's signatures (FeatureNotSupported, HLSL E5017/E5005/fastopt, 0xC0000005 / device lost, the RenoDX DLSS NR
     // skip), plus two the DLSS5 Feeder add-on itself names as going to ReShade.log ("error X3506: unrecognized compiler
     // target 'cs_5_1'" for a d3dcompiler too old for its neural pass; "the D3D12 device was removed"). Short codes match as
-    // whole words, so a hex address that happens to contain them is no finding.
+    // whole words, so a hex address that happens to contain them is no finding. #248 adds three lines the DLSS5 Feeder
+    // writes to dlss5-feed.log (the owner's Borderlands 3): NotImplemented for feature 18 only (that code for another
+    // feature says nothing about neural rendering); the depth probe's "FLAT while the scene moves" verdict only (its
+    // "sampled depth is flat" line is a still scene or a menu); its "stopped: the DLSS evaluate crashed" line, a finding
+    // only right after a change (Classify) — it then stands in for the generic crash row of the same crash. The table's
+    // order is the page's order: the specific crash row before the generic one.
     private static readonly (NrLogSignature Signature, NrFixHint Fix, Regex Pattern)[] Signatures =
     [
         (NrLogSignature.NeuralRenderingSkipped, NrFixHint.NrDllForCard,
             new(@"NR skipped evaluation because feature update failed", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
         (NrLogSignature.FeatureNotSupported, NrFixHint.NrDllForCard,
             new(@"\b0xBAD00001\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
+        (NrLogSignature.NeuralRenderingNotImplemented, NrFixHint.NothingToChangeInRhi,
+            new(@"^(?=.*(?:\bfeature 18\b|\bneural rendering\b))(?=.*\b0xBAD00012\b)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
         (NrLogSignature.ShaderCompiler, NrFixHint.NativeD3DCompiler,
             new(@"\bE5017\b|\bE5005\b|\bfastopt\b|\berror X3506\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
+        (NrLogSignature.FlatDepth, NrFixHint.GenericDepthInReShade,
+            new(@"\bDepth probe\b.*\bdepth is FLAT while the scene moves\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
+        (NrLogSignature.EvaluateCrashAfterDisplayChange, NrFixHint.RestartWithDisplayModeSet,
+            new(@"\bstopped: the DLSS evaluate crashed\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
         (NrLogSignature.CrashOrDeviceLost, NrFixHint.RemoveNrMethod,
             new(@"\b0xC0000005\b|DEVICE_LOST|device lost|DEVICE_REMOVED|device was removed", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
     ];
+
+    // #248: the Feeder's own lines that tell where a run is — a new run (the add-on attached), the DLSS feature ready, a
+    // frame delivered, and a change of the game's picture once the feature was ready (the swapchain's colour space, ReShade's
+    // effect runtime made again, the feature rebuilt for a new size or format).
+    private static readonly Regex FeederRunStart = new(@"\bdlss5-feed\b.*\battached\.", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex FeederFeatureReady = new(@"\[feed\] feature ready:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex FeederFrameDelivered = new(@"\[feed\] frame \d+ delivered\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex FeederDisplayChange = new(@"\[feed\] (?:swapchain colour space:|effect runtime \S+ initialised\b|building: \d+x\d+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>Folders and files anti-cheat software puts in a game (wizardkof's list). Information only.</summary>
     public static readonly IReadOnlyList<string> AntiCheatFolders =
@@ -184,22 +222,52 @@ public static class NeuralRenderingDiagnosis
 
     /// <summary>
     /// The known errors in <paramref name="text"/>: the LAST line of each signature (the most recent run), in signature
-    /// order. <paramref name="firstLine"/> is the number of the text's first line, or null when it is not known.
+    /// order. <paramref name="firstLine"/> is the number of the text's first line, or null when it is not known (only the
+    /// end of a large log: the run's start was not read, so its feature counts as ready already).
+    /// <para>#248: the Feeder's "stopped: the DLSS evaluate crashed" is a finding only after a change of the game's picture
+    /// that no delivered frame has come through yet (since the feature was ready in that run); it then replaces the generic
+    /// crash rows of that crash (those seen since the change). Without that context the generic row stays.</para>
     /// </summary>
     public static IReadOnlyList<NrLogFinding> Classify(string log, string? text, int? firstLine = 1)
     {
         if (string.IsNullOrEmpty(text)) return [];
         var last = new Dictionary<NrLogSignature, NrLogFinding>();
+        var ready = firstLine is null;
+        var changed = false;
+        var rebuilt = false;
+        NrLogFinding? crashSinceChange = null;
+        void SettleChange()
+        {
+            if (crashSinceChange is { } crash) last[NrLogSignature.CrashOrDeviceLost] = crash;
+            changed = rebuilt = false;
+            crashSinceChange = null;
+        }
         var lines = text.Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i];
+            if (FeederRunStart.IsMatch(line)) { SettleChange(); ready = false; }
+            else if (FeederFrameDelivered.IsMatch(line) && changed && rebuilt) SettleChange();
+            else if (FeederDisplayChange.IsMatch(line) && ready) { changed = true; rebuilt = false; }
+            else if (FeederFeatureReady.IsMatch(line)) { rebuilt = changed; ready = true; }
             foreach (var (signature, fix, pattern) in Signatures)
             {
                 if (!pattern.IsMatch(line)) continue;
-                last[signature] = new NrLogFinding(log, firstLine is { } first ? first + i : null, signature, fix, Excerpt(line));
+                var finding = new NrLogFinding(log, firstLine is { } first ? first + i : null, signature, fix, Excerpt(line));
+                if (signature == NrLogSignature.EvaluateCrashAfterDisplayChange)
+                {
+                    if (!changed) continue;
+                    crashSinceChange = null;
+                }
+                else if (signature == NrLogSignature.CrashOrDeviceLost && changed)
+                {
+                    crashSinceChange = finding;
+                    continue;
+                }
+                last[signature] = finding;
             }
         }
+        SettleChange();
         return Signatures.Select(row => row.Signature).Where(last.ContainsKey).Select(signature => last[signature]).ToArray();
     }
 

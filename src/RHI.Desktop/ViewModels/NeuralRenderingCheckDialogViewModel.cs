@@ -189,6 +189,9 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
         NrLogSignature.NeuralRenderingSkipped => "Nrc.SigNrSkipped",
         NrLogSignature.FeatureNotSupported => "Nrc.SigFeatureNotSupported",
         NrLogSignature.ShaderCompiler => "Nrc.SigShaderCompiler",
+        NrLogSignature.NeuralRenderingNotImplemented => "Nrl.SigNotImplemented",
+        NrLogSignature.FlatDepth => "Nrl.SigFlatDepth",
+        NrLogSignature.EvaluateCrashAfterDisplayChange => "Nrl.SigEvaluateCrash",
         _ => "Nrc.SigCrash"
     });
 
@@ -218,6 +221,15 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
             => controls.RemovableRows is null ? (NoControl, T("Nrc.FixSelectFirst"))
                 : controls.RemovableRows.Contains(kind) ? (control, text)
                 : (NoControl, F("Nrc.FixNoRemove", RowName(kind, diagnosis)));
+
+        // #248: plain steps outside RHI — nothing to change in RHI (driver/Proton), ReShade's own in-game overlay, the
+        // game's own display options; no RHI control is named.
+        switch (hint)
+        {
+            case NrFixHint.NothingToChangeInRhi: return (NoControl, T("Nrl.FixNothingInRhi"));
+            case NrFixHint.GenericDepthInReShade: return (NoControl, T("Nrl.FixGenericDepth"));
+            case NrFixHint.RestartWithDisplayModeSet: return (NoControl, T("Nrl.FixRestartDisplayMode"));
+        }
 
         if (hint == NrFixHint.NativeD3DCompiler)
             return ("d3dcompiler", T((controls.Protontricks, controls.Winetricks) switch
