@@ -98,6 +98,7 @@ public sealed class LinuxAppSettings
     // w12/epic rows
     // w12/nr-logs rows
     // w12/pins rows
+    // w12/hdr-wsi rows
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -169,6 +170,7 @@ public sealed class LinuxAppSettings
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
         return this;
     }
 

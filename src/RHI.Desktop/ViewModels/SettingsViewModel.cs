@@ -78,6 +78,7 @@ public sealed class SettingsViewModel : PanelViewModel
     // w12/epic rows
     // w12/nr-logs rows
     // w12/pins rows
+    // w12/hdr-wsi rows
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
@@ -155,6 +156,7 @@ public sealed class SettingsViewModel : PanelViewModel
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

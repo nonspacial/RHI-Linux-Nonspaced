@@ -377,6 +377,7 @@ public static class OptionLists
     // w12/epic rows
     // w12/nr-logs rows
     // w12/pins rows
+    // w12/hdr-wsi rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>
     public static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");

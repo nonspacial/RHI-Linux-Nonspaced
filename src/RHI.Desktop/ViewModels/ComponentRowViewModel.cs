@@ -156,6 +156,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w12/epic rows
     // w12/nr-logs rows
     // w12/pins rows
+    // w12/hdr-wsi rows
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }

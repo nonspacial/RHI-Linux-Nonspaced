@@ -85,6 +85,7 @@ public sealed partial class LinuxManagedComponentService
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -161,6 +162,7 @@ public sealed partial class LinuxManagedComponentService
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -233,6 +235,7 @@ public sealed partial class LinuxManagedComponentService
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -320,6 +323,7 @@ public sealed partial class LinuxManagedComponentService
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

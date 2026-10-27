@@ -616,6 +616,7 @@ public sealed class WaveOneMessageLocalizationTests
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must

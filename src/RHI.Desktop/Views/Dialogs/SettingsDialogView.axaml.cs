@@ -129,6 +129,7 @@ public sealed partial class SettingsDialogView : UserControl
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;
@@ -163,5 +164,6 @@ public sealed partial class SettingsDialogView : UserControl
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
     }
 }

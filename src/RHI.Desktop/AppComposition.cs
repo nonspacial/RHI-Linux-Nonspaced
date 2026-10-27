@@ -89,6 +89,7 @@ internal sealed class AppComposition
     // w12/epic rows
     // w12/nr-logs rows
     // w12/pins rows
+    // w12/hdr-wsi rows
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -282,6 +283,7 @@ internal sealed class AppComposition
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
@@ -324,6 +326,7 @@ internal sealed class AppComposition
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
@@ -399,6 +402,7 @@ internal sealed class AppComposition
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -468,6 +472,7 @@ internal sealed class AppComposition
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
         };
     }
 }

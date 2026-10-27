@@ -76,6 +76,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
         )
     {
         _hang.When = hangWhen;
@@ -129,6 +130,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             );
         // w3/scan Settings row (#90): the fixture's own "Xbox / Game Pass folders" list (w3 integration).
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
@@ -163,6 +165,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
@@ -219,6 +222,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -264,6 +268,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
@@ -354,6 +359,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
         )
     {
         var http = new HttpClient(gitHubCache ? new GitHubConditionalCacheHandler(new OfflineHandler(httpFailure, httpResponse, hang)) : new OfflineHandler(httpFailure, httpResponse, hang)); // w11/download-idle: the app's GitHub API cache in front (#233)
@@ -444,6 +450,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
         var managed = new LinuxManagedComponentService(
             records, reshade, new ReShadeAddonManagerService(http, upstreamManifest, Path.Combine(cacheDir, "addons"), Path.Combine(prefs, "custom-addons"), Path.Combine(prefs, "addon-manager.json"), records), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
@@ -484,6 +491,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
+            // w12/hdr-wsi rows
             );
         managed.ShaderSets = shaderSets; // w7/shader-sets (#179): after construction, as the app's composition does
         built(managed);

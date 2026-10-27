@@ -654,6 +654,7 @@ public static class UiLocalizationService
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1684,6 +1685,7 @@ public static class UiLocalizationService
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // w12/hdr-wsi rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";
