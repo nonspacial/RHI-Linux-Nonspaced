@@ -33,8 +33,10 @@ public sealed class App : Application
             MainWindowViewModel? tokenNoticeTarget = null;
             githubToken.TokenRejected += (_, _) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenRejected());
             githubToken.TokenFileExposed += (_, e) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenFileExposed(e.Restricted));
-            // GitHub API answers are revalidated with ETags for the session (#35): a 304 costs no rate limit.
-            var http = new HttpClient(new GitHubConditionalCacheHandler(githubToken)) { Timeout = TimeSpan.FromMinutes(5) };
+            // GitHub API answers are revalidated with ETags (#35), kept between launches and shared by overlapping lookups
+            // (#244); api.github.com requests give up after 30 s, HttpClient.Timeout stays for payloads.
+            var (http, gitHubCache) = AppComposition.CreateHttpClient(githubToken);
+            desktop.Exit += (_, _) => gitHubCache.Flush(); // #244: the batched save is written before the process ends
             var records = new LinuxDeploymentRecordStore();
             // Roll back deployments a crash interrupted and sweep their leftovers (#23) before any
             // service exists that could deploy (installs, start-up auto-update).

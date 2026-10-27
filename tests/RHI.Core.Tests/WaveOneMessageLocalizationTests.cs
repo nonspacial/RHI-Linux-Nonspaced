@@ -612,6 +612,7 @@ public sealed class WaveOneMessageLocalizationTests
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows
+        yield return DownloadTimedOutException.MessageFor(DownloadSources.GitHubApi.Name, RHI.Platform.Linux.Network.GitHubConditionalCacheHandler.DefaultApiTimeout); // #244: 30 s API timeout
         // w12/luma rows
         // w12/epic rows
         // w12/nr-logs rows

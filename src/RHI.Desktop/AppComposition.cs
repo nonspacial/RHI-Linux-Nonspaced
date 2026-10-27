@@ -85,6 +85,19 @@ internal sealed class AppComposition
     // w12/shaders rows
     // w12/update-all rows
     // w12/github-cache rows
+    /// <summary>The app's HttpClient total timeout (payloads; GitHub API requests have their own 30 s, #244).</summary>
+    internal static readonly TimeSpan HttpTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// #244: the app's one <see cref="HttpClient"/>: the GitHub API cache (answers saved in <paramref name="store"/>, default
+    /// <c>~/.cache/rhi-linux/github-api-cache.json</c>; overlapping lookups shared; 30 s per API request) in front of
+    /// <paramref name="inner"/> (the app: the token handler, so a token is added after the cache and never reaches it).
+    /// </summary>
+    internal static (HttpClient Http, GitHubConditionalCacheHandler GitHubCache) CreateHttpClient(HttpMessageHandler inner, GitHubApiCacheStore? store = null)
+    {
+        var cache = new GitHubConditionalCacheHandler(inner, store: store ?? new GitHubApiCacheStore());
+        return (new HttpClient(cache) { Timeout = HttpTimeout }, cache);
+    }
     // w12/luma rows
     // w12/epic rows
     // w12/nr-logs rows
