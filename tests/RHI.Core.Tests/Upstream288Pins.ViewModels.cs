@@ -77,6 +77,7 @@ public sealed class Upstream288PinsViewModelTests
             var outcome = await fx.Vm.Dlss.ApplyDlssBatchAsync(games, new LinuxDlssVersionDefaults(Version));
 
             Assert.Equal((1, 1), (outcome.Result.FailedCount, outcome.Result.ChangedCount));
+            Assert.StartsWith(Counts(language, changed: 1, failed: 1), outcome.Line, StringComparison.Ordinal);
             AssertNamesOnlyTheFailedGame(language, outcome.Line, "Pin288 Failing", "Pin288 Good");
             Assert.Equal(outcome.Line, fx.Vm.StatusText);
         }
@@ -153,6 +154,7 @@ public sealed class Upstream288PinsViewModelTests
                 line = LineWith(lines, FailedPrefix(language, 1));
             }
 
+            Assert.StartsWith(Counts(language, changed: open is null ? 0 : 1, failed: 1), line, StringComparison.Ordinal);
             AssertNamesOnlyTheFailedGame(language, line, "Pin288 Locked", open is null ? null : "Pin288 Open");
         }
         finally
@@ -164,12 +166,32 @@ public sealed class Upstream288PinsViewModelTests
 
     private static readonly TimeSpan HangGuard = TimeSpan.FromSeconds(60);
 
+    // The counts in the UI language (#249: they were shown in English in PT-BR), literal wording.
+    private static string Counts(string language, int changed, int failed) => language == "pt-BR"
+        ? $"DLSS/Streamline: {changed} alterado(s) · 0 já atualizado(s) · 0 ignorado(s) · 0 adiado(s) · {failed} com falha."
+        : $"DLSS/Streamline: {changed} changed · 0 current · 0 skipped · 0 deferred · {failed} failed.";
+
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public void Pin288_CountsLine_IsInTheUiLanguage_EvenWithNoTargets(string language)
+    {
+        try
+        {
+            UiLocalizationService.Apply(language);
+            Assert.Equal(language == "pt-BR" ? "Nenhum alvo de DLSS/Streamline elegível foi encontrado." : "No eligible DLSS/Streamline targets were found.",
+                DlssPanelViewModel.CountsLine(new LinuxDlssBatchResult([])));
+            Assert.Equal(Counts(language, changed: 1, failed: 0), DlssPanelViewModel.CountsLine(new LinuxDlssBatchResult([
+                new("Pin288 Counts", LinuxDlssBatchComponent.SuperResolution, true, true, false, false, "Applied.")])));
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
     // Literal wording (not the table row), so a reworded or dropped row fails here.
     private static string FailedPrefix(string language, int count)
         => language == "pt-BR" ? $"Falha em {count} jogo(s) • " : $"Failed: {count} game(s) • ";
 
-    // The failed part comes after the counts: the game named with a reason after it, no English fixed text left in a
-    // Portuguese line, and the game that worked not named.
+    // The failed part comes after the counts: the game named with a reason after it, no English fixed text left anywhere
+    // in a Portuguese line, and the game that worked not named.
     private static void AssertNamesOnlyTheFailedGame(string language, string line, string failed, string? fine)
     {
         var at = line.IndexOf(FailedPrefix(language, 1), StringComparison.Ordinal);
@@ -178,12 +200,12 @@ public sealed class Upstream288PinsViewModelTests
         Assert.StartsWith(FailedPrefix(language, 1) + failed + ": ", part, StringComparison.Ordinal);
         Assert.True(part.Length > (FailedPrefix(language, 1) + failed + ": ").Length + 2, "no reason after the name: " + line);
         if (fine is not null) Assert.DoesNotContain(fine, line, StringComparison.Ordinal);
-        if (language == "pt-BR")
+        if (language == "pt-BR") // the whole line: the counts as well as the failed part
         {
-            var words = System.Text.RegularExpressions.Regex.Replace(part.Replace(failed, " ", StringComparison.Ordinal), "'[^']*'", "''"); // paths
+            var words = System.Text.RegularExpressions.Regex.Replace(line.Replace(failed, " ", StringComparison.Ordinal), "'[^']*'", "''"); // paths
             var english = UiLocalizationService.EnglishMarkersIn(words)
                 .Where(word => !word.Equals("no", StringComparison.OrdinalIgnoreCase)).ToArray();
-            Assert.True(english.Length == 0, $"English left ({string.Join(", ", english)}): {part}");
+            Assert.True(english.Length == 0, $"English left ({string.Join(", ", english)}): {line}");
         }
     }
 

@@ -1461,5 +1461,7 @@ internal static class UiStrings
         // w12/nr-logs rows
         // w12/pins rows
         ("Dp.BatchFailedGames", "Falha em {0} jogo(s) • {1}", "Failed: {0} game(s) • {1}"),
+        ("Dp.BatchCounts", "DLSS/Streamline: {0} alterado(s) · {1} já atualizado(s) · {2} ignorado(s) · {3} adiado(s) · {4} com falha.", "DLSS/Streamline: {0} changed · {1} current · {2} skipped · {3} deferred · {4} failed."),
+        ("Dp.BatchNoTargets", "Nenhum alvo de DLSS/Streamline elegível foi encontrado.", "No eligible DLSS/Streamline targets were found."),
     ];
 }
