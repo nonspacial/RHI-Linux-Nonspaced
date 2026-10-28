@@ -83,6 +83,26 @@ public sealed class Upstream288PinsViewModelTests
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
+    // The line names exactly what FailedCount counts: never a skipped or deferred item (even one marked unsuccessful),
+    // each game once with its reasons in order, the count in games.
+    [Fact]
+    public void Pin288_FailedGamesLine_NamesOnlyTheFailedItems_OnceAGame()
+    {
+        UiLocalizationService.Apply("en-US");
+        const LinuxDlssBatchComponent sr = LinuxDlssBatchComponent.SuperResolution, rr = LinuxDlssBatchComponent.RayReconstruction;
+        var result = new LinuxDlssBatchResult([
+            new("Pin288 Changed", sr, true, true, false, false, "Applied."),
+            new("Pin288 Skipped", sr, false, false, false, true, "Skipped."),
+            new("Pin288 Deferred", sr, false, false, true, false, "Deferred."),
+            new("Pin288 Failed", sr, false, false, false, false, "Could not apply SR."),
+            new("Pin288 Failed", rr, false, false, false, false, "Could not apply RR."),
+        ]);
+
+        Assert.Equal(2, result.FailedCount);
+        Assert.Equal("Failed: 1 game(s) • Pin288 Failed: Could not apply SR; Could not apply RR.", DlssPanelViewModel.FailedGamesLine(result));
+        Assert.Equal("", DlssPanelViewModel.FailedGamesLine(new LinuxDlssBatchResult([result.Items[0], result.Items[1], result.Items[2]])));
+    }
+
     // The other flows that show the same result line: the batch's Restore, the single-game Apply defaults and Restore all.
     // A step that fails because the game folder became read-only after the analysis (the download itself worked) is
     // named with its reason; in the batch, the game that worked is not.
