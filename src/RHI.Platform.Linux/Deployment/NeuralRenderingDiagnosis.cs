@@ -89,8 +89,9 @@ public enum NrLogSignature
     /// <summary>An access violation (<c>0xC0000005</c>) or a lost/removed GPU device.</summary>
     CrashOrDeviceLost,
     /// <summary>
-    /// #248: NGX answered <c>0xBAD00012</c> (NotImplemented) for feature 18, neural rendering: the driver/Proton stack does not
-    /// offer it (DLSS Super Resolution still runs).
+    /// #248: NGX answered <c>0xBAD00012</c> (NotImplemented) to the requirements query for feature 18, neural rendering: the
+    /// driver did not confirm support. That alone does not prove the neural pass cannot run (some drivers give it while the
+    /// pass runs); DLSS Super Resolution still runs.
     /// </summary>
     NeuralRenderingNotImplemented,
     /// <summary>#248: the Feeder's depth probe saw a flat depth while the scene moved: ReShade's Generic Depth is on the wrong buffer.</summary>
@@ -111,7 +112,7 @@ public enum NrFixHint
     NativeD3DCompiler,
     /// <summary>Remove the Neural Rendering method on its Managed components row.</summary>
     RemoveNrMethod,
-    /// <summary>#248: a plain statement — nothing to change in RHI or the game (driver/Proton support is needed).</summary>
+    /// <summary>#248: a plain statement — nothing to change in RHI or the game; what the answer means and what still works.</summary>
     NothingToChangeInRhi,
     /// <summary>#248: a plain step in ReShade's in-game overlay (Add-ons tab → Generic Depth), not an RHI control.</summary>
     GenericDepthInReShade,
@@ -175,8 +176,8 @@ public static class NeuralRenderingDiagnosis
     // skip), plus two the DLSS5 Feeder add-on itself names as going to ReShade.log ("error X3506: unrecognized compiler
     // target 'cs_5_1'" for a d3dcompiler too old for its neural pass; "the D3D12 device was removed"). Short codes match as
     // whole words, so a hex address that happens to contain them is no finding. #248 adds three lines the DLSS5 Feeder
-    // writes to dlss5-feed.log (the owner's Borderlands 3): NotImplemented for feature 18 only (that code for another
-    // feature says nothing about neural rendering); the depth probe's "FLAT while the scene moves" verdict only (its
+    // writes to dlss5-feed.log (the owner's Borderlands 3): NotImplemented for the Feeder's "feature 18" only (that code
+    // for another feature says nothing about neural rendering, even on a line that mentions it); the depth probe's "FLAT while the scene moves" verdict only (its
     // "sampled depth is flat" line is a still scene or a menu); its "stopped: the DLSS evaluate crashed" line, a finding
     // only right after a change (Classify) — it then stands in for the generic crash row of the same crash. The table's
     // order is the page's order: the specific crash row before the generic one.
@@ -187,7 +188,7 @@ public static class NeuralRenderingDiagnosis
         (NrLogSignature.FeatureNotSupported, NrFixHint.NrDllForCard,
             new(@"\b0xBAD00001\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
         (NrLogSignature.NeuralRenderingNotImplemented, NrFixHint.NothingToChangeInRhi,
-            new(@"^(?=.*(?:\bfeature 18\b|\bneural rendering\b))(?=.*\b0xBAD00012\b)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
+            new(@"^(?=.*\bfeature 18\b)(?=.*\b0xBAD00012\b)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
         (NrLogSignature.ShaderCompiler, NrFixHint.NativeD3DCompiler,
             new(@"\bE5017\b|\bE5005\b|\bfastopt\b|\berror X3506\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)),
         (NrLogSignature.FlatDepth, NrFixHint.GenericDepthInReShade,

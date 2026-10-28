@@ -36,9 +36,13 @@ public sealed class NeuralRenderingFeederLogTests
 
     [Theory]
     [InlineData("[feed] NGX feature requirements: feature 18 (neural rendering, what nvngx_dlssnr.dll backs) -> the query itself failed 0xBAD00012 (NotImplemented)", true)]
-    [InlineData("[feed] neural rendering query returned 0xbad00012", true)]
-    // NotImplemented for another feature is no neural-rendering finding; nor is feature 18 without the code.
+    [InlineData("[feed] ngx FEATURE 18 query returned 0xbad00012", true)]
+    // NotImplemented for another feature is no neural-rendering finding, even when its line mentions neural rendering
+    // (review nit 7: only the Feeder's own "feature 18" names it); nor is feature 18 without the code.
+    [InlineData("[feed] neural rendering query returned 0xbad00012", false)]
+    [InlineData("[feed] NGX feature requirements: SuperSampling (DLSS, needed before neural rendering) -> the query itself failed 0xBAD00012 (NotImplemented)", false)]
     [InlineData("[feed] NGX feature requirements: SuperSampling (DLSS) -> the query itself failed 0xBAD00012 (NotImplemented)", false)]
+    [InlineData("[feed] NGX feature requirements: feature 180 -> failed 0xBAD00012", false)]
     [InlineData("[feed] NGX feature requirements: feature 18 (neural rendering) -> supported", false)]
     [InlineData("[feed] feature 18 at 0xBAD000120 (an address)", false)]
     public void NotImplemented_IsFeature18Only(string line, bool found)

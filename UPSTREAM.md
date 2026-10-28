@@ -1078,9 +1078,13 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in `b057033..c1076d3`). Extends #234's
 **Log findings** (same rows: log, line, plain headline, a "Fix:" line; the matching text and path in the ~2 s tooltip).
 
-- `0xBAD00012` (NotImplemented) for NGX feature 18 / neural rendering: the driver and Proton (dxvk-nvapi) do not offer
-  neural rendering yet; nothing to change in RHI or the game; DLSS Super Resolution still works. The same code for another
-  feature is no finding.
+- `0xBAD00012` (NotImplemented) for the Feeder's NGX "feature 18" requirements query: the driver did not confirm Neural
+  Rendering support. The line proves only that (the DLSS5 Feeder's README records the same answer on a driver where the
+  neural pass ran), so the row is worded that way and does not contradict the page's recommended method: nothing to
+  change in RHI or the game; if the picture shows no neural effect, this driver and Proton (dxvk-nvapi) do not run it
+  yet; DLSS Super Resolution still works. The same code for another feature is no finding, even on a line that mentions
+  neural rendering. #248 also asked to name a method that works without Neural Rendering: every RHI Neural Rendering
+  method needs it, so the row names none; DLSS Super Resolution (the game's own DLSS) is what keeps working.
 - The Feeder's depth probe "depth is FLAT while the scene moves": a setting in ReShade's in-game overlay (Add-ons tab →
   Generic Depth → the buffer that moves with the scene), stated plainly as not an RHI control. Its "sampled depth is
   flat" line (a still scene or a menu) is no finding.

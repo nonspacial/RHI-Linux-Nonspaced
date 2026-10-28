@@ -483,8 +483,8 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         Assert.Equal(pt
             ? [
                 "3 erros conhecidos",
-                "dlss5-feed.log, linha 25: o Neural Rendering não está disponível com este driver e este Proton (0xBAD00012)",
-                "Como resolver: não há nada a mudar no RHI nem no jogo: este driver e o Proton (dxvk-nvapi) ainda não oferecem o Neural Rendering, então a etapa neural não roda. O DLSS Super Resolution continua funcionando.",
+                "dlss5-feed.log, linha 25: o driver não confirmou o suporte ao Neural Rendering (0xBAD00012)",
+                "Como resolver: não há nada a mudar no RHI nem no jogo. Alguns drivers dão esta resposta mesmo quando a etapa neural roda: se a imagem não mostra nenhum efeito neural, este driver e o Proton (dxvk-nvapi) ainda não a rodam. O DLSS Super Resolution continua funcionando.",
                 "dlss5-feed.log, linha 114: a profundidade fica plana enquanto a cena se move: o Generic Depth do ReShade está no buffer errado",
                 "Como resolver: isto se ajusta no overlay do ReShade dentro do jogo, não no RHI: no jogo, abra o overlay do ReShade, vá à aba Add-ons, abra Generic Depth e escolha o buffer de profundidade que se move com a cena.",
                 "dlss5-feed.log, linha 170: o DLSS5 Feeder parou depois que o modo de exibição do jogo mudou (HDR ou resolução)",
@@ -492,8 +492,8 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
             ]
             : [
                 "3 known errors",
-                "dlss5-feed.log, line 25: neural rendering is not available through this driver and Proton (0xBAD00012)",
-                "Fix: there is nothing to change in RHI or in the game: this driver and Proton (dxvk-nvapi) do not offer neural rendering yet, so the neural pass cannot run. DLSS Super Resolution still works.",
+                "dlss5-feed.log, line 25: the driver did not confirm Neural Rendering support (0xBAD00012)",
+                "Fix: there is nothing to change in RHI or in the game. Some drivers give this answer even though the neural pass runs: if the picture shows no neural effect, this driver and Proton (dxvk-nvapi) do not run it yet. DLSS Super Resolution still works.",
                 "dlss5-feed.log, line 114: the depth is flat while the scene moves: ReShade's Generic Depth is on the wrong buffer",
                 "Fix: this is set in ReShade's overlay inside the game, not in RHI: in the game, open the ReShade overlay, go to the Add-ons tab, open Generic Depth and pick the depth buffer that moves with the scene.",
                 "dlss5-feed.log, line 170: the DLSS5 Feeder stopped after the game's display mode changed (HDR or resolution)",
@@ -514,6 +514,38 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         Assert.DoesNotContain(logs, line => line.Text.Contains(UiLocalizationService.Format("Nrc.FixRemove", "DLSS5 Feeder"), StringComparison.Ordinal));
         Assert.DoesNotContain(logs, line => line.Text.Contains("instal", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(before, Snapshot(watched));
+    }
+
+    // #248 review F1: NGX's NotImplemented answer to the feature-18 requirements query does not prove the neural pass cannot
+    // run (some drivers give it while the pass runs), so the row says only that the driver did not confirm support, and
+    // the page's DLSS5 Feeder recommendation above it stays without a line that contradicts it.
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task NotImplementedRow_SaysOnlyWhatTheLineProves_BesideTheFeederRecommendation(string language)
+    {
+        var bl3 = Borderlands(ForAll);
+        File.WriteAllText(Path.Combine(bl3.Bin, "dlss5-feed.log"),
+            "dlss5-feed 1.19.0 attached.\n[feed] NGX feature requirements: feature 18 (neural rendering, what nvngx_dlssnr.dll backs) -> the query itself failed 0xBAD00012 (NotImplemented)\n");
+        using var fx = await StartAsync([bl3.Game], Facts(RtxGeneration.Rtx40), language,
+            seed: fx => NrGpuGames.SeedOwner(fx.Records, Listed(fx, bl3.Game.Name), ManagedComponentKind.Dlss5Feeder, bl3.Nr, version: "0.13.1-beta.1"));
+
+        var page = await OpenThroughPanelAsync(fx);
+
+        var pt = language == "pt-BR";
+        var method = page.Diagnosis.Method.RecommendedName;
+        Assert.False(string.IsNullOrEmpty(method));
+        Assert.Equal(method, page.Sections[2].Lines[0].Text);
+        var logs = page.Sections[4].Lines.Select(line => line.Text).ToArray();
+        Assert.Equal(pt
+            ? ["1 erro conhecido",
+               "dlss5-feed.log, linha 2: o driver não confirmou o suporte ao Neural Rendering (0xBAD00012)",
+               "Como resolver: não há nada a mudar no RHI nem no jogo. Alguns drivers dão esta resposta mesmo quando a etapa neural roda: se a imagem não mostra nenhum efeito neural, este driver e o Proton (dxvk-nvapi) ainda não a rodam. O DLSS Super Resolution continua funcionando."]
+            : ["1 known error",
+               "dlss5-feed.log, line 2: the driver did not confirm Neural Rendering support (0xBAD00012)",
+               "Fix: there is nothing to change in RHI or in the game. Some drivers give this answer even though the neural pass runs: if the picture shows no neural effect, this driver and Proton (dxvk-nvapi) do not run it yet. DLSS Super Resolution still works."],
+            logs);
+        foreach (var claim in new[] { "cannot run", "not available", "do not offer", "não está disponível", "não roda", "não oferecem" })
+            Assert.DoesNotContain(logs, line => line.Contains(claim, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
