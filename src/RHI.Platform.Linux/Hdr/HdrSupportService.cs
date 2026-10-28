@@ -63,11 +63,11 @@ public static class HdrSupportRule
 }
 
 /// <summary>
-/// #251: the HDR support resolver. In order, the first decisive answer wins: RHI's curated list (an embedded resource,
-/// keyed <c>steam:&lt;AppID&gt;</c>, <c>heroic:&lt;app&gt;</c>, <c>xbox:&lt;StoreId&gt;</c> or <c>name:&lt;lower-case name&gt;</c>),
-/// PCGamingWiki's <c>hdr</c> field (the page found as the graphics-API lookup finds it, wikitext read through
-/// <c>action=parse</c>), then — for a game the app that installed it keeps a Microsoft Store record for — that record's
-/// <c>CapabilityHDR</c> attribute on PC. Answers are cached under RHI's cache folder with the page name and fetch time,
+/// #251: the HDR support resolver. RHI's curated list (an embedded resource, keyed <c>steam:&lt;AppID&gt;</c>,
+/// <c>heroic:&lt;app&gt;</c>, <c>xbox:&lt;StoreId&gt;</c> or <c>name:&lt;lower-case name&gt;</c>) wins; then PCGamingWiki's
+/// <c>hdr</c> field (the page found as the graphics-API lookup finds it, wikitext read through <c>action=parse</c>), except
+/// that — for a game the app that installed it keeps a Microsoft Store record for — that record's <c>CapabilityHDR</c>
+/// attribute on PC turns a PCGW "false" or unknown into Yes (correction F3). Answers are cached under RHI's cache folder with the page name and fetch time,
 /// read once per game and refreshed only after an explicit full Refresh (<see cref="MarkStale"/>); a failed lookup is
 /// Unknown and never cached. Lookups run at most <see cref="MaxParallel"/> at a time, each bounded in time.
 /// </summary>
@@ -166,8 +166,9 @@ public sealed partial class HdrSupportService
                 var (found, decisive) = await LookUpAsync(game, bounded.Token).ConfigureAwait(false);
                 if (found is null)
                     return earlier?.ToEvidence() ?? StoreFlag(game) ?? HdrSupportEvidence.Unchecked;
-                // PCGW first (a "false" there stands); the Store record decides only what PCGW leaves unknown.
-                var evidence = found.Answer == HdrSupportAnswer.Unknown && StoreFlag(game) is { } store ? store : found;
+                // Correction F3 (coordinator, "safe, not sorry"): a Store yes on PC — the publisher's own listing for that build —
+                // beats a PCGW "false" or unknown; only a PCGW yes needs no Store look. The curated list stays first (above).
+                var evidence = found.Answer != HdrSupportAnswer.Yes && StoreFlag(game) is { } store ? store : found;
                 if (decisive) await SaveAsync(key, evidence, cancellationToken).ConfigureAwait(false);
                 return evidence;
             }

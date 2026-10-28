@@ -181,9 +181,11 @@ public sealed class HdrSupportServiceTests : IDisposable
     [InlineData("""["Desktop","Xbox"]""", null, HdrSupportAnswer.Yes)]
     [InlineData("null", null, HdrSupportAnswer.Yes)]
     [InlineData("""["Xbox"]""", null, HdrSupportAnswer.Unknown)]
-    [InlineData("""["Desktop"]""", "false", HdrSupportAnswer.No)]
+    [InlineData("""["Desktop"]""", "false", HdrSupportAnswer.Yes)] // correction F3: the Store's PC yes beats PCGW false
+    [InlineData("""["Xbox"]""", "false", HdrSupportAnswer.No)] // a console-only flag does not
+    [InlineData("""["Desktop"]""", "unknown", HdrSupportAnswer.Yes)]
     [InlineData("""["Desktop"]""", "true", HdrSupportAnswer.Yes)]
-    public async Task AnXboxGame_UsesItsStoreRecordsPcHdrFlag_WherePcgwHasNoAnswer(string platforms, string? pcgw, HdrSupportAnswer expected)
+    public async Task AnXboxGame_UsesItsStoreRecordsPcHdrFlag_UnlessPcgwSaysYes(string platforms, string? pcgw, HdrSupportAnswer expected)
     {
         var state = Directory.CreateDirectory(Path.Combine(_root, "installer-state")).FullName;
         var products = Directory.CreateDirectory(Path.Combine(state, "catalogue", "products")).FullName;
@@ -203,7 +205,24 @@ public sealed class HdrSupportServiceTests : IDisposable
         var evidence = await Service(wiki).ResolveAsync(game);
 
         Assert.Equal(expected, evidence.Answer);
-        if (pcgw is null && expected == HdrSupportAnswer.Yes) Assert.Equal(HdrSupportSource.MicrosoftStore, evidence.Source);
+        if (pcgw != "true" && expected == HdrSupportAnswer.Yes) Assert.Equal(HdrSupportSource.MicrosoftStore, evidence.Source); // its tooltip
+        if (pcgw == "true") Assert.Equal(HdrSupportSource.PcGamingWiki, evidence.Source);
+    }
+
+    [Fact]
+    public async Task TheCuratedList_StillBeatsTheStoreFlag()
+    {
+        var state = Directory.CreateDirectory(Path.Combine(_root, "installer-state")).FullName;
+        var products = Directory.CreateDirectory(Path.Combine(state, "catalogue", "products")).FullName;
+        File.WriteAllText(Path.Combine(products, "9NBLGGH4R315.json"),
+            """{"ProductId":"9NBLGGH4R315","Properties":{"Attributes":[{"Name":"CapabilityHDR","ApplicablePlatforms":["Desktop"]}]}}""");
+        var game = Named("Forza Quest");
+        game.Source = "Xbox";
+        game.XboxPackage = new XboxPackageInfo("9NBLGGH4R315", "Installer", null, Path.Combine(state, "jobs.json"));
+
+        var evidence = await Service(new FakeWiki(), """{"games":{"xbox:9NBLGGH4R315":{"hdr":false}}}""").ResolveAsync(game);
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.CuratedList), evidence);
     }
 
     [Theory]
