@@ -244,6 +244,25 @@ public sealed class GitHubApiCacheTests : IDisposable
     }
 
     [Fact]
+    public void Load_DropsAnswersForAnyPlaceButHttpsApiGitHubCom()
+    {
+        var store = new GitHubApiCacheStore(CachePath);
+        string[] urls =
+        [
+            "https://api.github.com/repos/rhi-tests/opti/releases",
+            "https://github.com/rhi-tests/opti/releases",
+            "http://api.github.com/repos/rhi-tests/opti/releases",
+            "https://api.github.com:8443/repos/rhi-tests/opti/releases",
+            "https://api.github.com.example/repos/rhi-tests/opti/releases",
+        ];
+        store.Save(urls.Select(url => new GitHubApiCacheEntry { Url = url, Accept = "", ETag = "\"e\"", SavedUtc = _now, Body = "[]" }).ToList());
+
+        var loaded = store.Load(_now);
+
+        Assert.Equal(urls[0], Assert.Single(loaded).Url);
+    }
+
+    [Fact]
     public async Task Saves_WaitForTheDelay_OrAFlush()
     {
         var github = new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\"");
@@ -390,6 +409,37 @@ public sealed class GitHubApiCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task LookupsWithADifferentAccept_AreNeverShared_NorReusedForEachOther()
+    {
+        var github = new GitHubFake("", "\"etag-1\"") { Gate = new(), BodyFor = asked => "accept=" + string.Join(",", asked.Headers.Accept) };
+        var cache = Handler(github, persisted: false);
+        var joined = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        cache.JoinedForTesting = _ => joined.TrySetResult();
+        using var http = new HttpClient(cache);
+        async Task<string> Lookup(string accept)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesUrl);
+            request.Headers.Accept.ParseAdd(accept);
+            using var response = await http.SendAsync(request);
+            return await response.Content.ReadAsStringAsync();
+        }
+
+        var json = Lookup("application/vnd.github+json");
+        await github.Entered.Task.WaitAsync(HangGuard);
+        var raw = Lookup("application/vnd.github.raw");
+        var next = await Task.WhenAny(github.SecondEntered.Task, joined.Task).WaitAsync(HangGuard);
+        Assert.Same(github.SecondEntered.Task, next); // a request of its own, never a join
+        github.Gate.SetResult();
+
+        Assert.Equal("accept=application/vnd.github+json", await json.WaitAsync(HangGuard));
+        Assert.Equal("accept=application/vnd.github.raw", await raw.WaitAsync(HangGuard));
+        // Inside the 60 s each one is reused from its own answer.
+        Assert.Equal("accept=application/vnd.github.raw", await Lookup("application/vnd.github.raw").WaitAsync(HangGuard));
+        Assert.Equal("accept=application/vnd.github+json", await Lookup("application/vnd.github+json").WaitAsync(HangGuard));
+        Assert.Equal(2, github.Requests.Count);
+    }
+
+    [Fact]
     public async Task OneCallersCancel_EndsOnlyItsOwnWait()
     {
         var github = new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\"") { Gate = new() };
@@ -444,6 +494,20 @@ public sealed class GitHubApiCacheTests : IDisposable
         Assert.Single(github.Requests[1].IfNoneMatch);
     }
 
+    [Fact]
+    public async Task ClockSetBack_AfterAnAnswer_DoesNotKeepItFresh()
+    {
+        var github = new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\"");
+        using var http = new HttpClient(Handler(github, persisted: false));
+
+        await http.GetStringAsync(ReleasesUrl);
+        _now -= TimeSpan.FromHours(1); // the clock jumped back after GitHub confirmed the answer
+        await http.GetStringAsync(ReleasesUrl);
+
+        Assert.Equal(2, github.Requests.Count);
+        Assert.Single(github.Requests[1].IfNoneMatch);
+    }
+
     // ── 30 s API timeout ────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -478,6 +542,18 @@ public sealed class GitHubApiCacheTests : IDisposable
 
         await Assert.ThrowsAsync<DownloadTimedOutException>(()
             => http.PostAsync("https://api.github.com/graphql", new StringContent("{}")).WaitAsync(HangGuard));
+    }
+
+    [Fact]
+    public async Task ApiAnswer_WhoseBodyStallsAfterTheHeaders_GivesUpAfterTheApiTimeout()
+    {
+        var github = new GitHubFake("", "\"etag-1\"") { StallBody = true };
+        using var http = new HttpClient(Handler(github, persisted: false, apiTimeout: TimeSpan.FromMilliseconds(200)));
+
+        // The 60 s idle limit (#233) would end the read much later: the API timeout covers the body the cache reads.
+        var error = await Assert.ThrowsAsync<DownloadTimedOutException>(() => http.GetStringAsync(ReleasesUrl).WaitAsync(TimeSpan.FromSeconds(20)));
+
+        Assert.Equal("The server took too long to answer: RHI stopped waiting after 1 second. Source: GitHub API", error.Message);
     }
 
     [Fact]
@@ -552,8 +628,8 @@ public sealed class GitHubApiCacheTests : IDisposable
     }
 
     /// <summary>
-    /// GitHub: answers 304 to its current ETag, else the body; can hold a request on a gate or never answer, or refuse (with
-    /// or without an advertised rate-limit reset).
+    /// GitHub: answers 304 to its current ETag, else the body; can hold a request on a gate or never answer, refuse (with or
+    /// without an advertised rate-limit reset), send headers and then stall the body, or answer each request its own body.
     /// </summary>
     internal sealed class GitHubFake(string body, string etag) : HttpMessageHandler
     {
@@ -567,9 +643,12 @@ public sealed class GitHubApiCacheTests : IDisposable
         public string? FinalUrl { get; init; }
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Stopped { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public HttpStatusCode? Refuse { get; set; }
         /// <summary>With <see cref="Refuse"/>: GitHub's rate-limit headers (no quota left, reset at this time).</summary>
         public DateTimeOffset? QuotaResetAt { get; set; }
+        public bool StallBody { get; set; }
+        public Func<HttpRequestMessage, string>? BodyFor { get; init; }
 
         public void Publish(string text, string tag) => (_body, _etag) = (Encoding.UTF8.GetBytes(text), tag);
         public void PublishBytes(byte[] bytes, string tag) => (_body, _etag) = (bytes, tag);
@@ -578,8 +657,14 @@ public sealed class GitHubApiCacheTests : IDisposable
         {
             var copy = new HttpRequestMessage().Headers;
             foreach (var header in request.Headers) copy.TryAddWithoutValidation(header.Key, header.Value);
-            lock (Requests) Requests.Add(copy);
+            int count;
+            lock (Requests)
+            {
+                Requests.Add(copy);
+                count = Requests.Count;
+            }
             Entered.TrySetResult();
+            if (count == 2) SecondEntered.TrySetResult();
             try
             {
                 if (Hang) await Task.Delay(Timeout.Infinite, cancellationToken);
@@ -605,12 +690,38 @@ public sealed class GitHubApiCacheTests : IDisposable
                 NotModifiedAnswers++;
                 return new HttpResponseMessage(HttpStatusCode.NotModified) { RequestMessage = request };
             }
-            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(_body) };
+            HttpContent content = StallBody ? new StreamContent(new StallingStream())
+                : new ByteArrayContent(BodyFor is null ? _body : Encoding.UTF8.GetBytes(BodyFor(request)));
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
             response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
             response.Headers.ETag = EntityTagHeaderValue.Parse(_etag);
             if (FinalUrl is not null) request.RequestUri = new Uri(FinalUrl); // as the inner handler does on a redirect
             response.RequestMessage = request;
             return response;
         }
+    }
+
+    /// <summary>A body whose bytes never come (the headers already did).</summary>
+    private sealed class StallingStream : Stream
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }
