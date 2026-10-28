@@ -1224,6 +1224,7 @@ existed here (per-architecture stamped cache); tests pin it. No start-up push (D
 - A prefix whose only store entries start one game each (no entry for the client itself, e.g. a per-game installer put the client into the game's prefix, or the client's own entry was removed from Lutris): every other game recorded there, and every store-library game found by folder layout, is still listed — with the prefix's runner and Wine fields but no launch command and no parent launcher (Play says to set one in Edit game), plus one scan warning per prefix. A prefix where only games share (no store entry at all) lists no extra games, as before.
 - A per-game store entry that becomes its game's card moves from the client's folder to the game's folder, so its library key changes: favourite/hidden marks and Edit-game changes saved on the old card (keyed by the Lutris config file) do not follow it and must be set again. Not migrated.
 - Uninstall entries (`EpicGames-<artifactId>`) the log does not mention are listed wherever the prefix holds Epic data (classic manifests or the new launcher's data folder), as upstream lists them whether or not its data folder is found.
+- Ubisoft: Lutris names a game by its launch id, Ubisoft's record by its install id; where the two differ, the game keeps its card (Play through the client) at its real folder and its per-game Lutris entry stays a second card at the client's folder (no wrong game, nothing dropped; the same as before #247).
 - Differences, all small: a game with no name anywhere keeps its folder name (upstream skips it); a DLC's classic manifest never names its game's card; upstream's `HKCU\Software\Epic Games\EpicGamesLauncher\AppDataPath` data-folder override is not read (only the launchers' default places; a relocated data folder inside a prefix is not found); a folder another store's record names keeps that store's hand-off.
 - Not covered: the new launcher's native Linux build (`~/.local/share/com.epicgames.eglv2`, Proton-run Windows games) is not read; Epic games installed through Heroic/Legendary are unchanged.
 
@@ -1248,8 +1249,11 @@ Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in
   feature was ready in that run. A frame delivered while a rebuild for the change is announced ("holding the feature
   (re)build", "building:") but not ready yet is the old feature's and settles nothing; a change the feature survives
   without a rebuild (an alt-tab or effect reload on a D3D12 game, per the Feeder's README) is settled by the next
-  delivered frame, so a later crash gets the generic row. Then: restart the game with its final display mode (HDR,
-  resolution) set in the game's own options; if it stops again, turn HDR off in the game's options (the Feeder's README
+  delivered frame, so a later crash gets the generic row. The Feeder writes "frame N delivered" only for its first
+  `log_frames` frames and then every 1800 frames, so after such a change a crash before the next delivered line (up to
+  about 30 s at 60 fps) still gets this row; no other Feeder line proves a frame was delivered (its STALL lines also
+  appear while a rebuild is held), and the row's last sentence covers that case. Then: restart the game with its final
+  display mode (HDR, resolution) set in the game's own options; if the Feeder stops again, turn HDR off in the game's options (the Feeder's README
   records the same evaluate fault inside NGX with the DLSS 5 add-on, which a restart may not cure). This row replaces the generic `0xC0000005` row of the same crash (the
   evaluate lines right after the stopped line included, whichever the Feeder writes first); the generic row ("remove
   the method") stays for every other crash, including a Feeder crash on its first build, and a stopped line in a run

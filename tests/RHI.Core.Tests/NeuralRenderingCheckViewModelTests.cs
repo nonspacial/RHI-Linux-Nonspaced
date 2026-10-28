@@ -488,7 +488,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
                 "dlss5-feed.log, linha 114: a profundidade fica plana enquanto a cena se move: o Generic Depth do ReShade está no buffer errado",
                 "Como resolver: isto se ajusta no overlay do ReShade dentro do jogo, não no RHI: no jogo, abra o overlay do ReShade, vá à aba Add-ons, abra Generic Depth e escolha o buffer de profundidade que se move com a cena.",
                 "dlss5-feed.log, linha 170: o DLSS5 Feeder parou depois que o modo de exibição do jogo mudou (HDR ou resolução)",
-                "Como resolver: reinicie o jogo com o modo de exibição que você quer (HDR e resolução) já escolhido nas opções do jogo, para que ele não mude enquanto o Feeder roda. Se ele parar de novo, desligue o HDR nas opções do jogo. Não há nada a mudar no RHI para isso."
+                "Como resolver: reinicie o jogo com o modo de exibição que você quer (HDR e resolução) já escolhido nas opções do jogo, para que ele não mude enquanto o Feeder roda. Se o Feeder parar de novo, desligue o HDR nas opções do jogo. Não há nada a mudar no RHI para isso."
             ]
             : [
                 "3 known errors",
@@ -497,7 +497,7 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
                 "dlss5-feed.log, line 114: the depth is flat while the scene moves: ReShade's Generic Depth is on the wrong buffer",
                 "Fix: this is set in ReShade's overlay inside the game, not in RHI: in the game, open the ReShade overlay, go to the Add-ons tab, open Generic Depth and pick the depth buffer that moves with the scene.",
                 "dlss5-feed.log, line 170: the DLSS5 Feeder stopped after the game's display mode changed (HDR or resolution)",
-                "Fix: restart the game with the display mode you want (HDR and resolution) already chosen in the game's options, so it does not change while the Feeder runs. If it stops again, turn HDR off in the game's options. There is nothing to change in RHI for this."
+                "Fix: restart the game with the display mode you want (HDR and resolution) already chosen in the game's options, so it does not change while the Feeder runs. If the Feeder stops again, turn HDR off in the game's options. There is nothing to change in RHI for this."
             ], logs.Select(line => line.Text));
         Assert.Equal([false, true, false, true, false, true, false], logs.Select(line => line.IsWarning));
         Assert.Equal([false, false, true, false, true, false, true], logs.Select(line => line.IsDetail));

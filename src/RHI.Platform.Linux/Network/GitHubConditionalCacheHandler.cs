@@ -26,7 +26,7 @@ namespace RHI.Platform.Linux.Network;
 /// <see cref="DownloadTimedOutException"/> (a network failure: could not check, never a Cancel and never "current"). The
 /// app's <see cref="HttpClient.Timeout"/> stays for payloads.</item>
 /// </list>
-/// When GitHub refuses (403/429 with no remaining quota, or a 5xx) and GitHub confirmed the cached body this session, that
+/// When GitHub refuses (403/429, or a 5xx) and GitHub confirmed the cached body this session, that
 /// body is returned and the fact is logged; a body saved by an earlier launch is returned only inside the rate-limit window
 /// GitHub advertised. Until the advertised reset time requests whose answer is cached are not sent at all. Payload
 /// downloads (release assets, archives) are never cached or timed here: they go through the stamped download cache.

@@ -395,8 +395,12 @@ public sealed class DeferredRunningGameTests : IDisposable
         {
             await WaitingForTheGateAsync(fx.Vm.Operations);
             Assert.Equal(0, checks.Count);
+            Assert.Equal(1, race.ReadsAfterClaim); // w12 follow-up (re-review update-all N2): the wait again, not yet the claim
         }
         Assert.True(await checks.Seen.WaitAsync(HangGuard), "no pass after the gate was freed");
+        // Exactly two reads after the claiming read — wait again, then claim — so the claim landed on the claim's own read
+        // (an extra read before WhenIdleAsync would move it onto the wait and leave the loop untested).
+        Assert.Equal(2, race.ReadsAfterClaim);
         await retry.Run!.WaitAsync(HangGuard);
 
         Assert.Equal(["background-update"], checks.Kinds);
@@ -565,6 +569,10 @@ public sealed class DeferredRunningGameTests : IDisposable
         private readonly object _lock = new();
         private IPanelHost _inner = null!;
         private int _skip = -1;
+        private int _readsAfterClaim = -1;
+
+        /// <summary>Reads of <see cref="IPanelHost.Operations"/> after the claiming read (-1 before it).</summary>
+        public int ReadsAfterClaim { get { lock (_lock) return _readsAfterClaim; } }
 
         public TaskCompletionSource<OperationScope> Claimed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -586,7 +594,12 @@ public sealed class DeferredRunningGameTests : IDisposable
             if (targetMethod!.Name == "get_Operations")
             {
                 bool claim;
-                lock (_lock) claim = _skip >= 0 && _skip-- == 0;
+                lock (_lock)
+                {
+                    if (_readsAfterClaim >= 0) _readsAfterClaim++;
+                    claim = _skip >= 0 && _skip-- == 0;
+                    if (claim) _readsAfterClaim = 0;
+                }
                 if (claim) Claimed.SetResult(_inner.Operations.TryBegin("queued") ?? throw new InvalidOperationException("the gate was not free"));
             }
             try { return targetMethod.Invoke(_inner, args); }
