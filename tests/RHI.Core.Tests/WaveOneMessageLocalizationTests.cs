@@ -616,6 +616,8 @@ public sealed class WaveOneMessageLocalizationTests
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        yield return LinuxDlssDefaultsService.BatchDeployFailedPrefix + "Access to the path '/jogos/exemplo/nvngx_dlss.dll' is denied.";
+        yield return LinuxDlssDefaultsService.BatchRestoreFailedPrefix + "Access to the path '/jogos/exemplo/nvngx_dlss.dll' is denied.";
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must
@@ -699,6 +701,9 @@ public sealed class WaveOneMessageLocalizationTests
         { OptiScalerDeploymentService.NightlySwitchFailedPrefix + OptiScalerDeploymentService.NightlyBuildUnavailablePrefix
             + DownloadStalledException.MessageFor("OptiScaler", TimeSpan.FromSeconds(60)), "The download stopped" },
         { LinuxManagedComponentService.NrStageFailedPrefix + DownloadStalledException.MessageFor("DLSS", TimeSpan.FromSeconds(60)), "The download stopped" },
+        // w12/pins rows (#249: the DLSS batch names a game whose step threw)
+        { LinuxDlssDefaultsService.BatchDeployFailedPrefix + "offline test", "Batch deploy failed" },
+        { LinuxDlssDefaultsService.BatchRestoreFailedPrefix + "offline test", "Batch restore failed" },
     };
 
     [Theory]

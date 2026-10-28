@@ -1460,5 +1460,6 @@ internal static class UiStrings
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        ("Dp.BatchFailedGames", "Falha em {0} jogo(s) • {1}", "Failed: {0} game(s) • {1}"),
     ];
 }
