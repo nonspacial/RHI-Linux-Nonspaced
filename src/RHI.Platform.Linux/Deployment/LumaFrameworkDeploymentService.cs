@@ -117,15 +117,22 @@ public sealed class LumaFrameworkDeploymentService
     }
 
     /// <summary>
-    /// #245 (upstream <c>CheckLumaNexusUpdatesAsync</c>): what Nexus says about the game's installed Luma mod when the wiki
-    /// now lists it only there; null when RHI has no Luma record for the game or the mod is not Nexus-only. The baseline is
-    /// the install time (no Luma install records a Nexus file id: a Nexus download installs through the local-package path).
+    /// #245 (review F2): what the game's Luma row shows for a mod the wiki lists only on Nexus Mods: its page, and Nexus's
+    /// answer when RHI installed it (<see cref="LumaNexusPage.Installed"/> null: RHI has no Luma install for the game, so
+    /// the row only opens the page and Nexus is not asked). Null when the mod is not Nexus-only, and on native Linux games
+    /// (Luma is never deployed there, so the row offers nothing).
     /// </summary>
-    public async Task<RHI.Platform.Linux.Network.NexusModUpdateAnswer?> AskNexusAsync(DetectedGame game, CancellationToken cancellationToken = default)
-        => GetRecord(game) is { } record && await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is { } entry
-            ? await AskNexusAsync(record, entry, cancellationToken).ConfigureAwait(false)
-            : null;
+    public async Task<LumaNexusPage?> NexusPageAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)) return null;
+        if (await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is not { } entry) return null;
+        return GetRecord(game) is { } record
+            ? new LumaNexusPage(entry.NexusUrl!, await AskNexusAsync(record, entry, cancellationToken).ConfigureAwait(false))
+            : new LumaNexusPage(entry.NexusUrl!, null);
+    }
 
+    // #245 (upstream CheckLumaNexusUpdatesAsync): the baseline is the install time (no Luma install records a Nexus file id:
+    // a Nexus download installs through the local-package path).
     private Task<RHI.Platform.Linux.Network.NexusModUpdateAnswer> AskNexusAsync(LinuxDeploymentRecord record, LumaCatalogEntry entry, CancellationToken cancellationToken)
         => NexusUpdates is { } nexus
             ? nexus.CheckAsync(entry.NexusUrl!, new DateTimeOffset(DateTime.SpecifyKind(record.InstalledAtUtc, DateTimeKind.Utc)), null, cancellationToken)
@@ -1180,3 +1187,6 @@ public sealed class LumaFrameworkDeploymentService
 }
 
 public sealed record LumaPlanItem(string StagingPath, string TargetPath, string ArchivePath);
+
+/// <summary>#245: a Nexus-only Luma mod's page and, when RHI installed it, Nexus's answer about a newer file.</summary>
+public sealed record LumaNexusPage(string PageUrl, RHI.Platform.Linux.Network.NexusModUpdateAnswer? Installed);

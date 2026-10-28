@@ -1461,6 +1461,8 @@ internal static class UiStrings
         ("Lu.UpdateOnNexusTip", "Abre a página deste mod no Nexus Mods; o RHI não pode baixá-lo por você.", "Opens this mod's page on Nexus Mods; RHI cannot download it for you."),
         ("Lu.OpenOnNexus", "Abrir no Nexus", "Open on Nexus"),
         ("Lu.OpenOnNexusNoKeyTip", "Abre a página deste mod no Nexus Mods. O RHI só verifica se há atualizações dele com uma conta do Nexus conectada: Configurações → Contas e atualizações → Conectar conta do Nexus.", "Opens this mod's page on Nexus Mods. RHI checks it for updates only with a connected Nexus account: Settings → Accounts & updates → Connect Nexus account."),
+        ("Lu.OpenOnNexusKeyRefusedTip", "Abre a página deste mod no Nexus Mods. O Nexus Mods recusou a chave do Nexus salva, então o RHI não pôde verificar se há atualizações dele. Conecte a conta de novo: Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus.", "Opens this mod's page on Nexus Mods. Nexus Mods refused the saved Nexus key, so RHI could not check it for updates. Connect the account again: Settings → Accounts & updates → Disconnect, then Connect Nexus account."),
+        ("Lu.OpenOnNexusInstallTip", "Abre a página deste mod no Nexus Mods. Baixe-o lá e solte o arquivo no RHI para instalá-lo.", "Opens this mod's page on Nexus Mods. Download it there and drop the file on RHI to install it."),
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

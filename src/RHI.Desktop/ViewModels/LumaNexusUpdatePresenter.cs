@@ -14,13 +14,15 @@ using RHI.Platform.Linux.Paths;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>
-/// #245 (upstream 2.8.8 <c>20d3297</c>): the Luma row of the selected game when RHI installed a Luma mod the Luma wiki now
-/// lists only on Nexus Mods. RHI asks Nexus (connected account's key only) whether a newer file is there and, when it is,
-/// shows "Update on Nexus" in the row: it opens the mod's Nexus page through <see cref="LinkHosts.NexusMod"/> and
-/// downloads nothing. Without a connected account the same place reads "Open on Nexus", and its ~2 s tooltip names
-/// Settings → Accounts &amp; updates → Connect Nexus account (the control that lets RHI check). Hidden when Nexus has no
-/// newer file, when Nexus could not be asked, and for every other mod. The answer is worked out off the UI thread
-/// (<see cref="NexusModUpdateCheck"/> keeps Nexus's file list for an hour, shared with Update All).
+/// #245 (upstream 2.8.8 <c>20d3297</c>): the Luma row of the selected game when the Luma wiki lists the game's Luma mod
+/// only on Nexus Mods. The row's own Nexus button (its own column: Install/Remove → Nexus → ⚙ → ⓘ) opens the mod's Nexus
+/// page through <see cref="LinkHosts.NexusMod"/> and downloads nothing. When RHI installed the mod, RHI asks Nexus
+/// (connected account's key only) whether a newer file is there: "Update on Nexus" when it is; hidden when Nexus has
+/// nothing newer or could not be asked. "Open on Nexus" with a ~2 s tooltip naming the control that fixes it when no
+/// account is connected (Connect Nexus account) or Nexus refused the saved key (Disconnect, then Connect Nexus account),
+/// and — without asking Nexus — when RHI has not installed the mod (download it there, drop the file on RHI). The answer
+/// is worked out off the UI thread (<see cref="NexusModUpdateCheck"/> keeps Nexus's file list for an hour, shared with
+/// Update All).
 /// </summary>
 public sealed class LumaNexusUpdatePresenter
 {
@@ -55,7 +57,7 @@ public sealed class LumaNexusUpdatePresenter
     /// <summary>Every Nexus answer still being worked out (tests await it).</summary>
     public Task Checking { get; private set; } = Task.CompletedTask;
 
-    /// <summary>Follows the shell's component rows (once): each new Luma row of an installed mod gets its Nexus answer.</summary>
+    /// <summary>Follows the shell's component rows (once): each new Luma row gets its Nexus answer.</summary>
     public void FollowRows()
     {
         if (_following) return;
@@ -71,8 +73,7 @@ public sealed class LumaNexusUpdatePresenter
     private void Track(IEnumerable<ComponentRowViewModel> rows)
     {
         if (_shell.SelectedGame is not { } game) return;
-        foreach (var row in rows.Where(row => row.Kind == ManagedComponentKind.LumaFramework
-                                              && row.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable))
+        foreach (var row in rows.Where(row => row.Kind == ManagedComponentKind.LumaFramework))
         {
             var work = AskAsync(game, row);
             Checking = Checking.IsCompleted ? work : Task.WhenAll(Checking, work);
@@ -82,7 +83,7 @@ public sealed class LumaNexusUpdatePresenter
 
     private async Task AskAsync(DetectedGame game, ComponentRowViewModel row)
     {
-        NexusModUpdateAnswer? answer;
+        LumaNexusPage? answer;
         try
         {
             answer = await Task.Run(() => _managed.AskNexusAboutLumaAsync(game)).ConfigureAwait(false);
@@ -111,31 +112,61 @@ public sealed class LumaNexusUpdatePresenter
     }
 }
 
-/// <summary>#245: the Luma row's Nexus button (set by <see cref="LumaNexusUpdatePresenter"/>); hidden until Nexus answered.</summary>
+/// <summary>What the Luma row's Nexus button says (#245).</summary>
+public enum LumaNexusRowMode
+{
+    /// <summary>Not shown: not a Nexus-only mod, nothing newer on Nexus, or Nexus could not be asked.</summary>
+    Hidden,
+    /// <summary>"Update on Nexus": RHI installed it and Nexus has a newer file.</summary>
+    Update,
+    /// <summary>"Open on Nexus": RHI installed it, no Nexus account is connected.</summary>
+    OpenNoKey,
+    /// <summary>"Open on Nexus": RHI installed it, Nexus refused the saved key.</summary>
+    OpenKeyRefused,
+    /// <summary>"Open on Nexus": RHI has not installed it (the page is where to get it).</summary>
+    OpenToInstall
+}
+
+/// <summary>#245: the Luma row's Nexus button (set by <see cref="LumaNexusUpdatePresenter"/>); hidden until answered.</summary>
 public sealed class LumaNexusRowState : INotifyPropertyChanged
 {
-    private NexusModUpdateOutcome? _outcome;
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    /// <summary>Shown only when Nexus has a newer file, or when no Nexus account is connected (then it only opens the page).</summary>
-    public bool IsVisible => Url is not null && _outcome is NexusModUpdateOutcome.Newer or NexusModUpdateOutcome.NoKey;
+    public LumaNexusRowMode Mode { get; private set; }
 
-    public string Label => UiLocalizationService.Text(_outcome == NexusModUpdateOutcome.NoKey ? "Lu.OpenOnNexus" : "Lu.UpdateOnNexus");
+    /// <summary>Shown only with a page that passed <see cref="LinkHosts.NexusMod"/> and something to say (see <see cref="Mode"/>).</summary>
+    public bool IsVisible => Url is not null && Mode != LumaNexusRowMode.Hidden;
 
-    public string Tip => UiLocalizationService.Text(_outcome == NexusModUpdateOutcome.NoKey ? "Lu.OpenOnNexusNoKeyTip" : "Lu.UpdateOnNexusTip");
+    public string Label => UiLocalizationService.Text(Mode == LumaNexusRowMode.Update ? "Lu.UpdateOnNexus" : "Lu.OpenOnNexus");
+
+    public string Tip => UiLocalizationService.Text(Mode switch
+    {
+        LumaNexusRowMode.OpenNoKey => "Lu.OpenOnNexusNoKeyTip",
+        LumaNexusRowMode.OpenKeyRefused => "Lu.OpenOnNexusKeyRefusedTip",
+        LumaNexusRowMode.OpenToInstall => "Lu.OpenOnNexusInstallTip",
+        _ => "Lu.UpdateOnNexusTip"
+    });
+
+    internal static LumaNexusRowMode ModeFor(LumaNexusPage page) => page.Installed?.Outcome switch
+    {
+        null => LumaNexusRowMode.OpenToInstall,
+        NexusModUpdateOutcome.Newer => LumaNexusRowMode.Update,
+        NexusModUpdateOutcome.NoKey => LumaNexusRowMode.OpenNoKey,
+        NexusModUpdateOutcome.KeyRefused => LumaNexusRowMode.OpenKeyRefused,
+        _ => LumaNexusRowMode.Hidden
+    };
 
     /// <summary>The mod's Nexus page (the button's command parameter), once it passed <see cref="LinkHosts.NexusMod"/>.</summary>
     public string? Url { get; private set; }
 
     public ICommand? Command { get; private set; }
 
-    internal void Set(NexusModUpdateAnswer answer, ICommand open)
+    internal void Set(LumaNexusPage page, ICommand open)
     {
-        _outcome = answer.Outcome;
-        Url = GameLinkCatalogue.SafePage(answer.PageUrl, LinkHosts.NexusMod);
+        Mode = ModeFor(page);
+        Url = GameLinkCatalogue.SafePage(page.PageUrl, LinkHosts.NexusMod);
         Command = open;
-        foreach (var name in new[] { nameof(Url), nameof(Command), nameof(Label), nameof(Tip), nameof(IsVisible) })
+        foreach (var name in new[] { nameof(Mode), nameof(Url), nameof(Command), nameof(Label), nameof(Tip), nameof(IsVisible) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 }

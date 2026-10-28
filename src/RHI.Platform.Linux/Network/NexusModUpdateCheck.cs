@@ -13,7 +13,9 @@ public enum NexusModUpdateOutcome
     Current,
     /// <summary>No Nexus account is connected, so Nexus was not asked.</summary>
     NoKey,
-    /// <summary>Nexus could not be asked or gave no dated file (error, rate limit, key refused, not a mod page).</summary>
+    /// <summary>Nexus refused the saved key (401/403): the user fixes it in Settings → Accounts &amp; updates.</summary>
+    KeyRefused,
+    /// <summary>Nexus could not be asked or gave no dated file (error, rate limit, not a mod page).</summary>
     Failed
 }
 
@@ -28,15 +30,19 @@ public sealed record NexusModUpdateAnswer(NexusModUpdateOutcome Outcome, string 
 /// file's upload time with the install's baseline: the installed Nexus file's upload time when the caller knows the
 /// file id, else the install time (upstream's baseline, which a new install resets). Upload times are used rather than
 /// the mod's "updated" time, which also moves when only the page text changes. One file list per mod is kept for
-/// <see cref="Freshness"/> (selection and Update All share it); a failure is never kept, never reads as current.
+/// <see cref="Freshness"/> (selection and Update All share it); a failure is never kept as an answer, never reads as
+/// current. After Nexus answers 429 (rate limited, after the client's one retry) nothing is asked for
+/// <see cref="RateLimitBackoff"/>: every check meanwhile is could-not-check with that answer (the limit is the account's).
 /// </summary>
 public sealed class NexusModUpdateCheck
 {
     public static readonly TimeSpan Freshness = TimeSpan.FromHours(1);
+    public static readonly TimeSpan RateLimitBackoff = TimeSpan.FromMinutes(5);
 
     // Fixed messages (PT-BR presentation pairs); values come last.
     public const string NoKeyMessage = "RHI checks this mod for updates on Nexus Mods only with a connected Nexus account: Settings → Accounts & updates → Connect Nexus account.";
     public const string FailedPrefix = "Nexus Mods could not be asked about this mod just now: ";
+    public const string KeyRefusedMessage = "Nexus Mods refused the saved Nexus key, so RHI could not check this mod for updates. Connect the account again: Settings → Accounts & updates → Disconnect, then Connect Nexus account.";
     public const string NotAModPageMessage = "The link is not a Nexus Mods mod page.";
     public const string NoDatedFileMessage = "Nexus Mods lists no dated main file for this mod.";
 
@@ -47,6 +53,7 @@ public sealed class NexusModUpdateCheck
     private readonly TimeProvider _time;
     private readonly object _gate = new();
     private readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<NexusModFile> Files)> _files = new(StringComparer.OrdinalIgnoreCase);
+    private (DateTimeOffset Until, string Message)? _rateLimited;
 
     /// <param name="apiKey">The connected account's key, or null (asked on every check: connecting needs no restart).</param>
     public NexusModUpdateCheck(NexusApiClient api, Func<string?> apiKey, TimeProvider? timeProvider = null)
@@ -80,19 +87,31 @@ public sealed class NexusModUpdateCheck
         IReadOnlyList<NexusModFile>? files = null;
         var cacheKey = page.Domain + "/" + page.ModId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var now = _time.GetUtcNow();
+        string? backingOff = null;
         lock (_gate)
+        {
             if (_files.TryGetValue(cacheKey, out var kept) && now - kept.At < Freshness) files = kept.Files;
+            else if (_rateLimited is { } limited && now < limited.Until) backingOff = limited.Message;
+        }
+        if (backingOff is not null) return new(NexusModUpdateOutcome.Failed, pageUrl, FailedPrefix + backingOff);
         if (files is null)
         {
             try
             {
                 files = await _api.GetModFilesAsync(key, page.Domain, page.ModId, cancellationToken).ConfigureAwait(false);
             }
+            catch (NexusApiException ex) when (!cancellationToken.IsCancellationRequested && ex.Rejected)
+            {
+                AppLog.Warn("nexus", "Nexus Mods refused the saved key while asked for a mod's files", ex);
+                return new(NexusModUpdateOutcome.KeyRefused, pageUrl, KeyRefusedMessage);
+            }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested
                                        && ex is IOException or JsonException or UntrustedDownloadException or HttpRequestException
                                            or TaskCanceledException or InvalidOperationException)
             {
                 AppLog.Warn("nexus", "Could not ask Nexus Mods for a mod's files", ex);
+                if (ex is NexusApiException { RateLimited: true })
+                    lock (_gate) _rateLimited = (now + RateLimitBackoff, ex.Message);
                 return new(NexusModUpdateOutcome.Failed, pageUrl, FailedPrefix + ex.Message);
             }
             lock (_gate) _files[cacheKey] = (now, files);

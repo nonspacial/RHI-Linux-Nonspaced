@@ -654,6 +654,8 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage,
             "O RHI só verifica se há atualizações deste mod no Nexus Mods com uma conta do Nexus conectada: Configurações → Contas e atualizações → Conectar conta do Nexus."),
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusCurrentMessage, "Não há um arquivo Luma mais novo no Nexus Mods."),
+        (RHI.Platform.Linux.Network.NexusModUpdateCheck.KeyRefusedMessage,
+            "O Nexus Mods recusou a chave do Nexus salva, então o RHI não pôde verificar se há atualizações deste mod. Conecte a conta de novo: Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus."),
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusOnlyInstallMessage,
             "O mod Luma deste jogo é publicado só no Nexus Mods, então o RHI não pode baixá-lo. Baixe-o na página dele no Nexus Mods e solte o arquivo no RHI para instalá-lo."),
         // w12/epic rows

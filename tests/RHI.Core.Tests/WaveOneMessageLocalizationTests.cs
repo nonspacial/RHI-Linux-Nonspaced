@@ -622,6 +622,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return LumaFrameworkDeploymentService.NexusCurrentMessage;
         yield return LumaFrameworkDeploymentService.NexusOnlyUpdatePrefix + "https://www.nexusmods.com/masseffectandromeda/mods/1351";
         yield return LumaFrameworkDeploymentService.NexusOnlyInstallMessage;
+        yield return RHI.Platform.Linux.Network.NexusModUpdateCheck.KeyRefusedMessage;
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

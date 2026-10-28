@@ -10,6 +10,8 @@ namespace RHI.Core.Tests;
 /// #245 in the app: the selected game's Luma row for a Nexus-only mod shows "Update on Nexus" (EN / PT-BR) with its ~2 s
 /// tooltip only when Nexus has a newer file; pressing it opens the mod's Nexus page and downloads nothing. Without a Nexus
 /// account it reads "Open on Nexus" and the tooltip names Connect Nexus account; when Nexus has nothing newer it is hidden.
+/// Correction round 1: also "Open on Nexus" for a Nexus-only mod RHI has not installed (F2) and when Nexus refused the saved
+/// key (F3, tooltip names Settings → Accounts &amp; updates); an Unreal game keeps its Luma ⚙ beside it (F1).
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
 [System.Runtime.Versioning.SupportedOSPlatform("linux")]
@@ -84,6 +86,84 @@ public sealed class LumaNexusRowTests : IDisposable
         Assert.Empty(opened);
     }
 
+    // Review F1: an Unreal Engine game (Mass Effect, Borderlands 2 … are UE3) shows the Luma Engine.ini ⚙ (#189) and the
+    // Nexus button on the same row; both stay (the layout keeps them apart: LumaNexusRowLayoutTests).
+    [Theory]
+    [InlineData("en-US", null)]
+    [InlineData("pt-BR", null)]
+    [InlineData("en-US", "key")]
+    public async Task UnrealLumaGame_ShowsTheEngineIniGear_AndTheNexusButton(string language, string? key)
+    {
+        using var fx = await StartAsync(language, key, newer: true, engineHint: "Unreal Engine 3");
+        using var _ = Language(language);
+        var row = await LumaRowAsync(fx);
+
+        Assert.True(row.HasIniSettings);
+        Assert.True(row.LumaNexus.IsVisible);
+        Assert.Equal(RHI.Desktop.Localization.UiLocalizationService.Text(key is null ? "Lu.OpenOnNexus" : "Lu.UpdateOnNexus"), row.LumaNexus.Label);
+    }
+
+    // Review F2: a Nexus-only mod RHI has not installed: "Open on Nexus" opens its page (where to get it); Nexus is not
+    // asked, account or not.
+    [Theory]
+    [InlineData("en-US", null, "Open on Nexus", "Download it there and drop the file on RHI to install it.")]
+    [InlineData("pt-BR", null, "Abrir no Nexus", "Baixe-o lá e solte o arquivo no RHI para instalá-lo.")]
+    [InlineData("en-US", "key", "Open on Nexus", "Download it there and drop the file on RHI to install it.")]
+    public async Task NotInstalledByRhi_TheRowOpensTheNexusPage_WithoutAskingNexus(string language, string? key, string label, string tip)
+    {
+        using var fx = await StartAsync(language, key, newer: true, installed: false);
+        using var _ = Language(language);
+        var opened = new List<string>();
+        fx.Vm.LumaNexus.OpenLink = url => { opened.Add(url); return (true, null); };
+        var row = await LumaRowAsync(fx);
+
+        Assert.True(row.LumaNexus.IsVisible);
+        Assert.Equal(label, row.LumaNexus.Label);
+        Assert.EndsWith(tip, row.LumaNexus.Tip, StringComparison.Ordinal);
+        var before = _requests.Count;
+        row.LumaNexus.Command!.Execute(row.LumaNexus.Url);
+        Assert.Equal([LumaNexusOnlyTests.AndromedaPage], opened);
+        Assert.Equal(before, _requests.Count);
+        Assert.DoesNotContain(_requests, url => url.Contains("api.nexusmods.com", StringComparison.Ordinal));
+    }
+
+    // Review F3: Nexus refused the saved key (401/403): "Open on Nexus", its tooltip names the control that fixes it.
+    [Theory]
+    [InlineData("en-US", System.Net.HttpStatusCode.Unauthorized, "Settings → Accounts & updates → Disconnect, then Connect Nexus account")]
+    [InlineData("pt-BR", System.Net.HttpStatusCode.Forbidden, "Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus")]
+    public async Task RefusedKey_TheRowOpensThePage_AndItsTipNamesAccountsAndUpdates(string language, System.Net.HttpStatusCode status, string control)
+    {
+        using var fx = await StartAsync(language, key: "revoked", newer: true, failNexus: true, failStatus: status);
+        using var _ = Language(language);
+        var row = await LumaRowAsync(fx);
+
+        Assert.True(row.LumaNexus.IsVisible);
+        Assert.Equal(RHI.Desktop.Localization.UiLocalizationService.Text("Lu.OpenOnNexus"), row.LumaNexus.Label);
+        Assert.Contains(control, row.LumaNexus.Tip, StringComparison.Ordinal);
+    }
+
+    // Review F4 (R4): a wiki link to Nexus that is not an https Nexus page is never offered (nor opened), installed or not.
+    [Fact]
+    public async Task NotInstalled_ANexusLinkThatIsNotAnHttpsNexusPage_IsHidden()
+    {
+        var wiki = LumaNexusOnlyTests.WikiSnippet.Replace("https://www.nexusmods.com/masseffectandromeda/mods/1351", "http://www.nexusmods.com/masseffectandromeda/mods/1351", StringComparison.Ordinal);
+        using var fx = await StartAsync("en-US", key: null, newer: true, installed: false, wiki: wiki);
+        var row = await LumaRowAsync(fx);
+
+        Assert.False(row.LumaNexus.IsVisible);
+    }
+
+    // Luma is never deployed to a native Linux game: no Nexus button there.
+    [Fact]
+    public async Task NativeLinuxGame_HasNoNexusButton()
+    {
+        using var fx = await StartAsync("en-US", key: null, newer: true, installed: false, runner: "Native Linux");
+        fx.Vm.LumaNexus.FollowRows();
+        var row = await LumaRowOrNullAsync(fx);
+
+        Assert.False(row?.LumaNexus.IsVisible ?? false);
+    }
+
     private sealed class LanguageScope : IDisposable
     {
         public void Dispose() => RHI.Desktop.Localization.UiLocalizationService.Apply("en-US");
@@ -95,7 +175,9 @@ public sealed class LumaNexusRowTests : IDisposable
         return new LanguageScope();
     }
 
-    private async Task<ViewModelFixture> StartAsync(string language, string? key, bool newer, bool failNexus = false)
+    private async Task<ViewModelFixture> StartAsync(string language, string? key, bool newer, bool failNexus = false,
+        System.Net.HttpStatusCode failStatus = System.Net.HttpStatusCode.InternalServerError, bool installed = true, string? engineHint = null,
+        string? wiki = null, string runner = "Proton")
     {
         var dir = Path.Combine(_root, "Mass Effect Andromeda");
         Directory.CreateDirectory(dir);
@@ -104,26 +186,30 @@ public sealed class LumaNexusRowTests : IDisposable
         var game = new DetectedGame
         {
             Name = "Mass Effect: Andromeda", InstallPath = dir, BinaryDirectory = dir, ExecutablePath = exe, Source = "Test",
-            Runner = "Proton", PrefixPath = Path.Combine(dir, "pfx"), GraphicsApi = GraphicsApi.DirectX11
+            Runner = runner, PrefixPath = Path.Combine(dir, "pfx"), GraphicsApi = GraphicsApi.DirectX11, EngineHint = engineHint
         };
         var files = LumaNexusOnlyTests.Files((1, "MAIN", LumaNexusOnlyTests.InstalledAt.AddDays(newer ? 19 : -3), "1.2"));
         var fx = await ViewModelFixture.StartAsync([game], language, httpResponse: request =>
         {
             var url = request.RequestUri!.AbsoluteUri;
             _requests.Enqueue(url);
-            if (url == LumaCatalogService.WikiUrl) return LumaNexusOnlyTests.Answer(LumaNexusOnlyTests.WikiSnippet, "text/html");
+            if (url == LumaCatalogService.WikiUrl) return LumaNexusOnlyTests.Answer(wiki ?? LumaNexusOnlyTests.WikiSnippet, "text/html");
             if (url == LumaNexusOnlyTests.AndromedaFiles)
-                return failNexus ? new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError) : LumaNexusOnlyTests.Answer(files, "application/json");
+                return failNexus ? new HttpResponseMessage(failStatus) : LumaNexusOnlyTests.Answer(files, "application/json");
             return null;
         }, lumaNexusKey: () => key);
+        if (!installed) return fx;
         var addon = Path.Combine(dir, "Luma-Mass_Effect_Andromeda.addon64");
         File.WriteAllBytes(addon, [1, 2, 3]);
         fx.Records.Upsert(LumaNexusOnlyTests.InstalledRecord(game, LumaNexusOnlyTests.AndromedaGitHubAsset, "Luma-Mass_Effect_Andromeda.zip", addon));
         return fx;
     }
 
-    /// <summary>Selects the game afresh (the record came after start-up), then waits for the analysis and the Nexus answer.</summary>
     private static async Task<ComponentRowViewModel> LumaRowAsync(ViewModelFixture fx)
+        => await LumaRowOrNullAsync(fx) ?? throw new Xunit.Sdk.XunitException("No Luma row");
+
+    /// <summary>Selects the game afresh (the record came after start-up), then waits for the analysis and the Nexus answer.</summary>
+    private static async Task<ComponentRowViewModel?> LumaRowOrNullAsync(ViewModelFixture fx)
     {
         fx.Vm.LumaNexus.FollowRows();
         var selected = fx.Vm.Games.Single(row => row.Game.Name == "Mass Effect: Andromeda").Game;
@@ -140,6 +226,6 @@ public sealed class LumaNexusRowTests : IDisposable
         finally { fx.Vm.Session.Completed -= OnCompleted; }
         await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromMinutes(1));
         await fx.Vm.LumaNexus.Checking.WaitAsync(TimeSpan.FromMinutes(1));
-        return fx.Vm.Components.Single(row => row.Kind == ManagedComponentKind.LumaFramework);
+        return fx.Vm.Components.SingleOrDefault(row => row.Kind == ManagedComponentKind.LumaFramework);
     }
 }

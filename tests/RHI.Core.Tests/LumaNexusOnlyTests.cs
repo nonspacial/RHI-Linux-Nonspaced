@@ -175,7 +175,6 @@ public sealed class LumaNexusOnlyTests : IDisposable
     [Theory]
     [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData(HttpStatusCode.TooManyRequests)]
-    [InlineData(HttpStatusCode.Unauthorized)]
     public async Task Check_NexusError_CouldNotCheck_NeverAnUpdate(HttpStatusCode status)
     {
         var (service, game, _) = Build(key: "key", files: null, nexusStatus: status);
@@ -185,6 +184,24 @@ public sealed class LumaNexusOnlyTests : IDisposable
         Assert.True(check.CouldNotCheck);
         Assert.False(check.UpdateAvailable);
         Assert.StartsWith(NexusModUpdateCheck.FailedPrefix, check.Message, StringComparison.Ordinal);
+    }
+
+    // Review F3: a refused key (401/403) is a blocker the user fixes in RHI: could-not-check, naming the control.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task Check_RefusedKey_CouldNotCheck_NamingAccountsAndUpdates(HttpStatusCode status)
+    {
+        var (service, game, _) = Build(key: "revoked", files: null, nexusStatus: status);
+
+        var check = await service.CheckUpdateAsync(game);
+
+        Assert.True(check.CouldNotCheck);
+        Assert.False(check.UpdateAvailable);
+        Assert.Contains("Settings → Accounts & updates → Disconnect, then Connect Nexus account", check.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("revoked", check.Message, StringComparison.Ordinal);
+        Assert.Contains("Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus",
+            UiLocalizationService.PresentFor("pt-BR", check.Message), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -393,6 +410,84 @@ public sealed class NexusModUpdateCheckTests
         Assert.Equal(3, requests.Count);
     }
 
+    // Review F4 (R5): a file uploaded the same second as the install is the installed one, not newer.
+    [Fact]
+    public async Task AFileUploadedTheSecondOfTheInstall_IsCurrent()
+    {
+        var (check, _) = Build(LumaNexusOnlyTests.Files((1, "MAIN", Installed.UtcDateTime, "1.0")));
+
+        Assert.Equal(NexusModUpdateOutcome.Current, (await check.CheckAsync(Page, Installed)).Outcome);
+        Assert.Equal(NexusModUpdateOutcome.Newer, (await check.CheckAsync(Page, Installed.AddSeconds(-1))).Outcome);
+    }
+
+    // Review F4 (R8): an empty key is no account; Nexus is not asked.
+    [Fact]
+    public async Task AnEmptyKey_IsNoKey_AndNexusIsNotAsked()
+    {
+        var (check, requests) = Build(LumaNexusOnlyTests.Files((1, "MAIN", Installed.UtcDateTime.AddDays(2), "1.3")), key: "");
+
+        Assert.Equal(NexusModUpdateOutcome.NoKey, (await check.CheckAsync(Page, Installed)).Outcome);
+        Assert.Empty(requests);
+    }
+
+    // Review F3 at the check: 401/403 is "key refused" (named control), never a passing hiccup.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task ARefusedKey_IsKeyRefused_NamingAccountsAndUpdates(HttpStatusCode status)
+    {
+        var (check, _) = Build("", status: () => status);
+
+        var answer = await check.CheckAsync(Page, Installed);
+
+        Assert.Equal("KeyRefused", answer.Outcome.ToString());
+        Assert.Contains("Settings → Accounts & updates", answer.Message, StringComparison.Ordinal);
+    }
+
+    // Review F5: after a 429 (the client already retried once) nothing is asked for five minutes, for any mod (the limit is
+    // the account's); meanwhile every check is could-not-check with that answer, a file list still fresh still answers.
+    [Fact]
+    public async Task AfterARateLimit_NexusIsLeftAloneForFiveMinutes()
+    {
+        var time = new ManualTime(Installed.AddDays(30));
+        HttpStatusCode? status = null;
+        var (check, requests) = Build(LumaNexusOnlyTests.Files((1, "MAIN", Installed.UtcDateTime.AddDays(2), "1.3")), time, status: () => status);
+        Assert.Equal(NexusModUpdateOutcome.Newer, (await check.CheckAsync(Page, Installed)).Outcome); // kept for an hour
+        status = HttpStatusCode.TooManyRequests;
+        const string Other = "https://www.nexusmods.com/borderlands2/mods/700";
+
+        var limited = await check.CheckAsync(Other, Installed);
+        var asked = requests.Count;
+        var meanwhile = await check.CheckAsync(Other, Installed);
+        var kept = await check.CheckAsync(Page, Installed);
+        time.Now += TimeSpan.FromMinutes(4);
+        var stillMeanwhile = await check.CheckAsync(Other, Installed);
+
+        Assert.Equal(NexusModUpdateOutcome.Failed, limited.Outcome);
+        Assert.Equal((NexusModUpdateOutcome.Failed, limited.Message), (meanwhile.Outcome, meanwhile.Message));
+        Assert.Equal(NexusModUpdateOutcome.Failed, stillMeanwhile.Outcome);
+        Assert.Equal(NexusModUpdateOutcome.Newer, kept.Outcome);
+        Assert.Equal(asked, requests.Count); // nothing asked during the back-off
+
+        status = null;
+        time.Now += TimeSpan.FromMinutes(1.5);
+        Assert.Equal(NexusModUpdateOutcome.Newer, (await check.CheckAsync(Other, Installed)).Outcome);
+        Assert.Equal(asked + 1, requests.Count);
+    }
+
+    // A failure that is not a rate limit is never kept: the next check asks again (correctness first: never a stale answer).
+    [Fact]
+    public async Task AnOrdinaryFailure_StartsNoBackOff()
+    {
+        HttpStatusCode? status = HttpStatusCode.ServiceUnavailable;
+        var (check, requests) = Build(LumaNexusOnlyTests.Files((1, "MAIN", Installed.UtcDateTime.AddDays(2), "1.3")), status: () => status);
+
+        Assert.Equal(NexusModUpdateOutcome.Failed, (await check.CheckAsync(Page, Installed)).Outcome);
+        status = null;
+        Assert.Equal(NexusModUpdateOutcome.Newer, (await check.CheckAsync(Page, Installed)).Outcome);
+        Assert.Equal(2, requests.Count);
+    }
+
     [Fact]
     public async Task NotANexusPage_IsNeverAsked()
     {
@@ -404,15 +499,17 @@ public sealed class NexusModUpdateCheckTests
         Assert.Empty(requests);
     }
 
-    private static (NexusModUpdateCheck Check, ConcurrentQueue<string> Requests) Build(string files, TimeProvider? time = null, Func<bool>? fail = null)
+    private static (NexusModUpdateCheck Check, ConcurrentQueue<string> Requests) Build(string files, TimeProvider? time = null, Func<bool>? fail = null,
+        Func<HttpStatusCode?>? status = null, string? key = "key")
     {
         var requests = new ConcurrentQueue<string>();
         var fake = new NexusApiClientTests.FakeNexus(request =>
         {
             requests.Enqueue(request.RequestUri!.AbsoluteUri);
+            if (status?.Invoke() is { } answer) return new HttpResponseMessage(answer);
             return fail?.Invoke() == true ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : LumaNexusOnlyTests.Answer(files, "application/json");
         });
-        return (new NexusModUpdateCheck(new NexusApiClient(new HttpClient(fake), (_, _) => Task.CompletedTask), () => "key", time), requests);
+        return (new NexusModUpdateCheck(new NexusApiClient(new HttpClient(fake), (_, _) => Task.CompletedTask), () => key, time), requests);
     }
 
     private sealed class ManualTime(DateTimeOffset now) : TimeProvider
