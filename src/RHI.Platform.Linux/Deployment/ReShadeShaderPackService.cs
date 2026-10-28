@@ -89,6 +89,20 @@ public sealed class ReShadeShaderPackService
     public const string ProtectedShaderFilePrefix =
         "A shader file in RHI's folder is not the one RHI placed (it was changed or added outside RHI), so RHI left it alone. Move or delete it, or untick its pack in Shaders/Add-ons, then try again: ";
 
+    /// <summary>
+    /// w12 follow-up (re-review shaders N2): the same refusal for one of ReShade's core headers in <c>_Core</c>. The headers go
+    /// with every pack, so unticking a pack cannot clear it: move or delete it is the only way out. The path follows.
+    /// </summary>
+    public const string ProtectedCoreHeaderPrefix =
+        "A ReShade core header in RHI's folder is not the one RHI placed (it was changed or added outside RHI), so RHI left it alone. Move or delete it, then try again: ";
+
+    /// <summary>
+    /// w12 follow-up (re-review shaders N3): two catalogue packs whose ids give the same folder name would place the same file.
+    /// RHI's own catalogue clash, never a file of the user's; nothing is changed. The path follows.
+    /// </summary>
+    public const string PackFolderClashPrefix =
+        "Two shader packs in RHI's catalogue would place the same file, so RHI changed nothing. This clash is RHI's, not a file of yours; tick only one of those packs in Shaders/Add-ons: ";
+
     /// <summary>#240/#241: fixed text before the path when a folder or file inside RHI's shader folder is a link (PT-BR pair; review F4).</summary>
     public const string LinkedShaderFolderPrefix = "A folder or file inside RHI's shader folder is a link, so RHI does not write through it: ";
 
@@ -479,7 +493,7 @@ public sealed class ReShadeShaderPackService
                 throw new InvalidOperationException($"Shader path escapes managed root: {destination}");
             var relative = Path.GetRelativePath(root, destination);
             if (!seen.Add(relative))
-                throw new IOException(ProtectedShaderFilePrefix + destination);
+                throw new IOException(PackFolderClashPrefix + destination);
             plan.Add(new MirrorFile(relative, destination, source));
         }
 
@@ -519,7 +533,7 @@ public sealed class ReShadeShaderPackService
             var current = await FileHash.Sha256HexAsync(destination, CancellationToken.None).ConfigureAwait(false);
             var owned = previousByPath.TryGetValue(file.RelativePath, out var old) && FileHash.HexEquals(current, old.Sha256);
             if (file.Source is null) return owned ? current : null;
-            if (!owned) throw new IOException(ProtectedShaderFilePrefix + destination);
+            if (!owned) throw new IOException(ProtectedFileMessage(root, destination));
             var stagedSha = await FileHash.Sha256HexAsync(file.Source, CancellationToken.None).ConfigureAwait(false);
             if (new FileInfo(destination).Length == new FileInfo(file.Source).Length && FileHash.HexEquals(current, stagedSha))
                 return current; // unchanged: no write, no journal step
@@ -1074,8 +1088,14 @@ public sealed class ReShadeShaderPackService
         var manifestRelative = Path.GetRelativePath(managedRoot, destination);
         if (!previousByPath.TryGetValue(manifestRelative, out var old) ||
             !string.Equals(FileHash.Sha256Hex(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
-            throw new IOException(ProtectedShaderFilePrefix + destination);
+            throw new IOException(ProtectedFileMessage(managedRoot, destination));
     }
+
+    /// <summary>The refusal for a file in RHI's folder that is not RHI's: the core-header line inside <c>_Core</c> (re-review N2).</summary>
+    private static string ProtectedFileMessage(string root, string destination)
+        => (Path.GetRelativePath(root, destination).StartsWith(CoreFolder + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? ProtectedCoreHeaderPrefix
+            : ProtectedShaderFilePrefix) + destination;
 
     /// <summary>
     /// One verified copy into the game's shader folder; inside <paramref name="operation"/> the target is tracked and the
@@ -1110,7 +1130,7 @@ public sealed class ReShadeShaderPackService
             var manifestRelative = Path.GetRelativePath(managedRoot, destination);
             if (!previousByPath.TryGetValue(manifestRelative, out var old) ||
                 !string.Equals(FileHash.Sha256Hex(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new IOException(ProtectedShaderFilePrefix + destination);
+                throw new IOException(ProtectedFileMessage(managedRoot, destination));
         }
     }
 
@@ -1249,6 +1269,9 @@ public sealed class ReShadeShaderPackService
 
         void Prune()
         {
+            // w12 follow-up (re-review shaders M1): when reshade-shaders/RHI itself, or reshade-shaders, is a link, every folder
+            // under it lives where the link points (the user's own place): nothing there is pruned, not even an empty folder.
+            if (IsLink(rootFull) || (Path.GetDirectoryName(rootFull) is { } shaders && IsLink(shaders))) return;
             // An empty pack folder of RHI's (named after a catalogue pack, or _Core) that an older build left behind: its
             // prune ran while the journal's copies still filled it, and its manifest no longer lists it.
             foreach (var name in packFolders ?? [])

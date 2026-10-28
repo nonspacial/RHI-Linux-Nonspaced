@@ -731,9 +731,13 @@ public sealed class DeploymentOperation : IAsyncDisposable
         }
         // Review w12/shaders F5: after-commit tidying runs while this operation still holds its lock (the snapshots are
         // already gone, which is all it needs), so nothing else acts on its entry in between.
-        RunAfterCommit();
-        // The lock file only matters while the entry exists; snapshots that could not be removed are swept later.
-        ReleaseLock(deleteLockFile: !File.Exists(_journal.EntryPath(Id)));
+        // w12 follow-up (re-review shaders N1): the lock goes even when an action throws something unexpected.
+        try { RunAfterCommit(); }
+        finally
+        {
+            // The lock file only matters while the entry exists; snapshots that could not be removed are swept later.
+            ReleaseLock(deleteLockFile: !File.Exists(_journal.EntryPath(Id)));
+        }
         return problems;
     }
 
@@ -744,7 +748,8 @@ public sealed class DeploymentOperation : IAsyncDisposable
     /// <see cref="CommitAsync"/>, or a landed commit write found by <see cref="SettleAfterFailureAsync"/>); never after a
     /// rollback, and a crash before it skips it. Runs before the operation's lock is released (review F5), so no other
     /// operation's settle or recovery acts on its entry in between. For tidying the snapshots stand in the way of — removing folders a
-    /// removal emptied (a snapshot sits beside each file it took out). Best effort: a failure is logged, never thrown.
+    /// removal emptied (a snapshot sits beside each file it took out). Best effort: an IO failure is logged, never thrown; anything else
+    /// is thrown once the lock is released.
     /// </summary>
     public void AfterCommit(string what, Action action) => _afterCommit.Add((what, action));
 

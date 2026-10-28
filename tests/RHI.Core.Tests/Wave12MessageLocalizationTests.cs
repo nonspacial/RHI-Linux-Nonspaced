@@ -30,6 +30,8 @@ public sealed class Wave12MessageLocalizationTests
         // shaders (#239–#241)
         { ReShadeShaderPackService.ProtectedShaderFilePrefix + "/jogos/Exemplo/reshade-shaders/RHI/Prod80/Shaders/x.fx", "outside RHI" },
         { ReShadeShaderPackService.LinkedShaderFolderPrefix + "/jogos/Exemplo/reshade-shaders/RHI", "is a link" },
+        { ReShadeShaderPackService.ProtectedCoreHeaderPrefix + "/jogos/Exemplo/reshade-shaders/RHI/_Core/Shaders/ReShade.fxh", "core header" }, // follow-up N2
+        { ReShadeShaderPackService.PackFolderClashPrefix + "/jogos/Exemplo/reshade-shaders/RHI/Pack_One/Shaders/Same.fx", "would place the same file" }, // N3
         // pins (#249)
         { LinuxDlssDefaultsService.BatchDeployFailedPrefix + "E/S negada", "Batch deploy failed" },
         { LinuxDlssDefaultsService.BatchRestoreFailedPrefix + "E/S negada", "Batch restore failed" },

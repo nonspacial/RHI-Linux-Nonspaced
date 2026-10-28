@@ -31,6 +31,22 @@ public sealed class DeploymentJournalAfterCommitTests : IDisposable
         Assert.False(File.Exists(lockPath));
     }
 
+    // w12 follow-up (re-review shaders N1): an after-commit action that throws something other than an IO error still
+    // lets the operation's lock go (the throw is reported, the lock is never left held).
+    [Fact]
+    public async Task AfterCommit_AnUnexpectedThrow_StillReleasesTheLock()
+    {
+        var journal = new DeploymentJournal(Path.Combine(_root, "journal"));
+        var operation = await journal.BeginAsync("after-commit throws");
+        var lockPath = journal.LockPath(operation.Id);
+        operation.AfterCommit("throw", () => throw new InvalidOperationException("unexpected"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => operation.CommitAsync());
+
+        Assert.False(LockIsHeld(lockPath));
+        Assert.False(File.Exists(lockPath));
+    }
+
     [Fact]
     public async Task AfterCommit_NeverRunsAfterARollback()
     {

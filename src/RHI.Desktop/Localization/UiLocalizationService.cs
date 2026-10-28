@@ -1718,6 +1718,11 @@ public static class UiLocalizationService
         // w12/shaders rows
         (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.ProtectedShaderFilePrefix,
             "Um arquivo de shader na pasta do RHI não é o que o RHI colocou (foi alterado ou adicionado fora do RHI), então o RHI não mexeu nele. Mova ou apague o arquivo, ou desmarque o pacote dele em Shaders/Add-ons, e tente de novo: "),
+        // w12 follow-up (re-review shaders N2, N3): a changed core header (no pack to untick); RHI's own pack-folder clash.
+        (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.ProtectedCoreHeaderPrefix,
+            "Um cabeçalho principal do ReShade na pasta do RHI não é o que o RHI colocou (foi alterado ou adicionado fora do RHI), então o RHI não mexeu nele. Mova ou apague o arquivo e tente de novo: "),
+        (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.PackFolderClashPrefix,
+            "Dois pacotes de shaders do catálogo do RHI colocariam o mesmo arquivo, então o RHI não mudou nada. O conflito é do RHI, não de um arquivo seu; marque só um desses pacotes em Shaders/Add-ons: "),
         (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.LinkedShaderFolderPrefix,
             "Uma pasta ou um arquivo dentro da pasta de shaders do RHI é um link, então o RHI não grava através dele: "),
         // w12/update-all rows
