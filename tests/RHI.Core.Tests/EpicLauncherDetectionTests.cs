@@ -439,6 +439,66 @@ public sealed class EpicLauncherDetectionTests : IDisposable
         Assert.Equal("lutris 'lutris:rungame/alan-wake-2-egs'", Assert.Single(games, g => g.InstallPath == alanDir).LaunchCommand);
     }
 
+    [Fact]
+    public async Task NewLauncherAtItsDefaultPlace_WithoutAUrlHandler_StillStartsTheGameThroughIt()
+    {
+        // Epic: the launcher preview lives in %LOCALAPPDATA%\Epic Games\Launcher (w12 review 2).
+        var prefix = Prefix("eglv2-default");
+        var launcher = Pe(Path.Combine(prefix, "drive_c", "users", "steamuser", "AppData", "Local", "Epic Games", "Launcher"), "EpicGamesLauncher.exe");
+        var gameDir = Path.Combine(prefix, "drive_c", "EGL", "Kena");
+        var exe = Pe(gameDir, "Kena.exe", 8192);
+        Log(DataFolder(prefix), """{"version":1}""", Entry("i-k", true, @"C:\EGL\Kena", "Kena1"));
+        UserRegistry(prefix, ("""Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\EpicGames-Kena1""", [("DisplayName", "Kena")]));
+
+        var game = Assert.Single(await DetectWine(), g => g.InstallPath == gameDir);
+
+        Assert.Equal(exe, game.ExecutablePath);
+        Assert.Equal(launcher, game.LaunchExecutablePath);
+        Assert.Equal($"WINEPREFIX='{prefix}' wine '{launcher}' 'com.epicgames.launcher://apps/Kena1?action=launch&silent=true'", game.LaunchCommand);
+    }
+
+    [Fact]
+    public async Task UninstallEntries_TheLogDoesNotMention_AreListedBesideClassicManifests_AsUpstream()
+    {
+        // Upstream lists EpicGames-* entries whether or not the new launcher's data folder is found (w12 review 3).
+        var prefix = Prefix("egl-uninstall-only");
+        Pe(Path.Combine(prefix, "drive_c", "Program Files (x86)", "Epic Games", "Launcher", "Portal", "Binaries", "Win64"), "EpicGamesLauncher.exe");
+        Pe(Path.Combine(prefix, "drive_c", "EGL", "Classic"), "Classic.exe", 8192);
+        var relocated = Path.Combine(prefix, "drive_c", "EGL", "Relocated");
+        Pe(relocated, "Relocated.exe", 8192);
+        Manifest(prefix, "c.item", "Classic Game", @"C:\EGL\Classic", "ClassicApp");
+        UserRegistry(prefix, ("""Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\EpicGames-Reloc1""",
+            [("DisplayName", "Relocated Game"), ("InstallLocation", @"C:\EGL\Relocated")]));
+
+        var game = Assert.Single(await DetectWine(), g => g.InstallPath == relocated);
+
+        Assert.Equal("Relocated Game", game.Name);
+        Assert.EndsWith("'com.epicgames.launcher://apps/Reloc1?action=launch&silent=true'", game.LaunchCommand);
+    }
+
+    [PermissionDenialFact]
+    public async Task AnUnreadableUsersFolder_InAPrefixWithoutEpicData_GivesNoEpicWarning()
+    {
+        // No Epic data → silent; the users folder is someone else's to report (w12 review 4).
+        var prefix = Prefix("users-locked");
+        Pe(Path.Combine(prefix, "drive_c", "Program Files", "Plain"), "Plain.exe", 8192);
+        var users = Path.Combine(prefix, "drive_c", "users");
+        File.SetUnixFileMode(users, UnixFileMode.None);
+        try
+        {
+            Assert.Throws<UnauthorizedAccessException>(() => Directory.GetDirectories(users));
+
+            var scan = await new GameLibraryScanner([new WinePrefixDetector(Home, [])]).ScanWithReportAsync(null);
+
+            Assert.Contains(scan.Games, g => g.Name == "Plain");
+            Assert.DoesNotContain(scan.Detectors.Single(d => d.Name == "Wine").Warnings, w => w.Contains("Epic", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.SetUnixFileMode(users, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     private Task<IReadOnlyList<DetectedGame>> DetectWine() => new WinePrefixDetector(Home, []).DetectAsync();

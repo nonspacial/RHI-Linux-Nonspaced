@@ -43,7 +43,8 @@ internal static class EpicLauncherRecords
     public static IEnumerable<StoreLauncherGame> Read(StoreLauncherRecords.Context context, CancellationToken ct)
     {
         var manifests = Path.Combine(context.DriveC, "ProgramData", "Epic", "EpicGamesLauncher", "Data", "Manifests");
-        var dataFolders = UserFolders(context)
+        var users = UserFolders(context);
+        var dataFolders = users
             .Select(user => Path.Combine(user, "AppData", "Local", "com.epicgames.eglv2"))
             .Where(Directory.Exists)
             .ToList();
@@ -51,7 +52,7 @@ internal static class EpicLauncherRecords
         if (!Directory.Exists(manifests) && dataFolders.Count == 0) yield break;
 
         var user = LoadUserRegistry(context.Prefix);
-        var launcher = Launcher(context, user);
+        var launcher = Launcher(context, user, users);
         var found = new List<(string Folder, string Name, string? AppName)>();
 
         // Classic launcher: one .item file per install (a DLC's file shares its game's folder: the game's own comes first).
@@ -90,11 +91,11 @@ internal static class EpicLauncherRecords
                 found.Add((folder, name, install.ArtifactId));
             }
         }
-        // Uninstall entries the log does not mention (upstream: in case the log's format changes).
-        if (dataFolders.Count > 0)
-            foreach (var (artifact, entry) in uninstall)
-                if (!listedArtifacts.Contains(artifact) && context.GameFolder(entry.Location) is { } folder)
-                    found.Add((folder, entry.Name, artifact));
+        // Uninstall entries the log does not mention, as upstream lists them wherever the launcher left data (in case the
+        // log's format changes, or the new launcher's data folder is not where it is looked for).
+        foreach (var (artifact, entry) in uninstall)
+            if (!listedArtifacts.Contains(artifact) && context.GameFolder(entry.Location) is { } folder)
+                found.Add((folder, entry.Name, artifact));
 
         var launcherFolder = launcher is null ? null : PathIdentity.Canonicalize(Path.GetDirectoryName(launcher)!);
         foreach (var (folder, name, appName) in found)
@@ -108,10 +109,15 @@ internal static class EpicLauncherRecords
         }
     }
 
-    private static IEnumerable<string> UserFolders(StoreLauncherRecords.Context context)
+    /// <summary>
+    /// The prefix's Windows user folders. An unreadable <c>drive_c/users</c> is none, quietly: a prefix without Epic data
+    /// stays silent (the other readers of that folder say it is unreadable).
+    /// </summary>
+    private static IReadOnlyList<string> UserFolders(StoreLauncherRecords.Context context)
     {
         var users = Path.Combine(context.DriveC, "users");
-        return Directory.Exists(users) ? Directory.GetDirectories(users).Order(StringComparer.Ordinal) : [];
+        try { return Directory.Exists(users) ? [.. Directory.GetDirectories(users).Order(StringComparer.Ordinal)] : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
     }
 
     private static WineRegistryReader LoadUserRegistry(string prefix)
@@ -126,14 +132,16 @@ internal static class EpicLauncherRecords
 
     /// <summary>
     /// The launcher the <c>com.epicgames.launcher:</c> URL handler starts (per user first, then the machine's), else the
-    /// classic launcher's default places.
+    /// classic launcher's default places, then the new launcher's (in each Windows user's local app data).
     /// </summary>
-    private static string? Launcher(StoreLauncherRecords.Context context, WineRegistryReader user)
+    private static string? Launcher(StoreLauncherRecords.Context context, WineRegistryReader user, IReadOnlyList<string> users)
     {
         foreach (var command in new[] { user.Value(UrlHandlerKey, ""), context.Registry.Value(UrlHandlerKey, "") })
             if (HandlerProgram(command) is { } program && WindowsPathMapper.ToLinux(context.Prefix, program) is { } file && File.Exists(file))
                 return file;
-        return context.DefaultFile(DefaultLauncherFiles);
+        // The new launcher's default place is per user (Epic: %LOCALAPPDATA%\Epic Games\Launcher\EpicGamesLauncher.exe).
+        return context.DefaultFile(DefaultLauncherFiles)
+               ?? users.Select(folder => Path.Combine(folder, "AppData", "Local", "Epic Games", "Launcher", "EpicGamesLauncher.exe")).FirstOrDefault(File.Exists);
     }
 
     /// <summary>The program of a URL handler command: <c>"C:\…\EpicGamesLauncher.exe" %1</c> or unquoted up to <c>.exe</c>.</summary>
