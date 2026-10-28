@@ -223,6 +223,113 @@ public sealed class HdrSectionViewModelTests : IDisposable
         }
     }
 
+    // ---- correction round 1, F6 + F7 (R2): lookups for games the user has left ------------------------------------------
+
+    [Fact]
+    public async Task ArrowingThroughTheLibrary_CancelsTheLookupsOfGamesLeft()
+    {
+        // Five games nobody looked up yet; PCGamingWiki is slow (each request waits until the test lets it go, or until its
+        // caller cancels). Each selection's first request arrives only once the earlier game's lookup has let the shared
+        // request gate go — i.e. was cancelled; at the end only the last game's lookup asks anything more.
+        const int count = 5;
+        var games = Enumerable.Range(1, count).Select(i => _games.Game($"Sweep Quest {i}", "direct")).ToList();
+        var wiki = new HdrSupportServiceTests.FakeWiki();
+        foreach (var game in games)
+        {
+            wiki.Search[game.Name] = game.Name.Replace(' ', '_');
+            wiki.Pages[game.Name] = HdrSupportServiceTests.Wikitext("false");
+        }
+        var slow = new SlowWiki(wiki);
+        using var fx = await LegacyHdrWsiViewModelTests.StartAsync(games, LegacyHdrWsiViewModelTests.Modern, new LegacyHdrWsiViewModelTests.RecordingLauncher());
+        var runtime = fx.Vm.Runtime;
+        fx.Vm.SelectedGame = null;
+        runtime.HdrSupport = Service(slow);
+
+        foreach (var game in games)
+        {
+            var arrived = slow.NextArrival();
+            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == game.Name).Game;
+            await arrived.WaitAsync(TimeSpan.FromSeconds(20)); // never arrives while a left lookup still holds the gate
+        }
+        var last = runtime.HdrSupportLookup!;
+        slow.Release();
+        await last.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
+
+        Assert.Equal(count - 1 + 2, slow.Requests); // one cancelled search per game left, then the last game's search + page
+        Assert.Same(games[^1].Name, fx.Vm.SelectedGame!.Name);
+        Assert.Equal(HdrSupportAnswer.No, runtime.HdrSupportKnown?.Answer);
+        Assert.False(runtime.ShowHdrSection);
+    }
+
+    [Fact]
+    public async Task ALateAnswer_ForAGameTheUserLeft_NeverLandsOnTheSelectedGame()
+    {
+        // B's answer (No: hidden) is known; A's lookup is slow. Select A, then B, then A's answer arrives: B stays hidden
+        // with B's own answer.
+        var a = _games.Game("Alpha Quest", "direct");
+        var b = _games.Game("Beta Quest", "direct");
+        var wiki = new HdrSupportServiceTests.FakeWiki
+        {
+            Search = { [a.Name] = "Alpha_Quest", [b.Name] = "Beta_Quest" },
+            Pages = { [a.Name] = HdrSupportServiceTests.Wikitext("true"), [b.Name] = HdrSupportServiceTests.Wikitext("false") }
+        };
+        // A's server answers only when released, even after RHI cancelled the request (so A's late result lands after B's).
+        var slow = new SlowWiki(wiki) { Holding = false, IgnoreCancel = true };
+        using var fx = await LegacyHdrWsiViewModelTests.StartAsync([b, a], LegacyHdrWsiViewModelTests.Modern, new LegacyHdrWsiViewModelTests.RecordingLauncher());
+        var runtime = fx.Vm.Runtime;
+        runtime.HdrSupport = Service(slow);
+        await runtime.HdrSupportLookup!.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
+        Assert.False(runtime.ShowHdrSection); // B: No
+
+        slow.Holding = true;
+        var arrived = slow.NextArrival();
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == a.Name).Game;
+        var lookupA = runtime.HdrSupportLookup!;
+        await arrived.WaitAsync(TimeSpan.FromSeconds(20));
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == b.Name).Game; // B's answer from the cache
+        Assert.Null(runtime.HdrSupportLookup);
+        slow.Release();
+        await lookupA.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard); // A's answer (or its cancelled Unknown) arrives now
+
+        Assert.Equal(b.Name, fx.Vm.SelectedGame!.Name);
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.PcGamingWiki, b.Name), runtime.HdrSupportKnown);
+        Assert.False(runtime.ShowHdrSection);
+    }
+
+    /// <summary>
+    /// A slow PCGamingWiki in front of <see cref="HdrSupportServiceTests.FakeWiki"/>: while <see cref="Holding"/>, each request
+    /// waits until <see cref="Release"/> or until its caller cancels (then it never reaches the wiki; unless
+    /// <see cref="IgnoreCancel"/>). Counts every request.
+    /// </summary>
+    private sealed class SlowWiki(HdrSupportServiceTests.FakeWiki inner) : DelegatingHandler(inner)
+    {
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource _arrival = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _requests;
+
+        public volatile bool Holding = true;
+        /// <summary>A held request ignores its caller's cancellation (a server that answers late whatever happens).</summary>
+        public volatile bool IgnoreCancel;
+        public int Requests => Volatile.Read(ref _requests);
+
+        public Task NextArrival()
+        {
+            var next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref _arrival, next);
+            return next.Task;
+        }
+
+        public void Release() => _released.TrySetResult();
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _requests);
+            Volatile.Read(ref _arrival).TrySetResult();
+            if (Holding) await (IgnoreCancel ? _released.Task : _released.Task.WaitAsync(cancellationToken));
+            return await base.SendAsync(request, cancellationToken);
+        }
+    }
+
     [Theory]
     [InlineData("en-US", "Resolution")]
     [InlineData("pt-BR", "Resolução")]
