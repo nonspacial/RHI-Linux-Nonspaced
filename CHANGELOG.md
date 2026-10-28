@@ -14,6 +14,20 @@ number (`2.8.7.1`), and the port of the next upstream release takes that release
 
 Not on `main` yet: nothing at the moment.
 
+## 2.8.7.1 — 2026-10-28: .deb, .rpm and .tar.gz downloads
+
+- The same app as 2.8.7; only the version number and the downloads changed. Besides the AppImage, each release now
+  has a `.deb` (Debian, Ubuntu and derivatives), an `.rpm` (Fedora, openSUSE) and a `.tar.gz` (any distribution),
+  all made from the same build, and one `SHA256SUMS` file to check any of them with
+  `sha256sum -c SHA256SUMS --ignore-missing`. The README's [Installing a release](README.md#installing-a-release)
+  has the steps for each system and how to remove it.
+- The `.deb` and `.rpm` install RHI in `/opt/rhi-linux` with the `rhi-linux` command and a menu entry; the package
+  manager installs the system libraries RHI needs. There is no package repository: updates stay manual downloads.
+- The update check is unchanged: it tells you when a newer release is published and never installs one itself. 2.8.7
+  announces this release as newer.
+- Going back to 2.8.7 needs nothing removed first.
+- `packaging/build-packages.sh` builds the new downloads with a pinned, checksum-checked nFPM.
+
 ## 2.8.7 — 2026-10-27: first release
 
 - The first published release: an AppImage with its `.sha256` file on GitHub Releases. It holds everything in the
