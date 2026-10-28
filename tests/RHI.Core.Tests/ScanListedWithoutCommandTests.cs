@@ -14,7 +14,7 @@ public sealed class ScanListedWithoutCommandTests
 {
     [Theory]
     [InlineData("en-US", "Lutris: 2 game(s) listed without a launch command — set one in Edit game", "skipped")]
-    [InlineData("pt-BR", "Lutris: 2 jogo(s) listado(s) sem comando de inicialização — defina um em Editar jogo", "ignorado")]
+    [InlineData("pt-BR", "Lutris: 2 jogo(s) listado(s) sem comando de execução — defina um em Editar jogo", "ignorado")]
     public void ListedWithoutACommand_HasItsOwnLine_NeverTheSkippedCount(string language, string line, string skippedWord)
     {
         var scan = new GameLibraryScanResult([], [new DetectorScanStatus("Lutris", 5, null, [], ListedWithoutLaunchCommand: 2)], []);
