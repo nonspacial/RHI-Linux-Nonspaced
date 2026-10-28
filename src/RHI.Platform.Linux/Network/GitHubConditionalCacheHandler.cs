@@ -26,8 +26,9 @@ namespace RHI.Platform.Linux.Network;
 /// <see cref="DownloadTimedOutException"/> (a network failure: could not check, never a Cancel and never "current"). The
 /// app's <see cref="HttpClient.Timeout"/> stays for payloads.</item>
 /// </list>
-/// When GitHub refuses (403/429 with no remaining quota, or a 5xx) and a body is cached, the cached body is returned and
-/// the fact is logged; until the advertised reset time requests whose answer is cached are not sent at all. Payload
+/// When GitHub refuses (403/429 with no remaining quota, or a 5xx) and GitHub confirmed the cached body this session, that
+/// body is returned and the fact is logged; a body saved by an earlier launch is returned only inside the rate-limit window
+/// GitHub advertised. Until the advertised reset time requests whose answer is cached are not sent at all. Payload
 /// downloads (release assets, archives) are never cached or timed here: they go through the stamped download cache.
 /// Requests that carry their own Authorization header are sent as they are (never cached, shared or saved).
 /// </summary>
@@ -108,7 +109,7 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
         if (_entries.TryGetValue(key, out var cached))
         {
             if (IsFresh(cached)) return Hit(cached, request, null);
-            if (_now().UtcTicks < Interlocked.Read(ref _rateLimitedUntilTicks))
+            if (IsRateLimited())
                 return Hit(cached, request, "GitHub API rate limit reached; using the answer cached earlier");
         }
         return await SendSharedAsync(key, request, cancellationToken).ConfigureAwait(false);
@@ -268,7 +269,10 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
         if (!response.IsSuccessStatusCode)
         {
             NoteRateLimit(response);
-            if (cached is not null && IsRefusal(response.StatusCode))
+            // An answer GitHub confirmed this session stands in for a refusal (#35). A saved one (an earlier launch, up to
+            // 30 days old) only while GitHub's advertised rate-limit window runs: a 5xx or a 403 that is no rate limit at
+            // the next start reads as could not check, never as that answer.
+            if (cached is not null && IsRefusal(response.StatusCode) && (!cached.FromDisk || IsRateLimited()))
             {
                 AppLog.Warn("github-cache", $"GitHub API answered {(int)response.StatusCode}; using the answer cached earlier for {outgoing.RequestUri}");
                 response.Dispose();
@@ -489,6 +493,9 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
             until = DateTimeOffset.FromUnixTimeSeconds(epoch);
         Interlocked.Exchange(ref _rateLimitedUntilTicks, until.UtcTicks);
     }
+
+    /// <summary>Inside the rate-limit window GitHub advertised (403/429 with no quota left, until its reset time).</summary>
+    private bool IsRateLimited() => _now().UtcTicks < Interlocked.Read(ref _rateLimitedUntilTicks);
 
     private static bool IsRefusal(HttpStatusCode status)
         => status is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests || (int)status >= 500;

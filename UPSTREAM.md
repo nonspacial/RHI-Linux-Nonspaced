@@ -1082,8 +1082,10 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
   when RHI exits. Never a request header: the token is added by `GitHubApiTokenHandler` behind the cache, and a request
   that carries its own Authorization header is neither cached, shared nor saved.
 - Linux difference: a saved answer is only used once GitHub answered 304 this session (or, as before, while GitHub's
-  advertised rate-limit window runs); it is never treated as current without asking. Upstream's 60 s reuse follows the
-  same rule (it starts empty each launch).
+  advertised rate-limit window runs); it is never treated as current without asking. A 5xx, or a 403 that is no rate
+  limit (GitHub's secondary limit in a start-up burst looks like one), at the next start reads as could not check;
+  upstream serves its saved body on any error. An answer GitHub confirmed this session still stands in for such an
+  error (#35). Upstream's 60 s reuse follows the same rule (it starts empty each launch).
 - Linux difference: a request that times out reads as could not check ("The server took too long to answer: RHI
   stopped waiting after 30 seconds. Source: GitHub API", EN + PT-BR), even when an answer is cached; upstream hands
   back the stale cached body, which an update check would read as "current". The user's Cancel stays a Cancel, and a

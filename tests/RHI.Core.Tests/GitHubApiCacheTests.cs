@@ -121,6 +121,86 @@ public sealed class GitHubApiCacheTests : IDisposable
         Assert.Single(Assert.Single(github.Requests).IfNoneMatch);
     }
 
+    [Theory]
+    [InlineData(503)]
+    [InlineData(500)]
+    [InlineData(403)] // no rate limit (no "X-RateLimit-Remaining: 0"): GitHub's secondary limit in a start-up burst looks like this
+    public async Task SavedAnswer_AndAGitHubErrorAtTheNextStart_ReadsAsTheError_NeverAsTheSavedAnswer(int status)
+    {
+        using (var first = new HttpClient(Handler(new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\""))))
+            await first.GetStringAsync(ReleasesUrl);
+        _now += TimeSpan.FromDays(20); // v2 may be out by now
+        var github = new GitHubFake("[{\"tag_name\":\"v2\"}]", "\"etag-2\"") { Refuse = (HttpStatusCode)status };
+        var cache = Handler(github);
+        using var http = new HttpClient(cache);
+
+        using var response = await http.GetAsync(ReleasesUrl);
+
+        Assert.Single(Assert.Single(github.Requests).IfNoneMatch); // asked about the saved answer
+        Assert.Equal((HttpStatusCode)status, response.StatusCode);
+        Assert.DoesNotContain("v1", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(0, cache.CacheHits);
+    }
+
+    [Fact]
+    public async Task SavedAnswer_AndAGitHubErrorAtTheNextStart_TheAppUpdateCheckReadsCouldNotCheck()
+    {
+        const string repository = "rhi-tests/rhi";
+        const string releases = "[{\"tag_name\":\"v1.0.0\",\"html_url\":\"https://github.com/rhi-tests/rhi/releases/tag/v1.0.0\"}]";
+        using (var first = new HttpClient(Handler(new GitHubFake(releases, "\"etag-1\""))))
+            Assert.Equal(AppUpdateCheckResult.UpToDate, (await new AppUpdateCheckService(first, "1.0.0", [repository]).CheckAsync()).Result);
+        _now += TimeSpan.FromDays(20);
+        using var http = new HttpClient(Handler(new GitHubFake(releases, "\"etag-1\"") { Refuse = HttpStatusCode.ServiceUnavailable }));
+
+        var check = await new AppUpdateCheckService(http, "1.0.0", [repository]).CheckAsync().WaitAsync(HangGuard);
+
+        Assert.Equal(AppUpdateCheckResult.CouldNotCheck, check.Result); // never "up to date" from a 20-day-old answer
+    }
+
+    [Fact]
+    public async Task SavedAnswer_InsideGitHubsAdvertisedRateLimitWindow_IsServed_AndNotAskedAgainUntilTheReset()
+    {
+        using (var first = new HttpClient(Handler(new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\""))))
+            await first.GetStringAsync(ReleasesUrl);
+        _now += TimeSpan.FromDays(20);
+        var github = new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\"") { Refuse = HttpStatusCode.Forbidden, QuotaResetAt = _now.AddMinutes(30) };
+        using var http = new HttpClient(Handler(github));
+
+        var limited = await http.GetStringAsync(ReleasesUrl);
+        _now += TimeSpan.FromMinutes(1);
+        var stillLimited = await http.GetStringAsync(ReleasesUrl);
+        var askedWhileLimited = github.Requests.Count;
+        _now += TimeSpan.FromMinutes(30);
+        github.Refuse = null;
+        await http.GetStringAsync(ReleasesUrl);
+
+        Assert.Contains("v1", limited, StringComparison.Ordinal);
+        Assert.Contains("v1", stillLimited, StringComparison.Ordinal);
+        Assert.Equal(1, askedWhileLimited);
+        Assert.Equal(2, github.Requests.Count); // asked again after the reset
+    }
+
+    [Theory]
+    [InlineData(503)]
+    [InlineData(403)]
+    public async Task AnswerConfirmedThisSession_StillStandsInForAGitHubError(int status)
+    {
+        using (var first = new HttpClient(Handler(new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\""))))
+            await first.GetStringAsync(ReleasesUrl);
+        _now += TimeSpan.FromDays(20);
+        var github = new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\"");
+        using var http = new HttpClient(Handler(github));
+        await http.GetStringAsync(ReleasesUrl); // 304: GitHub confirmed the saved answer this session
+        _now += TimeSpan.FromSeconds(61);
+        github.Refuse = (HttpStatusCode)status;
+
+        using var response = await http.GetAsync(ReleasesUrl);
+
+        Assert.Equal(2, github.Requests.Count);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode); // #35: unchanged rule for answers confirmed this session
+        Assert.Contains("v1", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task SavedFile_KeepsAtMost512Answers_TheNewest()
     {
@@ -471,7 +551,10 @@ public sealed class GitHubApiCacheTests : IDisposable
             => (request.RequestUri!.Host == "api.github.com" ? _api : _other).SendAsync(request, cancellationToken);
     }
 
-    /// <summary>GitHub: answers 304 to its current ETag, else the body; can hold a request on a gate or never answer.</summary>
+    /// <summary>
+    /// GitHub: answers 304 to its current ETag, else the body; can hold a request on a gate or never answer, or refuse (with
+    /// or without an advertised rate-limit reset).
+    /// </summary>
     internal sealed class GitHubFake(string body, string etag) : HttpMessageHandler
     {
         private byte[] _body = Encoding.UTF8.GetBytes(body);
@@ -484,6 +567,9 @@ public sealed class GitHubApiCacheTests : IDisposable
         public string? FinalUrl { get; init; }
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Stopped { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public HttpStatusCode? Refuse { get; set; }
+        /// <summary>With <see cref="Refuse"/>: GitHub's rate-limit headers (no quota left, reset at this time).</summary>
+        public DateTimeOffset? QuotaResetAt { get; set; }
 
         public void Publish(string text, string tag) => (_body, _etag) = (Encoding.UTF8.GetBytes(text), tag);
         public void PublishBytes(byte[] bytes, string tag) => (_body, _etag) = (bytes, tag);
@@ -503,6 +589,16 @@ public sealed class GitHubApiCacheTests : IDisposable
             {
                 Stopped.TrySetResult();
                 throw;
+            }
+            if (Refuse is { } status)
+            {
+                var refused = new HttpResponseMessage(status) { Content = new StringContent("{\"message\":\"refused\"}"), RequestMessage = request };
+                if (QuotaResetAt is { } reset)
+                {
+                    refused.Headers.Add("X-RateLimit-Remaining", "0");
+                    refused.Headers.Add("X-RateLimit-Reset", reset.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+                return refused;
             }
             if (request.Headers.IfNoneMatch.Any(tag => tag.Tag == _etag))
             {
