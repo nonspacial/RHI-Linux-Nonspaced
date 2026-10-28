@@ -1,0 +1,31 @@
+RHI Linux @VERSION@ (self-contained build for x86_64 Linux)
+
+This folder runs as it is: it bundles the .NET runtime, so nothing from .NET needs installing.
+Run it from here:
+
+    ./RHI
+
+To install it for your user (the same layout as the repository's install-user.sh):
+
+    mkdir -p ~/.local/opt ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/96x96/apps
+    rm -rf ~/.local/opt/rhi-linux
+    cp -a . ~/.local/opt/rhi-linux
+    ln -sfn ~/.local/opt/rhi-linux/RHI ~/.local/bin/rhi-linux
+    cp rhi-linux.desktop ~/.local/share/applications/
+    cp rhi-linux.png ~/.local/share/icons/hicolor/96x96/apps/
+
+The menu entry starts "rhi-linux", so ~/.local/bin must be on your PATH (most desktops add it).
+
+To remove it again:
+
+    rm -rf ~/.local/opt/rhi-linux ~/.local/bin/rhi-linux
+    rm -f ~/.local/share/applications/rhi-linux.desktop ~/.local/share/icons/hicolor/96x96/apps/rhi-linux.png
+
+Your settings and library stay in ~/.config/rhi-linux, ~/.local/share/rhi-linux and ~/.cache/rhi-linux.
+
+Needed from the system: fontconfig, zlib, ICU, OpenSSL (3 or 1.1) and the X11 libraries
+(libX11, libXext, libXrandr, libXi, libXcursor, libXfixes, libICE, libSM). Every desktop
+distribution has them. Some components need a 7-Zip tool (7z, 7zz or 7za); RHI names it when needed.
+
+Updates are manual: RHI tells you when a newer release is published (Settings -> Accounts & updates).
+Download it from https://github.com/nonspacial/RHI-Linux-Nonspaced/releases and replace this folder.

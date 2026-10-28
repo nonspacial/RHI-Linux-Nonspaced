@@ -23,8 +23,8 @@ Not on `main` yet: nothing at the moment.
 ## Wave 12 — 2026-10-28: Universal MFG again, shader headers, HDR controls where they apply, Epic in prefixes
 
 > [!WARNING]
-> Before going back to 2.8.7 (27 October 2026, the first release), do these first; it does not know what this build
-> added:
+> Before going back to 2.8.7.1 or 2.8.7 (the released builds, 28 and 27 October 2026; the same app), do these first;
+> it does not know what this build added:
 >
 > - **Remove whatever RHI installed on Epic Games Launcher games inside a Wine, Lutris, Heroic or Steam prefix** if you
 >   want it managed there: 2.8.7 does not list games it could only find through the Epic launcher's records, so it can
@@ -130,6 +130,20 @@ DLSS
 - **The DLSS result line names each failed game with its reason** (upstream 2.8.8; Batch DLSS apply and restore, Apply
   defaults, Restore all), in the interface language, counts included; the same game owned on two stores is named twice.
   On a narrow DLSS batch dialog the line sits on its own row above the buttons.
+
+## 2.8.7.1 — 2026-10-28: .deb, .rpm and .tar.gz downloads
+
+- The same app as 2.8.7; only the version number and the downloads changed. Besides the AppImage, each release now
+  has a `.deb` (Debian, Ubuntu and derivatives), an `.rpm` (Fedora, openSUSE) and a `.tar.gz` (any distribution),
+  all made from the same build, and one `SHA256SUMS` file to check any of them with
+  `sha256sum -c SHA256SUMS --ignore-missing`. The README's [Installing a release](README.md#installing-a-release)
+  has the steps for each system and how to remove it.
+- The `.deb` and `.rpm` install RHI in `/opt/rhi-linux` with the `rhi-linux` command and a menu entry; the package
+  manager installs the system libraries RHI needs. There is no package repository: updates stay manual downloads.
+- The update check is unchanged: it tells you when a newer release is published and never installs one itself. 2.8.7
+  announces this release as newer.
+- Going back to 2.8.7 needs nothing removed first.
+- `packaging/build-packages.sh` builds the new downloads with a pinned, checksum-checked nFPM.
 
 ## 2.8.7 — 2026-10-27: first release
 

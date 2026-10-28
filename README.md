@@ -4,7 +4,7 @@
 
 ### Native Linux port of RHI for Steam / Proton, Heroic, Lutris, Wine and Xbox / Game Pass
 
-[![Release](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-2.8.7-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)
+[![Release](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-2.8.7.1-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)
 [![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.8.8%20beta-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
 [![Linux](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4?style=for-the-badge\&logo=dotnet)](https://dotnet.microsoft.com/)
@@ -50,7 +50,7 @@
 ## 🚀 Status
 
 **Project:** [nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced)
-**Release:** `v2.8.7` ([GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)), level with upstream RHI 2.8.7
+**Release:** `v2.8.7.1` ([GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)), level with upstream RHI 2.8.7
 **This build:** `v2.8.8-beta.1`, not released yet: installed builds only. It is level with upstream RHI 2.8.8 beta and is published as 2.8.8 once upstream RHI 2.8.8 leaves beta.
 **Upstream target:** `RHI 2.8.8` (beta)
 
@@ -168,17 +168,82 @@ Linux has no official Xbox app. RHI finds Xbox / Game Pass games from Xodus-form
 
 # ⚡ Quick Start
 
-## From a release (AppImage)
+## Installing a release
 
-Download `RHI-Linux-v2.8.7-x86_64.AppImage` and `RHI-Linux-v2.8.7-x86_64.AppImage.sha256` from [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases) into the same folder, check the download, make it executable and run it:
+Every release on [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases) has the same app in
+four downloads, plus one `SHA256SUMS` file. All of them bundle the .NET runtime, so nothing from .NET needs installing.
+Pick the one for your system:
+
+| Download | For |
+|---|---|
+| `RHI-Linux-v2.8.7.1-x86_64.AppImage` | any distribution; runs without installing |
+| `rhi-linux_2.8.7.1_amd64.deb` | Debian, Ubuntu, Linux Mint, Pop!_OS and other Debian-based systems |
+| `rhi-linux-2.8.7.1-1.x86_64.rpm` | Fedora, openSUSE |
+| `RHI-Linux-v2.8.7.1-x86_64.tar.gz` | any distribution; a folder you unpack where you like |
+
+### Check the download
+
+Put `SHA256SUMS` in the same folder as the file you downloaded and run:
 
 ```bash
-sha256sum --check RHI-Linux-v2.8.7-x86_64.AppImage.sha256
-chmod +x RHI-Linux-v2.8.7-x86_64.AppImage
-./RHI-Linux-v2.8.7-x86_64.AppImage
+sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-`sha256sum --check` must print `OK`; if it does not, delete the file and download it again. The AppImage bundles the .NET runtime, so nothing from .NET needs installing (see [Runtime requirements](#runtime-requirements) for the archive tool some components need). RHI tells you when a newer release is published (Settings → Accounts & updates); it never downloads or installs one itself.
+It must print `OK` for your file; if it does not, delete the file and download it again.
+
+### AppImage
+
+```bash
+chmod +x RHI-Linux-v2.8.7.1-x86_64.AppImage
+./RHI-Linux-v2.8.7.1-x86_64.AppImage
+```
+
+To remove it, delete the file.
+
+### Debian, Ubuntu and derivatives (.deb)
+
+```bash
+sudo apt install ./rhi-linux_2.8.7.1_amd64.deb
+```
+
+The `./` matters: without it apt looks for the name in its repositories. To remove it: `sudo apt remove rhi-linux`.
+
+### Fedora (.rpm)
+
+```bash
+sudo dnf install ./rhi-linux-2.8.7.1-1.x86_64.rpm
+```
+
+To remove it: `sudo dnf remove rhi-linux`.
+
+### openSUSE (.rpm)
+
+```bash
+sudo zypper install --allow-unsigned-rpm ./rhi-linux-2.8.7.1-1.x86_64.rpm
+```
+
+The package is not signed (the `SHA256SUMS` check above stands in for that), so zypper needs `--allow-unsigned-rpm`.
+To remove it: `sudo zypper remove rhi-linux`.
+
+The .deb and .rpm install the app in `/opt/rhi-linux`, the `rhi-linux` command and a menu entry with its icon; the
+package manager installs the system libraries it needs (fontconfig, zlib, ICU, OpenSSL and the X11 libraries).
+
+### Any distribution (.tar.gz)
+
+```bash
+tar -xzf RHI-Linux-v2.8.7.1-x86_64.tar.gz
+./RHI-Linux-v2.8.7.1/RHI
+```
+
+`INSTALL.txt` in the folder shows how to add it to your menu, and how to remove it again.
+
+### Updates
+
+There is no package repository: updates are manual downloads. RHI tells you when a newer release is published
+(Settings → Accounts & updates); it never downloads or installs one itself. Install the new download the same way; the
+.deb and .rpm replace the older version. Removing RHI keeps your settings and library in `~/.config/rhi-linux`,
+`~/.local/share/rhi-linux` and `~/.cache/rhi-linux`. See [Runtime requirements](#runtime-requirements) for the archive
+tool some components need.
 
 ## Building from source on CachyOS / Arch Linux
 
@@ -231,7 +296,7 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 > A build from before 15 October 2026 does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering choice, and the saved OptiScaler DLL name, for every game where that component is not installed; choose them again once you are back on the current build. **Remove RTX Encore from every game before going back.** An older build cannot update or remove it, and the first time it saves any install record it drops RTX Encore's record for good: after that even this build can no longer update or remove it, and its `nvngx_dlssnr.dll.original` and Wine override are left behind. Also switch No Addons games back to ReShade Stable or Nightly first, so their add-ons are turned back on.
 
 > [!WARNING]
-> Before going back to 2.8.7 (27 October 2026, the first release), do these first; it does not know what this build added:
+> Before going back to 2.8.7.1 or 2.8.7 (the released builds, 28 and 27 October 2026; the same app), do these first; it does not know what this build added:
 >
 > * **Remove whatever RHI installed on Epic Games Launcher games inside a Wine, Lutris, Heroic or Steam prefix** if you want it managed there: 2.8.7 does not list games it could only find through the Epic launcher's records, so it can neither update nor remove what is installed on them. Their install records are kept, and this build manages them again.
 > * **Expect Legacy HDR WSI back:** this build hides the tick and leaves `ENABLE_HDR_WSI=1` out on an NVIDIA driver 595 or newer, but keeps the tick saved. 2.8.7 applies a saved tick on every driver again (a game can then stop while loading); untick **Legacy HDR WSI** in those games once you are back on 2.8.7.
@@ -277,7 +342,7 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 
 ## Runtime requirements
 
-* The AppImage bundles the .NET runtime; nothing else from .NET is needed on the host.
+* The AppImage, .deb, .rpm and .tar.gz bundle the .NET runtime; nothing else from .NET is needed on the host.
 * ReShade is extracted from its official setup by RHI Linux itself; no archive tool is needed.
 * OptiScaler releases, `.7z` shader packs and Deep Fried Chicken packages are 7-Zip archives and need a host `7z`/`7zz`/`7za` (package `7zip` on Arch/CachyOS, `7zip` or `p7zip-full` elsewhere); `bsdtar` also works except for encrypted packages. RHI Linux names the missing tool when one is needed.
 
@@ -291,6 +356,21 @@ packaging/appimage/build-appimage.sh [--out DIR]   # the AppImage only
 The script publishes a self-contained `linux-x64` build (it runs on hosts without .NET) into an AppDir with `AppRun`, the desktop entry and the icon, then packs it with `appimagetool`. The result is `artifacts/appimage/RHI-Linux-v<version>-x86_64.AppImage` plus a `.sha256` file that holds only the file name. The version comes from `<Version>` in `Directory.Build.props`.
 
 `appimagetool` and the AppImage runtime are downloaded over HTTPS from the AppImage project's GitHub releases at pinned versions and used only when their SHA-256 matches; they are cached in `artifacts/appimage-tools/`. Building needs `curl` and `sha256sum` but no FUSE.
+
+## Building the .deb, .rpm and .tar.gz
+
+```bash
+packaging/build-packages.sh [--out DIR] [--from-publish DIR]
+```
+
+The script builds `RHI-Linux-v<version>-x86_64.tar.gz`, `rhi-linux_<version>_amd64.deb` and
+`rhi-linux-<version>-1.x86_64.rpm` from one self-contained publish (default output: `artifacts/packages/`), and a
+`SHA256SUMS` over them and the AppImage when it is in the same folder. `--from-publish` packages an existing
+self-contained publish (for example the AppImage's `AppDir/usr/bin`) instead of publishing again, so every download of
+a release holds the same build. The packages are made with [nFPM](https://nfpm.goreleaser.com) (`packaging/nfpm.yaml`),
+downloaded over HTTPS from its GitHub releases at a pinned version and used only when its SHA-256 matches; it is cached
+in `artifacts/package-tools/`. File times come from `SOURCE_DATE_EPOCH` (default: the last commit's time), so the same
+commit and publish give the same files.
 
 ## Validating a change
 
@@ -507,7 +587,7 @@ Third-party projects and components retain their respective original licenses.
 
 **Native Linux tooling for the RHI ecosystem.**
 
-Release `v2.8.7` · level with upstream RHI `2.8.7`
+Release `v2.8.7.1` · level with upstream RHI `2.8.7`
 
 This build `v2.8.8-beta.1` (not released yet) · level with upstream RHI `2.8.8` beta
 
