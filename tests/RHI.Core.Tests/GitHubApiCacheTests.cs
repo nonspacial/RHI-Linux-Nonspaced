@@ -148,11 +148,11 @@ public sealed class GitHubApiCacheTests : IDisposable
         const string repository = "rhi-tests/rhi";
         const string releases = "[{\"tag_name\":\"v1.0.0\",\"html_url\":\"https://github.com/rhi-tests/rhi/releases/tag/v1.0.0\"}]";
         using (var first = new HttpClient(Handler(new GitHubFake(releases, "\"etag-1\""))))
-            Assert.Equal(AppUpdateCheckResult.UpToDate, (await new AppUpdateCheckService(first, "1.0.0", [repository]).CheckAsync()).Result);
+            Assert.Equal(AppUpdateCheckResult.UpToDate, (await new AppUpdateCheckService(first, "1.0.0", repository).CheckAsync()).Result);
         _now += TimeSpan.FromDays(20);
         using var http = new HttpClient(Handler(new GitHubFake(releases, "\"etag-1\"") { Refuse = HttpStatusCode.ServiceUnavailable }));
 
-        var check = await new AppUpdateCheckService(http, "1.0.0", [repository]).CheckAsync().WaitAsync(HangGuard);
+        var check = await new AppUpdateCheckService(http, "1.0.0", repository).CheckAsync().WaitAsync(HangGuard);
 
         Assert.Equal(AppUpdateCheckResult.CouldNotCheck, check.Result); // never "up to date" from a 20-day-old answer
     }
