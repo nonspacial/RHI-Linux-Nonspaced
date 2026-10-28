@@ -1087,11 +1087,15 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
   and no crash report is written.
 - Linux: manual Update All re-deploys ReShade without a check (#113), so such a game counted as a failed update. A
   ReShade on the Custom channel is now checked first (`ILinuxManagedUpdateBackend.ChecksBeforeManualRefresh`; the check is
-  local: the chosen DLL is still there, and its hash): a source that is gone reads "could not be checked", with the
-  check's reason ("Custom ReShade source file is unavailable; installed DLL remains untouched.", PT-BR too) as the item's
-  message and in the ReShade section's update-check line; nothing is touched. A source still there is refreshed as
-  before. Stable, Nightly, No Addons and Legacy still refresh unchecked on every manual Update All. The background pass
-  already checked first and said "could not be checked" (unchanged).
+  local: the chosen DLL is still there, and its hash): a source that is gone reads "could not be checked" and nothing is
+  touched. The Update All line names it as it names a failure, after the counts: "Not checked: <game> (ReShade) —
+  Custom ReShade source file is unavailable; installed DLL remains untouched." (PT-BR too; every such game is named
+  wherever that line shows, so a background pass names it when it writes its line). Only a check that is local (`ChecksBeforeManualRefresh`) is named this way
+  (`LinuxUpdateItemResult.LocalReason`); a source that could not be reached (a reshade.me or GitHub outage) stays in the
+  "could not be checked" count. Difference: upstream writes its note on the game's card; the Linux card has no note
+  line, so the reason shows in the Update All line (its tooltip holds the whole line) and in the ReShade section's
+  update-check line. A source still there is refreshed as before. Stable, Nightly, No Addons and Legacy still refresh
+  unchecked on every manual Update All.
 
 <!-- w12/github-cache notes -->
 

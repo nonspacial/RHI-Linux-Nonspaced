@@ -649,7 +649,7 @@ public static class UiLocalizationService
         // w12/mfg rows
         // w12/shaders rows
         // w12/update-all rows
-        // #243: a Custom ReShade whose source DLL is gone (the row's note and Update All's "could not be checked" item).
+        // #243: a Custom ReShade whose source DLL is gone (Update All names it with its game; the ReShade section's update check).
         ("Custom ReShade source file is unavailable; installed DLL remains untouched.",
             "O arquivo de origem do ReShade personalizado não está disponível; a DLL instalada continua intocada."),
         // w12/github-cache rows
@@ -1753,8 +1753,9 @@ public static class UiLocalizationService
         // w8 final review 1: the games whose update was written although the save reported an error, named last, as batches do.
         var landed = RHI.Desktop.ViewModels.LandedLine.BatchNote(language, result.LandedGames);
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
+        var notChecked = NotCheckedNote(language, result);
         var failed = result.FailedItems;
-        if (failed.Count == 0) return text + landed;
+        if (failed.Count == 0) return text + notChecked + landed;
         var first = failed[0];
         var reason = first.Blocked
             ? TextFor(language, "Ui.UpdateAllBlocked")
@@ -1763,8 +1764,16 @@ public static class UiLocalizationService
             first.GameName, RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DisplayDependencyName(first.Component), reason);
         if (failed.Count > 1)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllMoreFailures"), failed.Count - 1);
-        return text + "." + landed;
+        return text + "." + notChecked + landed;
     }
+
+    // #243: every item that could not be checked for a reason on this machine, named as failures are (game, component,
+    // reason); one that could not reach its source stays in the count only.
+    private static string NotCheckedNote(string? language, RHI.Platform.Linux.Deployment.LinuxUpdateAllResult result)
+        => string.Concat(result.LocalUncheckedItems.Select(item => string.Format(CultureInfo.InvariantCulture,
+            TextFor(language, "Ua.UpdateAllNotChecked"), item.GameName,
+            RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DisplayDependencyName(item.Component),
+            PresentFor(language, item.Message).TrimEnd().TrimEnd('.'))));
 
     /// <summary>The Shaders/Add-ons manager's success line; keeps ReShade's "cached copy used" note (#132).</summary>
     public static string ShaderAddonAppliedFor(string? language, int shaderPacks, int addons, bool reShadeFromCache)

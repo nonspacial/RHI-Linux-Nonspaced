@@ -1456,6 +1456,8 @@ internal static class UiStrings
         // w12/shaders rows
         // w12/update-all rows
         ("Ua.DeferredUpdatesRan", "Atualizações adiadas feitas depois que o jogo fechou: {0}.", "Deferred updates ran after the game closed: {0}."),
+        // #243: an item Update All could not check for a reason on this machine, named after the failures.
+        ("Ua.UpdateAllNotChecked", " Não verificado: {0} ({1}) — {2}.", " Not checked: {0} ({1}) — {2}."),
         // w12/github-cache rows
         // w12/luma rows
         // w12/epic rows

@@ -95,6 +95,86 @@ public sealed class CustomReShadeUpdateAllTests
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
+    // Correction round 1, review F1: manual Update All names the game and the reason, as it names a failure, instead of a
+    // bare count (before #243 the same game was named as a failed update).
+    [Theory]
+    [InlineData("en-US", "Update All: 0 updated · 0 current · 0 deferred · 0 failed · 1 could not be checked."
+        + " Not checked: Custom Quest (ReShade) — Custom ReShade source file is unavailable; installed DLL remains untouched.")]
+    [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 0 em dia · 0 adiado(s) · 0 com falha · 1 não verificado(s)."
+        + " Não verificado: Custom Quest (ReShade) — O arquivo de origem do ReShade personalizado não está disponível; a DLL instalada continua intocada.")]
+    public async Task ManualUpdateAll_NamesTheGameAndTheReason_InTheUiLanguage(string language, string expected)
+    {
+        UiLocalizationService.Apply(language);
+        try
+        {
+            var root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-custom-ua-" + Guid.NewGuid().ToString("N"))).FullName;
+            try
+            {
+                var game = Game(root);
+                using var fx = await ViewModelFixture.StartAsync([game], uiLanguage: language);
+                var record = Record(game, nameof(ReShadeChannel.Custom));
+                record.Metadata["ReShade.CustomSource"] = Path.Combine(root, "Custom", "ReShade64.dll"); // removed by the user
+                fx.Records.Upsert(record);
+                fx.Vm.Updates.SetLibraryHasManagedTargets(true);
+
+                await fx.Vm.Updates.UpdateAllCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(60));
+
+                // (The offline fixture's DLSS manifest notice follows the line.)
+                Assert.StartsWith(expected, fx.Vm.StatusText, StringComparison.Ordinal);
+            }
+            finally { Directory.Delete(root, true); }
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
+    // Only a check that is local (ChecksBeforeManualRefresh) gives its "could not check" a reason worth naming; one that
+    // could not reach its source (another family, background pass) stays in the count.
+    [Theory]
+    [InlineData(true, LinuxUpdateRunMode.Manual, true)]
+    [InlineData(true, LinuxUpdateRunMode.Background, true)]
+    [InlineData(false, LinuxUpdateRunMode.Background, false)]
+    public async Task OnlyALocalCheckThatCouldNotTell_IsNamedWithItsReason(bool localCheck, LinuxUpdateRunMode mode, bool named)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-custom-ua-" + Guid.NewGuid().ToString("N"))).FullName;
+        try
+        {
+            var game = Game(root);
+            var records = new LinuxDeploymentRecordStore(Path.Combine(root, "deployments.json"));
+            records.Upsert(Record(game, nameof(ReShadeChannel.Custom)));
+            var fake = new FakeBackend(records, localCheck, new ManagedUpdateCheck(true, false, SourceGone, CouldNotCheck: true));
+
+            var result = await new LinuxUpdateAllService(records, fake, new NeverRunning()).RunAsync([game], _ => [], mode);
+
+            var item = Assert.Single(result.Items);
+            Assert.True(item.Unchecked);
+            Assert.Equal(named, item.LocalReason);
+            Assert.Equal(named ? 1 : 0, result.LocalUncheckedItems.Count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    // Each such item is named, after the failures, with the reason in the UI language; a remote one stays a count.
+    [Theory]
+    [InlineData("en-US", "Update All: 0 updated · 0 current · 0 deferred · 1 failed · 3 could not be checked."
+        + " Failed: Alpha (RenoDX HDR) — Game executable was not detected."
+        + " Not checked: Beta (ReShade) — Custom ReShade source file is unavailable; installed DLL remains untouched."
+        + " Not checked: Delta (ReShade) — Custom ReShade source file is unavailable; installed DLL remains untouched.")]
+    [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 0 em dia · 0 adiado(s) · 1 com falha · 3 não verificado(s)."
+        + " Falha: Alpha (RenoDX HDR) — O executável do jogo não foi detectado."
+        + " Não verificado: Beta (ReShade) — O arquivo de origem do ReShade personalizado não está disponível; a DLL instalada continua intocada."
+        + " Não verificado: Delta (ReShade) — O arquivo de origem do ReShade personalizado não está disponível; a DLL instalada continua intocada.")]
+    public void Summary_NamesEachLocalUncheckedItem_AfterTheFailures(string language, string expected)
+    {
+        var result = new LinuxUpdateAllResult([
+            new LinuxUpdateItemResult("Alpha", ManagedComponentKind.RenoDX, false, false, false, "Game executable was not detected."),
+            new LinuxUpdateItemResult("Beta", ManagedComponentKind.ReShade, true, false, false, SourceGone, Unchecked: true, LocalReason: true),
+            new LinuxUpdateItemResult("Gamma", ManagedComponentKind.ReLimiter, true, false, false, "GitHub could not be reached.", Unchecked: true),
+            new LinuxUpdateItemResult("Delta", ManagedComponentKind.ReShade, true, false, false, SourceGone, Unchecked: true, LocalReason: true)
+        ]);
+
+        Assert.Equal(expected, UiLocalizationService.UpdateAllSummaryFor(language, result));
+    }
+
     private static DetectedGame Game(string root)
     {
         var dir = Directory.CreateDirectory(Path.Combine(root, "games", "Custom Quest")).FullName;
