@@ -83,88 +83,61 @@ public sealed class Upstream288PinsViewModelTests
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
-    // The single-game Apply defaults reads the same result: a swap that fails (the game folder became read-only after
-    // the analysis; the download itself worked) is named with its reason too.
-    [PermissionDenialTheory]
-    [MemberData(nameof(Languages))]
-    public async Task Pin288_QuickApply_FailedSwap_NamesTheGameAndTheReason(string language)
+    // The other flows that show the same result line: the batch's Restore, the single-game Apply defaults and Restore all.
+    // A step that fails because the game folder became read-only after the analysis (the download itself worked) is
+    // named with its reason; in the batch, the game that worked is not.
+    public static TheoryData<string, string> ReadOnlyFlows => new()
     {
-        using var fx = await ViewModelFixture.StartAsync([], uiLanguage: language, httpResponse: Answer());
-        var game = fx.Game("Pin288 Quick");
-        try
-        {
-            File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll"), DlssAutoFollowServiceTests.Pe("310.1.0"));
-            await AddAndAnalyseAsync(fx, game);
-            var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
-            settings.DefaultDlssVersion = Version;
-            fx.Vm.Settings.SaveLinuxSettings(settings);
-            UiLocalizationService.Apply(language); // a Settings save adopts the saved language
-            PermissionDenial.MakeReadOnly(game.InstallPath);
-            var lines = CollectStatus(fx);
+        { "batch-restore", "en-US" }, { "batch-restore", "pt-BR" },
+        { "apply-defaults", "en-US" }, { "apply-defaults", "pt-BR" },
+        { "restore-all", "en-US" }, { "restore-all", "pt-BR" },
+    };
 
-            await fx.Vm.Dlss.QuickApplyDlssDefaultsCommand.ExecuteAsync(null).WaitAsync(HangGuard);
-
-            AssertNamesOnlyTheFailedGame(language, LineWith(lines, FailedPrefix(language, 1)), "Pin288 Quick", null);
-        }
-        finally
-        {
-            PermissionDenial.MakeWritable(game.InstallPath);
-            UiLocalizationService.Apply("en-US");
-        }
-    }
-
-    // The batch's Restore and the single-game Restore all: a restore that fails (the game folder became read-only after
-    // the analysis) is named with its reason; the game whose restore worked is not.
     [PermissionDenialTheory]
-    [MemberData(nameof(Languages))]
-    public async Task Pin288_DlssBatchRestore_NamesTheFailedGame(string language)
+    [MemberData(nameof(ReadOnlyFlows))]
+    public async Task Pin288_DlssResultLine_NamesTheFailedGame_InEveryFlow(string flow, string language)
     {
         using var fx = await ViewModelFixture.StartAsync([], uiLanguage: language, httpResponse: Answer());
         var locked = fx.Game("Pin288 Locked");
-        var open = fx.Game("Pin288 Open");
+        var open = flow == "batch-restore" ? fx.Game("Pin288 Open") : null;
         try
         {
-            UiLocalizationService.Apply(language);
-            foreach (var game in new[] { locked, open }) SeedBackup(game);
-            await AddAndAnalyseAsync(fx, locked);
-            await AddAndAnalyseAsync(fx, open);
-            var games = fx.Vm.Games.Select(row => row.Game).OrderBy(g => g.Name == "Pin288 Open" ? 1 : 0).ToArray();
+            foreach (var game in open is null ? new[] { locked } : new[] { locked, open })
+            {
+                if (flow == "apply-defaults") File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll"), DlssAutoFollowServiceTests.Pe("310.1.0"));
+                else SeedBackup(game);
+                await AddAndAnalyseAsync(fx, game);
+            }
+            if (flow == "apply-defaults")
+            {
+                var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+                settings.DefaultDlssVersion = Version;
+                fx.Vm.Settings.SaveLinuxSettings(settings);
+            }
+            UiLocalizationService.Apply(language); // a Settings save adopts the saved language
             PermissionDenial.MakeReadOnly(locked.InstallPath);
+            var lines = CollectStatus(fx);
 
-            var outcome = await fx.Vm.Dlss.RestoreDlssBatchAsync(games).WaitAsync(HangGuard);
+            string line;
+            if (flow == "batch-restore")
+            {
+                var games = fx.Vm.Games.Select(row => row.Game).OrderBy(g => g.Name == "Pin288 Open" ? 1 : 0).ToArray();
+                var outcome = await fx.Vm.Dlss.RestoreDlssBatchAsync(games).WaitAsync(HangGuard);
+                Assert.Equal((1, 1), (outcome.Result.FailedCount, outcome.Result.ChangedCount));
+                line = outcome.Line;
+            }
+            else
+            {
+                await (flow == "apply-defaults" ? fx.Vm.Dlss.QuickApplyDlssDefaultsCommand : fx.Vm.Dlss.RestoreAllDlssCommand)
+                    .ExecuteAsync(null).WaitAsync(HangGuard);
+                line = LineWith(lines, FailedPrefix(language, 1));
+            }
 
-            Assert.Equal((1, 1), (outcome.Result.FailedCount, outcome.Result.ChangedCount));
-            AssertNamesOnlyTheFailedGame(language, outcome.Line, "Pin288 Locked", "Pin288 Open");
+            AssertNamesOnlyTheFailedGame(language, line, "Pin288 Locked", open is null ? null : "Pin288 Open");
         }
         finally
         {
             PermissionDenial.MakeWritable(locked.InstallPath);
-            UiLocalizationService.Apply("en-US");
-        }
-    }
-
-    [PermissionDenialTheory]
-    [MemberData(nameof(Languages))]
-    public async Task Pin288_RestoreAll_FailedRestore_NamesTheGameAndTheReason(string language)
-    {
-        using var fx = await ViewModelFixture.StartAsync([], uiLanguage: language, httpResponse: Answer());
-        var game = fx.Game("Pin288 Restore");
-        try
-        {
-            UiLocalizationService.Apply(language);
-            SeedBackup(game);
-            await AddAndAnalyseAsync(fx, game);
-            Assert.True(fx.Vm.Dlss.CanRestoreAllDlss);
-            PermissionDenial.MakeReadOnly(game.InstallPath);
-            var lines = CollectStatus(fx);
-
-            await fx.Vm.Dlss.RestoreAllDlssCommand.ExecuteAsync(null).WaitAsync(HangGuard);
-
-            AssertNamesOnlyTheFailedGame(language, LineWith(lines, FailedPrefix(language, 1)), "Pin288 Restore", null);
-        }
-        finally
-        {
-            PermissionDenial.MakeWritable(game.InstallPath);
             UiLocalizationService.Apply("en-US");
         }
     }
