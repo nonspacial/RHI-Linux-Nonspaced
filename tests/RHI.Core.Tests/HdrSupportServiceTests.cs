@@ -225,6 +225,62 @@ public sealed class HdrSupportServiceTests : IDisposable
         Assert.Equal(HdrSupportAnswer.No, (await second.WaitAsync(TimeSpan.FromSeconds(30))).Answer); // asked anew
     }
 
+    // w12 follow-up (re-review hdr-wsi m1): deterministic — the left caller's request is held whatever its cancel, so its
+    // lookup is still running (and still listed) when the user comes back; the returning caller must ask on its own.
+    [Fact]
+    public async Task ALookupWhoseCallerLeft_StillRunning_IsNeverSharedWithTheReturningCaller()
+    {
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wiki = new FakeWiki { Search = { ["Digging Quest"] = "Digging_Quest" }, Pages = { ["Digging Quest"] = Wikitext("false") }, HoldIgnoringCancel = held.Task };
+        var game = Named("Digging Quest");
+        var service = Service(wiki);
+        using var left = new CancellationTokenSource();
+
+        var first = service.ResolveAsync(game, left.Token);
+        await wiki.Arrived.Task.WaitAsync(TimeSpan.FromSeconds(30)); // its request is out, and stays out until released
+        left.Cancel(); // the user selected another game
+        var asked = wiki.Requests.Count;
+        wiki.HoldIgnoringCancel = null;
+        var second = service.ResolveAsync(game); // and came back while the left lookup still runs
+        Assert.False(first.IsCompleted);
+        held.SetResult();
+
+        Assert.Equal(HdrSupportEvidence.Unchecked, await first.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal(HdrSupportAnswer.No, (await second.WaitAsync(TimeSpan.FromSeconds(30))).Answer); // its own answer
+        Assert.True(wiki.Requests.Count > asked, "the returning caller made no request of its own");
+    }
+
+    // w12 follow-up (re-review hdr-wsi n1): a save already on its way when Settings → Clear cache runs never writes the
+    // purged answers back; only the answer it was saving lands.
+    [Fact]
+    public async Task ASaveInFlight_AtClearCache_NeverWritesThePurgedAnswersBack()
+    {
+        var wiki = new FakeWiki
+        {
+            AppIdPages = { [377160] = "Fallout_4", [397540] = "Borderlands_3" },
+            Pages = { ["Fallout 4"] = Wikitext("false"), ["Borderlands 3"] = Wikitext("true") }
+        };
+        var service = Service(wiki);
+        var fallout = Steam("Fallout 4", 377160);
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(fallout)).Answer);
+        Assert.True(File.Exists(CachePath));
+        var cleared = false;
+        service.BeforeSaveGateForTesting = () =>
+        {
+            if (cleared) return;
+            cleared = true;
+            Directory.Delete(Path.GetDirectoryName(CachePath)!, recursive: true); // Clear cache, between load and save
+        };
+
+        Assert.Equal(HdrSupportAnswer.Yes, (await service.ResolveAsync(Steam("Borderlands 3", 397540))).Answer);
+
+        Assert.True(cleared);
+        using var cache = JsonDocument.Parse(File.ReadAllText(CachePath));
+        var games = cache.RootElement.GetProperty("Games").EnumerateObject().Select(entry => entry.Name).ToArray();
+        Assert.Equal(["steam:397540"], games);
+        Assert.Null(service.Peek(fallout));
+    }
+
     [Fact]
     public async Task AFinishedLookup_IsNeverReused_AfterARefresh()
     {
@@ -437,6 +493,8 @@ public sealed class HdrSupportServiceTests : IDisposable
         public volatile string? Fail;
         /// <summary>While set, every request waits for it or for its caller to cancel (a server slow to answer).</summary>
         public volatile Task? Hold;
+        /// <summary>While set, every request waits for it whatever its caller does (a server that answers late, cancel or not).</summary>
+        public volatile Task? HoldIgnoringCancel;
         /// <summary>Completed when a request arrives (replace it to wait for the next one).</summary>
         public TaskCompletionSource Arrived { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -445,6 +503,7 @@ public sealed class HdrSupportServiceTests : IDisposable
             Requests.Enqueue(request.RequestUri!.AbsoluteUri);
             Arrived.TrySetResult();
             if (Hold is { } hold) await hold.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (HoldIgnoringCancel is { } late) await late.ConfigureAwait(false);
             return await Answer(request).ConfigureAwait(false);
         }
 

@@ -352,12 +352,24 @@ public sealed partial class HdrSupportService
         finally { _cacheGate.Release(); }
     }
 
+    /// <summary>Test seam: runs after the save loaded the cache and before it takes the cache gate (re-review n1).</summary>
+    internal Action? BeforeSaveGateForTesting { get; set; }
+
     private async Task SaveAsync(string key, HdrSupportEvidence evidence, CancellationToken cancellationToken)
     {
-        var cache = await LoadCacheAsync(cancellationToken).ConfigureAwait(false);
+        await LoadCacheAsync(cancellationToken).ConfigureAwait(false);
+        BeforeSaveGateForTesting?.Invoke();
         await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // w12 follow-up (re-review hdr-wsi n1): a Clear cache between the load above and this gate purged the answers; the
+            // purge is asked again here and the save writes into the cache as it is now, never the pre-purge copy.
+            if (_cache is not null && _cacheOnDisk && !File.Exists(CachePath))
+            {
+                _cache = null;
+                _cacheOnDisk = false;
+            }
+            var cache = _cache ??= _cacheFile.Load().Value ?? new CacheFile();
             lock (cache)
             {
                 cache.Games[key] = new CacheEntry { Answer = evidence.Answer, Source = evidence.Source, Page = evidence.Page, FetchedAt = _time.GetUtcNow() };

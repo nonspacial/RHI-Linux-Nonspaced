@@ -462,6 +462,10 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     private HdrSupportEvidence? _hdrSupportEvidence;
     private DetectedGame? _hdrSupportFor;
     private CancellationTokenSource? _hdrSupportCancel;
+    // w12 follow-up (re-review hdr-wsi n4): each selection's source is disposed once its lookup has ended — by the lookup
+    // itself when the user has already left, else by the next selection (which cancels it first).
+    private readonly object _hdrSupportGate = new();
+    private bool _hdrSupportLookupEnded;
 
     /// <summary>#251: the HDR support resolver (wired by <c>AppComposition</c>); null = nothing known, the section always shows.</summary>
     internal HdrSupportService? HdrSupport
@@ -515,24 +519,52 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     {
         // Correction F6: the lookup for the game the user has left is cancelled, so arrowing through the library never
         // queues PCGamingWiki requests nobody waits for in front of the selected game's (and the graphics-API lookup's).
-        _hdrSupportCancel?.Cancel();
-        _hdrSupportCancel = null;
+        CancellationTokenSource? left;
+        bool leftEnded;
+        lock (_hdrSupportGate)
+        {
+            left = _hdrSupportCancel;
+            leftEnded = _hdrSupportLookupEnded;
+            _hdrSupportCancel = null;
+        }
+        if (left is not null)
+        {
+            try { left.Cancel(); }
+            catch (ObjectDisposedException) { } // its lookup ended (and disposed it) meanwhile: nothing left to cancel
+            if (leftEnded) left.Dispose();
+        }
         _hdrSupportFor = game;
         _hdrSupportEvidence = game is null ? null : _hdrSupport?.Peek(game);
         HdrSupportLookup = null;
         RaiseHdrPlanChanged();
         if (game is not null && _hdrSupportEvidence is null && _hdrSupport is { } support)
         {
-            var cancel = _hdrSupportCancel = new CancellationTokenSource();
-            var lookup = ResolveHdrSupportAsync(support, game, cancel.Token);
+            var cancel = new CancellationTokenSource();
+            lock (_hdrSupportGate)
+            {
+                _hdrSupportCancel = cancel;
+                _hdrSupportLookupEnded = false;
+            }
+            var lookup = ResolveHdrSupportAsync(support, game, cancel);
             HdrSupportLookup = lookup;
             UiExceptionGuard.Forget(lookup, "hdr-support");
         }
     }
 
-    private async Task ResolveHdrSupportAsync(HdrSupportService support, DetectedGame game, CancellationToken cancellationToken)
+    private async Task ResolveHdrSupportAsync(HdrSupportService support, DetectedGame game, CancellationTokenSource cancel)
     {
-        var evidence = await support.ResolveAsync(game, cancellationToken);
+        HdrSupportEvidence evidence;
+        try { evidence = await support.ResolveAsync(game, cancel.Token); }
+        finally
+        {
+            bool disposeNow;
+            lock (_hdrSupportGate)
+            {
+                disposeNow = !ReferenceEquals(_hdrSupportCancel, cancel);
+                if (!disposeNow) _hdrSupportLookupEnded = true;
+            }
+            if (disposeNow) cancel.Dispose();
+        }
         // An answer for a game the user has left (late, or the Unknown of a cancelled lookup) never lands on another game.
         if (!ReferenceEquals(_hdrSupportFor, game) || !ReferenceEquals(SelectedGame, game)) return;
         _hdrSupportEvidence = evidence;

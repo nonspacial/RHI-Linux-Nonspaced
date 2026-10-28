@@ -160,9 +160,9 @@ public sealed class HdrSectionViewModelTests : IDisposable
         Assert.True(runtime.ResolutionToggle, "the saved toggle was not loaded");
         var calls = new List<string>();
         var screen = new ResolutionToggleTests.FakeKScreen();
+        // The fake's recovery and size listing finish inside the Switcher setter (synchronous run, no state file, no UI
+        // dispatcher), so nothing is awaited here (w12 follow-up, re-review hdr-wsi m2: the earlier waits guarded nothing).
         fx.Vm.Resolution.Switcher = Switcher(calls, screen);
-        await fx.Vm.Resolution.Recovery.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
-        await fx.Vm.Resolution.DisplaySizesListed.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
 
         Assert.False(runtime.ShowHdrSection);
         Assert.True(runtime.ShowResolutionToggle); // the toggle stays where a switch can apply
@@ -297,6 +297,54 @@ public sealed class HdrSectionViewModelTests : IDisposable
         Assert.Equal(b.Name, fx.Vm.SelectedGame!.Name);
         Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.PcGamingWiki, b.Name), runtime.HdrSupportKnown);
         Assert.False(runtime.ShowHdrSection);
+    }
+
+    // w12 follow-up (re-review hdr-wsi n4): each selection's CancellationTokenSource is disposed once its lookup has ended —
+    // never while the left lookup still runs (it still holds the token), and also when the lookup ended before the user left.
+    [Fact]
+    public async Task EachSelectionsCancelSource_IsDisposed_OnlyOnceItsLookupEnded()
+    {
+        var a = _games.Game("Alpha Quest", "direct");
+        var b = _games.Game("Beta Quest", "direct");
+        var wiki = new HdrSupportServiceTests.FakeWiki
+        {
+            Search = { [a.Name] = "Alpha_Quest", [b.Name] = "Beta_Quest" },
+            Pages = { [a.Name] = HdrSupportServiceTests.Wikitext("true"), [b.Name] = HdrSupportServiceTests.Wikitext("false") }
+        };
+        var slow = new SlowWiki(wiki) { Holding = false, IgnoreCancel = true };
+        using var fx = await LegacyHdrWsiViewModelTests.StartAsync([b, a], LegacyHdrWsiViewModelTests.Modern, new LegacyHdrWsiViewModelTests.RecordingLauncher());
+        var runtime = fx.Vm.Runtime;
+        runtime.HdrSupport = Service(slow);
+        await runtime.HdrSupportLookup!.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard); // B answered (cached from now on)
+        var field = typeof(RHI.Desktop.ViewModels.RuntimePanelViewModel).GetField("_hdrSupportCancel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        static bool Disposed(CancellationTokenSource cts)
+        {
+            try { _ = cts.Token; return false; }
+            catch (ObjectDisposedException) { return true; }
+        }
+
+        // Left while its lookup still runs: cancelled, not disposed; disposed once the lookup ended.
+        slow.Holding = true;
+        var arrived = slow.NextArrival();
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == a.Name).Game;
+        var lookupA = runtime.HdrSupportLookup!;
+        var sourceA = (CancellationTokenSource)field.GetValue(runtime)!;
+        await arrived.WaitAsync(TimeSpan.FromSeconds(20));
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == b.Name).Game;
+        Assert.False(Disposed(sourceA), "disposed while its lookup still ran");
+        Assert.True(sourceA.IsCancellationRequested);
+        slow.Release();
+        await lookupA.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
+        Assert.True(Disposed(sourceA), "the left lookup's source was never disposed");
+
+        // Its lookup ended while the game was still selected: disposed when the user leaves.
+        runtime.HdrSupport = Service(slow); // nothing cached: A asks again (Release stays set, so it answers at once)
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == a.Name).Game;
+        await runtime.HdrSupportLookup!.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
+        var sourceA2 = (CancellationTokenSource)field.GetValue(runtime)!;
+        Assert.False(Disposed(sourceA2));
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == b.Name).Game;
+        Assert.True(Disposed(sourceA2), "the ended lookup's source was not disposed by the next selection");
     }
 
     /// <summary>
