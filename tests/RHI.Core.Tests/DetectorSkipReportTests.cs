@@ -41,7 +41,7 @@ public sealed class DetectorSkipReportTests : IDisposable
         Assert.False(status.Failed);
         Assert.Contains(status.Warnings, w => w.Contains(broken, StringComparison.Ordinal));
         Assert.Contains(status.Warnings, w => w.Contains(locked, StringComparison.Ordinal));
-        Assert.Contains("Heroic", LibraryScanStatusText.Problems(scan, "/state/rhi.log"));
+        Assert.Contains("Heroic", LibraryScanStatusText.Problems(scan, "/state/rhi.log", scan.Games));
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class DetectorSkipReportTests : IDisposable
         Assert.Equal(["Free Game"], scan.Games.Select(g => g.Name));
         var warning = Assert.Single(scan.Detectors.Single(d => d.Name == "Wine").Warnings);
         Assert.Contains(locked, warning, StringComparison.Ordinal);
-        Assert.Contains("Wine", LibraryScanStatusText.Problems(scan, null));
+        Assert.Contains("Wine", LibraryScanStatusText.Problems(scan, null, scan.Games));
     }
 
     [Theory]
@@ -123,7 +123,10 @@ public sealed class DetectorSkipReportTests : IDisposable
         if (marker == "dangling") File.CreateSymbolicLink(configInfo, Path.Combine(_root, "gone", "config_info"));
         else File.SetUnixFileMode(Write(configInfo, "GE-Proton10-32\n/opt/ge/files/share/fonts/\n"), UnixFileMode.None);
 
-        var scan = await new GameLibraryScanner([new WinePrefixDetector(home, [])]).ScanWithReportAsync(null);
+        var log = new AppLog(Path.Combine(_root, "rhi.log"));
+        GameLibraryScanResult scan;
+        using (AppLog.UseInThisFlow(log))
+            scan = await new GameLibraryScanner([new WinePrefixDetector(home, [])]).ScanWithReportAsync(null);
 
         var game = Assert.Single(scan.Games);
         Assert.Equal("Game", game.Name);
@@ -135,11 +138,14 @@ public sealed class DetectorSkipReportTests : IDisposable
         // D3DCompiler step refuse it (RuntimeUnknownPrefixTests runs them).
         Assert.False(RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.CanInstallWithWinetricks(game));
         // w12 follow-up (merge review nit 1): the game is listed, so the scan counts it as listed without a launch command
-        // (its own line, naming Edit game), never as a skipped item; the log line still names the prefix.
+        // (its own line, naming Edit game), never as a skipped item; the log line still names the prefix (w12 final review
+        // nit 5: asserted again, through this test's own log).
         var status = scan.Detectors.Single();
         Assert.Empty(status.Warnings);
         Assert.Equal([PathIdentity.Canonicalize(game.InstallPath)], status.ListedWithoutLaunchCommand);
         Assert.True(scan.HasProblems);
+        var logged = File.ReadAllLines(log.FilePath).Where(line => line.Contains("runtime markers unreadable", StringComparison.Ordinal)).ToArray();
+        Assert.Contains(logged, line => line.Contains(prefix, StringComparison.Ordinal));
     }
 
     private static string Write(string path, string content)
