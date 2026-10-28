@@ -23,7 +23,7 @@ Not on `main` yet: nothing at the moment.
 - The app now reports version `2.8.8`, so 2.8.7 announces this release as newer.
 - Before going back to 2.8.7, read the note at the top of the wave-12 entry below.
 
-## Wave 12 — 2026-10-28: Universal MFG releases again, shader headers with every pack, HDR controls only where they apply, Epic Games Launcher in prefixes
+## Wave 12 — 2026-10-28: Universal MFG again, shader headers, HDR controls where they apply, Epic in prefixes
 
 > [!WARNING]
 > Before going back to 2.8.7 (27 October 2026, the first release), do these first; it does not know what this build
@@ -40,8 +40,8 @@ Not on `main` yet: nothing at the moment.
 > 2.8.7 also brings back what this build fixed: its shader sync takes `ReShade.fxh`/`ReShadeUI.fxh` out of RHI's shader
 > folder again (packs such as Prod80 stop compiling), its Update All puts back an add-on file you deleted outside RHI
 > (ReLimiter, Display Commander, the DLSS5 DX11 Bridge), it cannot update Universal MFG past 1.4.x, it shows the HDR
-> section on every game (a saved HDR mode on a game this build hides it for applies again at a direct start), and offline
-> it turns Luma mode on for the games the old manifest listed.
+> section on every game (a saved HDR mode on a game this build hides it for applies again at a direct start), and
+> offline it turns Luma mode on for the games the old manifest listed.
 
 Components
 
@@ -54,8 +54,8 @@ Components
   every other component. Unlike upstream, nothing is updated at start-up while automatic updates are off. The ASI Loader
   is only ever updated for the bitness it was installed for; when the game's executable changes bitness, remove it and
   install it again.
-- **A file you deleted outside RHI is never put back by an update** — Universal MFG, MFG Ada Unlock, DLSSG 20/30, the ASI
-  Loader, ReLimiter, Display Commander and the DLSS5 DX11 Bridge. Update All says it could not be checked, with the
+- **A file you deleted outside RHI is never put back by an update** — Universal MFG, MFG Ada Unlock, DLSSG 20/30, the
+  ASI Loader, ReLimiter, Display Commander and the DLSS5 DX11 Bridge. Update All says it could not be checked, with the
   reason; the row still offers **Remove**, which clears RHI's record (then **Install** puts it back). A file changed
   outside RHI is never replaced either.
 - **Luma mods that are only on Nexus Mods are checked on Nexus** (upstream 2.8.8) with your connected Nexus account: the
@@ -75,16 +75,17 @@ Shaders
 - **A shader pack you turn off leaves no empty folders behind**, including the empty folders older builds left. Folders
   holding anything of yours stay.
 - **Applying shaders changes only what changed** (upstream 2.8.8): unchanged files are left alone, so applying the same
-  shaders again (Shaders/Add-ons, Update All, a ReShade update) writes nothing in the game. A file in RHI's shader folder
-  that is not the one RHI placed stops the sync with a line saying what to do (move or delete it, or untick its pack).
+  shaders again (Shaders/Add-ons, Update All, a ReShade update) writes nothing in the game. A file in RHI's shader
+  folder that is not the one RHI placed stops the sync with a line saying what to do (move or delete it, or untick its
+  pack).
 
 HDR
 
-- **Legacy HDR WSI only where it is needed** (Borderlands 3 would not load with `ENABLE_HDR_WSI=1`): the tick shows
-  only with an NVIDIA driver older than 595. On a newer driver it is hidden and `ENABLE_HDR_WSI=1` is left out of the
-  launch line RHI gives you for Steam, the app that installed an Xbox game, Heroic and Lutris, and of a game RHI starts
-  itself. A tick saved earlier stays saved and applies again on an older driver. Remove `ENABLE_HDR_WSI=1` from a launch
-  line you pasted into Steam yourself.
+- **Legacy HDR WSI only where it is needed** (Borderlands 3 would not load with `ENABLE_HDR_WSI=1`): the tick shows only
+  with an NVIDIA driver older than 595. On a newer driver it is hidden and `ENABLE_HDR_WSI=1` is left out of the launch
+  line RHI gives you for Steam, the app that installed an Xbox game, Heroic and Lutris, and of a game RHI starts itself.
+  A tick saved earlier stays saved and applies again on an older driver. Remove `ENABLE_HDR_WSI=1` from a launch line
+  you pasted into Steam yourself.
 - **HDR launch controls only for games that can use HDR:** the HDR section is hidden when RHI's data says the game has
   no HDR and RHI installed no HDR mod on it (RenoDX, Luma, DX9 HDR). Unknown, offline or not checked yet shows it. RHI
   reads its own list, PCGamingWiki and, for Xbox games, the Microsoft Store listing; the section label's tooltip says
@@ -101,8 +102,8 @@ Updates
   finish, and the like, each with its game and the reason, instead of only counting them (the Custom ReShade used to
   count as failed).
 - **GitHub answers are kept between launches** (upstream 2.8.8) and overlapping lookups share one request, which saves
-  the anonymous API allowance; a saved answer is used only once GitHub confirms it, or while GitHub's rate limit lasts. A
-  GitHub API request that takes longer than 30 seconds is given up and counts as could not be checked.
+  the anonymous API allowance; a saved answer is used only once GitHub confirms it, or while GitHub's rate limit lasts.
+  A GitHub API request that takes longer than 30 seconds is given up and counts as could not be checked.
 
 Library
 
@@ -110,16 +111,16 @@ Library
   classic launcher and the new one), modded in their real folder; **Play** starts them through the launcher in that
   prefix.
 - **Lutris store entries:** a Lutris entry that Lutris' Epic, Ubisoft, EA or Battle.net service made for one game now
-  starts only that game; before, the first such entry started every game of that store in the prefix. A game in a
-  prefix that has only other games' entries is still listed, without a launch command (set one in **Edit game**), and
-  the scan says so. Such an entry's card now sits in the game's own folder, so favourite, hidden and **Edit game**
-  changes saved on its old card must be set again.
+  starts only that game; before, the first such entry started every game of that store in the prefix. A game in a prefix
+  that has only other games' entries is still listed, without a launch command (set one in **Edit game**), and the scan
+  says so. Such an entry's card now sits in the game's own folder, so favourite, hidden and **Edit game** changes saved
+  on its old card must be set again.
 
 Check Neural Rendering
 
 - **Three DLSS5 Feeder failures in plain words** (Borderlands 3's log): the driver not confirming Neural Rendering
-  support (DLSS Super Resolution still works), a flat depth buffer (set in ReShade's in-game overlay, not in RHI), and the
-  Feeder stopping after the game's display mode changed (restart the game with its HDR and resolution set first).
+  support (DLSS Super Resolution still works), a flat depth buffer (set in ReShade's in-game overlay, not in RHI), and
+  the Feeder stopping after the game's display mode changed (restart the game with its HDR and resolution set first).
 
 DLSS
 
