@@ -317,6 +317,125 @@ public sealed class DeferredRunningGameTests : IDisposable
         Assert.Null(fx.Vm.Updates.DeferredRetry);
     }
 
+    // Correction round 1, review F4: the loop stopping (a Settings change) while a closed game's pass runs ends the poll
+    // quietly; it is not a failed pass in rhi.log.
+    [Fact]
+    public async Task LoopStoppedDuringAClosedGamesPass_IsNotLoggedAsAFailure()
+    {
+        var log = new AppLog(Path.Combine(_root, "rhi.log"));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stop = new CancellationTokenSource();
+        var retry = Retry(new Probe().IsRunning, async (_, token) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+            return false;
+        });
+        Task run;
+        using (AppLog.UseInThisFlow(log)) run = retry.Add([Game("Stopped Quest")], stop.Token);
+
+        await _clock.WaitingAsync();
+        _clock.Release();
+        await started.Task.WaitAsync(HangGuard);
+        stop.Cancel();
+        await run.WaitAsync(HangGuard);
+
+        Assert.True(run.IsCompletedSuccessfully);
+        Assert.DoesNotContain(File.Exists(log.FilePath) ? File.ReadAllLines(log.FilePath) : Array.Empty<string>(),
+            line => line.Contains("update pass for a game that closed failed", StringComparison.Ordinal));
+    }
+
+    // Review F2: the closed game's pass that changes nothing writes no status line (decision 2: none after every session).
+    [Fact]
+    public async Task ViewModel_ClosedGamePassThatChangesNothing_WritesNoStatusLine()
+    {
+        var checks = new Checks();
+        var probe = new Probe { Running = true };
+        var (fx, retry) = await DeferredInViewModelAsync(Game("Quiet Vm Quest"), probe, checks.Answer);
+        using var disposeFx = fx;
+        var lines = new ConcurrentQueue<string>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
+
+        probe.Running = false;
+        _clock.Release();
+        await retry.Run!.WaitAsync(HangGuard);
+
+        Assert.Equal(1, checks.Count); // the pass ran (offline: its check could not tell, nothing changed)
+        Assert.DoesNotContain(lines, line => line.StartsWith("Deferred updates ran", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, line => line.Contains("Update All:", StringComparison.Ordinal));
+        fx.Vm.Updates.StopBackgroundLoop();
+    }
+
+    // Review F3: another waiter (a queued library refresh) takes the gate between the closed game's wait for it and its
+    // own claim: the pass waits for the gate again and runs only once it holds it.
+    [Fact]
+    public async Task ViewModel_GateTakenBeforeTheClosedGamesClaim_WaitsForItAgain()
+    {
+        var game = Game("Race Vm Quest");
+        var checks = new Checks();
+        var probe = new Probe { Running = true };
+        using var fx = await ViewModelFixture.StartAsync([game], httpResponse: checks.Answer, runningProbe: probe);
+        Record(fx.Records, game, ManagedComponentKind.ReLimiter);
+        checks.Gate = fx.Vm.Operations;
+        var shell = (IPanelHost)fx.Vm;
+        var (host, race) = GateRaceHost.Over(shell);
+        var updates = new UpdatesViewModel(host, fx.Vm.Updates.UpdateAll) { DeferredRetryDelay = _clock.Delay };
+        shell.Settings.AutoUpdateComponents = true; // in memory only: the fixture's own loop stays off
+        using var loop = new CancellationTokenSource();
+        var pass = (Task)typeof(UpdatesViewModel).GetMethod("RunBackgroundComponentPassAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(updates, [loop.Token])!;
+        await pass.WaitAsync(HangGuard);
+        await _clock.WaitingAsync();
+        var retry = updates.DeferredRetry!;
+
+        race.ClaimOnRead(skip: 1); // WhenIdleAsync's read passes; the claim's read finds the gate taken
+        probe.Running = false;
+        _clock.Release();
+        using (var queued = await race.Claimed.Task.WaitAsync(HangGuard))
+        {
+            await WaitingForTheGateAsync(fx.Vm.Operations);
+            Assert.Equal(0, checks.Count);
+        }
+        Assert.True(await checks.Seen.WaitAsync(HangGuard), "no pass after the gate was freed");
+        await retry.Run!.WaitAsync(HangGuard);
+
+        Assert.Equal(["background-update"], checks.Kinds);
+        Assert.Empty(retry.Pending);
+        Assert.False(fx.Vm.Operations.IsBusy);
+        loop.Cancel();
+    }
+
+    // Review F3: Cancel pressed during the closed game's pass says so (background) and the game is done.
+    [Fact]
+    public async Task ViewModel_ClosedGamePassCancelled_SaysCancelled_AndForgetsTheGame()
+    {
+        var probe = new Probe { Running = true };
+        var (fx, retry) = await DeferredInViewModelAsync(Game("Cancel Vm Quest"), probe);
+        using var disposeFx = fx;
+        var asked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fx.HangWhen = request =>
+        {
+            if (request.RequestUri!.AbsoluteUri != ReLimiterLatest) return false;
+            asked.TrySetResult();
+            return true; // the release check stalls until cancelled
+        };
+        var lines = new ConcurrentQueue<string>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
+
+        probe.Running = false;
+        _clock.Release();
+        await asked.Task.WaitAsync(HangGuard);
+        Assert.Equal("background-update", fx.Vm.Operations.CurrentKind);
+        fx.Vm.Operations.Cancel();
+        await retry.Run!.WaitAsync(HangGuard);
+
+        // (The offline fixture's own notice may follow the line.)
+        Assert.Contains(lines, line => line.StartsWith("Operation cancelled. (background)", StringComparison.Ordinal));
+        Assert.Empty(retry.Pending);
+        Assert.False(fx.Vm.Operations.IsBusy);
+        fx.Vm.Updates.StopBackgroundLoop();
+    }
+
     private DeferredGameRetry Retry(Func<DetectedGame, bool> isRunning, Func<DetectedGame, CancellationToken, Task<bool>> pass, Func<bool>? wanted = null)
         => new(isRunning, wanted ?? (() => true), pass, DeferredGameRetry.DefaultInterval, _clock.Delay);
 
@@ -422,15 +541,60 @@ public sealed class DeferredRunningGameTests : IDisposable
         public OperationCoordinator? Gate { get; set; }
         public SemaphoreSlim Seen { get; } = new(0);
         public ConcurrentQueue<bool> WhileTestHeldTheGate { get; } = new();
+        public ConcurrentQueue<string?> Kinds { get; } = new();
         public int Count => Volatile.Read(ref _count);
 
         public HttpResponseMessage? Answer(HttpRequestMessage request)
         {
             if (request.RequestUri!.AbsoluteUri != ReLimiterLatest) return null;
             WhileTestHeldTheGate.Enqueue(Gate?.CurrentKind == "test");
+            Kinds.Enqueue(Gate?.CurrentKind);
             Interlocked.Increment(ref _count);
             Seen.Release();
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The shell as a panel sees it, except that once armed one read of <see cref="IPanelHost.Operations"/> (after
+    /// <c>skip</c> reads) first claims the gate as another operation would ("queued"): the race a second waiter can win
+    /// between the pass's wait for the gate and its own claim. Every other member is the shell's own.
+    /// </summary>
+    public class GateRaceHost : System.Reflection.DispatchProxy
+    {
+        private readonly object _lock = new();
+        private IPanelHost _inner = null!;
+        private int _skip = -1;
+
+        public TaskCompletionSource<OperationScope> Claimed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal static (IPanelHost Host, GateRaceHost Race) Over(IPanelHost inner)
+        {
+            var host = Create<IPanelHost, GateRaceHost>();
+            var race = (GateRaceHost)(object)host;
+            race._inner = inner;
+            return (host, race);
+        }
+
+        public void ClaimOnRead(int skip)
+        {
+            lock (_lock) _skip = skip;
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod!.Name == "get_Operations")
+            {
+                bool claim;
+                lock (_lock) claim = _skip >= 0 && _skip-- == 0;
+                if (claim) Claimed.SetResult(_inner.Operations.TryBegin("queued") ?? throw new InvalidOperationException("the gate was not free"));
+            }
+            try { return targetMethod.Invoke(_inner, args); }
+            catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(ex.InnerException);
+                throw;
+            }
         }
     }
 
