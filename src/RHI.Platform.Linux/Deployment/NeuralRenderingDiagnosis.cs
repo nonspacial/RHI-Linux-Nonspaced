@@ -116,7 +116,8 @@ public enum NrFixHint
     NothingToChangeInRhi,
     /// <summary>#248: a plain step in ReShade's in-game overlay (Add-ons tab → Generic Depth), not an RHI control.</summary>
     GenericDepthInReShade,
-    /// <summary>#248: a plain step — restart the game with its final display mode (HDR, resolution) already set.</summary>
+    /// <summary>#248: a plain step — restart the game with its final display mode (HDR, resolution) already set; if it stops
+    /// again, turn HDR off in the game's options (review F5).</summary>
     RestartWithDisplayModeSet
 }
 
