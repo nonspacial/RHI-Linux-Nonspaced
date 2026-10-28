@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
@@ -10,6 +11,7 @@ using System.Text;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Network;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
@@ -260,6 +262,51 @@ public sealed class Upstream288PinsTests : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(answer(request));
+    }
+
+    // ---- item 13 (review F1): the production pcgw_data.json selection budget -------------------------------------------
+
+    // PcgwCentralDataTests wait for the data file with a hang guard (de-flake), so nothing else bounds the default: a
+    // default cut to zero loses every cold selection's API/engine, a long one stalls the selection on a slow download.
+    [Fact]
+    public void Pin288_PcgwDataSelectionBudget_IsThreeSeconds()
+        => Assert.Equal(TimeSpan.FromSeconds(3), LinuxGameRuntimeProbe.DefaultPcgwDataSelectionBudget);
+
+    // A probe built without a budget (as AppComposition builds it) waits that default for a data file that has not
+    // loaded, then carries on. Only the lower bound is tight (a wait cannot end early); the upper one is a loose bound.
+    [Fact]
+    public async Task Pin288_PcgwDataSelection_WithoutABudget_WaitsTheDefault_ThenCarriesOn()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var http = new HttpClient(new Held(release.Task));
+        var probe = new LinuxGameRuntimeProbe(
+            pcgwData: new PcgwCentralDataService(http, Path.Combine(_root, "pcgw_data.json"), "https://example.test/pcgw_data.json", fallbackUrl: null));
+        var dir = Directory.CreateDirectory(Path.Combine(_root, "pcgw-budget")).FullName;
+        var exe = Path.Combine(dir, "game.exe");
+        File.WriteAllText(exe, "MZ no renderer imports here");
+        var game = new DetectedGame { Name = "Pin288 Budget", InstallPath = dir, ExecutablePath = exe, Runner = "Proton" };
+        try
+        {
+            var timer = Stopwatch.StartNew();
+            await probe.ProbeAsync(game, GameFileIndexer.Build(dir)).WaitAsync(TimeSpan.FromMinutes(2));
+            timer.Stop();
+
+            Assert.True(timer.Elapsed >= TimeSpan.FromMilliseconds(2900), $"selection waited only {timer.ElapsedMilliseconds} ms");
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(45), $"selection waited {timer.ElapsedMilliseconds} ms");
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
+    private sealed class Held(Task release) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await release.ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
     }
 
     // ---- item 9 (b8094e6): shader archive members with ".." or an absolute path are refused ---------------------------

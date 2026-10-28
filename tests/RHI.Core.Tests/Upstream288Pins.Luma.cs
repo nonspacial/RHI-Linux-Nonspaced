@@ -10,18 +10,23 @@ namespace RHI.Core.Tests;
 /// <summary>
 /// #249 items 9 and 10 (upstream 2.8.8 <c>b8094e6</c>): a Luma archive member that is absolute, or uses <c>..</c> even
 /// where it would land back inside the game, is refused before anything is staged; Luma removal deletes only the files
-/// its record lists (a file beside them stays); a Luma update writes one Update row in the update history.
+/// its record lists (a file beside them stays); a Luma update writes one Update row in the update history. (Removal's
+/// inside-the-game check for a recorded path outside the game is lane w12/luma's, with its own test.)
 /// </summary>
 public sealed partial class LumaFrameworkDeploymentServiceTests
 {
     [Theory]
-    [InlineData("/tmp/rhi-pin288-absolute.txt", "Absolute archive entry is not allowed: ")]
+    [InlineData("ABSOLUTE", "Absolute archive entry is not allowed: ")]   // an absolute member under this test's own root
     [InlineData("C:/Windows/rhi-pin288.txt", "Absolute archive entry is not allowed: ")]
     [InlineData("Shaders/../inside.txt", "Unsafe archive entry: ")]          // lands inside: only the ".." rule refuses it
     [InlineData("../Luma-escape.addon64", "Unsafe archive entry: ")]        // add-ons are routed by file name
     public async Task Pin288_ExtractionPlan_RefusesAbsoluteAndDotDotMembers(string member, string refusal)
     {
         var game = CreateGame();
+        // Built under _root at run time: if the refusal ever regresses, the member lands in this test's folder, never in
+        // the real system temp folder.
+        var absolute = Path.Combine(_root, "pin288-absolute-" + Guid.NewGuid().ToString("N") + ".txt");
+        if (member == "ABSOLUTE") member = absolute;
         var zipPath = Path.Combine(_root, "pin288-" + Guid.NewGuid().ToString("N") + ".zip");
         using (var file = File.Create(zipPath))
         using (var zip = new ZipArchive(file, ZipArchiveMode.Create))
@@ -34,6 +39,7 @@ public sealed partial class LumaFrameworkDeploymentServiceTests
         Assert.StartsWith(refusal, error.Message, StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFileSystemEntries(staging));
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "inside.txt")));
+        Assert.False(File.Exists(absolute));
     }
 
     [Fact]
@@ -61,30 +67,6 @@ public sealed partial class LumaFrameworkDeploymentServiceTests
         Assert.Equal(recorded.Order(StringComparer.Ordinal), remove.ChangedFiles!.Order(StringComparer.Ordinal));
         Assert.True(File.Exists(userShader));
         Assert.True(File.Exists(userAddon));
-    }
-
-    // A ledger entry that names a file outside the game (a hand-edited or damaged deployments.json): removal must not
-    // delete it. Upstream 2.8.8 guards its Luma uninstall with SafeCombine against the game folder.
-    [Fact(Skip = "#249: Luma removal deletes a recorded file outside the game folder (no containment check at removal; w12-pins progress file, Decision needed)")]
-    public async Task Pin288_Remove_NeverDeletesARecordedFileOutsideTheGame()
-    {
-        var game = CreateGame();
-        var records = NewRecords("pin288-outside-records.json");
-        SeedManagedReShade(records, game);
-        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "ReShade.ini"), "[ADDON]\nAddonPath=.\\addons\n");
-        var zip = MakeLumaZip();
-        using var http = BuildHttp(zip, Sha256(zip));
-        var service = new LumaFrameworkDeploymentService(http, records, Path.Combine(_root, "cache-pin288-outside"));
-        Assert.True((await service.InstallAsync(game)).Success);
-        var outside = Path.Combine(_root, "pin288-outside-" + Guid.NewGuid().ToString("N") + ".txt");
-        File.WriteAllText(outside, "not the game's");
-        var record = records.Find(game, ManagedComponentKind.LumaFramework)!;
-        record.Files.Add(new LinuxDeployedFile { Path = outside, Sha256 = await FileHash.Sha256HexAsync(outside, CancellationToken.None) });
-        records.Upsert(record);
-
-        await service.RemoveAsync(game);
-
-        Assert.True(File.Exists(outside));
     }
 
     [Fact]
