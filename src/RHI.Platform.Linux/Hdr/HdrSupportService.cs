@@ -70,7 +70,7 @@ public static class HdrSupportRule
 /// that — for a game the app that installed it keeps a Microsoft Store record for — that record's <c>CapabilityHDR</c>
 /// attribute on PC turns a PCGW "false" or unknown into Yes (correction F3). Answers are cached under RHI's cache folder with the page name and fetch time,
 /// read once per game and refreshed only after an explicit full Refresh (<see cref="MarkStale"/>); a failed lookup is
-/// Unknown and never cached. Lookups run at most <see cref="MaxParallel"/> at a time, each bounded in time.
+/// Unknown and never cached. Lookups run at most <see cref="MaxParallel"/> at a time, each one's work bounded in time.
 /// </summary>
 public sealed partial class HdrSupportService
 {
@@ -86,7 +86,7 @@ public sealed partial class HdrSupportService
     private readonly IReadOnlyDictionary<string, bool> _overrides;
     private readonly SemaphoreSlim _parallel = new(MaxParallel, MaxParallel);
     private readonly SemaphoreSlim _cacheGate = new(1, 1);
-    private readonly Dictionary<string, Task<HdrSupportEvidence>> _running = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Lookup> _running = new(StringComparer.Ordinal);
     private CacheFile? _cache;
     private long _staleBeforeUtcTicks;
 
@@ -129,7 +129,12 @@ public sealed partial class HdrSupportService
             return cache.Games.TryGetValue(LookupKey(game), out var entry) && !IsStale(entry) ? entry.ToEvidence() : null;
     }
 
-    /// <summary>The game's answer: never throws, never waits longer than the lookup timeout; a failure is Unknown.</summary>
+    /// <summary>
+    /// The game's answer; never throws, a failure is Unknown. The lookup's own work is bounded by the lookup timeout; it
+    /// may first wait for at most <see cref="MaxParallel"/> earlier lookups (correction F6: callers cancel the lookups of
+    /// games the user has left, so the queue holds only what is still wanted). A caller that cancels gets Unknown, never
+    /// cached.
+    /// </summary>
     public Task<HdrSupportEvidence> ResolveAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(game);
@@ -137,17 +142,29 @@ public sealed partial class HdrSupportService
         var key = LookupKey(game);
         lock (_running)
         {
-            // A finished lookup is never handed out again (its removal may still be queued): a Refresh asks anew.
-            if (_running.TryGetValue(key, out var running) && !running.IsCompleted) return running;
-            var task = Task.Run(() => ResolveUncachedAsync(game, key, cancellationToken), CancellationToken.None);
-            _running[key] = task;
-            _ = task.ContinueWith(done =>
+            // A running lookup is shared, unless its caller has left (it ends with Unknown): then this caller asks anew.
+            if (_running.TryGetValue(key, out var running) && !running.Token.IsCancellationRequested) return running.Task;
+            var entry = new Lookup(cancellationToken);
+            entry.Task = Task.Run(async () =>
             {
-                lock (_running)
-                    if (_running.TryGetValue(key, out var current) && ReferenceEquals(current, done)) _running.Remove(key);
-            }, TaskScheduler.Default);
-            return task;
+                try { return await ResolveUncachedAsync(game, key, cancellationToken).ConfigureAwait(false); }
+                finally
+                {
+                    // Correction F7 (R1): the lookup leaves the list before its task completes, so a finished lookup is
+                    // never handed out again — a Refresh (MarkStale) always asks anew, with no queued clean-up to race.
+                    lock (_running)
+                        if (_running.TryGetValue(key, out var current) && ReferenceEquals(current, entry)) _running.Remove(key);
+                }
+            }, CancellationToken.None);
+            _running[key] = entry;
+            return entry.Task;
         }
+    }
+
+    private sealed class Lookup(CancellationToken token)
+    {
+        public CancellationToken Token { get; } = token;
+        public Task<HdrSupportEvidence> Task { get; set; } = null!;
     }
 
     private async Task<HdrSupportEvidence> ResolveUncachedAsync(DetectedGame game, string key, CancellationToken cancellationToken)

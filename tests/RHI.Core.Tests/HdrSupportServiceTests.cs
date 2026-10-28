@@ -203,6 +203,46 @@ public sealed class HdrSupportServiceTests : IDisposable
         Assert.Equal(requests, wiki.Requests.Count);
     }
 
+    // ---- correction round 1, F6 + F7 (R1) ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ALookupWhoseCallerLeft_IsNeverHandedToTheNextCaller()
+    {
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wiki = new FakeWiki { Search = { ["Digging Quest"] = "Digging_Quest" }, Pages = { ["Digging Quest"] = Wikitext("false") }, Hold = held.Task };
+        var game = Named("Digging Quest");
+        var service = Service(wiki);
+        using var left = new CancellationTokenSource();
+
+        var first = service.ResolveAsync(game, left.Token);
+        await wiki.Arrived.Task.WaitAsync(TimeSpan.FromSeconds(30)); // its request is out
+        left.Cancel(); // the user selected another game
+        var second = service.ResolveAsync(game); // and came back
+        wiki.Hold = null;
+        held.SetResult();
+
+        Assert.Equal(HdrSupportEvidence.Unchecked, await first.WaitAsync(TimeSpan.FromSeconds(30))); // the left caller: nothing, not cached
+        Assert.Equal(HdrSupportAnswer.No, (await second.WaitAsync(TimeSpan.FromSeconds(30))).Answer); // asked anew
+    }
+
+    [Fact]
+    public async Task AFinishedLookup_IsNeverReused_AfterARefresh()
+    {
+        // F7 R1: resolve, MarkStale, resolve again at once — a new request, never the finished lookup's answer.
+        var wiki = new FakeWiki { AppIdPages = { [377160] = "Fallout_4" }, Pages = { ["Fallout 4"] = Wikitext("false") } };
+        var game = Steam("Fallout 4", 377160);
+        var clock = new ManualClock(new DateTimeOffset(2026, 10, 28, 3, 0, 0, TimeSpan.Zero));
+        var service = Service(wiki, time: clock);
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        var requests = wiki.Requests.Count;
+
+        wiki.Pages["Fallout 4"] = Wikitext("true");
+        clock.Now += TimeSpan.FromMinutes(1);
+        service.MarkStale();
+        Assert.Equal(HdrSupportAnswer.Yes, (await service.ResolveAsync(game)).Answer);
+        Assert.Equal(requests * 2, wiki.Requests.Count);
+    }
+
     [Fact]
     public async Task AFullRefresh_AsksAgain_AndKeepsTheEarlierAnswerWhenThatFails()
     {
@@ -334,11 +374,22 @@ public sealed class HdrSupportServiceTests : IDisposable
         public Dictionary<string, string> ParseErrors { get; } = new(StringComparer.OrdinalIgnoreCase);
         public ConcurrentQueue<string> Requests { get; } = new();
         public volatile string? Fail;
+        /// <summary>While set, every request waits for it (a server that is slow to answer, whatever the caller does).</summary>
+        public volatile Task? Hold;
+        /// <summary>Completed when a request arrives (replace it to wait for the next one).</summary>
+        public TaskCompletionSource Arrived { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Enqueue(request.RequestUri!.AbsoluteUri);
+            Arrived.TrySetResult();
+            if (Hold is { } hold) await hold.ConfigureAwait(false);
+            return await Answer(request).ConfigureAwait(false);
+        }
+
+        private Task<HttpResponseMessage> Answer(HttpRequestMessage request)
         {
             var uri = request.RequestUri!;
-            Requests.Enqueue(uri.AbsoluteUri);
             switch (Fail)
             {
                 case "offline": throw new HttpRequestException("offline test");

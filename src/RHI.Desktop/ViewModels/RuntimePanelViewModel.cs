@@ -450,6 +450,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     private HdrSupportService? _hdrSupport;
     private HdrSupportEvidence? _hdrSupportEvidence;
     private DetectedGame? _hdrSupportFor;
+    private CancellationTokenSource? _hdrSupportCancel;
 
     /// <summary>#251: the HDR support resolver (wired by <c>AppComposition</c>); null = nothing known, the section always shows.</summary>
     internal HdrSupportService? HdrSupport
@@ -501,21 +502,27 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     /// <summary>A game was selected (or none): its known answer at once, else a lookup whose answer arrives later.</summary>
     private void LoadHdrSupport(DetectedGame? game)
     {
+        // Correction F6: the lookup for the game the user has left is cancelled, so arrowing through the library never
+        // queues PCGamingWiki requests nobody waits for in front of the selected game's (and the graphics-API lookup's).
+        _hdrSupportCancel?.Cancel();
+        _hdrSupportCancel = null;
         _hdrSupportFor = game;
         _hdrSupportEvidence = game is null ? null : _hdrSupport?.Peek(game);
         HdrSupportLookup = null;
         RaiseHdrPlanChanged();
         if (game is not null && _hdrSupportEvidence is null && _hdrSupport is { } support)
         {
-            var lookup = ResolveHdrSupportAsync(support, game);
+            var cancel = _hdrSupportCancel = new CancellationTokenSource();
+            var lookup = ResolveHdrSupportAsync(support, game, cancel.Token);
             HdrSupportLookup = lookup;
             UiExceptionGuard.Forget(lookup, "hdr-support");
         }
     }
 
-    private async Task ResolveHdrSupportAsync(HdrSupportService support, DetectedGame game)
+    private async Task ResolveHdrSupportAsync(HdrSupportService support, DetectedGame game, CancellationToken cancellationToken)
     {
-        var evidence = await support.ResolveAsync(game);
+        var evidence = await support.ResolveAsync(game, cancellationToken);
+        // An answer for a game the user has left (late, or the Unknown of a cancelled lookup) never lands on another game.
         if (!ReferenceEquals(_hdrSupportFor, game) || !ReferenceEquals(SelectedGame, game)) return;
         _hdrSupportEvidence = evidence;
         RaiseHdrPlanChanged();
