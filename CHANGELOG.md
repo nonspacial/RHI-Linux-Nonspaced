@@ -8,20 +8,17 @@ listed in [`docs/download-trust.md`](docs/download-trust.md).
 
 Releases are published on [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases). The first,
 `2.8.7`, is level with upstream RHI 2.8.7 and takes its number; later releases of this project alone add a fourth
-number (`2.8.7.1`), and the port of the next upstream release takes that release's number (`2.8.8`).
+number (`2.8.7.1`). The port of the next upstream release takes that release's number (`2.8.8`) and is published only
+once upstream's release leaves beta; until then its builds carry a beta label (`2.8.8-beta.1`) and are not released.
 
 ## In progress
 
 Not on `main` yet: nothing at the moment.
 
-## 2.8.8 — 2026-10-28: level with upstream RHI 2.8.8
+## 2.8.8 beta 1 — not released yet
 
-- The second release: an AppImage with its `.sha256` file on GitHub Releases. It holds everything in the wave entries
-  below, up to and including wave 12, and is level with upstream RHI 2.8.8 (its beta notes; upstream had not tagged
-  2.8.8 when this was released). How each upstream feature was adapted for Linux: [`UPSTREAM.md`](UPSTREAM.md). It is
-  still a beta.
-- The app now reports version `2.8.8`, so 2.8.7 announces this release as newer.
-- Before going back to 2.8.7, read the note at the top of the wave-12 entry below.
+- Installed builds only: it holds everything in the wave entries below, up to and including wave 12, is level with
+  upstream RHI 2.8.8 beta, and is published as 2.8.8 once upstream RHI 2.8.8 leaves beta.
 
 ## Wave 12 — 2026-10-28: Universal MFG again, shader headers, HDR controls where they apply, Epic in prefixes
 

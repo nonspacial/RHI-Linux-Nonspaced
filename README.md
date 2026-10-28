@@ -4,7 +4,7 @@
 
 ### Native Linux port of RHI for Steam / Proton, Heroic, Lutris, Wine and Xbox / Game Pass
 
-[![Release](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-2.8.8-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)
+[![Release](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-2.8.7-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)
 [![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.8.8%20beta-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
 [![Linux](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4?style=for-the-badge\&logo=dotnet)](https://dotnet.microsoft.com/)
@@ -50,10 +50,11 @@
 ## 🚀 Status
 
 **Project:** [nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced)
-**Release:** `v2.8.8` ([GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)), level with upstream RHI 2.8.8 (its beta notes; upstream had not tagged 2.8.8 at release time)
+**Release:** `v2.8.7` ([GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)), level with upstream RHI 2.8.7
+**This build:** `v2.8.8-beta.1`, not released yet: installed builds only. It is level with upstream RHI 2.8.8 beta and is published as 2.8.8 once upstream RHI 2.8.8 leaves beta.
 **Upstream target:** `RHI 2.8.8` (beta)
 
-RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton. It follows upstream RHI up to 2.8.8 and adds Linux-specific safety around installs, downloads and Wine prefixes. It started from [wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux) (GPL-3.0).
+RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton. It follows upstream RHI up to 2.8.8 beta and adds Linux-specific safety around installs, downloads and Wine prefixes. It started from [wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux) (GPL-3.0).
 
 The project targets functional parity with upstream RHI where the same functionality can be implemented reliably on Linux.
 
@@ -79,7 +80,7 @@ RHI Linux Nonspaced:
 * **never leaves a game half-modded.** Installs, updates and removals are journaled and roll back as a whole if anything fails, including after a crash or power cut.
 * **checks what it downloads.** Each download source has its own list of allowed hosts and a size limit, and published checksums are verified. A download that stops sending data is given up after a minute instead of holding up Update All.
 * **leaves your Wine prefixes alone while they run**, and keeps DLL overrides you set yourself.
-* **follows upstream RHI to 2.8.8**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler, RTX Encore, Control Ultimate Edition frame generation, Universal MFG's MFG Unlocker releases and Nexus-only Luma mods.
+* **follows upstream RHI to 2.8.8 beta**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler, RTX Encore, Control Ultimate Edition frame generation, Universal MFG's MFG Unlocker releases and Nexus-only Luma mods.
 * **lists Xbox / Game Pass games** from Xodus-format installs and from a configurable list of Xbox game folders.
 * **lists games from other store launchers inside Wine prefixes** (Epic Games Launcher, EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io), from the itch.io app for Linux, and non-Steam games added to Steam.
 * **adds RTX Encore** as a managed component (not yet confirmed on Linux).
@@ -169,12 +170,12 @@ Linux has no official Xbox app. RHI finds Xbox / Game Pass games from Xodus-form
 
 ## From a release (AppImage)
 
-Download `RHI-Linux-v2.8.8-x86_64.AppImage` and `RHI-Linux-v2.8.8-x86_64.AppImage.sha256` from [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases) into the same folder, check the download, make it executable and run it:
+Download `RHI-Linux-v2.8.7-x86_64.AppImage` and `RHI-Linux-v2.8.7-x86_64.AppImage.sha256` from [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases) into the same folder, check the download, make it executable and run it:
 
 ```bash
-sha256sum --check RHI-Linux-v2.8.8-x86_64.AppImage.sha256
-chmod +x RHI-Linux-v2.8.8-x86_64.AppImage
-./RHI-Linux-v2.8.8-x86_64.AppImage
+sha256sum --check RHI-Linux-v2.8.7-x86_64.AppImage.sha256
+chmod +x RHI-Linux-v2.8.7-x86_64.AppImage
+./RHI-Linux-v2.8.7-x86_64.AppImage
 ```
 
 `sha256sum --check` must print `OK`; if it does not, delete the file and download it again. The AppImage bundles the .NET runtime, so nothing from .NET needs installing (see [Runtime requirements](#runtime-requirements) for the archive tool some components need). RHI tells you when a newer release is published (Settings → Accounts & updates); it never downloads or installs one itself.
@@ -230,12 +231,12 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 > A build from before 15 October 2026 does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering choice, and the saved OptiScaler DLL name, for every game where that component is not installed; choose them again once you are back on the current build. **Remove RTX Encore from every game before going back.** An older build cannot update or remove it, and the first time it saves any install record it drops RTX Encore's record for good: after that even this build can no longer update or remove it, and its `nvngx_dlssnr.dll.original` and Wine override are left behind. Also switch No Addons games back to ReShade Stable or Nightly first, so their add-ons are turned back on.
 
 > [!WARNING]
-> Before going back to 2.8.7 (27 October 2026, the first release), do these first; it does not know what 2.8.8 added:
+> Before going back to 2.8.7 (27 October 2026, the first release), do these first; it does not know what this build added:
 >
-> * **Remove whatever RHI installed on Epic Games Launcher games inside a Wine, Lutris, Heroic or Steam prefix** if you want it managed there: 2.8.7 does not list games it could only find through the Epic launcher's records, so it can neither update nor remove what is installed on them. Their install records are kept, and 2.8.8 manages them again.
-> * **Expect Legacy HDR WSI back:** 2.8.8 hides the tick and leaves `ENABLE_HDR_WSI=1` out on an NVIDIA driver 595 or newer, but keeps the tick saved. 2.8.7 applies a saved tick on every driver again (a game can then stop while loading); untick **Legacy HDR WSI** in those games once you are back on 2.8.7.
+> * **Remove whatever RHI installed on Epic Games Launcher games inside a Wine, Lutris, Heroic or Steam prefix** if you want it managed there: 2.8.7 does not list games it could only find through the Epic launcher's records, so it can neither update nor remove what is installed on them. Their install records are kept, and this build manages them again.
+> * **Expect Legacy HDR WSI back:** this build hides the tick and leaves `ENABLE_HDR_WSI=1` out on an NVIDIA driver 595 or newer, but keeps the tick saved. 2.8.7 applies a saved tick on every driver again (a game can then stop while loading); untick **Legacy HDR WSI** in those games once you are back on 2.8.7.
 >
-> 2.8.7 also brings back what 2.8.8 fixed: its shader sync takes `ReShade.fxh`/`ReShadeUI.fxh` out of RHI's shader folder again (packs such as Prod80 stop compiling), its Update All puts back an add-on file you deleted outside RHI, it cannot update Universal MFG past 1.4.x, it shows the HDR section on every game (a saved HDR mode applies again at a direct start), and offline it turns Luma mode on for the games the old manifest listed.
+> 2.8.7 also brings back what this build fixed: its shader sync takes `ReShade.fxh`/`ReShadeUI.fxh` out of RHI's shader folder again (packs such as Prod80 stop compiling), its Update All puts back an add-on file you deleted outside RHI, it cannot update Universal MFG past 1.4.x, it shows the HDR section on every game (a saved HDR mode applies again at a direct start), and offline it turns Luma mode on for the games the old manifest listed.
 
 > [!WARNING]
 > Before going back further, to the 22 October 2026 build (the one that added default DLSS presets and add-ons inside archives), do these first; it does not know what the later 22 October 2026 build added (the Neural Rendering DLL per card, also in 2.8.7):
@@ -440,7 +441,7 @@ RHI Linux Nonspaced ports **[RankFTW/RHI](https://github.com/RankFTW/RHI)**, the
 The current synchronization target is:
 
 ```text
-RHI 2.8.8 (beta notes; untagged at release time)
+RHI 2.8.8 (beta notes; upstream has not released 2.8.8 yet)
 ```
 
 RHI Linux aims to preserve the functionality and workflow of the original RHI project while adapting Windows-specific behavior for Linux, Wine and Proton.
@@ -506,7 +507,9 @@ Third-party projects and components retain their respective original licenses.
 
 **Native Linux tooling for the RHI ecosystem.**
 
-Release `v2.8.8` · level with upstream RHI `2.8.8`
+Release `v2.8.7` · level with upstream RHI `2.8.7`
+
+This build `v2.8.8-beta.1` (not released yet) · level with upstream RHI `2.8.8` beta
 
 [Back to top](#rhi-linux)
 

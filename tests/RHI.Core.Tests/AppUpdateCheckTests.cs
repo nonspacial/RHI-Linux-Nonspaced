@@ -131,6 +131,22 @@ public sealed class AppUpdateCheckServiceTests
         }
     }
 
+    // Owner decision 2026-10-28: the wave-12 build is 2.8.8-beta.1, installed only and never released; 2.8.7.1 came out
+    // meanwhile. The beta build must not announce 2.8.7.1 as an update, and must announce the real 2.8.8 once released.
+    [Fact]
+    public async Task Build2_8_8Beta1_SeesRelease2_8_7_1AsOlder_AndRelease2_8_8AsNewer()
+    {
+        var (released, _) = Build("2.8.8-beta.1", _ => Json($"[{Release("v2.8.7.1")},{Release("v2.8.7")}]"));
+        var upToDate = await released.CheckAsync();
+        Assert.Equal(AppUpdateCheckResult.UpToDate, upToDate.Result);
+        Assert.Equal("2.8.7.1", upToDate.Latest!.Version);
+
+        var (later, _) = Build("2.8.8-beta.1", _ => Json($"[{Release("v2.8.8")},{Release("v2.8.7.1")},{Release("v2.8.7")}]"));
+        var check = await later.CheckAsync();
+        Assert.Equal(AppUpdateCheckResult.UpdateAvailable, check.Result);
+        Assert.Equal("2.8.8", check.Latest!.Version);
+    }
+
     [Fact]
     public async Task EarlierBuilds_SeeRelease2_8_7AsNewer()
     {
@@ -166,6 +182,8 @@ public sealed class AppUpdateCheckServiceTests
     [InlineData("0.9.25.0-beta.1", "2.8.7")]
     [InlineData("2.8.7", "2.8.7.1")]
     [InlineData("2.8.7.1", "2.8.8")]
+    [InlineData("2.8.7.1", "2.8.8-beta.1")]
+    [InlineData("2.8.8-beta.1", "2.8.8")]
     public void Versions_OrderAsSemVer(string older, string newer)
     {
         var a = AppVersion.TryParse(older);

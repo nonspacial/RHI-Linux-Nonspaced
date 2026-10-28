@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- The product version: RhiProductInfo.Version, the AppImage name and validate.sh read it from here. -->
-    <Version>2.8.8</Version>
+    <Version>2.8.8-beta.1</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- Commit packages.lock.json for every project; CI and validate.sh restore with locked mode. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
