@@ -9,17 +9,22 @@ namespace RHI.Core.Services;
 public static class DetectorDiagnostics
 {
     private static readonly AsyncLocal<List<string>?> Collector = new();
-    private static readonly AsyncLocal<System.Runtime.CompilerServices.StrongBox<int>?> Listed = new();
+    private static readonly AsyncLocal<List<string>?> Listed = new();
 
     /// <summary>
-    /// w12 follow-up (merge review nit 1): <paramref name="games"/> games were listed, but without a launch command (Play
-    /// then says to set one in Edit game). Logged and counted for the scan's own plain line; never a "skipped" warning,
-    /// since nothing was skipped.
+    /// w12 follow-up (merge review nit 1): the games at <paramref name="installPaths"/> were listed, but without a launch
+    /// command (Play then says to set one in Edit game). Logged and collected (canonical paths, <see cref="PathIdentity"/>)
+    /// for the scan's own plain line; never a "skipped" warning, since nothing was skipped. w12 final review m1: the paths,
+    /// not a count, so the line counts only games still without a command once Edit game's commands are applied.
     /// </summary>
-    public static void ListedWithoutLaunchCommand(int games, string message, Exception? error = null)
+    public static void ListedWithoutLaunchCommand(IReadOnlyCollection<string> installPaths, string message, Exception? error = null)
     {
-        if (games <= 0) return;
-        if (Listed.Value is { } box) Interlocked.Add(ref box.Value, games);
+        if (installPaths.Count == 0) return;
+        if (Listed.Value is { } list)
+        {
+            var canonical = installPaths.Select(PathIdentity.Canonicalize).ToArray();
+            lock (list) list.AddRange(canonical);
+        }
         AppLog.Warn("scan", message, error);
     }
 
@@ -42,14 +47,16 @@ public static class DetectorDiagnostics
     }
 
     /// <summary>As <see cref="CollectAsync"/>, plus the games listed without a launch command.</summary>
-    internal static async Task<(T Result, IReadOnlyList<string> Warnings, int ListedWithoutLaunchCommand)> CollectScanAsync<T>(Func<Task<T>> detect)
+    internal static async Task<(T Result, IReadOnlyList<string> Warnings, IReadOnlyList<string> ListedWithoutLaunchCommand)> CollectScanAsync<T>(Func<Task<T>> detect)
     {
         var collector = new List<string>();
-        var listed = new System.Runtime.CompilerServices.StrongBox<int>();
+        var listed = new List<string>();
         Collector.Value = collector;
         Listed.Value = listed;
         var result = await detect().ConfigureAwait(false);
-        lock (collector) return (result, collector.ToArray(), Volatile.Read(ref listed.Value));
+        string[] paths;
+        lock (listed) paths = listed.Distinct(StringComparer.Ordinal).ToArray();
+        lock (collector) return (result, collector.ToArray(), paths);
     }
 }
 
@@ -59,11 +66,16 @@ public static class DetectorDiagnostics
 /// <param name="Error">Set when the detector failed outright; its games are missing from the library.</param>
 /// <param name="Warnings">Problems the detector recovered from (entries or libraries it had to skip).</param>
 /// <param name="Reused">True when a partial refresh reused the previous scan's result and status.</param>
-/// <param name="ListedWithoutLaunchCommand">Games listed without a launch command (their own line, not a warning).</param>
+/// <param name="ListedWithoutLaunchCommand">
+/// Canonical install paths of the games listed without a launch command (their own line, not a warning; null = none).
+/// </param>
 public sealed record DetectorScanStatus(string Name, int Count, string? Error, IReadOnlyList<string> Warnings, bool Reused = false,
-    int ListedWithoutLaunchCommand = 0)
+    IReadOnlyList<string>? ListedWithoutLaunchCommand = null)
 {
     public bool Failed => Error is not null;
+
+    /// <summary>Canonical install paths of the games listed without a launch command (empty when none).</summary>
+    public IReadOnlyList<string> ListedWithoutLaunchCommand { get; init; } = ListedWithoutLaunchCommand ?? [];
 }
 
 /// <summary>A library-policy stage (upstream manifest) that could not be applied; the local library stays as detected.</summary>
@@ -75,5 +87,5 @@ public sealed record GameLibraryScanResult(
     IReadOnlyList<DetectorScanStatus> Detectors,
     IReadOnlyList<PolicyScanStatus> PolicyFailures)
 {
-    public bool HasProblems => PolicyFailures.Count > 0 || Detectors.Any(d => d.Failed || d.Warnings.Count > 0 || d.ListedWithoutLaunchCommand > 0);
+    public bool HasProblems => PolicyFailures.Count > 0 || Detectors.Any(d => d.Failed || d.Warnings.Count > 0 || d.ListedWithoutLaunchCommand.Count > 0);
 }

@@ -138,7 +138,7 @@ public sealed class DetectorSkipReportTests : IDisposable
         // (its own line, naming Edit game), never as a skipped item; the log line still names the prefix.
         var status = scan.Detectors.Single();
         Assert.Empty(status.Warnings);
-        Assert.Equal(1, status.ListedWithoutLaunchCommand);
+        Assert.Equal([PathIdentity.Canonicalize(game.InstallPath)], status.ListedWithoutLaunchCommand);
         Assert.True(scan.HasProblems);
     }
 

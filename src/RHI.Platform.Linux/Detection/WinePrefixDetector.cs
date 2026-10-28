@@ -130,9 +130,9 @@ public sealed class WinePrefixDetector : IGameDetector
                 // command set in Edit game (its own line, never "skipped"); with none found it is only logged.
                 if (unreadable is not null)
                 {
-                    var listed = games.Count - listedBefore;
-                    var message = $"Wine prefix {prefix}: runtime markers unreadable; {listed} game(s) listed without a launch command";
-                    if (listed > 0) DetectorDiagnostics.ListedWithoutLaunchCommand(listed, message, unreadable);
+                    var listed = games.Skip(listedBefore).Select(game => game.InstallPath).ToArray();
+                    var message = $"Wine prefix {prefix}: runtime markers unreadable; {listed.Length} game(s) listed without a launch command";
+                    if (listed.Length > 0) DetectorDiagnostics.ListedWithoutLaunchCommand(listed, message, unreadable);
                     else AppLog.Warn("scan", message, unreadable);
                 }
             }

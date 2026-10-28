@@ -117,7 +117,7 @@ public sealed class ErrorPresentationTests
             [new DetectorScanStatus("Steam", 0, AtomicFile.NoFolderPrefix + P, [])],
             [new PolicyScanStatus("Outra política", "Upstream RHI manifest unavailable: E/S negada")]);
 
-        var shown = InPortuguese(() => LibraryScanStatusText.Problems(scan, null) ?? string.Empty);
+        var shown = InPortuguese(() => LibraryScanStatusText.Problems(scan, null, scan.Games) ?? string.Empty);
 
         Assert.Contains("Não foi possível determinar a pasta deste caminho: ", shown);
         Assert.Contains("Manifesto do RHI upstream indisponível: ", shown);

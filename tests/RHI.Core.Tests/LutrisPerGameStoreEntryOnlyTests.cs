@@ -56,7 +56,7 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
         Assert.Equal("lutris 'lutris:rungame/own-game-ubisoft'", Assert.Single(games, g => g.InstallPath == own).LaunchCommand);
         // w12 follow-up (merge review nit 1): counted as listed without a launch command (its own scan line), never as a
         // skipped item (no warning).
-        Assert.Equal(1, listed);
+        Assert.Equal([PathIdentity.Canonicalize(other)], listed); // w12 final review m1: the game's path, not a count
         Assert.Empty(warnings);
     }
 
@@ -76,7 +76,8 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
         Assert.Null(Assert.Single(games, g => g.InstallPath == other).LaunchCommand);
         Assert.DoesNotContain(games, g => g.InstallPath != Path.Combine(prefix, "drive_c", "StoreGames", "Own") &&
                                           g.LaunchCommand?.Contains("own-game-ubisoft", StringComparison.Ordinal) == true);
-        Assert.Equal(2, listed); // Other and Layout, in the prefix's one count (follow-up: no longer a "skipped" warning)
+        // Other and Layout, in the prefix's one report (follow-up: no longer a "skipped" warning; m1: their paths)
+        Assert.Equal(new[] { other, layout }.Select(PathIdentity.Canonicalize).Order(), listed.Order());
         Assert.Empty(warnings);
     }
 
@@ -97,7 +98,7 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
 
         Assert.Equal(plain, Assert.Single(games).InstallPath);
         Assert.Empty(warnings);
-        Assert.Equal(0, listed);
+        Assert.Empty(listed);
     }
 
     private string Prefix(string name)

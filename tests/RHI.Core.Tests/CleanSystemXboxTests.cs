@@ -54,7 +54,7 @@ public sealed class CleanSystemXboxTests : IDisposable
                 Assert.True(d.Warnings.Count == 0, $"{d.Name}: {string.Join(" | ", d.Warnings)}");
             });
             // Offline here, so the upstream manifest step reports itself; nothing about Xbox may appear.
-            Assert.DoesNotContain("Xbox", LibraryScanStatusText.Problems(scan, null) ?? "", StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Xbox", LibraryScanStatusText.Problems(scan, null, scan.Games) ?? "", StringComparison.OrdinalIgnoreCase);
             // Offline, the upstream data steps log their fetch failures; the scan itself logs nothing else.
             var noise = (File.Exists(log.FilePath) ? File.ReadAllLines(log.FilePath) : [])
                 .Where(line => !line.Contains("[pcgw-data]", StringComparison.Ordinal) &&

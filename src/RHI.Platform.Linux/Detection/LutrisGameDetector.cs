@@ -160,7 +160,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 var perGameEntriesOnly = fallback is null && sharing.Any(c => c.NamedGames.Count > 0 &&
                     !gameFolders.Any(folder => IsSameOrUnder(PathIdentity.Canonicalize(c.Game.InstallPath), folder)));
                 var runtime = sharing.OrderBy(c => c.ExeResolves ? 0 : 1).First().Game;
-                var listedWithoutCommand = 0;
+                var listedWithoutCommand = new List<string>(); // install paths (w12 final review m1)
 
                 foreach (var (record, folder) in recorded)
                 {
@@ -176,8 +176,9 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     if (exe is null) continue;
                     if (launcher is null)
                     {
-                        found.Add(WithoutLaunchCommand(runtime, record.Name, record.InstallDirectory, exe));
-                        listedWithoutCommand++;
+                        var listedGame = WithoutLaunchCommand(runtime, record.Name, record.InstallDirectory, exe);
+                        found.Add(listedGame);
+                        listedWithoutCommand.Add(listedGame.InstallPath);
                         continue;
                     }
                     var game = LauncherPrefixGame(launcher, own.Count > 0 ? launcher.Name : record.Name, record.InstallDirectory, exe);
@@ -204,15 +205,16 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     if (exe is null) continue;
                     if (fallback is null)
                     {
-                        found.Add(WithoutLaunchCommand(runtime, Path.GetFileName(entry.Directory), entry.Directory, exe));
-                        listedWithoutCommand++;
+                        var listed = WithoutLaunchCommand(runtime, Path.GetFileName(entry.Directory), entry.Directory, exe);
+                        found.Add(listed);
+                        listedWithoutCommand.Add(listed.InstallPath);
                         continue;
                     }
                     found.Add(LauncherPrefixGame(fallback, Path.GetFileName(entry.Directory), entry.Directory, exe));
                 }
                 // w12 follow-up (merge review nit 1): its own plain line in the scan notice, never counted as skipped.
                 DetectorDiagnostics.ListedWithoutLaunchCommand(listedWithoutCommand,
-                    $"Lutris prefix {prefixPath}: {listedWithoutCommand} game(s) listed with no launch command " +
+                    $"Lutris prefix {prefixPath}: {listedWithoutCommand.Count} game(s) listed with no launch command " +
                     "(the prefix's store entries each start another game, and Lutris lists no entry for the store client itself)");
             }
             catch (OperationCanceledException) { throw; }

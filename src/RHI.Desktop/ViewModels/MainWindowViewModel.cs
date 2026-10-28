@@ -963,7 +963,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             // Scan problems ride on the following lines (the selected game's "Ready — …") as a notice.
-            var problems = string.Join(" ", new[] { LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath), adoptRefused }
+            var problems = string.Join(" ", new[] { LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath, _library.AllGames), adoptRefused }
                 .Where(text => !string.IsNullOrEmpty(text)));
             string? scanProblems = problems.Length == 0 ? null : problems;
             var scanDone = LibraryScanStatusText.Done(_library.AllGames.Count);
