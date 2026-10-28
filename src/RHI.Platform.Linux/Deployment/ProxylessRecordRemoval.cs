@@ -5,7 +5,7 @@ namespace RHI.Platform.Linux.Deployment;
 
 /// <summary>
 /// w12 final review M1 (B2's way out): Remove for a record that lost its proxy DLL's name (Universal MFG, RTX 20 FG
-/// Unlock, Ultimate ASI Loader; older builds or edited ledgers). <see cref="ManagedUpdateFileGuard.MissingProxyNameMessage"/>
+/// Unlock, Ultimate ASI Loader, DLSS Enabler Standalone; older builds or edited ledgers). <see cref="ManagedUpdateFileGuard.MissingProxyNameMessage"/>
 /// tells the user to Remove, then Install, so Remove must work for exactly that record. RHI cannot tell its proxy by name,
 /// so it goes by the record's own file list: inside the family's journaled removal it deletes each listed file whose
 /// SHA-256 still equals the recorded one, restores the recorded Wine override (the override names its own DLL) and drops

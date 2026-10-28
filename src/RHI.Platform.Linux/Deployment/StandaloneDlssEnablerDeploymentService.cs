@@ -248,9 +248,11 @@ public sealed class StandaloneDlssEnablerDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
-        if (string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Registro do DLSS Enabler Standalone não possui o nome da DLL proxy; remoção bloqueada.");
+        // w12 closing (B2's rule for this family): a record without its proxy's name is removed by its file list, the way
+        // out the check and the update name.
+        if (ProxylessRecordRemoval.Applies(record, MetaProxyName))
+            return await RemoveWithoutProxyNameAsync(game, record, cancellationToken).ConfigureAwait(false);
+        var proxyName = record.Metadata[MetaProxyName];
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, targetPath));
         if (fileRecord?.Sha256 is not { Length: > 0 })
@@ -294,6 +296,44 @@ public sealed class StandaloneDlssEnablerDeploymentService
             + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
 
+    /// <summary>
+    /// w12 closing (B2's rule, <see cref="ProxylessRecordRemoval"/>): Remove for a record without its proxy's name. After the
+    /// game's hold check, every listed file in the record's binary folder that still holds RHI's bytes goes, the recorded
+    /// override is restored, the record is dropped, and the files left behind are named. Same journaled removal as
+    /// <see cref="RemoveAsync"/>.
+    /// </summary>
+    private async Task<ComponentOperationResult> RemoveWithoutProxyNameAsync(
+        DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    {
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.DlssEnablerStandalone).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
+        var plan = await ProxylessRecordRemoval.PlanAsync(record, cancellationToken).ConfigureAwait(false);
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "DLSS Enabler Standalone removal: " + game.Name, game, ManagedComponentKind.DlssEnablerStandalone, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        WineOverrideRestoreResult? overrideRestore = null;
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        try
+        {
+            foreach (var path in plan.Delete)
+                await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
+            _records.Remove(game, ManagedComponentKind.DlssEnablerStandalone);
+        }
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dlss-enabler").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS Enabler Standalone", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            return ComponentOperationResult.Fail($"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("DLSS Enabler Standalone", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
+    }
+
     public async Task<DlssEnablerUpdateStatus> CheckLatestAsync(
         DetectedGame game,
         CancellationToken cancellationToken = default)
@@ -325,9 +365,10 @@ public sealed class StandaloneDlssEnablerDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("DLSS Enabler Standalone não é gerenciado pelo RHI para este jogo.");
 
+        // w12 closing: the one line for a record without its proxy's name, with its way out (Remove, then Install).
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Registro do DLSS Enabler Standalone não possui proxy; update bloqueado.");
+            return ComponentOperationResult.Fail(ManagedUpdateFileGuard.MissingProxyNameMessage);
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, targetPath));
         if (fileRecord?.Sha256 is not { Length: > 0 })
@@ -399,6 +440,10 @@ public sealed class StandaloneDlssEnablerDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return new ManagedUpdateCheck(false, false, "DLSS Enabler Standalone is not RHI-managed.");
+        // w12 closing: a record without its proxy's name cannot be updated (UpdateAsync refuses it): could not check, with
+        // the way out, never a planned update that fails on every pass.
+        if (ProxylessRecordRemoval.Applies(record, MetaProxyName))
+            return new ManagedUpdateCheck(true, false, ManagedUpdateFileGuard.MissingProxyNameMessage, record.Version, CouldNotCheck: true, LocalReason: true);
         var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
         return new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
             CouldNotCheck: !status.Success);

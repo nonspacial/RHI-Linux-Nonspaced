@@ -38,7 +38,7 @@ public static class ManagedUpdateFileGuard
 
     /// <summary>
     /// w12 follow-up (re-review mfg N2): the one line for a record that lost its proxy DLL's name (Universal MFG, DLSSG 20/30,
-    /// Ultimate ASI Loader), in the check and in the update alike: RHI cannot tell which file is its own, so nothing is
+    /// Ultimate ASI Loader, DLSS Enabler Standalone), in the check and in the update alike: RHI cannot tell which file is its own, so nothing is
     /// swapped; Remove, then Install, records it again.
     /// </summary>
     public const string MissingProxyNameMessage =

@@ -65,6 +65,7 @@ public sealed class MfgLocalReasonUpdateAllTests
     [InlineData(ManagedComponentKind.Rtx40MfgStandalone)]
     [InlineData(ManagedComponentKind.Dlssg2030Unlock)]
     [InlineData(ManagedComponentKind.UltimateAsiLoader)]
+    [InlineData(ManagedComponentKind.DlssEnablerStandalone)] // w12 closing: same rule for DLSS Enabler Standalone
     public async Task RecordWithoutItsProxyName_IsALocalReason(ManagedComponentKind kind)
     {
         using var fx = await ViewModelFixture.StartAsync([]);
@@ -83,6 +84,7 @@ public sealed class MfgLocalReasonUpdateAllTests
     [InlineData(ManagedComponentKind.Rtx40MfgStandalone)]
     [InlineData(ManagedComponentKind.Dlssg2030Unlock)]
     [InlineData(ManagedComponentKind.UltimateAsiLoader)]
+    [InlineData(ManagedComponentKind.DlssEnablerStandalone)] // w12 closing: same rule for DLSS Enabler Standalone
     public async Task RecordWithoutItsProxyName_OneLine_WithItsWayOut_InTheCheckAndTheUpdate_AndTheWayOutWorks(ManagedComponentKind kind)
     {
         using var fx = await ViewModelFixture.StartAsync([]);
