@@ -113,6 +113,9 @@ public sealed class NeuralRenderingFeederLogTests
     [Theory]
     [InlineData("[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n" + Holding)]
     [InlineData("[feed] building: 3840x2160 backbuffer R16G16B16A16_FLOAT (same-device D3D12, depth reversed=1)\n")]
+    // A further change while the rebuild is held (an effect reload) does not cancel the announced rebuild.
+    [InlineData("[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n" + Holding
+                + "[feed] effect runtime 0000000030D7B050 initialised (device 0000000033F50080; 1 runtime in this process)\n")]
     public void AFrameTheOldFeatureDeliveredBeforeTheRebuild_DoesNotClearTheChange(string changeAndRebuildPending)
     {
         var text = "dlss5-feed 1.19.0 attached.\n" + Ready + changeAndRebuildPending + "[feed] frame 1800 delivered\n" + Ready + Crash;
@@ -137,6 +140,18 @@ public sealed class NeuralRenderingFeederLogTests
         Assert.Equal(NrLogSignature.CrashOrDeviceLost, finding.Signature);
         Assert.Equal(9, finding.Line);
         Assert.Equal(NrFixHint.RemoveNrMethod, finding.Fix);
+    }
+
+    // Once the announced rebuild is ready, the rebuilt feature's first delivered frame settles the change: a later crash is
+    // the generic row.
+    [Theory]
+    [InlineData("[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n" + Holding)]
+    [InlineData("[feed] building: 3840x2160 backbuffer R16G16B16A16_FLOAT (same-device D3D12, depth reversed=1)\n")]
+    public void TheRebuiltFeaturesFirstFrame_SettlesTheChange(string changeAndRebuildPending)
+    {
+        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + changeAndRebuildPending + Ready + "[feed] frame 1800 delivered\n" + Crash;
+
+        Assert.Equal([NrLogSignature.CrashOrDeviceLost], NeuralRenderingDiagnosis.Classify("dlss5-feed.log", text).Select(f => f.Signature));
     }
 
     // Review F6 (R2, probe P08): a crash between the change and any rebuild (the old feature, the new picture) is the
@@ -205,6 +220,11 @@ public sealed class NeuralRenderingFeederLogTests
         // The run already has a generic row for that crash (its 0xC0000005 line): that row stays, on its own line.
         var withCode = "dlss5-feed 1.19.0 attached.\n" + Ready + Crash;
         Assert.Equal([3], NeuralRenderingDiagnosis.Classify("dlss5-feed.log", withCode).Select(f => f.Line ?? 0));
+        // A crash held after a change and settled by a later frame is the run's generic row too: the stopped line after it
+        // adds nothing and moves nothing.
+        var settled = "dlss5-feed 1.19.0 attached.\n" + Ready + "[feed] frame 1 delivered\n[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n"
+                      + "[feed] evaluate raised 0xC0000005 (caught; nothing submitted)\n[feed] frame 1800 delivered\n" + stopped;
+        Assert.Equal([(NrLogSignature.CrashOrDeviceLost, 5)], NeuralRenderingDiagnosis.Classify("dlss5-feed.log", settled).Select(f => (f.Signature, f.Line ?? 0)));
         // A later run's stopped line is that run's crash: the newest row.
         Assert.Equal([8], NeuralRenderingDiagnosis.Classify("dlss5-feed.log", withCode + text).Select(f => f.Line ?? 0));
     }
