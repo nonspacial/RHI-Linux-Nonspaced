@@ -7,7 +7,8 @@
 #   --from-publish DIR  package this self-contained linux-x64 publish (e.g. the AppImage's AppDir/usr/bin)
 #                       instead of publishing again; it is copied, never changed
 #
-# Output in DIR (the version comes from <Version> in Directory.Build.props):
+# Output in DIR (the version comes from <Version> in Directory.Build.props; a pre-release version such as
+# 2.8.8-beta.1 is refused before anything is built, because betas get no packages):
 #   RHI-Linux-v<version>-x86_64.tar.gz   folder RHI-Linux-v<version>/: RHI and its libraries, rhi-linux.desktop,
 #                                        rhi-linux.png, INSTALL.txt
 #   rhi-linux_<version>_amd64.deb        Debian, Ubuntu and derivatives
@@ -77,6 +78,7 @@ else
 fi
 [[ -n "$version" ]] || fail "could not read <Version> from Directory.Build.props"
 [[ "$version" =~ ^[0-9A-Za-z.~+-]+$ ]] || fail "unexpected characters in version '$version'"
+[[ "$version" != *-* ]] || fail "version $version is a pre-release: .deb/.rpm/.tar.gz are built for releases only (betas are installed builds)"
 
 tarball="RHI-Linux-v$version-x86_64.tar.gz"
 deb="rhi-linux_${version}_amd64.deb"
