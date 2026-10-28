@@ -433,7 +433,10 @@ public sealed class ReShadeShaderPackService
         }
         if (Deploys(Path.Combine(CoreFolder, "Shaders"))) effectPaths.Add($@".\reshade-shaders\RHI\{CoreFolder}\Shaders\**");
 
-        PruneOwnedFolders(root, [], includeRoot: false, operation, PackFolderNames()); // #240: empty pack folders an older build left
+        // #240: empty pack folders an older build (or a crash before the prune) left — only of packs no longer selected (review
+        // F2): an empty folder the user made inside a selected pack's folder or _Core (headers go with every pack) is theirs.
+        var selectedFolders = normalized.Select(SafePackDirectoryName).Append(CoreFolder).ToHashSet(StringComparer.Ordinal);
+        PruneOwnedFolders(root, [], includeRoot: false, operation, PackFolderNames().Where(name => !selectedFolders.Contains(name)).ToArray());
         var manifestFile = new JsonFileStore<Manifest>(manifestPath);
         var staged = manifestFile.Stage(_ => outputManifest)!;
         if (staged.Before is { } before && before.AsSpan().SequenceEqual(staged.After))
@@ -556,13 +559,17 @@ public sealed class ReShadeShaderPackService
     {
         var root = Path.Combine(gameDirectory, "reshade-shaders", "RHI");
         var manifestPath = Path.Combine(root, ".rhi-manifest.json");
-        if (!File.Exists(manifestPath)) return;
-        var manifest = LoadManifest(manifestPath);
-        await RemoveManifestFilesAsync(root, manifest, operation).ConfigureAwait(false);
-        if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
-        if (!FileCleanup.TryDelete(manifestPath, out var removeError))
-            AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
-        PruneOwnedFolders(root, [], includeRoot: true, operation, PackFolderNames()); // #240: RHI's folder goes with its last file
+        if (File.Exists(manifestPath))
+        {
+            var manifest = LoadManifest(manifestPath);
+            await RemoveManifestFilesAsync(root, manifest, operation).ConfigureAwait(false);
+            if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
+            if (!FileCleanup.TryDelete(manifestPath, out var removeError))
+                AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
+        }
+        // #240: RHI's folder goes with its last file. Also without a manifest (review F1): a crash between a sync's commit and
+        // its after-commit prune leaves RHI's empty pack folders and no manifest, and with ReShade gone no later sync tidies.
+        PruneOwnedFolders(root, [], includeRoot: true, operation, PackFolderNames());
     }
 
     internal static IReadOnlyList<string> ExpandDependencies(

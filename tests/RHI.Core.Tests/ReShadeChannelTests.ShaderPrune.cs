@@ -170,4 +170,70 @@ public sealed partial class ReShadeChannelTests
             CancelAtWritePhase.AssertUnchanged(before, fx.Game.BinaryDirectory!);
         }
     }
+    // Review F1: a crash between the commit of a sync that took the last pack out and its after-commit prune leaves RHI's
+    // empty pack folders and no manifest. ReShade's removal still tidies them (with ReShade gone no later sync would);
+    // the user's own empty folder stays, and with it RHI's folder.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "CommitPoint")]
+    public async Task Prune_CrashBeforeThePrune_ThenReShadeRemoval_LeavesNoEmptyFolderOfRhis(bool userFolder)
+    {
+        var fx = await TwoPackGameAsync($"prune-crash-removal-{userFolder}");
+        var ownEmpty = userFolder ? Directory.CreateDirectory(RhiDir(fx.Game, "MyEmptyFolder")).FullName : null;
+        await CrashAtTheCommitAsync(fx, () => fx.Service.SyncShaderPacksAsync(fx.Game, []));
+        Assert.True(Directory.Exists(RhiDir(fx.Game, "CrosireLegacy", "Shaders"))); // the crash left RHI's empty folders
+        Assert.False(File.Exists(RhiDir(fx.Game, ".rhi-manifest.json")));
+
+        var removal = await fx.Service.RemoveAsync(fx.Game);
+
+        Assert.True(removal.Success, removal.Message);
+        if (ownEmpty is null) Assert.False(Directory.Exists(RhiDir(fx.Game)));
+        else Assert.Equal(["MyEmptyFolder"], Directory.EnumerateFileSystemEntries(RhiDir(fx.Game)).Select(Path.GetFileName));
+    }
+
+    // Review F1, second path: a crash between the commit of ReShade's removal and its prune; ReShade is gone, so the next
+    // ReShade install (which syncs the packs, none here) is what tidies RHI's empty folders.
+    [Fact]
+    [Trait("Category", "CommitPoint")]
+    public async Task Prune_CrashBeforeThePruneOfAReShadeRemoval_TheNextInstallTidies()
+    {
+        var fx = await TwoPackGameAsync("prune-crash-reinstall");
+        await CrashAtTheCommitAsync(fx, () => fx.Service.RemoveAsync(fx.Game));
+        Assert.True(Directory.Exists(RhiDir(fx.Game, "CrosireLegacy", "Shaders")));
+
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+
+        Assert.False(Directory.Exists(RhiDir(fx.Game)));
+    }
+
+    /// <summary>Runs <paramref name="run"/> until it "dies" at its commit (after the commit point, before the after-commit work), then recovers.</summary>
+    private static async Task CrashAtTheCommitAsync(RrFx fx, Func<Task<ComponentOperationResult>> run)
+    {
+        fx.Journal.CrashAtCommitForTesting = true;
+        try { await run(); }
+        catch (SimulatedCrashException) { } // the dead thread's own outcome does not matter: the next start owns the entry
+        finally { fx.Journal.CrashAtCommitForTesting = false; }
+        var report = await SimulatedDeath.RecoverAsync(fx.JournalDir, fx.Ledger);
+        Assert.Equal(JournalRecoveryOutcome.AlreadyCommitted, Assert.Single(report!.Entries).Outcome);
+    }
+
+    // Review F2 (coordinator: the leftover pass covers only packs no longer selected): an empty folder the user made
+    // inside a selected pack's folder (or RHI's _Core) is not RHI's to prune, while the pack taken out still goes.
+    [Theory]
+    [InlineData("CrosireMaster/Shaders/MyWork")]
+    [InlineData("CrosireMaster/MyWork")]
+    [InlineData("_Core/MyWork")]
+    public async Task Prune_UsersEmptyFolderInsideASelectedPack_IsKept(string relative)
+    {
+        var fx = await TwoPackGameAsync("prune-user-in-pack-" + relative.Replace('/', '-'));
+        var mine = Directory.CreateDirectory(RhiDir(fx.Game, relative.Split('/'))).FullName;
+
+        Assert.True((await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"])).Success);
+        Assert.True(Directory.Exists(mine));
+        Assert.False(Directory.Exists(RhiDir(fx.Game, "CrosireLegacy")));
+
+        Assert.True((await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"])).Success); // same set again
+        Assert.True(Directory.Exists(mine));
+    }
 }
