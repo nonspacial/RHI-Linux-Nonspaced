@@ -418,4 +418,97 @@ public sealed class MfgAdaUnlockUpdateTests : IDisposable
 
         Assert.True(results[^1].Success); // the commit write is the last
     }
+
+    // ---- Correction round 1 (review w12-review-mfg.md) -----------------------------------------------------------------
+
+    // F1: on a game held by its own failed undo, Update All (both modes) reads the hold's restart text for MFG Ada (could not
+    // be checked), never "changed outside RHI" about RHI's own half-undone add-on; nothing is looked up or written.
+    [PermissionDenialFact]
+    public async Task HeldGame_UpdateAllItem_IsTheHoldsRestartText_InBothModes()
+    {
+        var f = await InstalledAsync("correction-held");
+        f.Release.Active = "0.6";
+        var halfUndone = Release.Payload(0x34);
+        using var hold = await FailedUndoHold.ArmAsync(f.Journal, f.Records, f.Game, ManagedComponentKind.MfgAdaUnlock, f.Addon, halfUndone);
+        var lookups = f.Release.ListRequests;
+
+        foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
+        {
+            var result = await f.UpdateAll.RunAsync([f.Game], _ => [], mode);
+            Assert.Equal((0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount));
+            Assert.Equal(DeploymentJournal.EarlierUndoFailedMessage, Assert.Single(result.Items).Message);
+        }
+        Assert.Equal(lookups, f.Release.ListRequests);
+        Assert.Equal(halfUndone, File.ReadAllBytes(f.Addon));
+    }
+
+    /// <summary>A network that answers nothing (offline, a cold start without the manifest cache); counts what was asked.</summary>
+    private sealed class Offline : HttpMessageHandler
+    {
+        public int Requests { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests++;
+            throw new HttpRequestException("offline test");
+        }
+    }
+
+    // F6: the add-on removed outside RHI is told before any network call, the manifest included, so offline (a cold start
+    // with no manifest cache) the check still reads the removed line, not "update check failed".
+    [Fact]
+    public async Task RemovedAddon_Offline_ReadsTheRemovedLine_BeforeTheManifest()
+    {
+        var f = await InstalledAsync("correction-offline");
+        File.Delete(f.Addon);
+        var offline = new Offline();
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+            Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
+
+        var check = await cold.CheckUpdateAsync(f.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + f.Addon, check.Message);
+        Assert.Equal(0, offline.Requests);
+    }
+
+    // F6 + F1: the same wrapper tells a held game the hold's restart text before the manifest.
+    [PermissionDenialFact]
+    public async Task HeldGame_Offline_ReadsTheHoldsRestartText_BeforeTheManifest()
+    {
+        var f = await InstalledAsync("correction-held-offline");
+        using var hold = await FailedUndoHold.ArmAsync(f.Journal, f.Records, f.Game, ManagedComponentKind.MfgAdaUnlock, f.Addon, Release.Payload(0x35));
+        var offline = new Offline();
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+            Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
+
+        var check = await cold.CheckUpdateAsync(f.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(DeploymentJournal.EarlierUndoFailedMessage, check.Message);
+        Assert.Equal(0, offline.Requests);
+    }
+
+    // F1: the generic GitHub add-on check (ReLimiter, Display Commander) asks the hold first too, before it reads the file.
+    [PermissionDenialFact]
+    public async Task ReLimiter_HeldGame_CheckIsTheHoldsRestartText_BeforeAnyLookup()
+    {
+        var root = Path.Combine(_root, "correction-relimiter-held");
+        var f = await InstalledAsync(root, new Release().Add("0.5", 0x31).Add("0.6", 0x32).WithActive("0.5"));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(root, "relimiter.json"));
+        var journal = SimulatedDeath.NewJournal(Path.Combine(root, "relimiter-journal"), records).Journal;
+        var relimiter = new GitHubReShadeAddonDeploymentService(new HttpClient(f.Release), records, new GitHubReShadeAddonDefinition(
+            ManagedComponentKind.ReLimiter, "ReLimiter", ListUrl, AddonName, null, 128 * 1024), Path.Combine(root, "relimiter-cache"), journal);
+        File.Delete(f.Addon); // the MFG Ada copy goes; ReLimiter (same asset name in this fake) installs its own
+        Assert.True((await relimiter.InstallAsync(f.Game)).Success);
+        f.Release.Active = "0.6";
+        using var hold = await FailedUndoHold.ArmAsync(journal, records, f.Game, ManagedComponentKind.ReLimiter, f.Addon, Release.Payload(0x36));
+        var lookups = f.Release.ListRequests;
+
+        var check = await relimiter.CheckUpdateAsync(f.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(DeploymentJournal.EarlierUndoFailedMessage, check.Message);
+        Assert.Equal(lookups, f.Release.ListRequests);
+    }
 }

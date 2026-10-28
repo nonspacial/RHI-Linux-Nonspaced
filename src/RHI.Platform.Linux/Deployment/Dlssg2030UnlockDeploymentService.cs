@@ -420,6 +420,9 @@ public sealed class Dlssg2030UnlockDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return new ManagedUpdateCheck(false, false, "RTX 20 FG Unlock is not RHI-managed.");
+        // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
+        if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.Dlssg2030Unlock, record.Version).ConfigureAwait(false) is { } held)
+            return held;
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
             return new ManagedUpdateCheck(true, false, "Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.",
@@ -442,6 +445,9 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("RTX 20 FG Unlock legado não está instalado pelo RHI.");
 
+        // F1 (review w12/mfg; toolkit rule since w10 D15): the hold's restart text before the file checks below.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.Dlssg2030Unlock).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
             return ComponentOperationResult.Fail("Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.");

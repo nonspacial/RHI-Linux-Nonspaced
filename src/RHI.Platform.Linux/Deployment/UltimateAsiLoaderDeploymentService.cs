@@ -143,6 +143,9 @@ public sealed class UltimateAsiLoaderDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return new ManagedUpdateCheck(false, false, "Ultimate ASI Loader is not RHI-managed.");
+        // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
+        if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.UltimateAsiLoader, record.Version).ConfigureAwait(false) is { } held)
+            return held;
         if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
             return new ManagedUpdateCheck(true, false, "Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.",
                 record.Version, CouldNotCheck: true);
@@ -320,6 +323,9 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("Ultimate ASI Loader is not managed by RHI Linux for this game.");
 
+        // F1 (review w12/mfg; toolkit rule since w10 D15): the hold's restart text before the hash check below.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.UltimateAsiLoader).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
         if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
             return ComponentOperationResult.Fail("Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.");
 

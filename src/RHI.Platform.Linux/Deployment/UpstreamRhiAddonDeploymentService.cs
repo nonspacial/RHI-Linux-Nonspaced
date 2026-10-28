@@ -116,6 +116,15 @@ public sealed class UpstreamRhiAddonDeploymentService
         string? releaseTag = null,
         CancellationToken cancellationToken = default)
     {
+        // F6 (review w12/mfg): a held game and a file removed outside RHI are told before any network call (the manifest
+        // included), so offline they still read as what they are, not "update check failed".
+        if (_records.Find(game, _options.Kind) is { } managed)
+        {
+            if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, _options.Kind, managed.Version).ConfigureAwait(false) is { } held)
+                return held;
+            if (ManagedUpdateFileGuard.Removed(managed.Files.Select(file => file.Path), managed.Version) is { } removed)
+                return removed;
+        }
         try
         {
             var (displayName, releaseApiUrl) = await ResolveDefinitionAsync(cancellationToken).ConfigureAwait(false);

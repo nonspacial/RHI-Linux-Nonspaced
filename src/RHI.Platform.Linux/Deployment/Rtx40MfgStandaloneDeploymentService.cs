@@ -423,6 +423,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("Universal MFG não é gerenciado pelo RHI para este jogo.");
 
+        // F1 (review w12/mfg; toolkit rule since w10 D15): the hold's restart text before the hash check below.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.Rtx40MfgStandalone).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName) ?? record.Metadata.GetValueOrDefault(LegacyMetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
             return ComponentOperationResult.Fail("Registro do Universal MFG não possui proxy; update bloqueado.");
@@ -498,6 +501,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return new ManagedUpdateCheck(false, false, "Universal MFG is not RHI-managed.");
+        // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
+        if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.Rtx40MfgStandalone, record.Version).ConfigureAwait(false) is { } held)
+            return held;
         // #236: the proxy the user deleted is never put back by an update; seen before any network call.
         var proxyPath = ProxyPathOf(record);
         if (proxyPath is not null && ManagedUpdateFileGuard.Removed([proxyPath], record.Version) is { } removed)

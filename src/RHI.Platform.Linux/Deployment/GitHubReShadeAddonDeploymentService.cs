@@ -64,6 +64,9 @@ public sealed class GitHubReShadeAddonDeploymentService
         var record = _records.Find(game, _definition.Kind);
         if (record is null)
             return new ManagedUpdateCheck(false, false, $"{_definition.DisplayName} is not managed by RHI Linux.");
+        // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
+        if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, _definition.Kind, record.Version).ConfigureAwait(false) is { } held)
+            return held;
         // #237: an add-on the user deleted is never put back by an update (seen before any network call).
         if (ManagedUpdateFileGuard.Removed(record.Files.Select(file => file.Path), record.Version) is { } removed)
             return removed;

@@ -1,4 +1,5 @@
 using RHI.Core.Deployment;
+using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -27,6 +28,18 @@ public static class ManagedUpdateFileGuard
     /// <summary>The check's line for a component file changed outside RHI; the path follows.</summary>
     public const string ChangedOutsideRhiPrefix =
         "Not updated: this file was changed outside RHI, and an update never replaces it: ";
+
+    /// <summary>
+    /// F1 (review w12/mfg; the toolkit rule since w10 D15): a game held by its own earlier undo (or an undecided change) gets
+    /// the hold's restart text as a could-not-check result before the check reads any of its files, which would take RHI's
+    /// own half-undone file for one removed or changed outside RHI. Null while nothing holds the game. Cheap when nothing
+    /// waits (no journal read).
+    /// </summary>
+    public static async Task<ManagedUpdateCheck?> HeldAsync(
+        DeploymentJournal? journal, DetectedGame game, ManagedComponentKind component, string? installedVersion)
+        => await DeploymentScope.HoldRefusalAsync(journal, game, component).ConfigureAwait(false) is { } held
+            ? new ManagedUpdateCheck(true, false, held, installedVersion, CouldNotCheck: true)
+            : null;
 
     /// <summary>The first recorded file that is gone, as a could-not-check result; null while every one is there.</summary>
     public static ManagedUpdateCheck? Removed(IEnumerable<string> paths, string? installedVersion)
