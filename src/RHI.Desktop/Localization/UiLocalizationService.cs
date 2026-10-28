@@ -1758,6 +1758,16 @@ public static class UiLocalizationService
         ("Could not apply Neural Rendering ", "Não foi possível aplicar o Neural Rendering "),
         ("Could not apply Streamline ", "Não foi possível aplicar o Streamline "),
         // w12/hdr-wsi rows
+        // w12 final review M1: Remove of a record without its proxy DLL's name (component name first, paths last).
+        (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.RemovedSuffix,
+            " removido. O registro do RHI não tinha o nome da DLL proxy, então o RHI apagou só os arquivos listados que ainda tinham os bytes que ele instalou, restaurou o override do Wine que tinha registrado e descartou o registro."),
+        (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.NotDeletedPrefix, " Arquivos que o RHI não apagou: "),
+        (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.ChainedOriginalBackNote,
+            " A DLL original encadeada voltou ao próprio nome."),
+        (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.ChainedOriginalMissingNote,
+            " A DLL original encadeada está faltando, então a DLL do ASI Loader ficou onde estava."),
+        (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.ChainedOriginalKeptNote,
+            " A DLL original encadeada não foi recolocada, porque a DLL do ASI Loader foi alterada fora do RHI ou o RHI não sabe qual arquivo ela substituiu."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

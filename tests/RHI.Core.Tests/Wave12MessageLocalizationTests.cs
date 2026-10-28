@@ -54,6 +54,12 @@ public sealed class Wave12MessageLocalizationTests
         { RHI.Platform.Linux.Network.NexusModUpdateCheck.NotAModPageMessage, "is not a Nexus Mods mod page" },
         { RHI.Platform.Linux.Network.NexusModUpdateCheck.NoDatedFileMessage, "no dated main file" },
         { RHI.Platform.Linux.Network.NexusModUpdateCheck.ModNotShownMessage, "would not show this mod's files" }, // follow-up B25
+        // w12 final review M1: Remove of a record without its proxy DLL name (one row per fixed part)
+        { ProxylessRecordRemoval.Message("Universal MFG", []), "had no proxy DLL name" },
+        { ProxylessRecordRemoval.Message("RTX 20 FG Unlock", [P]), "Files RHI did not delete" },
+        { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [], ProxylessRecordRemoval.ChainedOriginalBackNote), "is back under its own name" },
+        { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P], ProxylessRecordRemoval.ChainedOriginalMissingNote), "was left where it is" },
+        { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P, P], ProxylessRecordRemoval.ChainedOriginalKeptNote), "was not put back" },
     };
 
     public static TheoryData<string, string> PortugueseSourced() => new()

@@ -325,10 +325,10 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
-        if (string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Registro do RTX 20 FG Unlock legado não possui o nome da DLL proxy; remoção bloqueada para proteger arquivos externos.");
-
+        // w12 final review M1: a record without its proxy's name is removed by its file list (the way out the check names).
+        if (ProxylessRecordRemoval.Applies(record, MetaProxyName))
+            return await RemoveWithoutProxyNameAsync(game, record, cancellationToken).ConfigureAwait(false);
+        var proxyName = record.Metadata[MetaProxyName];
         var proxyPath = Path.Combine(record.BinaryDirectory, proxyName);
         var iniPath = Path.Combine(record.BinaryDirectory, IniFileName);
         var proxyRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
@@ -384,6 +384,43 @@ public sealed class Dlssg2030UnlockDeploymentService
             ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
             : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
             + WineDllOverrideService.KeptValueNotes(overrideRestore));
+    }
+
+    /// <summary>
+    /// w12 final review M1: Remove for a record without its proxy's name (<see cref="ProxylessRecordRemoval"/>): every
+    /// listed file (proxy, INI) that still holds RHI's bytes goes, the recorded override is restored, the record is
+    /// dropped, and the files left behind are named. Same journaled removal as <see cref="RemoveAsync"/>.
+    /// </summary>
+    private async Task<ComponentOperationResult> RemoveWithoutProxyNameAsync(
+        DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    {
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.Dlssg2030Unlock).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
+        var plan = await ProxylessRecordRemoval.PlanAsync(record, cancellationToken).ConfigureAwait(false);
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "RTX 20 FG Unlock removal: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        WineOverrideRestoreResult? overrideRestore = null;
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        try
+        {
+            foreach (var path in plan.Delete)
+                await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
+            _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock);
+        }
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "fg2030").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("RTX 20 FG Unlock", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
     }
 
     public async Task<Dlssg2030UpdateStatus> CheckLatestAsync(

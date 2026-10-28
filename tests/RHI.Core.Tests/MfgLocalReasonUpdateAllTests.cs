@@ -77,16 +77,22 @@ public sealed class MfgLocalReasonUpdateAllTests
     }
 
     // w12 follow-up (re-review mfg N2): the three families say the same thing, with its way out, in the check and in the
-    // update (a direct Update and Update All alike), EN + PT-BR.
+    // update (a direct Update and Update All alike), EN + PT-BR. w12 final review M1: the way out is followed, not only read
+    // (the review's probe): Remove through the app's own service succeeds, the file and the record are gone.
     [Theory]
     [InlineData(ManagedComponentKind.Rtx40MfgStandalone)]
     [InlineData(ManagedComponentKind.Dlssg2030Unlock)]
     [InlineData(ManagedComponentKind.UltimateAsiLoader)]
-    public async Task RecordWithoutItsProxyName_OneLine_WithItsWayOut_InTheCheckAndTheUpdate(ManagedComponentKind kind)
+    public async Task RecordWithoutItsProxyName_OneLine_WithItsWayOut_InTheCheckAndTheUpdate_AndTheWayOutWorks(ManagedComponentKind kind)
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var game = MfgUpdateAllTests.StreamlineGame(fx.Root, "One line " + kind);
-        SeedRecord(fx, game, kind, fileOnDisk: true, proxyName: false);
+        var path = Path.Combine(game.BinaryDirectory!, kind == ManagedComponentKind.Rtx40MfgStandalone ? "dinput8.dll" : "winmm.dll");
+        File.WriteAllBytes(path, MfgUpdateAllTests.UniversalMfgRelease.Pe(0x42));
+        var record = Record(game, kind, path);
+        record.Files[0].Sha256 = FileHash.Sha256Hex(path);
+        if (kind == ManagedComponentKind.UltimateAsiLoader) record.Metadata["UAL.Architecture"] = nameof(PeArchitecture.X64);
+        fx.Records.Upsert(record);
 
         var check = await fx.Managed.CheckManagedUpdateAsync(game, kind, []);
         var update = await fx.Managed.UpdateManagedAsync(game, kind, []);
@@ -98,6 +104,14 @@ public sealed class MfgLocalReasonUpdateAllTests
         var pt = UiLocalizationService.PresentFor("pt-BR", check.Message);
         Assert.EndsWith("Remova-o e instale-o de novo.", pt, StringComparison.Ordinal);
         Assert.DoesNotContain("proxy DLL name", pt, StringComparison.Ordinal);
+
+        var remove = kind == ManagedComponentKind.UltimateAsiLoader
+            ? await fx.Managed.RemoveUltimateAsiLoaderAsync(game)
+            : await fx.Managed.RemoveAsync(game, kind);
+
+        Assert.True(remove.Success, remove.Message);
+        Assert.False(File.Exists(path));
+        Assert.Null(fx.Records.Find(game, kind));
     }
 
     // w12 follow-up (merge review nit 2): the GitHub add-ons' and RenoDX's refusals that come from this machine (no game exe,

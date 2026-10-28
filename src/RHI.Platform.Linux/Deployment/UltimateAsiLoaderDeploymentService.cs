@@ -413,8 +413,10 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("Ultimate ASI Loader is not managed by RHI Linux. Removal is locked to protect external files.");
 
-        if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Ultimate ASI Loader deployment record is missing its proxy filename.");
+        // w12 final review M1: a record without its proxy's name is removed by its file list (the way out the check names).
+        if (ProxylessRecordRemoval.Applies(record, MetaProxyName))
+            return await RemoveWithoutProxyNameAsync(game, record, cancellationToken).ConfigureAwait(false);
+        var proxyName = record.Metadata[MetaProxyName];
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
@@ -484,6 +486,87 @@ public sealed class UltimateAsiLoaderDeploymentService
                 ? $"Ultimate ASI Loader removed; original {proxyName} restored and Wine override rolled back."
                 : $"Ultimate ASI Loader removed; Wine override for {proxyName} rolled back.")
             + WineDllOverrideService.KeptValueNotes(overrideRestore));
+    }
+
+    /// <summary>
+    /// w12 final review M1: Remove for a record without its proxy's name (<see cref="ProxylessRecordRemoval"/>): every
+    /// listed file that still holds RHI's bytes goes, the recorded override is restored, the record is dropped, and the
+    /// files left behind are named. With a chained original (<c>UAL.HadOriginal</c>) the proxy is the listed file the
+    /// original was renamed away from (<c>&lt;name&gt;</c> → <see cref="HookedName"/>): the original goes back over it while
+    /// <c>UAL.HookedPath</c> exists and the proxy still holds RHI's bytes (or is gone); otherwise the proxy stays (the game
+    /// would lose that DLL name altogether) and is named, and the record is still dropped.
+    /// </summary>
+    private async Task<ComponentOperationResult> RemoveWithoutProxyNameAsync(
+        DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    {
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.UltimateAsiLoader).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
+        var plan = await ProxylessRecordRemoval.PlanAsync(record, cancellationToken).ConfigureAwait(false);
+        var delete = plan.Delete.ToList();
+        var left = plan.Left.ToList();
+        string? restoreOver = null, hooked = null;
+        var notes = "";
+        if (record.Metadata.GetValueOrDefault(MetaHadOriginal) == "1")
+        {
+            var hookedText = record.Metadata.GetValueOrDefault(MetaHookedPath);
+            hooked = string.IsNullOrWhiteSpace(hookedText) ? null : Path.GetFullPath(hookedText);
+            var proxy = hooked is null ? null : delete.Concat(left).FirstOrDefault(path => string.Equals(
+                Path.Combine(Path.GetDirectoryName(path)!, HookedName(Path.GetFileName(path))), hooked, StringComparison.Ordinal));
+            var hookedExists = hooked is not null && File.Exists(hooked);
+            if (proxy is not null && hookedExists && (delete.Contains(proxy) || !File.Exists(proxy)))
+            {
+                restoreOver = proxy;
+                delete.Remove(proxy);
+                left.Remove(proxy);
+                notes = ProxylessRecordRemoval.ChainedOriginalBackNote;
+            }
+            else
+            {
+                foreach (var path in delete.Where(path => proxy is null || path == proxy).ToList())
+                {
+                    delete.Remove(path);
+                    left.Add(path);
+                }
+                if (hookedExists) left.Add(hooked!);
+                notes = hookedExists ? ProxylessRecordRemoval.ChainedOriginalKeptNote : ProxylessRecordRemoval.ChainedOriginalMissingNote;
+            }
+        }
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "Ultimate ASI Loader removal: " + game.Name, game, ManagedComponentKind.UltimateAsiLoader, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        WineOverrideRestoreResult? overrideRestore = null;
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        try
+        {
+            foreach (var path in delete)
+                await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+            if (restoreOver is not null)
+            {
+                // The original goes back over the proxy in one rename, as in the named removal.
+                await scope.TrackAsync(restoreOver, cancellationToken).ConfigureAwait(false);
+                await scope.TrackAsync(hooked!, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(restoreOver, scope.Files.Find(hooked!)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                AtomicFile.Rename(hooked!, restoreOver, overwrite: true);
+            }
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
+            _records.Remove(game, ManagedComponentKind.UltimateAsiLoader);
+        }
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "ual").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("Ultimate ASI Loader", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            if (!rollback.Success)
+                AppLog.Warn("ual", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
+            return ComponentOperationResult.Fail($"Ultimate ASI Loader removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("Ultimate ASI Loader", left, notes + WineDllOverrideService.KeptValueNotes(overrideRestore)));
     }
 
     internal static PeArchitecture ResolveArchitecture(DetectedGame game) => GameArchitecture.Of(game);

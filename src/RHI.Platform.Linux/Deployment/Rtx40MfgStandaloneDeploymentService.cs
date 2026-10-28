@@ -346,9 +346,11 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName) ?? record.Metadata.GetValueOrDefault(LegacyMetaProxyName);
-        if (string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Registro do Universal MFG não possui o nome da DLL proxy; remoção bloqueada.");
+        // w12 final review M1: a record without its proxy's name is removed by its file list (the way out the check names).
+        if (ProxylessRecordRemoval.Applies(record, MetaProxyName, LegacyMetaProxyName))
+            return await RemoveWithoutProxyNameAsync(game, record, cancellationToken).ConfigureAwait(false);
+        var proxyName = new[] { MetaProxyName, LegacyMetaProxyName }.Select(key => record.Metadata.GetValueOrDefault(key))
+            .First(name => !string.IsNullOrWhiteSpace(name))!;
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, targetPath));
         if (fileRecord?.Sha256 is not { Length: > 0 })
@@ -390,6 +392,43 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado."
             + WineDllOverrideService.KeptValueNotes(overrideRestore));
+    }
+
+    /// <summary>
+    /// w12 final review M1: Remove for a record without its proxy's name (<see cref="ProxylessRecordRemoval"/>): every
+    /// listed file that still holds RHI's bytes goes, the recorded override is restored, the record is dropped, and the
+    /// files left behind are named. Same journaled removal as <see cref="RemoveAsync"/>.
+    /// </summary>
+    private async Task<ComponentOperationResult> RemoveWithoutProxyNameAsync(
+        DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    {
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.Rtx40MfgStandalone).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
+        var plan = await ProxylessRecordRemoval.PlanAsync(record, cancellationToken).ConfigureAwait(false);
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "Universal MFG removal: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        WineOverrideRestoreResult? overrideRestore = null;
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        try
+        {
+            foreach (var path in plan.Delete)
+                await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
+            _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone);
+        }
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "universal-mfg").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            return ComponentOperationResult.Fail($"Universal MFG removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("Universal MFG", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
     }
 
     public async Task<Rtx40MfgUpdateStatus> CheckLatestAsync(
