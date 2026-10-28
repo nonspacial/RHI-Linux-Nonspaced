@@ -9,7 +9,7 @@ listed in [`docs/download-trust.md`](docs/download-trust.md).
 Releases are published on [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases). The first,
 `2.8.7`, is level with upstream RHI 2.8.7 and takes its number; later releases of this project alone add a fourth
 number (`2.8.7.1`). The port of the next upstream release takes that release's number (`2.8.8`) and is published only
-once upstream's release leaves beta; until then its builds carry a beta label (`2.8.8-beta.1`) and are not released.
+once upstream's release leaves beta; until then its builds carry a beta label (`2.8.8-beta.1`) and are not released yet.
 
 ## In progress
 
@@ -51,8 +51,9 @@ Components
   every other component. Unlike upstream, nothing is updated at start-up while automatic updates are off. The ASI Loader
   is only ever updated for the bitness it was installed for; when the game's executable changes bitness, remove it and
   install it again (the Extras section's ASI Loader check says so too). A record that lost its DLL name reads one line
-  for all three: remove the component, then install it again. **Remove** works on such a record: it deletes only the
-  files that still hold what RHI installed, puts the Wine setting back and names any file it left.
+  for these three, Universal MFG and DLSS Enabler Standalone alike: remove the component, then install it again.
+  **Remove** works on such a record: it deletes only the files that still hold what RHI installed, puts the Wine setting
+  back and names any file it left.
 - **A file you deleted outside RHI is never put back by an update** — Universal MFG, MFG Ada Unlock, DLSSG 20/30, the
   ASI Loader, ReLimiter, Display Commander and the DLSS5 DX11 Bridge. Update All says it could not be checked, with the
   reason; the row still offers **Remove**, which clears RHI's record (then **Install** puts it back). A file changed

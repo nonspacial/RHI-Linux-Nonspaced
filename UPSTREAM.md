@@ -1076,13 +1076,14 @@ verified extraction). Upstream pushes these at start and compares file contents 
 rule (owner decision D1 = No): Update All, and the background pass when automatic updates are on, with a game that was
 running caught up at the next pass. Fork-only: the check reports a proxy removed outside RHI (never put back), changed
 outside RHI, or recorded without its hash or proxy name as "could not be checked" with a line saying why (a record
-without its proxy name: one line for Universal MFG, DLSSG 20/30 and the ASI Loader, ending "Remove it, then Install it
-again", in the check and the update); a game held by its own failed undo reads the hold's restart text first, before any
-file is read; and the row keeps Remove and notes the removed proxy (no note on a game moved after the install, where
-Remove waits for Repair after move). Remove follows that line through (w12 final review M1): for a record without its
-proxy name it deletes only the listed files that still hold RHI's bytes, restores the recorded Wine override, drops the
-record and names every file it left (missing, without a hash or changed outside RHI; the ASI Loader puts a chained
-original back over its proxy while the original exists, else leaves the proxy), so Install works again.
+without its proxy name: one line for Universal MFG, DLSSG 20/30, the ASI Loader and DLSS Enabler Standalone, ending
+"Remove it, then Install it again", in the check and the update); a game held by its own failed undo reads the hold's
+restart text first, before any file is read; and the row keeps Remove and notes the removed proxy (no note on a game
+moved after the install, where Remove waits for Repair after move). Remove follows that line through (w12 final review
+M1): for a record without its proxy name it deletes only the listed files that still hold RHI's bytes, restores the
+recorded Wine override, drops the record and names every file it left (missing, without a hash or changed outside RHI;
+the ASI Loader puts a chained original back over its proxy while the original exists, else leaves the proxy), so Install
+works again.
 
 ### #237 — MFG Ada Unlock updates
 
