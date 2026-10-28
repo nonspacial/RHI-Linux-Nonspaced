@@ -86,7 +86,10 @@
       </Grid>
     </ScrollViewer>
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="16">
-      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.78"/>
+      <!-- #249: a result line naming many failed games scrolls inside the footer instead of squeezing the body. -->
+      <ScrollViewer x:Name="StatusScroll" MaxHeight="96" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.78"/>
+      </ScrollViewer>
       <Button Grid.Column="1" Content="{l:T Win.RestoreSelected}" Padding="14,7" Command="{Binding RestoreCommand}" IsEnabled="{Binding CanRun}"/>
       <Button Grid.Column="2" Content="{l:T Win.Apply}" Padding="14,7" Command="{Binding ApplyCommand}" IsEnabled="{Binding CanRun}"/>
       <Button Grid.Column="3" Content="{Binding CloseLabel}" Padding="14,7" Command="{Binding CloseCommand}" IsEnabled="{Binding CanClose}"/>
