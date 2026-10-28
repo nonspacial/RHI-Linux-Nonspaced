@@ -71,6 +71,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/mfg rows
         // w12/shaders rows
         // w12/update-all rows
+        , RHI.Platform.Linux.Deployment.IGameRunningProbe? runningProbe = null
         // w12/github-cache rows
         // w12/luma rows
         // w12/epic rows
@@ -160,6 +161,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/mfg rows
         // w12/shaders rows
         // w12/update-all rows
+        if (runningProbe is not null) Vm.Updates.UpdateAll.RunningProbe = runningProbe; // #242: games a test says are running
         // w12/github-cache rows
         // w12/luma rows
         // w12/epic rows
@@ -217,6 +219,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/mfg rows
         // w12/shaders rows
         // w12/update-all rows
+        , RHI.Platform.Linux.Deployment.IGameRunningProbe? runningProbe = null
         // w12/github-cache rows
         // w12/luma rows
         // w12/epic rows
@@ -263,6 +266,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w12/mfg rows
             // w12/shaders rows
             // w12/update-all rows
+            , runningProbe
             // w12/github-cache rows
             // w12/luma rows
             // w12/epic rows

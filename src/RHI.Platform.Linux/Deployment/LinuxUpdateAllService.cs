@@ -41,7 +41,10 @@ public sealed record LinuxUpdateItemResult(
     // #178: left out because the update-inclusion file cannot be read (Excluded is true too).
     bool ExclusionUnreadable = false,
     // w8 final review 1: the update was written and the save then reported an error (finished as committed; Message says so).
-    bool Landed = false);
+    bool Landed = false,
+    // #243: could not be checked for a reason on this machine (a Custom ReShade whose source DLL is gone; the check is
+    // local): the summary names the game and the reason. A source that could not be reached (reshade.me) stays a count.
+    bool LocalReason = false);
 
 public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> Items)
 {
@@ -57,6 +60,11 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
     public IReadOnlyList<LinuxUpdateItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred).ToArray();
     /// <summary>w8 final review 1: the games with an update whose save reported an error after it was written, once each.</summary>
     public IReadOnlyList<string> LandedGames => Items.Where(item => item.Landed).Select(item => item.GameName).Distinct(StringComparer.Ordinal).ToArray();
+    /// <summary>#243: the items that could not be checked for a reason on this machine, each named in the summary.</summary>
+    public IReadOnlyList<LinuxUpdateItemResult> LocalUncheckedItems => Items.Where(item => item.Unchecked && item.LocalReason).ToArray();
+    /// <summary>#242: the games this pass left alone because they were running (each once): the background loop updates
+    /// them once they close.</summary>
+    public IReadOnlyList<DetectedGame> RunningGames { get; init; } = [];
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
@@ -83,6 +91,13 @@ public interface ILinuxManagedUpdateBackend
 
     /// <summary>#178: whether the update inclusion leaves this component of this game out of Update All.</summary>
     UpdateExclusion UpdateExclusionFor(DetectedGame game, ManagedComponentKind component) => UpdateExclusion.None;
+
+    /// <summary>
+    /// #243: whether this component's check is local, so manual Update All checks it first although it refreshes it
+    /// without a check (ReShade): its check can find a local reason it cannot be checked (a Custom ReShade whose source
+    /// DLL is gone), and the game is then reported as not checked, named with that reason, instead of a refresh that fails.
+    /// </summary>
+    bool ChecksBeforeManualRefresh(DetectedGame game, ManagedComponentKind component) => false;
 }
 
 public interface IGameRunningProbe
@@ -194,7 +209,6 @@ public sealed class LinuxUpdateAllService
 
     private readonly LinuxDeploymentRecordStore _records;
     private readonly ILinuxManagedUpdateBackend _backend;
-    private readonly IGameRunningProbe _running;
     private int _runningPass;
 
     public LinuxUpdateAllService(
@@ -204,8 +218,14 @@ public sealed class LinuxUpdateAllService
     {
         _records = records;
         _backend = backend;
-        _running = runningProbe ?? new LinuxGameRunningProbe();
+        RunningProbe = runningProbe ?? new LinuxGameRunningProbe();
     }
+
+    /// <summary>Tells whether a game is running (a test sets a fake one).</summary>
+    internal IGameRunningProbe RunningProbe { get; set; }
+
+    /// <summary>#242: whether the game runs now, by the same probe a pass defers it with.</summary>
+    public bool IsRunning(DetectedGame game) => RunningProbe.IsRunning(game);
 
     public static IReadOnlyList<ManagedComponentKind> SupportedComponents => SupportedReadOnly;
 
@@ -231,6 +251,7 @@ public sealed class LinuxUpdateAllService
             ]);
 
         var results = new List<LinuxUpdateItemResult>();
+        var running = new List<DetectedGame>(); // #242
         try
         {
             foreach (var game in games)
@@ -256,8 +277,9 @@ public sealed class LinuxUpdateAllService
                 targets = targets.Except(excluded).ToArray();
                 if (targets.Length == 0) continue;
 
-                if (_running.IsRunning(game))
+                if (RunningProbe.IsRunning(game))
                 {
+                    running.Add(game);
                     foreach (var component in targets)
                         results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, true,
                             "Game is running; update deferred until a later Update All/background pass."));
@@ -273,7 +295,10 @@ public sealed class LinuxUpdateAllService
                     using var unit = new OperationCancellation(cancellationToken);
                     try
                     {
-                        if (mode == LinuxUpdateRunMode.Background || !RefreshedInManualMode.Contains(component))
+                        // #243: a refreshed family is still checked first where its check can say "could not check" for a
+                        // local reason; only that answer stops its refresh.
+                        var refreshed = mode == LinuxUpdateRunMode.Manual && RefreshedInManualMode.Contains(component);
+                        if (!refreshed || _backend.ChecksBeforeManualRefresh(game, component))
                         {
                             var check = await _backend.CheckManagedUpdateAsync(game, component, files, unit.Token).ConfigureAwait(false);
                             if (check.Blocked)
@@ -286,10 +311,13 @@ public sealed class LinuxUpdateAllService
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false, check.Message, HeldBy: check.HeldBy));
                                 continue;
                             }
-                            if (!check.Managed || !check.UpdateAvailable)
+                            if (refreshed ? check.Managed && check.CouldNotCheck : !check.Managed || !check.UpdateAvailable)
                             {
+                                var couldNotCheck = check.Managed && check.CouldNotCheck;
+                                // #243: a local check's "could not check" has its reason here: the summary names it.
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false,
-                                    check.Message, Unchecked: check.Managed && check.CouldNotCheck));
+                                    check.Message, Unchecked: couldNotCheck,
+                                    LocalReason: couldNotCheck && _backend.ChecksBeforeManualRefresh(game, component)));
                                 continue;
                             }
                         }
@@ -321,7 +349,7 @@ public sealed class LinuxUpdateAllService
         {
             Interlocked.Exchange(ref _runningPass, 0);
         }
-        return new LinuxUpdateAllResult(results);
+        return new LinuxUpdateAllResult(results) { RunningGames = running };
     }
 
     public static bool IsSupported(ManagedComponentKind component) => Supported.Contains(component);

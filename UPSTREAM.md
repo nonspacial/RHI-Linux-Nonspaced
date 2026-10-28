@@ -1115,6 +1115,37 @@ every launch, x86 never updated" never existed here (per-architecture stamped ca
 
 <!-- w12/update-all notes -->
 
+### #242 — A game deferred because it was running is updated soon after it closes
+- Upstream `79f5680` (`AutoUpdateService.EnqueueRetry`, `RetryPassAsync`): Automatic Updates queue the running games and a 60 s
+  timer updates each one alone once it is no longer running.
+- Linux: the background pass reports the games it deferred (`LinuxUpdateAllResult.RunningGames`); the loop keeps them in
+  `DeferredGameRetry` and, every 60 s while any is left and "Automatically update RHI-managed components" is on, asks the
+  existing running-game probe (`/proc`, no process started) about each. A game that has closed gets a pass of its own with
+  the background pass's rules (update inclusion, holds, families, check first), once the busy gate is free. A game that
+  runs again before its pass waits for the next poll; one whose pass ran is done (a failure is left to the next scheduled
+  pass, as upstream drops it). Turning automatic updates off, or any change that restarts the loop, forgets the list (the
+  restarted loop's first pass defers them again). A probe error is logged once and only means "ask again next poll"; every
+  poll waits the full minute first. A pass that changed something writes "Deferred updates ran after the game closed:
+  <game>." followed by the usual Update All counts. Manual Update All is unchanged: a running game is reported as
+  deferred. Difference: upstream queues only games whose update check found something; Linux defers before checking (as
+  before), so the closed game's pass does the check.
+
+### #243 — Update All: a Custom-channel ReShade whose source DLL is gone is reported, not failed
+- Upstream `49d4473` (`UpdateOrchestrationService.UpdateAllReShade`): a `FileNotFoundException` from a Custom-channel game
+  whose DLL was removed from the Custom folder is caught; the card says "ReShade DLL not found — see Custom ReShade folder"
+  and no crash report is written.
+- Linux: manual Update All re-deploys ReShade without a check (#113), so such a game counted as a failed update. A
+  ReShade on the Custom channel is now checked first (`ILinuxManagedUpdateBackend.ChecksBeforeManualRefresh`; the check is
+  local: the chosen DLL is still there, and its hash): a source that is gone reads "could not be checked" and nothing is
+  touched. The Update All line names it as it names a failure, after the counts: "Not checked: <game> (ReShade) —
+  Custom ReShade source file is unavailable; installed DLL remains untouched." (PT-BR too; every such game is named
+  wherever that line shows, so a background pass names it when it writes its line). Only a check that is local (`ChecksBeforeManualRefresh`) is named this way
+  (`LinuxUpdateItemResult.LocalReason`); a source that could not be reached (a reshade.me or GitHub outage) stays in the
+  "could not be checked" count. Difference: upstream writes its note on the game's card; the Linux card has no note
+  line, so the reason shows in the Update All line (its tooltip holds the whole line) and in the ReShade section's
+  update-check line. A source still there is refreshed as before. Stable, Nightly, No Addons and Legacy still refresh
+  unchecked on every manual Update All.
+
 <!-- w12/github-cache notes -->
 
 <!-- w12/luma notes -->
