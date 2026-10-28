@@ -200,10 +200,10 @@ public sealed class XboxGameDetector : IGameDetector
         var play = crumb?.Command(crumb.PlayEntry, storeId);
         if (crumb is not null && play is not null && OwningAppLocator.IsExecutableFile(play[0]))
             return new XboxPackageInfo(storeId, InstallerApp, OwningAppLocator.Render(play, crumb.LaunchEnvironment), instance.JobsFile,
-                play, crumb.Command(crumb.ShowEntry, storeId), crumb.LaunchEnvironment);
+                play, crumb.Command(crumb.ShowEntry, storeId), crumb.LaunchEnvironment, StateDir: instance.StateDir);
         if (crumb?.LaunchArgv is { } argv && !OwningAppLocator.IsExecutableFile(argv[0]))
             AppLog.Warn("scan", $"Xbox app launcher {argv[0]} ({crumb.File}) is not an executable file; Play falls back to opening the installer app");
-        return new XboxPackageInfo(storeId, InstallerApp, instance.FallbackOpenCommand, instance.JobsFile);
+        return new XboxPackageInfo(storeId, InstallerApp, instance.FallbackOpenCommand, instance.JobsFile, StateDir: instance.StateDir);
     }
 
     private static DetectedGame Card(string name, string dir, XboxPackage? package, XboxPackageInfo info)

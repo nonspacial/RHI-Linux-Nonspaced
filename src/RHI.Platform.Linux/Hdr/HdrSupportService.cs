@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Detection;
+using RHI.Platform.Linux.Detection.Xbox;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
 
@@ -224,23 +225,17 @@ public sealed partial class HdrSupportService
     }
 
     /// <summary>
-    /// The Microsoft Store record the app that installed an Xbox game keeps (<c>catalogue/products/&lt;StoreId&gt;.json</c>
-    /// beside its <c>jobs.json</c>), read-only: Yes when its <c>CapabilityHDR</c> attribute applies to PC; null otherwise
-    /// (the attribute's absence says nothing: many HDR games lack it).
+    /// The Microsoft Store record the app that installed an Xbox game keeps in its instance's state folder
+    /// (<c>catalogue/products/&lt;StoreId&gt;.json</c>, the file RHI reads the card's name from — correction F4), read-only:
+    /// Yes when its <c>CapabilityHDR</c> attribute applies to PC; null otherwise (the attribute's absence says nothing: many
+    /// HDR games lack it).
     /// </summary>
     internal static HdrSupportEvidence? StoreFlag(DetectedGame game)
     {
-        if (game.XboxPackage is not { StoreId: { Length: > 0 } storeId, JobsFile: { Length: > 0 } jobs }
-            || !Regex.IsMatch(storeId, "^[A-Za-z0-9]{8,20}$"))
-            return null;
-        var file = Path.Combine(Path.GetDirectoryName(jobs) ?? "", "catalogue", "products", storeId + ".json");
-        try
+        if (game.XboxPackage is not { StoreId: { Length: > 0 } storeId, StateDir: { Length: > 0 } stateDir }) return null;
+        return XboxInstallerInstance.ReadCatalogueProduct(stateDir, storeId, root =>
         {
-            var info = new FileInfo(file);
-            if (!info.Exists || info.Length is 0 or > 16 * 1024 * 1024) return null;
-            using var stream = File.OpenRead(file);
-            using var doc = JsonDocument.Parse(stream);
-            if (!doc.RootElement.TryGetProperty("Properties", out var properties) || properties.ValueKind != JsonValueKind.Object
+            if (!root.TryGetProperty("Properties", out var properties) || properties.ValueKind != JsonValueKind.Object
                 || !properties.TryGetProperty("Attributes", out var attributes) || attributes.ValueKind != JsonValueKind.Array)
                 return null;
             foreach (var attribute in attributes.EnumerateArray())
@@ -253,11 +248,7 @@ public sealed partial class HdrSupportService
                 if (onPc) return new HdrSupportEvidence(HdrSupportAnswer.Yes, HdrSupportSource.MicrosoftStore);
             }
             return null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            return null;
-        }
+        }, "its HDR flag is not used");
     }
 
     private HdrSupportEvidence? Curated(DetectedGame game)

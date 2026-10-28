@@ -168,16 +168,8 @@ internal sealed class XboxInstallerInstance
         => CatalogueProductTitle(storeId) ?? CatalogueTitle(storeId) ?? JobTitle(storeId);
 
     private string? CatalogueProductTitle(string storeId)
-    {
-        if (!IsStoreId(storeId)) return null;
-        var file = Path.Combine(StateDir, "catalogue", "products", storeId + ".json");
-        if (!File.Exists(file)) return null;
-        try
+        => ReadCatalogueProduct(StateDir, storeId, root =>
         {
-            using var doc = JsonDocument.Parse(ReadSmall(file, 16 * 1024 * 1024));
-            var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || String(root, "ProductId") is { } id && !string.Equals(id, storeId, StringComparison.OrdinalIgnoreCase))
-                return null;
             if (!root.TryGetProperty("LocalizedProperties", out var localized) || localized.ValueKind != JsonValueKind.Array) return null;
             var entries = localized.EnumerateArray().Where(entry => entry.ValueKind == JsonValueKind.Object).ToList();
             // English first (the language the rest of the card's data uses), else the first language listed.
@@ -185,10 +177,30 @@ internal sealed class XboxInstallerInstance
                        .Concat(entries)
                        .Select(entry => String(entry, "ProductTitle"))
                        .FirstOrDefault(title => !string.IsNullOrWhiteSpace(title))?.Trim();
+        }, "the name comes from elsewhere");
+
+    /// <summary>
+    /// Reads the Microsoft Store product record the installer app keeps for <paramref name="storeId"/> in the instance's
+    /// state folder (<c>catalogue/products/&lt;id&gt;.json</c>, read-only, 16 MiB cap) and hands its root to
+    /// <paramref name="read"/>; null when there is none, it is unreadable, or it names another product (<c>ProductId</c>).
+    /// One reader for the card's name and the HDR flag (#251 correction F4), so both read the same file.
+    /// </summary>
+    internal static T? ReadCatalogueProduct<T>(string stateDir, string storeId, Func<JsonElement, T?> read, string fallbackNote) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(stateDir) || !IsStoreId(storeId)) return null;
+        var file = Path.Combine(stateDir, "catalogue", "products", storeId + ".json");
+        if (!File.Exists(file)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(ReadSmall(file, 16 * 1024 * 1024));
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || String(root, "ProductId") is { } id && !string.Equals(id, storeId, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return read(root);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            AppLog.Warn("scan", $"Xbox app catalogue product {file} unreadable; the name comes from elsewhere", ex);
+            AppLog.Warn("scan", $"Xbox app catalogue product {file} unreadable; {fallbackNote}", ex);
             return null;
         }
     }

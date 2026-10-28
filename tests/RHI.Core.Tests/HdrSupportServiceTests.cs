@@ -200,7 +200,7 @@ public sealed class HdrSupportServiceTests : IDisposable
         }
         var game = Named("Forza Quest");
         game.Source = "Xbox";
-        game.XboxPackage = new XboxPackageInfo("9NBLGGH4R315", "Installer", null, Path.Combine(state, "jobs.json"));
+        game.XboxPackage = new XboxPackageInfo("9NBLGGH4R315", "Installer", null, Path.Combine(state, "jobs.json"), StateDir: state);
 
         var evidence = await Service(wiki).ResolveAsync(game);
 
@@ -218,7 +218,7 @@ public sealed class HdrSupportServiceTests : IDisposable
             """{"ProductId":"9NBLGGH4R315","Properties":{"Attributes":[{"Name":"CapabilityHDR","ApplicablePlatforms":["Desktop"]}]}}""");
         var game = Named("Forza Quest");
         game.Source = "Xbox";
-        game.XboxPackage = new XboxPackageInfo("9NBLGGH4R315", "Installer", null, Path.Combine(state, "jobs.json"));
+        game.XboxPackage = new XboxPackageInfo("9NBLGGH4R315", "Installer", null, Path.Combine(state, "jobs.json"), StateDir: state);
 
         var evidence = await Service(new FakeWiki(), """{"games":{"xbox:9NBLGGH4R315":{"hdr":false}}}""").ResolveAsync(game);
 

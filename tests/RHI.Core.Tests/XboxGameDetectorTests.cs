@@ -121,7 +121,8 @@ public sealed class XboxGameDetectorTests : IDisposable
         // Play opens the installer app (its instance script), never the game.
         Assert.Equal($"'{script}'", game.LaunchCommand);
         Assert.Equal(XboxInstallerApp.DisplayName, game.ParentLauncherName);
-        Assert.Equal(new XboxPackageInfo("9ABC", XboxInstallerApp.DisplayName, $"'{script}'", Path.Combine(_state, "jobs.json"), Architecture: PeArchitecture.X64), game.XboxPackage);
+        Assert.Equal(new XboxPackageInfo("9ABC", XboxInstallerApp.DisplayName, $"'{script}'", Path.Combine(_state, "jobs.json"), Architecture: PeArchitecture.X64,
+            StateDir: _state), game.XboxPackage); // w12/hdr-wsi F4: the instance's state folder rides along (catalogue records)
         Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
     }
 
