@@ -1080,11 +1080,18 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 - The check (`Network/NexusModUpdateCheck`, the one Nexus "newer file" check; #198 reuses it) uses the connected
   account's API key only (owner rule; upstream asks the anonymous GraphQL API), Nexus's v1 file list, and compares the
   newest MAIN/UPDATE file's upload time with the install time (upstream's baseline; no Luma install records a Nexus file
-  id). No account / Nexus error / rate limit = could not check. One file list per mod is kept for an hour.
+  id). No account / Nexus error / rate limit / a refused key (401/403) = could not check; a refused key's line names
+  Settings → Accounts & updates → Disconnect, then Connect Nexus account. One file list per mod is kept for an hour;
+  after a 429 Nexus is left alone for 5 minutes (the limit is the account's).
 - Update never downloads it: Update All and the background pass count it as could not be checked (never failed). The
-  Luma row shows "Update on Nexus" (opens the page through `LinkHosts.NexusMod`) only when Nexus has a newer file, and
-  "Open on Nexus" with a tooltip naming Connect Nexus account when no account is connected. The fork's rows have no
-  per-row Update button, so this is a row button in the ⚙ slot (Luma rows have no ⚙).
+  fork's rows have no per-row Update button, so the Luma row has a Nexus button in its own column (Install/Remove →
+  Nexus → ⚙ → ⓘ; an Unreal game's Luma Engine.ini ⚙, #189, stays beside it): "Update on Nexus" (opens the page through
+  `LinkHosts.NexusMod`) when Nexus has a newer file; "Open on Nexus" when no account is connected or Nexus refused the
+  key (the 2 s tooltip names the control that fixes it) and, without asking Nexus, when RHI has not installed the mod
+  (upstream's card links these mods' Nexus page; download it there and drop the file on RHI). Hidden otherwise.
+- Pins gap 2 (upstream `b8094e6`, `SafeCombine` on Luma uninstall): Luma removal and update delete a recorded file or
+  folder only inside the game folder, its binary folder or ReShade's `AddonPath` (where Luma's add-on goes); a ledger
+  entry naming anything else is left in place (logged) and never blocks the removal.
 
 ### #246 — Luma mode: no manifest default (upstream removed lumaDefaultGames)
 - Upstream 2.8.8 Beta `230ac6a` removed `lumaDefaultGames` from `manifest.json` (no upstream consumer since at least
