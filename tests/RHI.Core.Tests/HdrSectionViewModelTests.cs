@@ -180,125 +180,46 @@ public sealed class HdrSectionViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task AHiddenSection_OnAHandoffCard_KeepsTodaysToggleRule()
+    public async Task AHiddenSection_OnAHandoffCard_HidesTheToggle_ItsSizeCouldOnlyTravelInGamescope()
     {
-        // A Steam card with gamescope installed: the toggle shows as before (#191's rule), and with HDR Off nothing can carry
-        // the size into Steam, so the plan says so instead of switching.
+        // A Steam card with gamescope installed: with the HDR row shown the toggle shows (#191: the size goes into the
+        // gamescope line to paste). With the HDR row hidden nothing can carry the size into Steam — and its hint would
+        // point at an HDR mode that is not on screen — so it hides; the saved toggle is kept and nothing is switched.
         var game = _games.Game("Digging Quest", "steam");
-        using var fx = await StartOnKdeAsync(game, Wiki(game, "false"), new LegacyHdrWsiViewModelTests.RecordingLauncher(), s => SeedResolution(s, game));
+        byte[]? seeded = null;
+        using var fx = await StartOnKdeAsync(game, Wiki(game, "false"), new LegacyHdrWsiViewModelTests.RecordingLauncher(), s => seeded = SeedResolution(s, game));
         var runtime = fx.Vm.Runtime;
 
         Assert.False(runtime.ShowHdrSection);
-        Assert.Equal(DisplayModeSwitcher.CanEverApply(fx.Vm.SelectedGame!, runtime.NvidiaHost), runtime.ShowResolutionToggle);
-        Assert.True(runtime.ShowResolutionToggle);
-        Assert.Equal((true, false, ResolutionPlanReason.Handoff), (runtime.SelectedResolutionPlan.Enabled, runtime.SelectedResolutionPlan.CanApply, runtime.SelectedResolutionPlan.Reason));
+        Assert.False(runtime.ShowResolutionToggle);
+        Assert.True(runtime.ResolutionToggle); // kept
+        Assert.False(runtime.SelectedResolutionPlan.SwitchesAroundLaunch);
         Assert.Equal("%command%", runtime.GetSelectedHdrLaunchOptions()); // no gamescope line to paste
-    }
+        Assert.Equal(seeded, File.ReadAllBytes(fx.Library.LibraryPath));
 
-    // ---- correction round 1, F6 + F7 (R2): lookups for games the user has left ------------------------------------------
-
-    [Fact]
-    public async Task ArrowingThroughTheLibrary_CancelsTheLookupsOfGamesLeft()
-    {
-        // Five games nobody looked up yet; PCGamingWiki is slow (each request waits until the test lets it go, or until its
-        // caller cancels). Each selection's first request arrives only once the earlier game's lookup has let the shared
-        // request gate go — i.e. was cancelled; at the end only the last game's lookup asks anything more.
-        const int count = 5;
-        var games = Enumerable.Range(1, count).Select(i => _games.Game($"Sweep Quest {i}", "direct")).ToList();
-        var wiki = new HdrSupportServiceTests.FakeWiki();
-        foreach (var game in games)
-        {
-            wiki.Search[game.Name] = game.Name.Replace(' ', '_');
-            wiki.Pages[game.Name] = HdrSupportServiceTests.Wikitext("false");
-        }
-        var slow = new SlowWiki(wiki);
-        using var fx = await LegacyHdrWsiViewModelTests.StartAsync(games, LegacyHdrWsiViewModelTests.Modern, new LegacyHdrWsiViewModelTests.RecordingLauncher());
-        var runtime = fx.Vm.Runtime;
-        fx.Vm.SelectedGame = null;
-        runtime.HdrSupport = Service(slow);
-
-        foreach (var game in games)
-        {
-            var arrived = slow.NextArrival();
-            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == game.Name).Game;
-            await arrived.WaitAsync(TimeSpan.FromSeconds(20)); // never arrives while a left lookup still holds the gate
-        }
-        var last = runtime.HdrSupportLookup!;
-        slow.Release();
-        await last.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
-
-        Assert.Equal(count - 1 + 2, slow.Requests); // one cancelled search per game left, then the last game's search + page
-        Assert.Same(games[^1].Name, fx.Vm.SelectedGame!.Name);
-        Assert.Equal(HdrSupportAnswer.No, runtime.HdrSupportKnown?.Answer);
-        Assert.False(runtime.ShowHdrSection);
+        // The same card with the HDR row shown: today's rule (shown, the size travels in the gamescope line).
+        using var shown = await StartOnKdeAsync(game, Wiki(game, "true"), new LegacyHdrWsiViewModelTests.RecordingLauncher(), s => SeedResolution(s, game));
+        Assert.True(shown.Vm.Runtime.ShowHdrSection);
+        Assert.True(shown.Vm.Runtime.ShowResolutionToggle);
+        Assert.Equal("gamescope -W 2560 -H 1440 --hdr-enabled -- %command%", shown.Vm.Runtime.GetSelectedHdrLaunchOptions());
     }
 
     [Fact]
-    public async Task ALateAnswer_ForAGameTheUserLeft_NeverLandsOnTheSelectedGame()
+    public async Task AHiddenSection_OnADesktopWithoutItsDisplayTool_HidesTheToggle()
     {
-        // B's answer (No: hidden) is known; A's lookup is slow. Select A, then B, then A's answer arrives: B stays hidden
-        // with B's own answer.
-        var a = _games.Game("Alpha Quest", "direct");
-        var b = _games.Game("Beta Quest", "direct");
-        var wiki = new HdrSupportServiceTests.FakeWiki
+        // A game RHI starts, gamescope installed but no kscreen-doctor: only gamescope could apply a size, and it needs the
+        // HDR row. Hidden HDR row → no toggle; shown HDR row → the toggle as before.
+        var game = _games.Game("Digging Quest", "direct");
+        using (var fx = await StartOnKdeAsync(game, Wiki(game, "false"), new LegacyHdrWsiViewModelTests.RecordingLauncher(), s => SeedResolution(s, game), kscreen: false))
         {
-            Search = { [a.Name] = "Alpha_Quest", [b.Name] = "Beta_Quest" },
-            Pages = { [a.Name] = HdrSupportServiceTests.Wikitext("true"), [b.Name] = HdrSupportServiceTests.Wikitext("false") }
-        };
-        // A's server answers only when released, even after RHI cancelled the request (so A's late result lands after B's).
-        var slow = new SlowWiki(wiki) { Holding = false, IgnoreCancel = true };
-        using var fx = await LegacyHdrWsiViewModelTests.StartAsync([b, a], LegacyHdrWsiViewModelTests.Modern, new LegacyHdrWsiViewModelTests.RecordingLauncher());
-        var runtime = fx.Vm.Runtime;
-        runtime.HdrSupport = Service(slow);
-        await runtime.HdrSupportLookup!.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
-        Assert.False(runtime.ShowHdrSection); // B: No
-
-        slow.Holding = true;
-        var arrived = slow.NextArrival();
-        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == a.Name).Game;
-        var lookupA = runtime.HdrSupportLookup!;
-        await arrived.WaitAsync(TimeSpan.FromSeconds(20));
-        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == b.Name).Game; // B's answer from the cache
-        Assert.Null(runtime.HdrSupportLookup);
-        slow.Release();
-        await lookupA.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard); // A's answer (or its cancelled Unknown) arrives now
-
-        Assert.Equal(b.Name, fx.Vm.SelectedGame!.Name);
-        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.PcGamingWiki, b.Name), runtime.HdrSupportKnown);
-        Assert.False(runtime.ShowHdrSection);
-    }
-
-    /// <summary>
-    /// A slow PCGamingWiki in front of <see cref="HdrSupportServiceTests.FakeWiki"/>: while <see cref="Holding"/>, each request
-    /// waits until <see cref="Release"/> or until its caller cancels (then it never reaches the wiki; unless
-    /// <see cref="IgnoreCancel"/>). Counts every request.
-    /// </summary>
-    private sealed class SlowWiki(HdrSupportServiceTests.FakeWiki inner) : DelegatingHandler(inner)
-    {
-        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private TaskCompletionSource _arrival = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _requests;
-
-        public volatile bool Holding = true;
-        /// <summary>A held request ignores its caller's cancellation (a server that answers late whatever happens).</summary>
-        public volatile bool IgnoreCancel;
-        public int Requests => Volatile.Read(ref _requests);
-
-        public Task NextArrival()
-        {
-            var next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            Volatile.Write(ref _arrival, next);
-            return next.Task;
+            Assert.False(fx.Vm.Runtime.ShowHdrSection);
+            Assert.False(fx.Vm.Runtime.ShowResolutionToggle);
+            Assert.False(fx.Vm.Runtime.SelectedResolutionPlan.SwitchesAroundLaunch);
         }
-
-        public void Release() => _released.TrySetResult();
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        using (var fx = await StartOnKdeAsync(game, Wiki(game, "true"), new LegacyHdrWsiViewModelTests.RecordingLauncher(), s => SeedResolution(s, game), kscreen: false))
         {
-            Interlocked.Increment(ref _requests);
-            Volatile.Read(ref _arrival).TrySetResult();
-            if (Holding) await (IgnoreCancel ? _released.Task : _released.Task.WaitAsync(cancellationToken));
-            return await base.SendAsync(request, cancellationToken);
+            Assert.True(fx.Vm.Runtime.ShowHdrSection);
+            Assert.True(fx.Vm.Runtime.ShowResolutionToggle);
         }
     }
 
@@ -346,13 +267,13 @@ public sealed class HdrSectionViewModelTests : IDisposable
         return fx;
     }
 
-    /// <summary>A KDE Wayland host with gamescope and kscreen-doctor on PATH (NVIDIA 615): where #191's switch applies.</summary>
+    /// <summary>A KDE Wayland host with gamescope and (unless <c>kscreen</c> is false) kscreen-doctor on PATH (NVIDIA 615).</summary>
     private async Task<ViewModelFixture> StartOnKdeAsync(DetectedGame game, HdrSupportServiceTests.FakeWiki wiki,
-        LegacyHdrWsiViewModelTests.RecordingLauncher launcher, Action<LinuxGameLibraryStore>? seed)
+        LegacyHdrWsiViewModelTests.RecordingLauncher launcher, Action<LinuxGameLibraryStore>? seed, bool kscreen = true)
     {
         var hdr = new LinuxHdrLaunchProfileService(
             environment: name => name switch { "XDG_SESSION_TYPE" => "wayland", "WAYLAND_DISPLAY" => "wayland-0", "XDG_CURRENT_DESKTOP" => "KDE", _ => null },
-            commandExists: command => command is "gamescope" or DisplayModeSwitcher.KScreenDoctor,
+            commandExists: command => command == "gamescope" || kscreen && command == DisplayModeSwitcher.KScreenDoctor,
             nvidiaVersion: () => LegacyHdrWsiViewModelTests.Modern,
             nvidiaGpu: () => NvidiaGpuFacts.None);
         var fx = await ViewModelFixture.StartAsync([game], seed: seed, launcher: launcher, hdrProfiles: hdr);

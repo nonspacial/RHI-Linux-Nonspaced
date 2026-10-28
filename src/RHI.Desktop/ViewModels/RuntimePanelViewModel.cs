@@ -5,6 +5,7 @@ using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Hdr;
+using RHI.Platform.Linux.Launch;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
 
@@ -291,9 +292,19 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     /// <summary>
     /// #191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).
-    /// w12/hdr-wsi (#251 correction): it has its own row and does not follow the HDR row's visibility.
+    /// w12/hdr-wsi (#251 correction F1): it has its own row and stays when the HDR row is hidden, wherever a plan with HDR
+    /// Off can apply — a desktop switch around a game RHI starts. Gamescope (and so a store hand-off, whose size travels
+    /// only in gamescope's launch options) needs the HDR row, so with that row hidden it no longer counts.
     /// </summary>
-    public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost);
+    public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost)
+                                        && (ShowHdrSection || CanSwitchDesktop(game, HdrHost));
+
+    /// <summary>
+    /// A display switch with HDR Off: a game RHI starts, on a probed desktop whose tool is installed (an unprobed host has no
+    /// desktop or tool to read, so a hidden-HDR game shows the toggle once the probe says it can apply).
+    /// </summary>
+    private static bool CanSwitchDesktop(DetectedGame game, LinuxHdrHostSnapshot host)
+        => !LaunchHandoffClassifier.IsHandoff(game) && DisplayModeSwitcher.AvailableTool(host) != DisplayTool.None;
 
     /// <summary>w12/hdr-wsi (#251 correction): the label of the resolution toggle's own row.</summary>
     public string ResolutionRowLabel => T("Hw.ResolutionRow");

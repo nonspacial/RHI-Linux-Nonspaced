@@ -1104,6 +1104,7 @@ Store record for (the instance's `catalogue/products/<id>.json`, the file RHI re
 still wins). Answers are cached in `~/.cache/rhi-linux/pcgw_hdr_cache.json` with page and fetch time, asked again only
 after a full Refresh or Settings → Clear cache; the lookup of a game the user has left is cancelled. A hidden section's
 saved HDR mode stays in `game-library.json` but is not applied at a direct launch nor offered as launch text (HDR Off).
-"Change resolution while playing" is not HDR: it has its own row below and stays wherever a switch can apply, so a
-hidden HDR section's game still switches the desktop resolution around a direct start. Provenance is only in the
+"Change resolution while playing" is not HDR: it has its own row below; when the HDR row is hidden it stays wherever a
+desktop switch can apply (a game RHI starts, the desktop's tool installed) and switches the resolution around a direct
+start; gamescope-only cases (store hand-offs, no desktop tool) need the HDR row and hide with it. Provenance is only in the
 section label's 2 s tooltip (EN + PT-BR).
