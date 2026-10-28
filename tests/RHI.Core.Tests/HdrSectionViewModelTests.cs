@@ -157,9 +157,12 @@ public sealed class HdrSectionViewModelTests : IDisposable
         byte[]? seeded = null;
         using var fx = await StartOnKdeAsync(game, Wiki(game, "false"), launcher, s => seeded = SeedResolution(s, game));
         var runtime = fx.Vm.Runtime;
+        Assert.True(runtime.ResolutionToggle, "the saved toggle was not loaded");
         var calls = new List<string>();
         var screen = new ResolutionToggleTests.FakeKScreen();
         fx.Vm.Resolution.Switcher = Switcher(calls, screen);
+        await fx.Vm.Resolution.Recovery.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
+        await fx.Vm.Resolution.DisplaySizesListed.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
 
         Assert.False(runtime.ShowHdrSection);
         Assert.True(runtime.ShowResolutionToggle); // the toggle stays where a switch can apply
