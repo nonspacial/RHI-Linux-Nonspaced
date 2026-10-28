@@ -364,12 +364,19 @@ public sealed class EpicLauncherDetectionTests : IDisposable
             new WinePrefixDetector(Home, [])
         ]).ScanWithReportAsync(null);
 
-        Assert.Single(scan.Games, g => g.InstallPath == hades);
+        var card = Assert.Single(scan.Games, g => g.InstallPath == hades);
+        // A folder another store records keeps that store's Play (w12 review 7).
+        Assert.Equal(LaunchHandoff.Heroic, LaunchHandoffClassifier.Classify(card));
+        Assert.DoesNotContain("com.epicgames.launcher", card.LaunchCommand ?? "", StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData("WINEPREFIX='/p' wine '/p/x/EpicGamesLauncher.exe' 'com.epicgames.launcher://apps/Dill?action=launch&silent=true'", LaunchHandoff.StoreClient)]
     [InlineData("WINEPREFIX='/p' wine '/p/x/EpicGamesLauncher.exe' -openuri=com.epicgames.launcher://apps/Dill?action=launch", LaunchHandoff.StoreClient)]
+    // Lutris' own Epic entries: the URI as one dashed option, with `=` inside its query (w12 review 6).
+    [InlineData("WINEPREFIX='/p' wine '/p/x/EpicGamesLauncher.exe' -opengl -SkipBuildPatchPrereq -com.epicgames.launcher://apps/Dill?action=launch", LaunchHandoff.StoreClient)]
+    [InlineData("WINEPREFIX='/p' wine '/p/x/EpicGamesLauncher.exe' -opengl -SkipBuildPatchPrereq", LaunchHandoff.None)]
+    [InlineData("WINEPREFIX='/p' wine '/p/x/Game.exe' -com.example.launcher://apps/Dill", LaunchHandoff.None)]
     public void TheLaunchersUri_IsAStoreClientHandOff(string command, LaunchHandoff expected)
         => Assert.Equal(expected, LaunchHandoffClassifier.Classify(new DetectedGame { Name = "x", InstallPath = "/g", Source = "Wine", LaunchCommand = command }));
 
@@ -497,6 +504,19 @@ public sealed class EpicLauncherDetectionTests : IDisposable
         {
             File.SetUnixFileMode(users, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
+    }
+
+    [Fact]
+    public async Task AHiveLargerThan512MiB_IsNotRead_WithAWarning()
+    {
+        // The registry hive cap, pinned with its literal value (w12 review 5): a sparse file, nothing is written.
+        var prefix = Prefix("huge-hive");
+        using (var hive = File.Create(Path.Combine(prefix, "system.reg"))) hive.SetLength(512L * 1024 * 1024 + 1);
+
+        var (records, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(StoreLauncherRecords.Find(prefix, Home, CancellationToken.None)));
+
+        Assert.Empty(records);
+        Assert.Contains(warnings, w => w.Contains("is larger than 536870912 bytes", StringComparison.Ordinal));
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────────────────────

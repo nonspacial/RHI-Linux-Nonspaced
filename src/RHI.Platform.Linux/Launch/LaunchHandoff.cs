@@ -340,6 +340,10 @@ public static class LaunchHandoffClassifier
     /// </summary>
     private static LaunchHandoff? StoreUri(string word)
     {
+        // Lutris' Epic entries pass the URI as one dashed option (`-com.epicgames.launcher://apps/X?action=launch`): the
+        // `=` in its query is no `--option=value`.
+        if (word.StartsWith('-') && StoreClientUriSchemes.Any(scheme => word.AsSpan(1).StartsWith(scheme, StringComparison.OrdinalIgnoreCase)))
+            return LaunchHandoff.StoreClient;
         var equals = word.IndexOf('=');
         var value = equals > 0 && word.StartsWith('-') ? word[(equals + 1)..] : word;
         if (value.StartsWith("steam:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Steam;
