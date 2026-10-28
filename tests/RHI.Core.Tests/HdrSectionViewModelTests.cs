@@ -146,6 +146,65 @@ public sealed class HdrSectionViewModelTests : IDisposable
         Assert.True(fx.Vm.Runtime.ShowHdrSection);
     }
 
+    // ---- correction round 1, F1: "Change resolution while playing" is not HDR -------------------------------------------
+
+    [Fact]
+    public async Task AHiddenSection_KeepsTheResolutionToggle_AndADirectStartSwitchesTheDesktop()
+    {
+        // Fallout 4-like: PCGW says false, no HDR mod, a game RHI starts itself on KDE with kscreen-doctor installed.
+        var game = _games.Game("Digging Quest", "direct");
+        var launcher = new LegacyHdrWsiViewModelTests.RecordingLauncher();
+        byte[]? seeded = null;
+        using var fx = await StartOnKdeAsync(game, Wiki(game, "false"), launcher, s => seeded = SeedResolution(s, game));
+        var runtime = fx.Vm.Runtime;
+        var calls = new List<string>();
+        var screen = new ResolutionToggleTests.FakeKScreen();
+        fx.Vm.Resolution.Switcher = Switcher(calls, screen);
+
+        Assert.False(runtime.ShowHdrSection);
+        Assert.True(runtime.ShowResolutionToggle); // the toggle stays where a switch can apply
+        Assert.True(runtime.ResolutionToggle);
+        Assert.Equal(new ResolutionPlan(true, true, ResolutionPlanReason.KScreenDoctor, new DisplayResolution(2560, 1440), DisplayTool.KScreenDoctor),
+            runtime.SelectedResolutionPlan);
+        Assert.False(runtime.SelectedHdrPlan.Enabled); // the saved Gamescope HDR mode is not used
+
+        await fx.Vm.LaunchCommand.ExecuteAsync(null);
+
+        var launch = Assert.Single(launcher.Launches);
+        Assert.NotNull(launch.Options); // started through the display switch's launch shell…
+        Assert.Null(launch.Options!.CommandPrefix); // …without gamescope or any HDR variable
+        Assert.DoesNotContain(launch.Options.Environment ?? new Dictionary<string, string>(), pair => pair.Key.Contains("HDR", StringComparison.Ordinal));
+        Assert.Contains(calls, call => call.StartsWith("kscreen-doctor output.DP-1.mode.", StringComparison.Ordinal)); // switched
+        Assert.Equal((2560, 1440), screen.CurrentSize);
+        Assert.Equal(seeded, File.ReadAllBytes(fx.Library.LibraryPath)); // the saved profile is untouched
+    }
+
+    [Fact]
+    public async Task AHiddenSection_OnAHandoffCard_KeepsTodaysToggleRule()
+    {
+        // A Steam card with gamescope installed: the toggle shows as before (#191's rule), and with HDR Off nothing can carry
+        // the size into Steam, so the plan says so instead of switching.
+        var game = _games.Game("Digging Quest", "steam");
+        using var fx = await StartOnKdeAsync(game, Wiki(game, "false"), new LegacyHdrWsiViewModelTests.RecordingLauncher(), s => SeedResolution(s, game));
+        var runtime = fx.Vm.Runtime;
+
+        Assert.False(runtime.ShowHdrSection);
+        Assert.Equal(DisplayModeSwitcher.CanEverApply(fx.Vm.SelectedGame!, runtime.NvidiaHost), runtime.ShowResolutionToggle);
+        Assert.True(runtime.ShowResolutionToggle);
+        Assert.Equal((true, false, ResolutionPlanReason.Handoff), (runtime.SelectedResolutionPlan.Enabled, runtime.SelectedResolutionPlan.CanApply, runtime.SelectedResolutionPlan.Reason));
+        Assert.Equal("%command%", runtime.GetSelectedHdrLaunchOptions()); // no gamescope line to paste
+    }
+
+    [Theory]
+    [InlineData("en-US", "Resolution")]
+    [InlineData("pt-BR", "Resolução")]
+    public void TheResolutionRowLabel_IsInTheUiLanguage(string language, string label)
+    {
+        UiLocalizationService.Apply(language);
+        try { Assert.Equal(label, UiLocalizationService.Text("Hw.ResolutionRow")); }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
     [Theory]
     [InlineData("en-US", "HDR: listed as supported by PCGamingWiki.", "HDR: an HDR mod is installed (")]
     [InlineData("pt-BR", "HDR: listado como compatível pelo PCGamingWiki.", "HDR: um mod de HDR está instalado (")]
@@ -178,6 +237,44 @@ public sealed class HdrSectionViewModelTests : IDisposable
         fx.Vm.Runtime.HdrSupport = Service(wiki);
         if (fx.Vm.Runtime.HdrSupportLookup is { } lookup) await lookup.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
         return fx;
+    }
+
+    /// <summary>A KDE Wayland host with gamescope and kscreen-doctor on PATH (NVIDIA 615): where #191's switch applies.</summary>
+    private async Task<ViewModelFixture> StartOnKdeAsync(DetectedGame game, HdrSupportServiceTests.FakeWiki wiki,
+        LegacyHdrWsiViewModelTests.RecordingLauncher launcher, Action<LinuxGameLibraryStore>? seed)
+    {
+        var hdr = new LinuxHdrLaunchProfileService(
+            environment: name => name switch { "XDG_SESSION_TYPE" => "wayland", "WAYLAND_DISPLAY" => "wayland-0", "XDG_CURRENT_DESKTOP" => "KDE", _ => null },
+            commandExists: command => command is "gamescope" or DisplayModeSwitcher.KScreenDoctor,
+            nvidiaVersion: () => LegacyHdrWsiViewModelTests.Modern,
+            nvidiaGpu: () => NvidiaGpuFacts.None);
+        var fx = await ViewModelFixture.StartAsync([game], seed: seed, launcher: launcher, hdrProfiles: hdr);
+        await LegacyHdrWsiViewModelTests.SelectAsync(fx, game.Name);
+        fx.Vm.Runtime.HdrSupport = Service(wiki);
+        if (fx.Vm.Runtime.HdrSupportLookup is { } lookup) await lookup.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
+        return fx;
+    }
+
+    /// <summary>A saved Gamescope HDR profile with the resolution toggle on at 2560x1440; returns the file's bytes.</summary>
+    private static byte[] SeedResolution(LinuxGameLibraryStore store, DetectedGame game)
+    {
+        var state = new LinuxGameLibraryState();
+        state.HdrProfiles[LinuxGameLibraryStore.GameKey(game)] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope, ResolutionToggle = true, Resolution = "2560x1440" };
+        store.Save(state);
+        return File.ReadAllBytes(store.LibraryPath);
+    }
+
+    private DisplayModeSwitcher Switcher(List<string> calls, ResolutionToggleTests.FakeKScreen screen)
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "fakebin")).FullName;
+        File.WriteAllText(Path.Combine(bin, DisplayModeSwitcher.KScreenDoctor), "#!/bin/sh\nexit 99\n"); // found on PATH, never run
+        return new DisplayModeSwitcher(Path.Combine(_root, "state", "display-mode.json"), name => name == "PATH" ? bin : null,
+            run: (tool, args, _) =>
+            {
+                lock (calls) calls.Add(Path.GetFileName(tool) + " " + string.Join(" ", args));
+                return Task.FromResult(screen.Answer(args));
+            },
+            isRunning: (_, _) => false);
     }
 
     private HdrSupportService Service(HdrSupportServiceTests.FakeWiki wiki)

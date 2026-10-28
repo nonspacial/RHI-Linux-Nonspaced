@@ -1469,5 +1469,6 @@ internal static class UiStrings
         ("Hw.HdrTipUnchecked", "HDR: o suporte ainda não pôde ser verificado; exibido caso se aplique.", "HDR: support could not be checked yet, shown in case it applies."),
         ("Hw.HdrTipMod", "HDR: um mod de HDR está instalado ({0}).", "HDR: an HDR mod is installed ({0})."),
         ("Hw.LegacyWsiNotUsed", "A marcação de WSI legado salva não é usada com este driver, que não precisa dela.", "The saved Legacy WSI tick is not used with this driver, which does not need it."),
+        ("Hw.ResolutionRow", "Resolução", "Resolution"),
     ];
 }

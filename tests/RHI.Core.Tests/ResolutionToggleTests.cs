@@ -26,7 +26,7 @@ public sealed class ResolutionToggleTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
     }
 
-    private const string KScreenJson = """
+    internal const string KScreenJson = """
         {"outputs":[
           {"name":"HDMI-A-1","enabled":true,"connected":true,"priority":2,"currentModeId":"9",
            "modes":[{"id":"9","name":"1920x1080@60","refreshRate":60.0,"size":{"width":1920,"height":1080}}]},
@@ -754,7 +754,7 @@ public sealed class ResolutionToggleTests : IDisposable
     /// A stateful kscreen-doctor answer over <see cref="KScreenJson"/>: <c>-j</c> reports DP-1's current mode,
     /// <c>output.DP-1.mode.X</c> selects by id or by kscreen-doctor's mode name (W x H @ rounded refresh), like the tool.
     /// </summary>
-    private sealed class FakeKScreen
+    internal sealed class FakeKScreen
     {
         private static readonly (string Id, int W, int H, double R)[] Modes =
             [("1", 3840, 2160, 144.0), ("2", 2560, 1440, 60.0), ("3", 2560, 1440, 143.99), ("5", 2560, 1440, 165.0), ("4", 1920, 1080, 120.0)];

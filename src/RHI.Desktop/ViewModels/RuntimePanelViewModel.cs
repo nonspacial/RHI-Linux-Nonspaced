@@ -168,6 +168,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(LumaPolicyText));
         OnPropertyChanged(nameof(LumaCoexistenceText));
         OnPropertyChanged(nameof(SelectedEngineHint));
+        OnPropertyChanged(nameof(ResolutionRowLabel)); // w12/hdr-wsi: follows the UI language
         NotifyHdrProfile();
     }
 
@@ -288,8 +289,14 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         RaiseHdrPlanChanged();
     }
 
-    /// <summary>#191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).</summary>
+    /// <summary>
+    /// #191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).
+    /// w12/hdr-wsi (#251 correction): it has its own row and does not follow the HDR row's visibility.
+    /// </summary>
     public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost);
+
+    /// <summary>w12/hdr-wsi (#251 correction): the label of the resolution toggle's own row.</summary>
+    public string ResolutionRowLabel => T("Hw.ResolutionRow");
 
     /// <summary>
     /// #250: the Legacy HDR WSI tick shows only where the probed host needs the layer (NVIDIA driver older than 595);
@@ -300,15 +307,14 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     /// <summary>
     /// #251: the profile a launch uses. While the HDR section is hidden (RHI's data says the game has no HDR and no HDR mod
-    /// is installed) its saved HDR mode and resolution toggle are kept but not used: no HDR variables, no wrapper, no
-    /// display switch, nothing to paste. The NVIDIA settings (DLSS section) still apply.
+    /// is installed) its saved HDR mode is kept but not used: HDR Off — no HDR variables, no wrapper, nothing to paste.
+    /// The resolution toggle is not HDR (coordinator, correction round 1): it applies as for any HDR-Off game (a desktop
+    /// switch around a direct start; a hand-off keeps its own rule). The NVIDIA settings (DLSS section) still apply.
     /// </summary>
     private LinuxHdrGameProfile PlannedProfile()
     {
         var profile = ShownProfile();
-        if (ShowHdrSection) return profile;
-        profile.Mode = LinuxHdrModes.Off;
-        profile.ResolutionToggle = false;
+        if (!ShowHdrSection) profile.Mode = LinuxHdrModes.Off;
         return profile;
     }
 
