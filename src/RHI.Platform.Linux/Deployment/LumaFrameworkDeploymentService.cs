@@ -492,7 +492,7 @@ public sealed class LumaFrameworkDeploymentService
 
         if (existingRecord is not null)
         {
-            var preflight = await PreflightManagedFilesAsync(existingRecord, cancellationToken).ConfigureAwait(false);
+            var preflight = await PreflightManagedFilesAsync(game, existingRecord, cancellationToken).ConfigureAwait(false);
             if (preflight is not null) return ComponentOperationResult.Fail(preflight);
         }
 
@@ -680,7 +680,7 @@ public sealed class LumaFrameworkDeploymentService
                     foreach (var old in existingRecord.Files)
                     {
                         if (string.IsNullOrWhiteSpace(old.Path) || !File.Exists(old.Path)) continue;
-                        if (newTargets.Contains(Path.GetFullPath(old.Path))) continue;
+                        if (newTargets.Contains(Path.GetFullPath(old.Path)) || !IsLumaPlace(game, old.Path)) continue;
                         await scope.DeleteAsync(old.Path, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
@@ -825,7 +825,7 @@ public sealed class LumaFrameworkDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("Luma Framework is not managed by RHI Linux. External files are protected from removal.");
 
-        var preflight = await PreflightManagedFilesAsync(record, cancellationToken).ConfigureAwait(false);
+        var preflight = await PreflightManagedFilesAsync(game, record, cancellationToken).ConfigureAwait(false);
         if (preflight is not null) return ComponentOperationResult.Fail(preflight);
 
         var dx9State = ReadDx9Migration(record, MetaDx9Migration);
@@ -870,7 +870,8 @@ public sealed class LumaFrameworkDeploymentService
             {
                 foreach (var name in new[] { "D3D9.dll", "dgVoodoo.conf" })
                 {
-                    var managed = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase));
+                    var managed = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase)
+                                                                      && IsLumaPlace(game, file.Path));
                     if (managed is null || !File.Exists(managed.Path)) continue;
                     await scope.DeleteAsync(managed.Path, CancellationToken.None).ConfigureAwait(false);
                     changed.Add(managed.Path);
@@ -885,6 +886,11 @@ public sealed class LumaFrameworkDeploymentService
                                              Path.GetFileName(file.Path).Equals("dgVoodoo.conf", StringComparison.OrdinalIgnoreCase)))
                     continue;
                 if (string.IsNullOrWhiteSpace(file.Path) || !File.Exists(file.Path)) continue;
+                if (!IsLumaPlace(game, file.Path))
+                {
+                    AppLog.Warn("luma", $"Removal left a recorded path outside the game folder in place: {file.Path}");
+                    continue;
+                }
                 await scope.DeleteAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
                 changed.Add(file.Path);
             }
@@ -901,7 +907,7 @@ public sealed class LumaFrameworkDeploymentService
         }
         await scope.CommitAsync().ConfigureAwait(false);
         // Past the commit point: emptied folders RHI created go (best effort; never rolled back).
-        FileCleanup.TryDeleteEmptyDirectories(record.DirectoriesCreatedByRhi);
+        FileCleanup.TryDeleteEmptyDirectories(record.DirectoriesCreatedByRhi.Where(directory => IsLumaPlace(game, directory)));
         return ComponentOperationResult.Ok("Luma Framework removed. ReShade, DLSS and user/runtime data were preserved; [Luma] and RHI-owned wiki Engine.ini settings were restored.", changed.ToArray());
     }
 
@@ -1108,12 +1114,30 @@ public sealed class LumaFrameworkDeploymentService
         return null;
     }
 
-    private static async Task<string?> PreflightManagedFilesAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    /// <summary>
+    /// Pins gap 2 (upstream 2.8.8 <c>b8094e6</c>, <c>SafeCombine</c> on Luma uninstall): a recorded path is Luma's to delete
+    /// only inside the game folder, its binary folder or ReShade's add-on folder (<c>AddonPath</c>), where Luma installs.
+    /// A ledger entry naming anything else (hand-edited or damaged <c>deployments.json</c>) is never deleted or hashed.
+    /// </summary>
+    internal static bool IsLumaPlace(DetectedGame game, string path)
+    {
+        var roots = new List<string>();
+        if (!string.IsNullOrWhiteSpace(game.InstallPath)) roots.Add(game.InstallPath);
+        if (!string.IsNullOrWhiteSpace(game.BinaryDirectory))
+        {
+            roots.Add(game.BinaryDirectory);
+            roots.Add(RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory));
+        }
+        return roots.Any(root => PathIdentity.IsSameOrInside(path, root));
+    }
+
+    private static async Task<string?> PreflightManagedFilesAsync(DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
         foreach (var file in record.Files)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(file.Path) || !File.Exists(file.Path)) continue;
+            if (!IsLumaPlace(game, file.Path)) continue; // not Luma's: never deleted, so never a reason to refuse
             if (string.IsNullOrWhiteSpace(file.Sha256))
                 return "Luma Framework ownership hash is missing; update/remove is blocked conservatively.";
             var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
