@@ -153,6 +153,56 @@ public sealed class HdrSupportServiceTests : IDisposable
         Assert.Equal(requests, wiki.Requests.Count);
     }
 
+    // ---- correction round 1, F5 + F7 (R7): pages PCGW has not got ------------------------------------------------------
+
+    [Fact]
+    public async Task ASteamGamePcgwDoesNotKnowByAppId_IsFoundByName_AndTheAnswerIsCached()
+    {
+        // Live: appid.php?appid=<unknown> answers 200 with wgPageName "Special:IdLookup", never 404.
+        var wiki = new FakeWiki { Search = { ["Digging Quest"] = "Digging_Quest" }, Pages = { ["Digging Quest"] = Wikitext("false") } };
+        var game = Steam("Digging Quest", 999999999);
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.PcGamingWiki, "Digging Quest"), evidence);
+        Assert.DoesNotContain(wiki.Requests, r => r.Contains("Special", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(wiki.Requests, r => r.Contains("action=opensearch", StringComparison.Ordinal));
+        var requests = wiki.Requests.Count;
+        Assert.Equal(evidence, await Service(wiki).ResolveAsync(game)); // cached: no request on the next start
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    [Fact]
+    public async Task ASteamGamePcgwDoesNotKnowAtAll_IsADefiniteUnknown_AskedOnce()
+    {
+        var wiki = new FakeWiki();
+        var game = Steam("Obscure Quest", 999999999);
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal((HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown), (evidence.Answer, evidence.Source));
+        var requests = wiki.Requests.Count;
+        Assert.Equal(evidence, await Service(wiki).ResolveAsync(game));
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("missingtitle")]
+    [InlineData("pagecannotexist")]
+    public async Task APageThatIsNotThere_IsADefiniteUnknown_AndIsCached(string code)
+    {
+        // The search (or a manifest URL) names a page, but PCGW's parse says it is not there.
+        var wiki = new FakeWiki { Search = { ["Gone Quest"] = "Gone_Quest" }, ParseErrors = { ["Gone Quest"] = code } };
+        var game = Named("Gone Quest");
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown, "Gone Quest"), evidence);
+        var requests = wiki.Requests.Count;
+        Assert.Equal(evidence, await Service(wiki).ResolveAsync(game));
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
     [Fact]
     public async Task AFullRefresh_AsksAgain_AndKeepsTheEarlierAnswerWhenThatFails()
     {
@@ -280,6 +330,8 @@ public sealed class HdrSupportServiceTests : IDisposable
         public Dictionary<int, string> AppIdPages { get; } = new();
         public Dictionary<string, string> Search { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string> Pages { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Titles whose parse answers this API error code (e.g. <c>missingtitle</c>, <c>pagecannotexist</c>).</summary>
+        public Dictionary<string, string> ParseErrors { get; } = new(StringComparer.OrdinalIgnoreCase);
         public ConcurrentQueue<string> Requests { get; } = new();
         public volatile string? Fail;
 
@@ -294,10 +346,9 @@ public sealed class HdrSupportServiceTests : IDisposable
                 case "server-error": return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
             }
             var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            // An AppID PCGW does not know: 200 with its own lookup page, as the live wiki answers (read 2026-10-28).
             if (uri.AbsolutePath == "/api/appid.php")
-                return Task.FromResult(AppIdPages.TryGetValue(int.Parse(query["appid"]!), out var page)
-                    ? Text($"<html><script>RLCONF={{\"wgPageName\":\"{page}\",\"wgTitle\":\"x\"}};</script></html>")
-                    : new HttpResponseMessage(HttpStatusCode.NotFound));
+                return Task.FromResult(Text($"<html><script>RLCONF={{\"wgPageName\":\"{(AppIdPages.TryGetValue(int.Parse(query["appid"]!), out var page) ? page : "Special:IdLookup")}\",\"wgTitle\":\"x\"}};</script></html>"));
             if (query["action"] == "opensearch")
             {
                 var name = query["search"]!;
@@ -307,6 +358,10 @@ public sealed class HdrSupportServiceTests : IDisposable
             if (query["action"] == "parse")
             {
                 var title = query["page"]!;
+                if (title.StartsWith("Special:", StringComparison.OrdinalIgnoreCase))
+                    return Task.FromResult(Text("""{"error":{"code":"pagecannotexist","info":"Namespace doesn't allow actual pages."}}"""));
+                if (ParseErrors.TryGetValue(title, out var code))
+                    return Task.FromResult(Text("{\"error\":{\"code\":\"" + code + "\",\"info\":\"test\"}}"));
                 return Task.FromResult(Pages.TryGetValue(title, out var text)
                     ? Text(JsonSerializer.Serialize(new { parse = new { title, pageid = 1, wikitext = text } }))
                     : Text("""{"error":{"code":"missingtitle","info":"The page you specified doesn't exist."}}"""));

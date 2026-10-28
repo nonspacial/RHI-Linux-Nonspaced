@@ -25,8 +25,11 @@ public sealed partial class PcGamingWikiGraphicsApiService
         {
             var appIdUrl = new Uri($"https://www.pcgamingwiki.com/api/appid.php?appid={steamAppId.Value}");
             var (html, outcome) = await GetTextAsync(appIdUrl, TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
-            if (html is not null && PageNameRegex().Match(html) is { Success: true } page)
-                return (Regex.Unescape(page.Groups[1].Value).Replace('_', ' '), false);
+            // Correction F5: for an AppID it does not know, PCGW answers 200 with its own lookup page (Special:IdLookup), not
+            // 404 — a page in the Special: namespace is "no page for this AppID", never a game page to read.
+            if (html is not null && PageNameRegex().Match(html) is { Success: true } page
+                && Regex.Unescape(page.Groups[1].Value).Replace('_', ' ') is var title && !title.StartsWith("Special:", StringComparison.OrdinalIgnoreCase))
+                return (title, false);
             if (html is null && outcome == FetchOutcome.Unavailable)
                 return (null, false);
             // No page for the AppID: PCGW's search may still know the name.
@@ -52,8 +55,9 @@ public sealed partial class PcGamingWikiGraphicsApiService
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return (null, false);
+            // "pagecannotexist": a title no page can have (a Special: page) — as missing as "missingtitle" (correction F5).
             if (root.TryGetProperty("error", out var error))
-                return (null, error.TryGetProperty("code", out var code) && code.GetString() is "missingtitle" or "invalidtitle");
+                return (null, error.TryGetProperty("code", out var code) && code.GetString() is "missingtitle" or "invalidtitle" or "pagecannotexist");
             return root.TryGetProperty("parse", out var parse) && parse.TryGetProperty("wikitext", out var text) && text.ValueKind == JsonValueKind.String
                 ? (text.GetString(), false)
                 : (null, false);
