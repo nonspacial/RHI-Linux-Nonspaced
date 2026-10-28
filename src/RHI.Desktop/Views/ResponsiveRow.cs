@@ -9,7 +9,8 @@ namespace RHI.Desktop.Views;
 /// fixed/auto column fits and the star column keeps at least <see cref="MinStarWidth"/>; otherwise the first
 /// <see cref="HeadColumns"/> columns stay on the first line (star takes the rest) and the remaining columns move
 /// below — on one line if they fit (a star among them taking the rest), else flowing left to right, a star column
-/// taking a whole line.
+/// taking a whole line. With <see cref="SkipEmptyColumns"/> a fixed/auto column with nothing visible is left out
+/// altogether (no spacing either), so a row whose optional buttons are hidden keeps one gap between the ones shown.
 /// </summary>
 public sealed class ResponsiveRow : Panel
 {
@@ -28,17 +29,21 @@ public sealed class ResponsiveRow : Panel
     public static readonly StyledProperty<double> MinStarWidthProperty =
         AvaloniaProperty.Register<ResponsiveRow, double>(nameof(MinStarWidth));
 
+    public static readonly StyledProperty<bool> SkipEmptyColumnsProperty =
+        AvaloniaProperty.Register<ResponsiveRow, bool>(nameof(SkipEmptyColumns));
+
     private readonly List<Placement> _placements = [];
     private string? _parsedSource;
     private ColumnDefinitions _definitions = new("*");
 
-    static ResponsiveRow() => AffectsMeasure<ResponsiveRow>(ColumnsProperty, ColumnSpacingProperty, LineSpacingProperty, HeadColumnsProperty, MinStarWidthProperty);
+    static ResponsiveRow() => AffectsMeasure<ResponsiveRow>(ColumnsProperty, ColumnSpacingProperty, LineSpacingProperty, HeadColumnsProperty, MinStarWidthProperty, SkipEmptyColumnsProperty);
 
     public string Columns { get => GetValue(ColumnsProperty); set => SetValue(ColumnsProperty, value); }
     public double ColumnSpacing { get => GetValue(ColumnSpacingProperty); set => SetValue(ColumnSpacingProperty, value); }
     public double LineSpacing { get => GetValue(LineSpacingProperty); set => SetValue(LineSpacingProperty, value); }
     public int HeadColumns { get => GetValue(HeadColumnsProperty); set => SetValue(HeadColumnsProperty, value); }
     public double MinStarWidth { get => GetValue(MinStarWidthProperty); set => SetValue(MinStarWidthProperty, value); }
+    public bool SkipEmptyColumns { get => GetValue(SkipEmptyColumnsProperty); set => SetValue(SkipEmptyColumnsProperty, value); }
 
     /// <summary>True when the row currently spans more than one line.</summary>
     public bool IsWrapped { get; private set; }
@@ -82,7 +87,9 @@ public sealed class ResponsiveRow : Panel
 
         _placements.Clear();
         var width = availableSize.Width;
-        var all = Enumerable.Range(0, n).ToList();
+        // w12/luma: an empty fixed/auto column is left out (no spacing) when asked; star columns always take their place.
+        var all = Enumerable.Range(0, n).Where(i => !SkipEmptyColumns || defs[i].Width.IsStar || HasContent(i)).ToList();
+        var headLimit = Math.Clamp(HeadColumns, 1, n);
         if (double.IsInfinity(width))
         {
             PlaceLine(all, 0, width, natural, defs, starFallback: true);
@@ -96,9 +103,9 @@ public sealed class ResponsiveRow : Panel
         else
         {
             IsWrapped = true;
-            var head = all.Take(Math.Clamp(HeadColumns, 1, n)).ToList();
+            var head = all.Where(i => i < headLimit).ToList();
             PlaceLine(head, 0, width, natural, defs, starFallback: false);
-            var tail = all.Skip(head.Count).Where(HasContent).ToList();
+            var tail = all.Where(i => i >= headLimit).Where(HasContent).ToList();
             var line = 1;
             if (tail.Count > 0 && LineFits(tail, width, natural, defs))
             {
