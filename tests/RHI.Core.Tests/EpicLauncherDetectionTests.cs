@@ -442,7 +442,11 @@ public sealed class EpicLauncherDetectionTests : IDisposable
 
         var games = LutrisGameDetector.DetectIn([configRoot], Home, CancellationToken.None);
 
-        Assert.DoesNotContain(games, g => g.InstallPath == hadesDir && g.LaunchCommand?.Contains("alan-wake-2-egs", StringComparison.Ordinal) == true);
+        // w12 integration A8: Hades is still listed (never dropped), with no launch command and no parent launcher.
+        var hades = Assert.Single(games, g => g.InstallPath == hadesDir);
+        Assert.Null(hades.LaunchCommand);
+        Assert.Null(hades.ParentLauncherName);
+        Assert.Equal(prefix, hades.PrefixPath);
         Assert.Equal("lutris 'lutris:rungame/alan-wake-2-egs'", Assert.Single(games, g => g.InstallPath == alanDir).LaunchCommand);
     }
 

@@ -123,7 +123,8 @@ public sealed partial class LutrisGameDetector : IGameDetector
     /// folder, Battle.net's <c>drive_c/Games</c>, <c>EA Games</c>). One card per game folder, with the launcher's prefix
     /// and runner. Launch starts the game's own Lutris store entry when Lutris has one (a store service's per-game config:
     /// the store client with this game's start argument), else the store's own client entry, else the prefix's parent
-    /// launcher; the user starts the game from there. An entry whose arguments start another game is never used. A
+    /// launcher; the user starts the game from there. An entry whose arguments start another game is never used: when the
+    /// prefix's only store entries start other games, the game is still listed, with no launch command (w12 A8). A
     /// folder that is (or holds) another listed entry, such as the launcher itself or a game with its own Lutris config,
     /// is not listed again; neither is a folder with no game executable. Also returns the per-game store entries that
     /// became their game's card (not listed again at the launcher's folder).
@@ -153,6 +154,13 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 if (libraryGames.Count == 0 && recorded.Count == 0) continue;
                 var gameFolders = libraryGames.Select(x => x.Folder).Concat(recorded.Select(x => x.Folder)).ToArray();
                 var fallback = PickParentLauncher(sharing, gameFolders);
+                // w12 integration A8: the prefix's only store entries start one game each (no client entry, no parent):
+                // a game with no entry of its own is still listed, with the prefix's runtime but no launch command (Play
+                // then says to set one in Edit game), never with another game's entry; one scan warning per prefix.
+                var perGameEntriesOnly = fallback is null && sharing.Any(c => c.NamedGames.Count > 0 &&
+                    !gameFolders.Any(folder => IsSameOrUnder(PathIdentity.Canonicalize(c.Game.InstallPath), folder)));
+                var runtime = sharing.OrderBy(c => c.ExeResolves ? 0 : 1).First().Game;
+                var listedWithoutCommand = 0;
 
                 foreach (var (record, folder) in recorded)
                 {
@@ -161,11 +169,17 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     // the prefix's parent launcher.
                     var own = OwnStoreEntries(sharing, record, gameFolders);
                     var launcher = own.FirstOrDefault() ?? StoreClientConfig(sharing, record.Store, gameFolders) ?? fallback;
-                    if (launcher is null) continue;
-                    launcher.RequiresExplicitPatchTarget = true;
+                    if (launcher is null && !perGameEntriesOnly) continue;
+                    if (launcher is not null) launcher.RequiresExplicitPatchTarget = true;
                     if (listedRoots.Any(root => IsSameOrUnder(root, folder)) || !seenFolders.Add(folder)) continue;
                     var exe = record.GameExecutable ?? PrefixGameFolders.FindExecutable(new PrefixGameFolders.Entry(record.InstallDirectory, null, null), ct);
                     if (exe is null) continue;
+                    if (launcher is null)
+                    {
+                        found.Add(WithoutLaunchCommand(runtime, record.Name, record.InstallDirectory, exe));
+                        listedWithoutCommand++;
+                        continue;
+                    }
                     var game = LauncherPrefixGame(launcher, own.Count > 0 ? launcher.Name : record.Name, record.InstallDirectory, exe);
                     // Its own entry starts the game itself (the store client's start argument): no "start it there".
                     if (own.Count > 0) game.ParentLauncherName = null;
@@ -173,11 +187,13 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     ownEntries.UnionWith(own);
                 }
 
-                // Only games share the prefix (no launcher config): nothing to launch the others through.
-                if (fallback is null) continue;
+                // Only games share the prefix (no launcher config, no store entry): nothing to launch the others
+                // through, so the store-library folders without an entry of their own are not listed. A prefix whose
+                // store entries each start one game (A8) still lists them, without a launch command.
+                if (fallback is null && !perGameEntriesOnly) continue;
                 // The parent launcher is not a game: no patch target or graphics API of its own until the user
                 // picks one in Edit game (Refs #148; a Battle.net/Ubisoft client exe is already caught by name).
-                if (libraryGames.Count > 0) fallback.RequiresExplicitPatchTarget = true;
+                if (libraryGames.Count > 0 && fallback is not null) fallback.RequiresExplicitPatchTarget = true;
                 foreach (var (entry, folder) in libraryGames)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -186,8 +202,17 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     if (!seenFolders.Add(folder)) continue;
                     var exe = PrefixGameFolders.FindExecutable(entry, ct);
                     if (exe is null) continue;
+                    if (fallback is null)
+                    {
+                        found.Add(WithoutLaunchCommand(runtime, Path.GetFileName(entry.Directory), entry.Directory, exe));
+                        listedWithoutCommand++;
+                        continue;
+                    }
                     found.Add(LauncherPrefixGame(fallback, Path.GetFileName(entry.Directory), entry.Directory, exe));
                 }
+                if (listedWithoutCommand > 0)
+                    DetectorDiagnostics.Warn($"Lutris prefix {prefixPath}: {listedWithoutCommand} game(s) listed with no launch command " +
+                                             "(the prefix's store entries each start another game, and Lutris lists no entry for the store client itself)");
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -197,6 +222,28 @@ public sealed partial class LutrisGameDetector : IGameDetector
         }
         return (found, ownEntries);
     }
+
+    /// <summary>
+    /// w12 integration A8: a game in a prefix whose store entries each start another game: the prefix's runtime (a
+    /// config's prefix, runner and Wine fields — copies of the store client's), its own exe, but no launch command and no
+    /// parent launcher, so Play says to set one in Edit game (as Heroic lists a store record without its client).
+    /// </summary>
+    private static DetectedGame WithoutLaunchCommand(DetectedGame runtime, string name, string folder, string exe) => new()
+    {
+        Name = name,
+        InstallPath = folder,
+        Source = "Lutris",
+        ExecutablePath = exe,
+        LaunchExecutablePath = exe,
+        PrefixPath = runtime.PrefixPath,
+        Runner = runtime.Runner,
+        CompatibilityTool = runtime.CompatibilityTool,
+        CompatibilityLayerType = runtime.CompatibilityLayerType,
+        WineBinaryPath = runtime.WineBinaryPath,
+        WineServerPath = runtime.WineServerPath,
+        LaunchCommand = null,
+        ParentLauncherName = null
+    };
 
     private static DetectedGame LauncherPrefixGame(DetectedGame launcher, string name, string folder, string exe) => new()
     {
