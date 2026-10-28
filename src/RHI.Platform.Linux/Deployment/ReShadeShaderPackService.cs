@@ -82,11 +82,15 @@ public sealed class ReShadeShaderPackService
     /// <summary>RHI's folder for ReShade's core headers, beside the packs (#239).</summary>
     private const string CoreFolder = "_Core";
 
-    /// <summary>Fixed text before the path of a file in RHI's shader folder that is not RHI's as recorded (PT-BR pair).</summary>
-    public const string ProtectedShaderFilePrefix = "Protected shader file in RHI path was modified or is externally owned: ";
+    /// <summary>
+    /// Fixed text before the path of a file in RHI's shader folder that is not RHI's as recorded (PT-BR pair). Review F3 (owner
+    /// wording rule): what happened, then the way out, the path last; the sync is still refused (never discarded).
+    /// </summary>
+    public const string ProtectedShaderFilePrefix =
+        "A shader file in RHI's folder is not the one RHI placed (it was changed or added outside RHI), so RHI left it alone. Move or delete it, or untick its pack in Shaders/Add-ons, then try again: ";
 
-    /// <summary>#240/#241: fixed text before the path when a folder inside RHI's shader folder is a link (PT-BR pair).</summary>
-    public const string LinkedShaderFolderPrefix = "A folder inside RHI's shader folder is a link, so RHI does not write through it: ";
+    /// <summary>#240/#241: fixed text before the path when a folder or file inside RHI's shader folder is a link (PT-BR pair; review F4).</summary>
+    public const string LinkedShaderFolderPrefix = "A folder or file inside RHI's shader folder is a link, so RHI does not write through it: ";
 
     // Mirrors upstream ShaderPackService.ExcludedShaderFiles.
     private static readonly HashSet<string> GloballyExcludedShaderFiles = new(StringComparer.OrdinalIgnoreCase)

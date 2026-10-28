@@ -181,7 +181,7 @@ public sealed class ShaderPackMirrorTests : IDisposable
     public static TheoryData<string, string> RefusalTexts => new()
     {
         { ReShadeDeploymentService.ShaderSyncFailedPrefix + ReShadeShaderPackService.LinkedShaderFolderPrefix + "/g/reshade-shaders/RHI/Prod80/Shaders/a.fx", "is a link" },
-        { ReShadeDeploymentService.ShaderSyncFailedPrefix + ReShadeShaderPackService.ProtectedShaderFilePrefix + "/g/reshade-shaders/RHI/Prod80/Shaders/a.fx", "externally owned" },
+        { ReShadeDeploymentService.ShaderSyncFailedPrefix + ReShadeShaderPackService.ProtectedShaderFilePrefix + "/g/reshade-shaders/RHI/Prod80/Shaders/a.fx", "Move or delete it" },
     };
 
     [Theory]

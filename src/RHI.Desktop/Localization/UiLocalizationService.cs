@@ -1679,9 +1679,9 @@ public static class UiLocalizationService
         // w12/mfg rows
         // w12/shaders rows
         (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.ProtectedShaderFilePrefix,
-            "Um arquivo de shader protegido na pasta do RHI foi alterado ou pertence a outro programa: "),
+            "Um arquivo de shader na pasta do RHI não é o que o RHI colocou (foi alterado ou adicionado fora do RHI), então o RHI não mexeu nele. Mova ou apague o arquivo, ou desmarque o pacote dele em Shaders/Add-ons, e tente de novo: "),
         (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.LinkedShaderFolderPrefix,
-            "Uma pasta dentro da pasta de shaders do RHI é um link, então o RHI não grava através dela: "),
+            "Uma pasta ou um arquivo dentro da pasta de shaders do RHI é um link, então o RHI não grava através dele: "),
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows

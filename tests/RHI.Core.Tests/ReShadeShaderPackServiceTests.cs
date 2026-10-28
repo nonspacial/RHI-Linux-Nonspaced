@@ -187,7 +187,8 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<IOException>(() => service.SyncAsync(game, ["CrosireMaster"]));
 
-        Assert.Contains("modified or is externally owned", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // w12/shaders review F3: the refusal's text now says how to go on; the refusal itself is unchanged.
+        Assert.Equal(ReShadeShaderPackService.ProtectedShaderFilePrefix + shader, ex.Message);
         Assert.Contains("changed outside RHI", File.ReadAllText(shader));
     }
 
