@@ -619,6 +619,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ManagedUpdateFileGuard.NoRecordedHashPrefix + "/jogos/exemplo/winmm.dll"; // correction round 1 (F5)
         yield return UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + "x86 → x64"; // correction round 1 (F3)
         // w12/shaders rows
+        yield return ReShadeDeploymentService.ShaderSyncFailedPrefix + ReShadeShaderPackService.LinkedShaderFolderPrefix + P;
+        yield return ReShadeDeploymentService.ShaderSyncFailedPrefix + ReShadeShaderPackService.ProtectedShaderFilePrefix + P;
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows

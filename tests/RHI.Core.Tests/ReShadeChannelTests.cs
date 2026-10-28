@@ -1115,6 +1115,22 @@ public sealed partial class ReShadeChannelTests : IDisposable
         File.WriteAllText(Path.Combine(pack, ".source"), sourceIdentity);
         // A cache entry RHI itself extracted also carries its download stamp (#142).
         CacheStamp.Write(Path.Combine(pack, "extracted"), sourceIdentity, sourceIdentity);
+        SeedCoreHeaders(cache);
+    }
+
+    /// <summary>w12/shaders #239: every sync with a pack also deploys ReShade's core headers, so an offline fixture seeds them.</summary>
+    internal static void SeedCoreHeaders(string cache)
+    {
+        const string url = "https://github.com/crosire/reshade-shaders/archive/refs/heads/slim.zip";
+        var pack = Path.Combine(cache, "shader-packs", "ReShadeCoreHeaders");
+        var shaders = Path.Combine(pack, "extracted", "Shaders");
+        if (File.Exists(Path.Combine(shaders, "ReShade.fxh"))) return;
+        Directory.CreateDirectory(shaders);
+        File.WriteAllText(Path.Combine(shaders, "ReShade.fxh"), "// ReShade.fxh fixture\n" + new string('h', 600));
+        File.WriteAllText(Path.Combine(shaders, "ReShadeUI.fxh"), "// ReShadeUI.fxh fixture\n" + new string('u', 600));
+        File.WriteAllText(Path.Combine(pack, ".complete"), "test");
+        File.WriteAllText(Path.Combine(pack, ".source"), url);
+        CacheStamp.Write(Path.Combine(pack, "extracted"), url, url);
     }
 
     internal static void WriteNativeD3DCompiler(string path, ushort machine)

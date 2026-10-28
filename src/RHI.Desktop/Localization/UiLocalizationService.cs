@@ -1700,6 +1700,10 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix,
             "Não atualizado: o executável do jogo não tem mais a arquitetura para a qual o Ultimate ASI Loader foi instalado, e uma atualização nunca o troca pela outra. Remova-o e instale-o de novo. Instalado para → agora: "),
         // w12/shaders rows
+        (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.ProtectedShaderFilePrefix,
+            "Um arquivo de shader na pasta do RHI não é o que o RHI colocou (foi alterado ou adicionado fora do RHI), então o RHI não mexeu nele. Mova ou apague o arquivo, ou desmarque o pacote dele em Shaders/Add-ons, e tente de novo: "),
+        (RHI.Platform.Linux.Deployment.ReShadeShaderPackService.LinkedShaderFolderPrefix,
+            "Uma pasta ou um arquivo dentro da pasta de shaders do RHI é um link, então o RHI não grava através dele: "),
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows

@@ -79,6 +79,19 @@ public sealed class ReShadeShaderPackService
 
     private static readonly string[] CoreHeaderNames = ["ReShade.fxh", "ReShadeUI.fxh"];
 
+    /// <summary>RHI's folder for ReShade's core headers, beside the packs (#239).</summary>
+    private const string CoreFolder = "_Core";
+
+    /// <summary>
+    /// Fixed text before the path of a file in RHI's shader folder that is not RHI's as recorded (PT-BR pair). Review F3 (owner
+    /// wording rule): what happened, then the way out, the path last; the sync is still refused (never discarded).
+    /// </summary>
+    public const string ProtectedShaderFilePrefix =
+        "A shader file in RHI's folder is not the one RHI placed (it was changed or added outside RHI), so RHI left it alone. Move or delete it, or untick its pack in Shaders/Add-ons, then try again: ";
+
+    /// <summary>#240/#241: fixed text before the path when a folder or file inside RHI's shader folder is a link (PT-BR pair; review F4).</summary>
+    public const string LinkedShaderFolderPrefix = "A folder or file inside RHI's shader folder is a link, so RHI does not write through it: ";
+
     // Mirrors upstream ShaderPackService.ExcludedShaderFiles.
     private static readonly HashSet<string> GloballyExcludedShaderFiles = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -294,9 +307,10 @@ public sealed class ReShadeShaderPackService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var needsCoreHeaders = normalized.Any(id =>
-            id.Equals("ClshortfuseShaders", StringComparison.OrdinalIgnoreCase) ||
-            id.Equals("MaxG2DSimpleHDR", StringComparison.OrdinalIgnoreCase));
+        // #239 (upstream EnsureReShadeHeaders): ReShade.fxh/ReShadeUI.fxh go with every sync that deploys a pack — most
+        // packs include them and ship no copy (Prod80 failed to compile without them); owned through the manifest like a
+        // pack file, so they leave with the last RHI pack.
+        var needsCoreHeaders = normalized.Length > 0;
 
         var root = Path.Combine(gameDirectory, "reshade-shaders", "RHI");
         var manifestPath = Path.Combine(root, ".rhi-manifest.json");
@@ -325,8 +339,18 @@ public sealed class ReShadeShaderPackService
         string? coreHeadersStaged = null;
         if (needsCoreHeaders)
         {
-            coreHeadersStaged = await EnsurePackAsync(CoreHeadersPack, cancellationToken).ConfigureAwait(false);
-            EnsureCoreHeadersPresent(coreHeadersStaged);
+            try
+            {
+                var staged = await EnsurePackAsync(CoreHeadersPack, cancellationToken).ConfigureAwait(false);
+                EnsureCoreHeadersPresent(staged);
+                coreHeadersStaged = staged;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // As upstream (a header missing from its staging folder is skipped): the packs still go in — a local custom
+                // pack works offline — and the next sync that can stage the headers brings them.
+                AppLog.Warn("shaders", "ReShade's core headers (ReShade.fxh, ReShadeUI.fxh) could not be staged; the shader packs are deployed without them", ex);
+            }
         }
 
         var previousByPath = previous.Files.ToDictionary(f => f.RelativePath, StringComparer.OrdinalIgnoreCase);
@@ -350,7 +374,7 @@ public sealed class ReShadeShaderPackService
                 "Textures");
         }
 
-        if (needsCoreHeaders)
+        if (coreHeadersStaged is not null)
         {
             var targetCoreRoot = Path.Combine(root, "_Core", "Shaders");
             foreach (var header in CoreHeaderNames)
@@ -365,84 +389,170 @@ public sealed class ReShadeShaderPackService
     }
 
     /// <summary>
-    /// The game-folder half of a sync <see cref="PrepareSyncAsync"/> prepared: no network. With <paramref name="operation"/>
-    /// (#169: the ReShade install's journaled operation) every shader file it removes or places and the ownership
-    /// manifest are tracked first and the placed content declared, so a failure — or a crash, at the next start — puts the
-    /// pack folders back as they were.
+    /// The game-folder half of a sync <see cref="PrepareSyncAsync"/> prepared: no network. #241 (upstream f32704c,
+    /// <c>ShaderPackService.Mirror</c>): the RHI folder is brought to the plan file by file — a file whose content already
+    /// equals its staged copy (size and SHA-256, and still what the manifest recorded) is left untouched and never
+    /// journaled, a changed one is replaced, a new one placed, one no longer planned deleted — so a sync that changes nothing
+    /// writes nothing and a running game keeps its shaders. With <paramref name="operation"/> (#169) every file it replaces,
+    /// places or deletes, every folder it creates and the manifest are journaled first, so a failure — or a crash, at the
+    /// next start — puts the folder back as it was; folders emptied are pruned after the commit (#240).
     /// </summary>
     internal async Task<ReShadeShaderSyncResult> ApplySyncAsync(PreparedShaderSync prepared, DeploymentOperation? operation, CancellationToken cancellationToken = default)
     {
-        var (root, manifestPath, previous, normalized, stagedById, exclusionsById, needsCoreHeaders, coreHeadersStaged) = prepared;
+        var (root, manifestPath, previous, normalized, _, _, _, _) = prepared;
         // Everything is staged and validated: from the first change in the game folder on, the sync runs to the end
         // (a cancel half-way used to leave copied packs that no manifest owns).
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        await RemoveManifestFilesAsync(root, previous, operation).ConfigureAwait(false);
+        var plan = PlanMirror(prepared);
+        var wanted = plan.Select(file => file.RelativePath).ToHashSet(StringComparer.Ordinal);
+        await RemoveManifestFilesAsync(root, new Manifest { Files = previous.Files.Where(file => !wanted.Contains(file.RelativePath)).ToList() },
+            operation).ConfigureAwait(false);
         if (normalized.Length == 0)
         {
             if (operation is not null && File.Exists(manifestPath))
                 await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
             if (!FileCleanup.TryDelete(manifestPath, out var manifestError))
                 AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", manifestError);
-            FileCleanup.TryDeleteEmptyTree(root);
+            PruneOwnedFolders(root, [], includeRoot: true, operation, PackFolderNames()); // #240: RHI's folder goes with its last file
             return new(root, [], [], []);
         }
 
-        Directory.CreateDirectory(root);
+        await EnsureFolderAsync(root, root, operation).ConfigureAwait(false);
+        var previousByPath = new Dictionary<string, ManifestFile>(StringComparer.Ordinal);
+        foreach (var file in previous.Files) previousByPath[file.RelativePath] = file;
         var outputManifest = new Manifest { PackIds = normalized.ToList() };
+        foreach (var file in plan)
+            if (await MirrorFileAsync(root, file, previousByPath, operation).ConfigureAwait(false) is { } sha)
+                outputManifest.Files.Add(new ManifestFile { RelativePath = file.RelativePath, Sha256 = sha });
+        // A stable order, so the manifest of a sync that changed nothing is byte for byte the one on disk (not rewritten).
+        outputManifest.Files.Sort((a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
+
         var effectPaths = new List<string>();
         var texturePaths = new List<string>();
-
-        foreach (var id in normalized)
+        bool Deploys(string folder) => outputManifest.Files.Any(file => file.RelativePath.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.Ordinal));
+        foreach (var safeId in normalized.Select(SafePackDirectoryName))
         {
-            var staged = stagedById[id];
-            var safeId = SafePackDirectoryName(id);
-            var targetPackRoot = Path.Combine(root, safeId);
-            var stagedShaders = Path.Combine(staged, "Shaders");
-            var stagedTextures = Path.Combine(staged, "Textures");
-
-            if (Directory.Exists(stagedShaders))
-            {
-                var targetShaders = Path.Combine(targetPackRoot, "Shaders");
-                await CopyTreeAsync(stagedShaders, targetShaders, root, outputManifest, operation, exclusionsById[id], "Shaders").ConfigureAwait(false);
-                if (Directory.Exists(targetShaders) && SafeFileEnumeration.Files(targetShaders).Any())
-                    effectPaths.Add($@".\reshade-shaders\RHI\{safeId}\Shaders\**");
-            }
-
-            if (Directory.Exists(stagedTextures))
-            {
-                var targetTextures = Path.Combine(targetPackRoot, "Textures");
-                await CopyTreeAsync(stagedTextures, targetTextures, root, outputManifest, operation, exclusionsById[id], "Textures").ConfigureAwait(false);
-                if (Directory.Exists(targetTextures) && SafeFileEnumeration.Files(targetTextures).Any())
-                    texturePaths.Add($@".\reshade-shaders\RHI\{safeId}\Textures\**");
-            }
+            if (Deploys(Path.Combine(safeId, "Shaders"))) effectPaths.Add($@".\reshade-shaders\RHI\{safeId}\Shaders\**");
+            if (Deploys(Path.Combine(safeId, "Textures"))) texturePaths.Add($@".\reshade-shaders\RHI\{safeId}\Textures\**");
         }
+        if (Deploys(Path.Combine(CoreFolder, "Shaders"))) effectPaths.Add($@".\reshade-shaders\RHI\{CoreFolder}\Shaders\**");
 
-        if (needsCoreHeaders)
-        {
-            var targetCoreRoot = Path.Combine(root, "_Core", "Shaders");
-            foreach (var header in CoreHeaderNames)
-                await CopyManagedFileAsync(
-                    Path.Combine(coreHeadersStaged!, "Shaders", header),
-                    Path.Combine(targetCoreRoot, header),
-                    root,
-                    outputManifest,
-                    operation).ConfigureAwait(false);
-            effectPaths.Add(@".\reshade-shaders\RHI\_Core\Shaders\**");
-        }
-
+        // #240: empty pack folders an older build (or a crash before the prune) left — only of packs no longer selected (review
+        // F2): an empty folder the user made inside a selected pack's folder or _Core (headers go with every pack) is theirs.
+        var selectedFolders = normalized.Select(SafePackDirectoryName).Append(CoreFolder).ToHashSet(StringComparer.Ordinal);
+        PruneOwnedFolders(root, [], includeRoot: false, operation, PackFolderNames().Where(name => !selectedFolders.Contains(name)).ToArray());
         var manifestFile = new JsonFileStore<Manifest>(manifestPath);
-        if (operation is null) manifestFile.Save(outputManifest);
+        var staged = manifestFile.Stage(_ => outputManifest)!;
+        if (staged.Before is { } before && before.AsSpan().SequenceEqual(staged.After))
+            return new(root, effectPaths, texturePaths, normalized); // #241: unchanged, not rewritten
+        if (operation is null) AtomicFile.WriteStoreFile(manifestPath, staged.After);
         else
         {
             // Declared BEFORE the write (w6/crash review 3): a crash right after it rolls the manifest back with the pack
             // files; declared after, recovery would keep the new manifest as user content over the restored packs.
-            var manifestBytes = manifestFile.Stage(_ => outputManifest)!.After;
             await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
-            await operation.RecordWriteAsync(manifestPath, FileHash.Sha256HexOf(manifestBytes), CancellationToken.None).ConfigureAwait(false);
-            AtomicFile.WriteStoreFile(manifestPath, manifestBytes);
+            await operation.RecordWriteAsync(manifestPath, FileHash.Sha256HexOf(staged.After), CancellationToken.None).ConfigureAwait(false);
+            AtomicFile.WriteStoreFile(manifestPath, staged.After);
             ManifestWrittenForTesting?.Invoke(manifestPath); // straight after the write: a crash test here fails if the declaration moves after it
         }
         return new(root, effectPaths, texturePaths, normalized);
+    }
+
+    /// <summary>#241: one file the sync wants in RHI's folder; <see cref="Source"/> null = keep RHI's copy as it is.</summary>
+    private sealed record MirrorFile(string RelativePath, string Destination, string? Source);
+
+    /// <summary>
+    /// #241: every file the prepared sync deploys (pack files minus exclusions, then the core headers), relative to RHI's
+    /// folder. Core headers that could not be staged this time keep the copy a previous sync placed (never removed for
+    /// being unavailable offline).
+    /// </summary>
+    private static List<MirrorFile> PlanMirror(PreparedShaderSync prepared)
+    {
+        var (root, _, previous, normalized, stagedById, exclusionsById, needsCoreHeaders, coreHeadersStaged) = prepared;
+        var rootWithSep = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var plan = new List<MirrorFile>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Add(string destination, string? source)
+        {
+            destination = Path.GetFullPath(destination);
+            if (!destination.StartsWith(rootWithSep, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Shader path escapes managed root: {destination}");
+            var relative = Path.GetRelativePath(root, destination);
+            if (!seen.Add(relative))
+                throw new IOException(ProtectedShaderFilePrefix + destination);
+            plan.Add(new MirrorFile(relative, destination, source));
+        }
+
+        foreach (var id in normalized)
+            foreach (var category in new[] { "Shaders", "Textures" })
+            {
+                var sourceRoot = Path.Combine(stagedById[id], category);
+                if (!Directory.Exists(sourceRoot)) continue;
+                foreach (var source in SafeFileEnumeration.Files(sourceRoot))
+                    if (!IsExcluded(exclusionsById[id], category, sourceRoot, source))
+                        Add(Path.Combine(root, SafePackDirectoryName(id), category, Path.GetRelativePath(sourceRoot, source)), source);
+            }
+
+        foreach (var header in CoreHeaderNames)
+        {
+            var destination = Path.Combine(root, CoreFolder, "Shaders", header);
+            if (coreHeadersStaged is not null) Add(destination, Path.Combine(coreHeadersStaged, "Shaders", header));
+            else if (needsCoreHeaders && previous.Files.Any(file => file.RelativePath == Path.GetRelativePath(root, destination)))
+                Add(destination, null);
+        }
+        return plan;
+    }
+
+    /// <summary>
+    /// #241: brings one planned file to its staged content. Unchanged (size and SHA-256 equal to the staged copy, still the
+    /// manifest's hash) → untouched, not journaled; RHI's copy with other content → replaced (journaled); missing → placed.
+    /// A file there that the manifest does not describe, or one behind a folder link, is refused (never overwritten).
+    /// Returns the hash of what is now RHI's there, or null for a header to keep that is no longer RHI's.
+    /// </summary>
+    private static async Task<string?> MirrorFileAsync(string root, MirrorFile file, IReadOnlyDictionary<string, ManifestFile> previousByPath,
+        DeploymentOperation? operation)
+    {
+        var destination = file.Destination;
+        if (IsLinkedBelow(root, destination)) throw new IOException(LinkedShaderFolderPrefix + destination);
+        if (File.Exists(destination))
+        {
+            var current = await FileHash.Sha256HexAsync(destination, CancellationToken.None).ConfigureAwait(false);
+            var owned = previousByPath.TryGetValue(file.RelativePath, out var old) && FileHash.HexEquals(current, old.Sha256);
+            if (file.Source is null) return owned ? current : null;
+            if (!owned) throw new IOException(ProtectedShaderFilePrefix + destination);
+            var stagedSha = await FileHash.Sha256HexAsync(file.Source, CancellationToken.None).ConfigureAwait(false);
+            if (new FileInfo(destination).Length == new FileInfo(file.Source).Length && FileHash.HexEquals(current, stagedSha))
+                return current; // unchanged: no write, no journal step
+            if (operation is null) return AtomicFile.Copy(file.Source, destination, overwrite: true);
+            await operation.TrackFileAsync(destination, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
+            await operation.RecordWriteAsync(destination, stagedSha, CancellationToken.None).ConfigureAwait(false);
+            return await AtomicFile.CopyAsync(file.Source, destination, stagedSha, CancellationToken.None, overwrite: true).ConfigureAwait(false);
+        }
+        if (file.Source is null) return null;
+        await EnsureFolderAsync(root, Path.GetDirectoryName(destination)!, operation).ConfigureAwait(false);
+        return await PlaceAsync(file.Source, destination, operation).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Creates <paramref name="folder"/> and the missing folders above it (up to the game folder holding
+    /// <c>reshade-shaders</c>), outermost first; inside <paramref name="operation"/> each is journaled before it is made, so
+    /// a rollback or a crash before the commit removes it again once its files are gone.
+    /// </summary>
+    private static async Task EnsureFolderAsync(string root, string folder, DeploymentOperation? operation)
+    {
+        if (Directory.Exists(folder)) return;
+        var gameFolder = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar))!)!;
+        var missing = new Stack<string>();
+        for (var current = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
+             current.Length > gameFolder.Length && !Directory.Exists(current);
+             current = Path.GetDirectoryName(current)!)
+            missing.Push(current);
+        while (missing.TryPop(out var created))
+        {
+            if (operation is not null)
+                await operation.AddCompensationAsync(CreatedDirectoryCompensator.KindName, CreatedDirectoryCompensator.Describe(created), CancellationToken.None).ConfigureAwait(false);
+            AtomicFile.CreateDirectoryDurable(created);
+        }
     }
 
     /// <summary>
@@ -453,13 +563,17 @@ public sealed class ReShadeShaderPackService
     {
         var root = Path.Combine(gameDirectory, "reshade-shaders", "RHI");
         var manifestPath = Path.Combine(root, ".rhi-manifest.json");
-        if (!File.Exists(manifestPath)) return;
-        var manifest = LoadManifest(manifestPath);
-        await RemoveManifestFilesAsync(root, manifest, operation).ConfigureAwait(false);
-        if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
-        if (!FileCleanup.TryDelete(manifestPath, out var removeError))
-            AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
-        FileCleanup.TryDeleteEmptyTree(root);
+        if (File.Exists(manifestPath))
+        {
+            var manifest = LoadManifest(manifestPath);
+            await RemoveManifestFilesAsync(root, manifest, operation).ConfigureAwait(false);
+            if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
+            if (!FileCleanup.TryDelete(manifestPath, out var removeError))
+                AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
+        }
+        // #240: RHI's folder goes with its last file. Also without a manifest (review F1): a crash between a sync's commit and
+        // its after-commit prune leaves RHI's empty pack folders and no manifest, and with ReShade gone no later sync tidies.
+        PruneOwnedFolders(root, [], includeRoot: true, operation, PackFolderNames());
     }
 
     internal static IReadOnlyList<string> ExpandDependencies(
@@ -955,32 +1069,12 @@ public sealed class ReShadeShaderPackService
     {
         if (!File.Exists(source))
             throw new InvalidDataException($"Required staged shader dependency is missing: {source}");
+        if (IsLinkedBelow(managedRoot, destination)) throw new IOException(LinkedShaderFolderPrefix + destination);
         if (!File.Exists(destination)) return;
         var manifestRelative = Path.GetRelativePath(managedRoot, destination);
         if (!previousByPath.TryGetValue(manifestRelative, out var old) ||
             !string.Equals(FileHash.Sha256Hex(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
-            throw new IOException($"Protected shader file in RHI path was modified or is externally owned: {destination}");
-    }
-
-    private static async Task CopyManagedFileAsync(
-        string source,
-        string destination,
-        string managedRoot,
-        Manifest manifest,
-        DeploymentOperation? operation)
-    {
-        var rootWithSep = Path.GetFullPath(managedRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        destination = Path.GetFullPath(destination);
-        if (!destination.StartsWith(rootWithSep, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Shader path escapes managed root: {destination}");
-        if (File.Exists(destination))
-            throw new IOException($"Protected shader file already exists in RHI-managed path: {destination}");
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        manifest.Files.Add(new ManifestFile
-        {
-            RelativePath = Path.GetRelativePath(managedRoot, destination),
-            Sha256 = await PlaceAsync(source, destination, operation).ConfigureAwait(false)
-        });
+            throw new IOException(ProtectedShaderFilePrefix + destination);
     }
 
     /// <summary>
@@ -1010,39 +1104,13 @@ public sealed class ReShadeShaderPackService
             if (IsExcluded(excludedFileNames, category, sourceRoot, source)) continue;
             var relative = Path.GetRelativePath(sourceRoot, source);
             var destination = Path.GetFullPath(Path.Combine(destinationRoot, relative));
+            // #240/#241: refused before any change, never written through (a link leads out of RHI's folder).
+            if (IsLinkedBelow(managedRoot, destination)) throw new IOException(LinkedShaderFolderPrefix + destination);
             if (!File.Exists(destination)) continue;
             var manifestRelative = Path.GetRelativePath(managedRoot, destination);
             if (!previousByPath.TryGetValue(manifestRelative, out var old) ||
                 !string.Equals(FileHash.Sha256Hex(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new IOException($"Protected shader file in RHI path was modified or is externally owned: {destination}");
-        }
-    }
-
-    private static async Task CopyTreeAsync(
-        string sourceRoot,
-        string destinationRoot,
-        string managedRoot,
-        Manifest manifest,
-        DeploymentOperation? operation,
-        IReadOnlySet<string>? excludedFileNames,
-        string category)
-    {
-        foreach (var source in SafeFileEnumeration.Files(sourceRoot))
-        {
-            if (IsExcluded(excludedFileNames, category, sourceRoot, source)) continue;
-            var relative = Path.GetRelativePath(sourceRoot, source);
-            var destination = Path.GetFullPath(Path.Combine(destinationRoot, relative));
-            var rootWithSep = Path.GetFullPath(managedRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (!destination.StartsWith(rootWithSep, StringComparison.Ordinal))
-                throw new InvalidOperationException($"Shader path escapes managed root: {relative}");
-            if (File.Exists(destination))
-                throw new IOException($"Protected shader file already exists in RHI-managed path: {destination}");
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            manifest.Files.Add(new ManifestFile
-            {
-                RelativePath = Path.GetRelativePath(managedRoot, destination),
-                Sha256 = await PlaceAsync(source, destination, operation).ConfigureAwait(false)
-            });
+                throw new IOException(ProtectedShaderFilePrefix + destination);
         }
     }
 
@@ -1139,6 +1207,8 @@ public sealed class ReShadeShaderPackService
                 var path = Path.GetFullPath(Path.Combine(root, file.RelativePath));
                 var rootWithSep = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
                 if (!path.StartsWith(rootWithSep, StringComparison.Ordinal) || !File.Exists(path)) continue;
+                // #240: never through a folder link (it leads out of RHI's tree), never a link RHI did not place.
+                if (IsLinkedBelow(root, path)) continue;
                 if (!string.Equals(FileHash.Sha256Hex(path), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
                 if (operation is not null) await operation.TrackFileAsync(path, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
                 AtomicFile.Delete(path);
@@ -1150,12 +1220,75 @@ public sealed class ReShadeShaderPackService
             }
         }
 
-        if (Directory.Exists(root))
+        PruneOwnedFolders(root, manifest.Files.Select(f => f.RelativePath), includeRoot: false, operation);
+    }
+
+    /// <summary>
+    /// #240: removes the folders under <paramref name="root"/> (<c>reshade-shaders/RHI</c>) that held RHI's files
+    /// <paramref name="relativeFiles"/> and are now empty, deepest first (and <paramref name="root"/> itself with
+    /// <paramref name="includeRoot"/>). Never a folder holding anything (a user's file keeps its folder), never one behind or
+    /// itself a folder link, never anything outside the root. Inside <paramref name="operation"/> this waits until it
+    /// committed: the journal's copy of each removed file sits beside it until then, and a rollback needs the folder.
+    /// </summary>
+    private static void PruneOwnedFolders(string root, IEnumerable<string> relativeFiles, bool includeRoot, DeploymentOperation? operation,
+        IReadOnlyCollection<string>? packFolders = null)
+    {
+        var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        var rootWithSep = rootFull + Path.DirectorySeparatorChar;
+        var folders = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var relative in relativeFiles)
         {
-            List<string> directories;
-            try { directories = SafeFileEnumeration.Directories(root).ToList(); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
-            FileCleanup.TryDeleteEmptyDirectories(directories);
+            string? folder;
+            try { folder = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(rootFull, relative))); }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { continue; }
+            for (; folder is not null && folder.StartsWith(rootWithSep, StringComparison.Ordinal); folder = Path.GetDirectoryName(folder))
+                folders.Add(folder);
         }
+        var ordered = folders.OrderByDescending(path => path.Length).ToList();
+        if (includeRoot) ordered.Add(rootFull);
+
+        void Prune()
+        {
+            // An empty pack folder of RHI's (named after a catalogue pack, or _Core) that an older build left behind: its
+            // prune ran while the journal's copies still filled it, and its manifest no longer lists it.
+            foreach (var name in packFolders ?? [])
+            {
+                var packFolder = Path.Combine(rootFull, name);
+                if (!Directory.Exists(packFolder) || IsLink(packFolder)) continue;
+                try { ordered.AddRange(SafeFileEnumeration.Directories(packFolder).Append(packFolder)); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Warn("shaders", $"Could not list {packFolder}", ex); }
+            }
+            ordered = ordered.Distinct(StringComparer.Ordinal).OrderByDescending(path => path.Length).ThenBy(path => path == rootFull ? 1 : 0).ToList();
+            foreach (var folder in ordered)
+            {
+                if (IsLinkedBelow(rootFull, folder) || (folder == rootFull && IsLink(rootFull))) continue;
+                if (!FileCleanup.TryDeleteEmptyDirectory(folder))
+                    AppLog.Warn("shaders", $"Could not remove the empty shader folder {folder}");
+            }
+        }
+
+        if (operation is null) Prune();
+        else operation.AfterCommit("remove the empty shader-pack folders", Prune);
+    }
+
+    /// <summary>The names RHI gives its pack folders under <c>reshade-shaders/RHI</c> (every catalogue pack, and <c>_Core</c>).</summary>
+    private IReadOnlyCollection<string> PackFolderNames()
+        => _packs.Select(pack => SafePackDirectoryName(pack.Id)).Append("_Core").Distinct(StringComparer.Ordinal).ToArray();
+
+    /// <summary>True when <paramref name="path"/> or a folder between it and <paramref name="root"/> is a symlink (or cannot be told).</summary>
+    private static bool IsLinkedBelow(string root, string path)
+    {
+        var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        for (var current = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+             current.Length > rootFull.Length && current.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+             current = Path.GetDirectoryName(current)!)
+            if (IsLink(current)) return true;
+        return false;
+    }
+
+    private static bool IsLink(string path)
+    {
+        try { return new FileInfo(path).LinkTarget is not null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; } // cannot vouch for it: treated as a link
     }
 }

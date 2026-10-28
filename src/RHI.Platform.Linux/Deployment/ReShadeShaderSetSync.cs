@@ -104,7 +104,7 @@ public sealed partial class ReShadeDeploymentService
             await scope.TrackAllAsync(inis, cancellationToken).ConfigureAwait(false);
             CleanupManagedIni(record, game.InstallPath);
             foreach (var ini in inis) await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
-            await _shaderPacks.CleanupAsync(binaryDirectory, scope.Operation).ConfigureAwait(false);
+            // #241: no pack cleanup first — ApplySyncAsync mirrors the folder from the previous manifest (unchanged files stay).
 
             LinuxDeployedFile? compilerFile = null;
             if (compilerPlan is not null)

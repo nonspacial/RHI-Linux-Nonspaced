@@ -175,7 +175,6 @@ public sealed partial class ReShadeDeploymentService
             {
                 CleanupManagedIni(existing, game.InstallPath); // w5 integration: the one ReShade.ini link rule (ini-presets review 8)
                 await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
-                await _shaderPacks.CleanupAsync(binaryDirectory, scope.Operation).ConfigureAwait(false); // #169: tracked
             }
 
             foreach (var directory in MissingDirectories(Path.GetDirectoryName(layerDll)!, prefix))
