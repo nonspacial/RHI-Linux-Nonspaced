@@ -8,21 +8,25 @@ using RHI.Platform.Linux.Network;
 namespace RHI.Core.Tests;
 
 /// <summary>
-/// #35 (DEP-16): GitHub API lookups are revalidated with ETags for the session (upstream 2.8.5 GitHubETagCache): a
-/// repeated lookup sends If-None-Match and a 304 hands back the cached answer; a rate-limited GitHub falls back to it.
+/// #35 (DEP-16): GitHub API lookups are revalidated with ETags (upstream 2.8.5 GitHubETagCache): a repeated lookup sends
+/// If-None-Match and a 304 hands back the cached answer; a rate-limited GitHub falls back to it. Since #244 an answer is
+/// reused without asking for 60 s, so these lookups are a minute apart on the test clock.
 /// </summary>
 public sealed class GitHubConditionalCacheHandlerTests
 {
     private const string ReleasesUrl = "https://api.github.com/repos/praydog/REFramework-nightly/releases?per_page=1";
+    private static readonly TimeSpan PastFreshness = TimeSpan.FromSeconds(61);
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
 
     [Fact]
     public async Task SecondLookup_IsConditional_And304ReturnsTheCachedBody()
     {
         var inner = new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\"");
-        var cache = new GitHubConditionalCacheHandler(inner);
+        var cache = new GitHubConditionalCacheHandler(inner, () => _now);
         using var http = new HttpClient(cache);
 
         var first = await http.GetStringAsync(ReleasesUrl);
+        _now += PastFreshness;
         var second = await http.GetStringAsync(ReleasesUrl);
 
         Assert.Equal(first, second);
@@ -37,11 +41,13 @@ public sealed class GitHubConditionalCacheHandlerTests
     public async Task ChangedResource_ReplacesTheCachedBody()
     {
         var inner = new GitHubFake("[{\"tag_name\":\"v1\"}]", "\"etag-1\"");
-        using var http = new HttpClient(new GitHubConditionalCacheHandler(inner));
+        using var http = new HttpClient(new GitHubConditionalCacheHandler(inner, () => _now));
 
         await http.GetStringAsync(ReleasesUrl);
         inner.Publish("[{\"tag_name\":\"v2\"}]", "\"etag-2\"");
+        _now += PastFreshness;
         var after = await http.GetStringAsync(ReleasesUrl);
+        _now += PastFreshness;
         var again = await http.GetStringAsync(ReleasesUrl);
 
         Assert.Contains("v2", after, StringComparison.Ordinal);
@@ -57,11 +63,14 @@ public sealed class GitHubConditionalCacheHandlerTests
         using var http = new HttpClient(new GitHubConditionalCacheHandler(inner, () => now));
 
         await http.GetStringAsync(ReleasesUrl);
+        now += PastFreshness;
         inner.RateLimitUntil = now.AddMinutes(30);
         var limited = await http.GetStringAsync(ReleasesUrl);
         var requestsWhileLimited = inner.Requests.Count;
+        now += PastFreshness;
         var cachedAgain = await http.GetStringAsync(ReleasesUrl);
 
+        Assert.Equal(2, requestsWhileLimited); // the refused request was sent; the next one was not
         Assert.Contains("v1", limited, StringComparison.Ordinal);
         Assert.Contains("v1", cachedAgain, StringComparison.Ordinal);
         Assert.Equal(requestsWhileLimited, inner.Requests.Count);
@@ -86,11 +95,12 @@ public sealed class GitHubConditionalCacheHandlerTests
         var inner = new GitHubFake(
             "{\"tag_name\":\"v1186\",\"assets\":[{\"name\":\"RE2.zip\",\"browser_download_url\":\"https://github.com/praydog/REFramework-nightly/releases/download/v1186/RE2.zip\"}]}",
             "\"etag-r\"");
-        using var http = new HttpClient(new GitHubConditionalCacheHandler(inner));
+        using var http = new HttpClient(new GitHubConditionalCacheHandler(inner, () => _now));
         var resolver = new GitHubReleaseAssetResolver(http);
         var query = new GitHubReleaseAssetQuery("https://api.github.com/repos/praydog/REFramework-nightly/releases/tags/v1186", ExactAssetName: "RE2.zip");
 
         var first = await resolver.ResolveAsync(query);
+        _now += PastFreshness;
         var second = await resolver.ResolveAsync(query);
 
         Assert.Equal(first, second);

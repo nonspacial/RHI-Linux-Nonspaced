@@ -1148,6 +1148,32 @@ every launch, x86 never updated" never existed here (per-architecture stamped ca
 
 <!-- w12/github-cache notes -->
 
+### #244 — GitHub API cache: keep answers between launches, share overlapping requests, 30 s API timeout
+
+- Ported from upstream `feb126c` (`GitHubETagCache` saved to `github_etag_cache.json`, 30-day `MaxAge`, saves batched
+  2 s, `ApiTimeout` 30 s) and `1b51cb2` (overlapping calls share one request, `FreshFor` 60 s, rate-limit flag for
+  api.github.com only). `GitHubConditionalCacheHandler` (#35) is still the one place: every service's api.github.com
+  GET goes through it, so no per-service change was needed (upstream moved six checks onto its cache in `1b51cb2`).
+- Kept between launches in `~/.cache/rhi-linux/github-api-cache.json` (`GitHubApiCacheStore`, `JsonFileStore` cache
+  kind: an unreadable file is copied aside to `.corrupt-<utc>` and rebuilt). Each entry: URL + Accept, ETag /
+  Last-Modified, content type, body, and when GitHub last confirmed it (a 200 or a 304; upstream only counts the 200).
+  Dropped on load after 30 days, or when invalid or dated more than a day ahead. Limits as before: 512 answers, 8 MiB
+  each; a body that is not UTF-8 text stays for the session only. Saves wait 2 s after the last change and are flushed
+  when RHI exits. Never a request header: the token is added by `GitHubApiTokenHandler` behind the cache, and a request
+  that carries its own Authorization header is neither cached, shared nor saved.
+- Linux difference: a saved answer is only used once GitHub answered 304 this session (or, as before, while GitHub's
+  advertised rate-limit window runs); it is never treated as current without asking. A 5xx, or a 403 that is no rate
+  limit (GitHub's secondary limit in a start-up burst looks like one), at the next start reads as could not check;
+  upstream serves its saved body on any error. An answer GitHub confirmed this session still stands in for such an
+  error (#35). Upstream's 60 s reuse follows the same rule (it starts empty each launch).
+- Linux difference: a request that times out reads as could not check ("The server took too long to answer: RHI
+  stopped waiting after 30 seconds. Source: GitHub API", EN + PT-BR), even when an answer is cached; upstream hands
+  back the stale cached body, which an update check would read as "current". The user's Cancel stays a Cancel, and a
+  caller's Cancel ends only its own wait for a shared request. The 30 s covers the request and the body the cache reads;
+  `HttpClient.Timeout` (5 min) stays for payloads, and the 60 s idle limit (#233) is unchanged.
+- An answer that ended on another host after a redirect is not kept. `rhi.log` (`[github-cache]`) names how many saved
+  answers were loaded at start and each one GitHub confirmed unchanged (304).
+
 <!-- w12/luma notes -->
 
 <!-- w12/epic notes -->

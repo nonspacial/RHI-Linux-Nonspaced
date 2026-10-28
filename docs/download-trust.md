@@ -63,10 +63,17 @@ reached." instead); bodies read under a whole-body timeout token or buffered by 
 (reshade.me, RenoDX catalogue, MOTD: its 5-min total) are listed in `UPSTREAM.md`. The limit is per gap, never a total
 deadline: a server sending a byte every 59 s is not stopped by it (the manual Cancel works; a throughput floor is #235).
 
-**Release lookups (#35).** GitHub API GETs pass through `GitHubConditionalCacheHandler` on the app's `HttpClient`
-(upstream's session `GitHubETagCache`): answers are revalidated with `If-None-Match`/`If-Modified-Since`; a 304
-(which costs no rate limit) returns the cached body; when GitHub refuses (403/429 with no quota left, or 5xx) the
-cached answer is served and, until the advertised reset, not asked again.
+**Release lookups (#35, #244).** GitHub API GETs pass through `GitHubConditionalCacheHandler` on the app's `HttpClient`
+(upstream's `GitHubETagCache`): answers are revalidated with `If-None-Match`/`If-Modified-Since`; a 304
+(which costs no rate limit) returns the cached body; when GitHub refuses (403/429, or 5xx) an answer it confirmed
+this session is served and, until an advertised rate-limit reset, not asked again. Since #244 the answers are kept
+between launches in `~/.cache/rhi-linux/github-api-cache.json` (URL, Accept, validators, body, time GitHub last
+confirmed it; never a header or token; 30-day expiry; at most 512 answers of up to 8 MiB) and a saved answer is used
+only after GitHub confirms it (304) or while GitHub's advertised rate-limit window runs; any other error at the next
+start reads as could not check. Overlapping identical lookups share one request, an answer GitHub confirmed is reused for 60 s
+without asking, and every api.github.com request gives up after 30 s (`DownloadTimedOutException`, "… 30 seconds.
+Source: GitHub API": could not check, never a Cancel). Requests carrying their own Authorization header, other
+methods and payload hosts are never cached; payloads keep the app's 5-minute total and the idle limit.
 
 **Archives (#37).** ZIP members are taken out only through `ReShadeArchiveExtractor.ExtractEntryAsync` (declared-size
 cap, fixed mode, length + CRC-32, atomic rename). 7z/encrypted archives go through `ExternalArchiveRunner` (one

@@ -624,6 +624,7 @@ public sealed class WaveOneMessageLocalizationTests
         // w12/update-all rows
         yield return "Custom ReShade source file is unavailable; installed DLL remains untouched."; // #243
         // w12/github-cache rows
+        yield return DownloadTimedOutException.MessageFor(DownloadSources.GitHubApi.Name, RHI.Platform.Linux.Network.GitHubConditionalCacheHandler.DefaultApiTimeout); // #244: 30 s API timeout
         // w12/luma rows
         // w12/epic rows
         // w12/nr-logs rows
