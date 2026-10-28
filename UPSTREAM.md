@@ -1090,6 +1090,7 @@ archive members with `..` or an absolute path refused; Luma removal deleting onl
 Loader cache per architecture; Follow newest and the Streamline dropdown with `2.14.16.0-v2`.
 Two pins found real gaps, both fixed in this wave. The DLSS result line (batch apply and restore, Apply defaults,
 Restore all) now names each failed game with its reason after the counts ("Failed: N game(s) • <game>: <reason>", EN +
-PT-BR), as upstream `d61a696` does in its mass-deploy summary (pins correction). Luma removal's inside-the-game check on
-the paths its record lists (upstream `b8094e6`, `SafeCombine` on uninstall) is fixed and pinned in lane w12/luma.
-The default 3 s wait for `pcgw_data.json` during a selection is pinned with its literal value.
+PT-BR), as upstream `d61a696` does in its mass-deploy summary, and its counts now follow the UI language (they were
+English in PT-BR) (pins correction). Luma removal's inside-the-game check on the paths its record lists (upstream
+`b8094e6`, `SafeCombine` on uninstall) is fixed and pinned in lane w12/luma. The default 3 s wait for `pcgw_data.json`
+during a selection is pinned with its literal value.
