@@ -187,6 +187,51 @@ public sealed class NeuralRenderingFeederLogTests
         Assert.Equal([NrLogSignature.CrashOrDeviceLost], NeuralRenderingDiagnosis.Classify("ReShade.log", bare).Select(f => f.Signature));
     }
 
+    // Review F3 (probe P05): the Feeder says it stopped, with no change before and a code that is not 0xC0000005: the page
+    // still names the crash — the generic row on the stopped line, never "No known errors" and never the restart advice.
+    [Fact]
+    public void AStoppedLineWithoutAChange_IsTheGenericRow_OncePerRun()
+    {
+        var stopped = "stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution).\n";
+        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + "[feed] evaluate raised 0xC000001D (caught)\n" + stopped;
+
+        var finding = Assert.Single(NeuralRenderingDiagnosis.Classify("dlss5-feed.log", text));
+
+        Assert.Equal(NrLogSignature.CrashOrDeviceLost, finding.Signature);
+        Assert.Equal(NrFixHint.RemoveNrMethod, finding.Fix);
+        Assert.Equal(4, finding.Line);
+        Assert.StartsWith("stopped: the DLSS evaluate crashed", finding.Excerpt);
+
+        // The run already has a generic row for that crash (its 0xC0000005 line): that row stays, on its own line.
+        var withCode = "dlss5-feed 1.19.0 attached.\n" + Ready + Crash;
+        Assert.Equal([3], NeuralRenderingDiagnosis.Classify("dlss5-feed.log", withCode).Select(f => f.Line ?? 0));
+        // A later run's stopped line is that run's crash: the newest row.
+        Assert.Equal([8], NeuralRenderingDiagnosis.Classify("dlss5-feed.log", withCode + text).Select(f => f.Line ?? 0));
+    }
+
+    // Review F4 (probe P04): the Feeder's stopped line written before the evaluate lines of the same crash: one row, the
+    // specific one. Only the evaluate lines right after it belong to that crash — a device lost at teardown later is its
+    // own generic row (probe P20).
+    [Fact]
+    public void TheStoppedLineBeforeItsEvaluateLines_IsTheSpecificRowAlone()
+    {
+        var stopped = "stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution).\n";
+        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + "[feed] frame 1 delivered\n[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n" + Ready
+                   + stopped + "[feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)\n"
+                   + "[feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)\n";
+
+        var finding = Assert.Single(NeuralRenderingDiagnosis.Classify("dlss5-feed.log", text));
+
+        Assert.Equal(NrLogSignature.EvaluateCrashAfterDisplayChange, finding.Signature);
+        Assert.Equal(6, finding.Line);
+
+        var teardown = Bl3Log.Replace("\r", "").Replace("[feed] timed out draining the queue before teardown",
+            "[feed] the D3D12 device was removed (DXGI_ERROR_DEVICE_REMOVED)");
+        Assert.Equal([(NrLogSignature.NeuralRenderingNotImplemented, 25), (NrLogSignature.FlatDepth, 114),
+                (NrLogSignature.EvaluateCrashAfterDisplayChange, 170), (NrLogSignature.CrashOrDeviceLost, 172)],
+            NeuralRenderingDiagnosis.Classify("dlss5-feed.log", teardown).Select(f => (f.Signature, f.Line ?? 0)));
+    }
+
     [Fact]
     public void ANewRun_ForgetsTheLastRunsChange()
     {

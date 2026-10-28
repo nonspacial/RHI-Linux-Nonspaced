@@ -208,6 +208,7 @@ public static class NeuralRenderingDiagnosis
     private static readonly Regex FeederFrameDelivered = new(@"\[feed\] frame \d+ delivered\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex FeederDisplayChange = new(@"\[feed\] (?:swapchain colour space:|effect runtime \S+ initialised\b|building: \d+x\d+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex FeederEvaluateLine = new(@"\[feed\] evaluate\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex FeederRebuildAnnounced = new(@"\[feed\] (?:holding the feature \(re\)build\b|building: \d+x\d+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
@@ -232,8 +233,9 @@ public static class NeuralRenderingDiagnosis
     /// (since the feature was ready in that run) that no delivered frame has come through yet; a frame delivered while a
     /// rebuild for the change is announced but not ready is the old feature's and settles nothing (review F2: a change the
     /// feature survives without a rebuild, an alt-tab or effect reload on D3D12, is settled by the next frame). It then
-    /// replaces the generic crash rows of that crash (those seen since the change). Without that context the generic row
-    /// stays.</para>
+    /// replaces the generic crash rows of that crash (those seen since the change, and the evaluate lines right after it,
+    /// review F4). Without that context the generic row stays, and a stopped line in a run with no generic row yet is that
+    /// run's generic row (review F3: whatever code the evaluate raised, the page never says "No known errors").</para>
     /// </summary>
     public static IReadOnlyList<NrLogFinding> Classify(string log, string? text, int? firstLine = 1)
     {
@@ -242,10 +244,12 @@ public static class NeuralRenderingDiagnosis
         var ready = firstLine is null;
         var changed = false;
         var rebuildPending = false;
+        var runHasCrash = false;
+        var afterSpecificRow = false;
         NrLogFinding? crashSinceChange = null;
         void SettleChange()
         {
-            if (crashSinceChange is { } crash) last[NrLogSignature.CrashOrDeviceLost] = crash;
+            if (crashSinceChange is { } crash) { last[NrLogSignature.CrashOrDeviceLost] = crash; runHasCrash = true; }
             changed = rebuildPending = false;
             crashSinceChange = null;
         }
@@ -253,7 +257,8 @@ public static class NeuralRenderingDiagnosis
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i];
-            if (FeederRunStart.IsMatch(line)) { SettleChange(); ready = false; }
+            if (afterSpecificRow && !FeederEvaluateLine.IsMatch(line)) afterSpecificRow = false;
+            if (FeederRunStart.IsMatch(line)) { SettleChange(); ready = false; runHasCrash = false; }
             else if (FeederFrameDelivered.IsMatch(line) && changed && !rebuildPending) SettleChange();
             else if (FeederDisplayChange.IsMatch(line) && ready) { changed = true; rebuildPending |= FeederRebuildAnnounced.IsMatch(line); }
             else if (FeederRebuildAnnounced.IsMatch(line) && changed) rebuildPending = true;
@@ -264,14 +269,21 @@ public static class NeuralRenderingDiagnosis
                 var finding = new NrLogFinding(log, firstLine is { } first ? first + i : null, signature, fix, Excerpt(line));
                 if (signature == NrLogSignature.EvaluateCrashAfterDisplayChange)
                 {
-                    if (!changed) continue;
+                    if (!changed)
+                    {
+                        if (!runHasCrash) { last[NrLogSignature.CrashOrDeviceLost] = finding with { Signature = NrLogSignature.CrashOrDeviceLost, Fix = FixFor(NrLogSignature.CrashOrDeviceLost) }; runHasCrash = true; }
+                        continue;
+                    }
                     crashSinceChange = null;
+                    afterSpecificRow = true;
                 }
+                else if (signature == NrLogSignature.CrashOrDeviceLost && afterSpecificRow) continue;
                 else if (signature == NrLogSignature.CrashOrDeviceLost && changed)
                 {
                     crashSinceChange = finding;
                     continue;
                 }
+                else if (signature == NrLogSignature.CrashOrDeviceLost) runHasCrash = true;
                 last[signature] = finding;
             }
         }
