@@ -383,6 +383,65 @@ public sealed class StoreLauncherRecordsTests : IDisposable
         Assert.Equal(gameDir, game.InstallPath);
     }
 
+    /// <summary>
+    /// Lutris' store services (Ubisoft Connect, the EA app, Battle.net) write one entry per game: a copy of the store
+    /// client's config plus that game's start argument. It is that game's Play and never another's, whatever the
+    /// file-name order, and it is not listed again at the client's folder (w12/epic review 1, coordinator correction 1).
+    /// </summary>
+    [Theory]
+    [InlineData("ubisoft")]
+    [InlineData("ea")]
+    [InlineData("battlenet")]
+    public void LutrisStoreService_PerGameEntry_StartsOnlyItsOwnGame(string store)
+    {
+        var configRoot = _tree.Dir("home", ".local", "share", "lutris", "games");
+        var prefix = Prefix("svc-" + store);
+        var ownDir = Path.Combine(prefix, "drive_c", "StoreGames", "Own");
+        var ownExe = Pe(ownDir, "Own.exe", 8192);
+        var otherDir = Path.Combine(prefix, "drive_c", "StoreGames", "Other");
+        Pe(otherDir, "Other.exe", 8192);
+        string clientExe, clientSlug, clientName, ownArgs;
+        switch (store)
+        {
+            case "ubisoft":
+                clientExe = "drive_c/Program Files (x86)/Ubisoft/Ubisoft Game Launcher/UbisoftConnect.exe";
+                (clientSlug, clientName, ownArgs) = ("ubisoft-connect", "Ubisoft Connect", "uplay://launch/4553");
+                Registry(prefix, ("""Software\\Wow6432Node\\Ubisoft\\Launcher\\Installs\\4553""", [("InstallDir", "C:/StoreGames/Own/")]),
+                    ("""Software\\Wow6432Node\\Ubisoft\\Launcher\\Installs\\7014""", [("InstallDir", "C:/StoreGames/Other/")]));
+                break;
+            case "ea":
+                clientExe = "drive_c/Program Files/Electronic Arts/EA Desktop/EA Desktop/EADesktop.exe";
+                (clientSlug, clientName, ownArgs) = ("ea-app", "EA app", "origin2://game/launch?offerIds=Origin.OFR.50.0001&autoDownload=1");
+                Registry(prefix, ("""Software\\Wow6432Node\\Origin Games\\Origin.OFR.50.0001""", [("InstallDir", "C:\\StoreGames\\Own\\"), ("DisplayName", "Own")]),
+                    ("""Software\\Wow6432Node\\Origin Games\\Origin.OFR.50.0004218""", [("InstallDir", "C:\\StoreGames\\Other\\"), ("DisplayName", "Other")]));
+                break;
+            default:
+                clientExe = "drive_c/Program Files (x86)/Battle.net/Battle.net Launcher.exe";
+                (clientSlug, clientName, ownArgs) = ("battlenet", "Battle.net", "--exec=\"launch GRYPHON\"");
+                ProductDbFile(prefix, ("gryphon", "gryphon", "C:/StoreGames/Own", true), ("prometheus", "pro", "C:/StoreGames/Other", true));
+                break;
+        }
+        Pe(Path.Combine(prefix, Path.GetDirectoryName(clientExe)!), Path.GetFileName(clientExe));
+        File.WriteAllText(Path.Combine(configRoot, clientSlug + "-1763420553.yml"),
+            $"game:\n  exe: {clientExe}\n  prefix: {prefix}\nname: {clientName}\n");
+        // Lutris' per-game entry ("<game>-<service>"), sorting before the client's own; YAML single-quoted args.
+        File.WriteAllText(Path.Combine(configRoot, "a-own-game-" + clientSlug + "-1763420600.yml"),
+            $"game:\n  args: '{ownArgs}'\n  exe: {clientExe}\n  prefix: {prefix}\nname: Own Game\n");
+
+        var games = LutrisGameDetector.DetectIn([configRoot], Home, CancellationToken.None);
+
+        // Another game's entry never starts this one: the store's own client does.
+        var other = Assert.Single(games, g => g.InstallPath == otherDir);
+        Assert.Equal($"lutris 'lutris:rungame/{clientSlug}'", other.LaunchCommand);
+        Assert.Equal(clientName, other.ParentLauncherName);
+        var own = Assert.Single(games, g => g.InstallPath == ownDir);
+        Assert.Equal($"lutris 'lutris:rungame/a-own-game-{clientSlug}'", own.LaunchCommand);
+        Assert.Equal("Own Game", own.Name);
+        Assert.Equal(ownExe, own.ExecutablePath);
+        Assert.Null(own.ParentLauncherName);
+        Assert.DoesNotContain(games, g => g.Name == "Own Game" && g.InstallPath != ownDir);
+    }
+
     // ── Heroic prefixes ─────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

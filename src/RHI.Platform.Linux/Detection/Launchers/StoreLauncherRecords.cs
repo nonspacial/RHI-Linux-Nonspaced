@@ -12,7 +12,8 @@ internal enum StoreLauncher
     UbisoftConnect,
     BattleNet,
     Rockstar,
-    Itch
+    Itch,
+    Epic
 }
 
 /// <summary>
@@ -41,6 +42,8 @@ internal sealed record StoreLauncherGame(
 /// keys (its <c>titles.dat</c> is encrypted on current launchers). Launch arguments follow Lutris' store services (the
 /// Linux reference): <c>uplay://launch/&lt;id&gt;</c>, <c>--exec="launch &lt;code&gt;"</c>,
 /// <c>origin2://game/launch?offerIds=&lt;id&gt;&amp;autoDownload=1</c>, and Rockstar's <c>-launchTitleInFolder &lt;dir&gt;</c>.
+/// The Epic Games Launcher's records (classic manifests and the new launcher's install log, #247) are read by
+/// <see cref="EpicLauncherRecords"/>.
 /// Read only; a record whose folder is missing, refused by <see cref="GameRootGuard"/> or is the prefix itself is skipped.
 /// </summary>
 internal static class StoreLauncherRecords
@@ -63,6 +66,7 @@ internal static class StoreLauncherRecords
         StoreLauncher.BattleNet => "Battle.net",
         StoreLauncher.Rockstar => "Rockstar Games Launcher",
         StoreLauncher.Itch => "itch",
+        StoreLauncher.Epic => "Epic Games Launcher",
         _ => store.ToString()
     };
 
@@ -74,6 +78,7 @@ internal static class StoreLauncherRecords
         StoreLauncher.BattleNet => "Battle.net",
         StoreLauncher.Rockstar => "Rockstar",
         StoreLauncher.Itch => "itch",
+        StoreLauncher.Epic => "Epic",
         _ => store.ToString()
     };
 
@@ -97,7 +102,9 @@ internal static class StoreLauncherRecords
                      (StoreLauncher.BattleNet, BattleNet),
                      (StoreLauncher.EaApp, Ea),
                      (StoreLauncher.Rockstar, Rockstar),
-                     (StoreLauncher.Itch, Itch)
+                     (StoreLauncher.Itch, Itch),
+                     // Last: a game another store's record names keeps that store's hand-off, as before #247.
+                     (StoreLauncher.Epic, EpicLauncherRecords.Read)
                  })
         {
             try
@@ -121,10 +128,11 @@ internal static class StoreLauncherRecords
         Uninstall, Uninstall32,
         @"Software\Origin Games", @"Software\Wow6432Node\Origin Games",
         .. EaPublisherKeys.SelectMany(key => new[] { @"Software\" + key, @"Software\Wow6432Node\" + key }),
-        @"Software\Rockstar Games", @"Software\Wow6432Node\Rockstar Games"
+        @"Software\Rockstar Games", @"Software\Wow6432Node\Rockstar Games",
+        EpicLauncherRecords.UrlHandlerKey
     ];
 
-    private sealed record Context(string Prefix, string Home, WineRegistryReader Registry)
+    internal sealed record Context(string Prefix, string Home, WineRegistryReader Registry)
     {
         public string DriveC => Path.Combine(Prefix, "drive_c");
 
@@ -375,6 +383,55 @@ internal static class StoreLauncherRecords
     }
 
     // ── shared ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    // A store client's "start this game" arguments, as Lutris' store services and these readers write them.
+    private static readonly Regex[] GameStartForms =
+    [
+        // Epic: apps/<AppName>, or apps/<namespace>%3A<item>%3A<AppName> (Lutris writes it after a dash).
+        new(@"com\.epicgames\.launcher://apps/(?<id>[^?&/\s""']+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"uplay://launch/(?<id>[^/?\s""']+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"origin2?://game/launch\?(?:[^\s""']*?&)?offerIds=(?<id>[^&\s""']+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"(?:origin|link2ea)://launchgame/(?<id>[^/?\s""']+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"--exec=\s*[""']?launch\s+(?<id>[^""'\s]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"battlenet://(?<id>[^/?\s""']+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"itch://games/(?<id>\d+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"-launchTitleInFolder\s+(?:""(?<folder>[^""]+)""|'(?<folder>[^']+)'|(?<folder>\S+))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+    ];
+
+    /// <summary>
+    /// The games a store client's arguments tell it to start (Lutris' per-game store entries, a record's own
+    /// <see cref="StoreLauncherGame.PlayArguments"/>): Epic's <c>com.epicgames.launcher://apps/&lt;id&gt;</c>, Ubisoft's
+    /// <c>uplay://launch/&lt;id&gt;</c>, the EA app's <c>offerIds=</c>/<c>launchgame/</c>, Battle.net's
+    /// <c>--exec="launch &lt;code&gt;"</c>, itch's <c>itch://games/&lt;id&gt;</c>, Rockstar's <c>-launchTitleInFolder</c>.
+    /// Empty when they name no game: a client entry that only opens the store.
+    /// </summary>
+    internal static IReadOnlySet<string> NamedGames(string? arguments)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(arguments)) return names;
+        foreach (var form in GameStartForms)
+            foreach (Match match in form.Matches(arguments))
+            {
+                if (match.Groups["folder"].Success)
+                {
+                    names.Add("folder:" + match.Groups["folder"].Value.Replace('/', '\\').TrimEnd('\\'));
+                    continue;
+                }
+                var id = Uri.UnescapeDataString(match.Groups["id"].Value);
+                foreach (var one in id.Split(','))
+                {
+                    if (one.Length == 0) continue;
+                    names.Add(one);
+                    // namespace:item:AppName names the game by its last part, as a record's AppName does.
+                    if (one.LastIndexOf(':') is >= 0 and var colon && colon < one.Length - 1) names.Add(one[(colon + 1)..]);
+                }
+            }
+        return names;
+    }
+
+    /// <summary>The games <paramref name="arguments"/> (one argument per item, as a record keeps them) name.</summary>
+    internal static IReadOnlySet<string> NamedGames(IReadOnlyList<string> arguments)
+        => NamedGames(string.Join(' ', arguments.Select(argument => argument.Any(char.IsWhiteSpace) ? "\"" + argument + "\"" : argument)));
 
     /// <summary>A store id safe to put in a launch argument (letters, digits, <c>_ . -</c>).</summary>
     internal static bool IsStoreId(string id) => id.Length is > 0 and <= 64 && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-');
