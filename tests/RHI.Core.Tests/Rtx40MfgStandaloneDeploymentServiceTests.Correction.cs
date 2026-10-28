@@ -35,6 +35,27 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
         Assert.Equal(halfUndone, File.ReadAllBytes(target));
     }
 
+    // F4 (review mutant R11): a release listing a `.zip.sha256` companion beside the zip (the publisher shipped those in
+    // v1.2.x) takes the zip; the companion is not counted as a second MFGUnlocker asset.
+    [Fact]
+    public async Task Release_ListingAZipSha256Companion_TakesTheZip()
+    {
+        using var fixture = CreateGame("correction-sha256-companion", 0x8664, GraphicsApi.DirectX12);
+        var dll = CreatePe(0x8664, 512 * 1024, 0x84);
+        using var handler = Rtx40Handler.WithVersions(("1.7.0", CreateZip(("MFGUnlocker.dll", dll))));
+        handler.Prefixes["1.7.0"] = "MFGUnlocker-";
+        handler.ExtraAssets.Add(("MFGUnlocker-v1.7.0.zip.sha256", System.Text.Encoding.ASCII.GetBytes(new string('b', 64) + "  MFGUnlocker-v1.7.0.zip\n")));
+        using var http = new HttpClient(handler);
+        var service = CreateService(fixture, http, new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json")));
+
+        var release = await service.ResolveLatestReleaseAsync(CancellationToken.None);
+        var install = await service.InstallAsync(fixture.Game, "version.dll");
+
+        Assert.Equal("MFGUnlocker-v1.7.0.zip", release.AssetName);
+        Assert.True(install.Success, install.Message);
+        Assert.Equal(dll, File.ReadAllBytes(Path.Combine(fixture.Bin, "version.dll")));
+    }
+
     // F5: a record without the proxy's hash (blank, or no file entry for the proxy) is "could not be checked" with the one
     // reason every family gives — never a planned update that fails on every pass, never "changed outside RHI".
     [Theory]
