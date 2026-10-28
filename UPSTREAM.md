@@ -1084,8 +1084,10 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
   Settings → Accounts & updates → Disconnect, then Connect Nexus account. One file list per mod is kept for an hour;
   after a 429 Nexus is left alone for 5 minutes (the limit is the account's).
 - Update never downloads it: Update All and the background pass count it as could not be checked (never failed). The
-  fork's rows have no per-row Update button, so the Luma row has a Nexus button in its own column (Install/Remove →
-  Nexus → ⚙ → ⓘ; an Unreal game's Luma Engine.ini ⚙, #189, stays beside it): "Update on Nexus" (opens the page through
+  fork's rows have no per-row Update button, so the Luma row has a Nexus button in its own column, first among the row's
+  buttons (Nexus → ⚙ → Install/Remove → ⓘ; an Unreal game's Luma Engine.ini ⚙, #189, stays beside it). Every other
+  row keeps the ⚙ → Install/Remove → ⓘ order and layout it had before: only the Nexus column takes no place while its
+  button is hidden (`ResponsiveRow.SkipEmptyColumns="3"`). "Update on Nexus" (opens the page through
   `LinkHosts.NexusMod`) when Nexus has a newer file; "Open on Nexus" when no account is connected or Nexus refused the
   key (the 2 s tooltip names the control that fixes it) and, without asking Nexus, when RHI has not installed the mod
   (upstream's card links these mods' Nexus page; download it there and drop the file on RHI). Hidden otherwise.
