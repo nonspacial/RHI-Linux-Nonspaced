@@ -30,6 +30,17 @@ public sealed class UltimateAsiLoaderDeploymentService
     public const string ArchitectureChangedPrefix =
         "Not updated: the game's executable no longer has the architecture Ultimate ASI Loader was installed for, and an update never swaps it for the other one. Remove it, then Install it again. Installed for → now: ";
 
+    /// <summary>Install refused: the Hooked backup name is taken; the proxy name and the backup's name sit in between.</summary>
+    public const string CannotChainPrefix = "Cannot chain ";
+
+    /// <summary>The Hooked-backup refusal after the backup's name; the way out comes last (w12 final review 2, m1).</summary>
+    public const string HookedBackupExistsSuffix =
+        " already exists. RHI will not overwrite an existing Hooked backup. Move or delete it, or choose another DLL name, then Install again.";
+
+    /// <summary>The Install refusal when <paramref name="hookedName"/> (the chained original's name) already exists.</summary>
+    public static string HookedBackupExistsMessage(string proxyName, string hookedName)
+        => CannotChainPrefix + proxyName + ": " + hookedName + HookedBackupExistsSuffix;
+
     private const string Asset32 = "Ultimate-ASI-Loader.zip";
     private const string Asset64 = "Ultimate-ASI-Loader_x64.zip";
     private const string MetaProxyName = "UAL.ProxyName";
@@ -223,8 +234,7 @@ public sealed class UltimateAsiLoaderDeploymentService
                 $"{proxyName} is already owned by another RHI-managed component. Choose a different ASI Loader proxy name; RHI will not reuse or chain over another managed proxy path.");
 
         if (hadOriginal && File.Exists(hookedPath))
-            return ComponentOperationResult.Fail(
-                $"Cannot chain {proxyName}: {Path.GetFileName(hookedPath)} already exists. RHI will not overwrite an existing Hooked backup.");
+            return ComponentOperationResult.Fail(HookedBackupExistsMessage(proxyName, Path.GetFileName(hookedPath)));
 
         UalReleaseInfo release;
         string stagedDll;

@@ -34,6 +34,14 @@ public sealed class Dlssg2030UnlockDeploymentService
     internal static string ContentsApiUrl(string commitSha, string fileName)
         => $"https://api.github.com/repos/{RepoOwner}/{RepoName}/contents/{fileName}?ref={commitSha}";
     public const string IniFileName = "dlssg_sm86.ini";
+
+    /// <summary>
+    /// Install refused: an INI RHI does not manage is already there (e.g. one a Remove left because the user edited it).
+    /// The way out comes last (w12 final review 2, m1).
+    /// </summary>
+    public const string ExternalIniRefusal = IniFileName
+        + " já existe e não é gerenciado pelo RHI. A instalação foi bloqueada para não adotar/sobrescrever uma configuração externa."
+        + " Mova ou apague esse arquivo (guarde uma cópia das suas alterações) e instale de novo.";
     public const string DefaultProxyName = "version.dll";
     public const string GpuGenRtx30 = "RTX 30 Series";
     public const string GpuGenRtx20 = "RTX 20 Series";
@@ -208,7 +216,7 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (File.Exists(proxyPath))
             return ComponentOperationResult.Fail($"{selectedProxy} já existe e não pertence ao RTX 20 FG Unlock legado gerenciado pelo RHI. Escolha outro proxy; o RHI não sobrescreve uma DLL externa.");
         if (File.Exists(iniPath))
-            return ComponentOperationResult.Fail($"{IniFileName} já existe e não é gerenciado pelo RHI. A instalação foi bloqueada para não adotar/sobrescrever uma configuração externa.");
+            return ComponentOperationResult.Fail(ExternalIniRefusal);
 
         // The preference file is written last, after the download, the Wine override and the
         // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).

@@ -1768,6 +1768,10 @@ public static class UiLocalizationService
             " A DLL original encadeada está faltando, então a DLL do ASI Loader ficou onde estava."),
         (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.ChainedOriginalKeptNote,
             " A DLL original encadeada não foi recolocada, porque a DLL do ASI Loader foi alterada fora do RHI ou o RHI não sabe qual arquivo ela substituiu."),
+        // w12 final review 2 (m1): Install refused over an existing Hooked backup (proxy and backup names in between).
+        (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.CannotChainPrefix, "Não foi possível encadear "),
+        (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.HookedBackupExistsSuffix,
+            " já existe. O RHI não sobrescreve uma cópia de segurança Hooked existente. Mova ou apague esse arquivo, ou escolha outro nome de DLL, e instale de novo."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

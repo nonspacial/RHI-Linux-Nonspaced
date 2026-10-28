@@ -180,6 +180,30 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
         Assert.Null(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
         var pt = UiLocalizationService.PresentFor("pt-BR", remove.Message);
         Assert.Empty(UiLocalizationService.EnglishMarkersIn(pt.Replace(target, "", StringComparison.Ordinal).Replace(hooked, "", StringComparison.Ordinal)));
+
+        // w12 final review 2 (m1): Install under the same name refuses and says what to do; both ways out work.
+        var refused = await service.InstallAsync(fixture.Game, "winmm.dll");
+
+        Assert.False(refused.Success);
+        Assert.Equal("Cannot chain winmm.dll: winmmHooked.dll already exists. RHI will not overwrite an existing Hooked backup."
+                     + " Move or delete it, or choose another DLL name, then Install again.", refused.Message);
+        Assert.Equal("Não foi possível encadear winmm.dll: winmmHooked.dll já existe. O RHI não sobrescreve uma cópia de segurança"
+                     + " Hooked existente. Mova ou apague esse arquivo, ou escolha outro nome de DLL, e instale de novo.",
+            UiLocalizationService.PresentFor("pt-BR", refused.Message));
+        Assert.Equal(original, File.ReadAllBytes(hooked));
+
+        var otherName = await service.InstallAsync(fixture.Game, "version.dll");
+
+        Assert.True(otherName.Success, otherName.Message);
+        Assert.True((await service.RemoveAsync(fixture.Game)).Success);
+        var moved = Path.Combine(fixture.Root, "winmmHooked-kept.dll");
+        File.Move(hooked, moved);
+
+        var sameName = await service.InstallAsync(fixture.Game, "winmm.dll");
+
+        Assert.True(sameName.Success, sameName.Message);
+        Assert.Equal("changed by another mod manager", File.ReadAllText(hooked));
+        Assert.Equal(original, File.ReadAllBytes(moved));
     }
 
     // The plan hashes the listed files only after the game's hold is settled: the user's bytes the undo puts back stay.

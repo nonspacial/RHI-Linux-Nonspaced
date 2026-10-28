@@ -74,6 +74,24 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         var pt = UiLocalizationService.PresentFor("pt-BR", remove.Message);
         Assert.EndsWith(" Arquivos que o RHI não apagou: " + ini, pt, StringComparison.Ordinal);
         Assert.Empty(UiLocalizationService.EnglishMarkersIn(pt.Replace(ini, "", StringComparison.Ordinal)));
+
+        // w12 final review 2 (m1): Install refuses over the user's INI and says what to do; doing it works.
+        var refused = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll");
+
+        Assert.False(refused.Success);
+        Assert.EndsWith(" Mova ou apague esse arquivo (guarde uma cópia das suas alterações) e instale de novo.", refused.Message, StringComparison.Ordinal);
+        Assert.EndsWith(" Move or delete that file (keep a copy of your changes), then Install again.",
+            UiLocalizationService.PresentFor("en-US", refused.Message), StringComparison.Ordinal);
+        Assert.Equal(userIni, File.ReadAllBytes(ini));
+
+        var copy = Path.Combine(fixture.Root, "my-dlssg_sm86.ini");
+        File.Move(ini, copy);
+        var install = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll");
+
+        Assert.True(install.Success, install.Message);
+        Assert.True(File.Exists(proxy));
+        Assert.True(File.Exists(ini));
+        Assert.Equal(userIni, File.ReadAllBytes(copy));
     }
 
     // The plan hashes the listed files only after the game's hold is settled: the user's bytes the undo puts back stay.

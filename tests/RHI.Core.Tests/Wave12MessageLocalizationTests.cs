@@ -60,12 +60,35 @@ public sealed class Wave12MessageLocalizationTests
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [], ProxylessRecordRemoval.ChainedOriginalBackNote), "is back under its own name" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P], ProxylessRecordRemoval.ChainedOriginalMissingNote), "was left where it is" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P, P], ProxylessRecordRemoval.ChainedOriginalKeptNote), "was not put back" },
+        // w12 final review 2 (m1): the Install refusal over an existing Hooked backup says what to do
+        { UltimateAsiLoaderDeploymentService.HookedBackupExistsMessage("winmm.dll", "winmmHooked.dll"), "Cannot chain" },
+        { UltimateAsiLoaderDeploymentService.HookedBackupExistsMessage("winmm.dll", "winmmHooked.dll"), "Move or delete it" },
     };
 
     public static TheoryData<string, string> PortugueseSourced() => new()
     {
         { ManagedUpdateFileGuard.RemovedOutsideRhiRowNote, "foi removido fora do RHI" },
+        { Dlssg2030UnlockDeploymentService.ExternalIniRefusal, "Mova ou apague" }, // w12 final review 2 (m1)
     };
+
+    // w12 final review 2 (m1): the advice added to two messages reads in full in both languages.
+    [Fact]
+    public void FinalReview2_Advice_IsExactInBothLanguages()
+    {
+        Assert.Equal("dlssg_sm86.ini already exists and is not managed by RHI. The install was blocked so an external configuration is not"
+                     + " adopted or overwritten. Move or delete that file (keep a copy of your changes), then Install again.",
+            UiLocalizationService.PresentFor("en-US", Dlssg2030UnlockDeploymentService.ExternalIniRefusal));
+        Assert.Equal("dlssg_sm86.ini já existe e não é gerenciado pelo RHI. A instalação foi bloqueada para não adotar/sobrescrever uma"
+                     + " configuração externa. Mova ou apague esse arquivo (guarde uma cópia das suas alterações) e instale de novo.",
+            UiLocalizationService.PresentFor("pt-BR", Dlssg2030UnlockDeploymentService.ExternalIniRefusal));
+
+        var hooked = UltimateAsiLoaderDeploymentService.HookedBackupExistsMessage("winmm.dll", "winmmHooked.dll");
+        Assert.Equal("Cannot chain winmm.dll: winmmHooked.dll already exists. RHI will not overwrite an existing Hooked backup."
+                     + " Move or delete it, or choose another DLL name, then Install again.", UiLocalizationService.PresentFor("en-US", hooked));
+        Assert.Equal("Não foi possível encadear winmm.dll: winmmHooked.dll já existe. O RHI não sobrescreve uma cópia de segurança Hooked"
+                     + " existente. Mova ou apague esse arquivo, ou escolha outro nome de DLL, e instale de novo.",
+            UiLocalizationService.PresentFor("pt-BR", hooked));
+    }
 
     // w12 follow-up (re-review pins M1): every component the DLSS batch can name has its pair, so a failed game's reason
     // reaches the PT-BR result line in Portuguese ("Falha em 1 jogo(s) • Jogo: Não foi possível aplicar o …").
