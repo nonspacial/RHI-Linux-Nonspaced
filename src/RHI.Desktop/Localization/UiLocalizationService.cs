@@ -1693,9 +1693,11 @@ public static class UiLocalizationService
             "Não atualizado: este arquivo foi removido fora do RHI, e uma atualização nunca o coloca de volta. Remover apaga o registro dele no RHI: "),
         (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.ChangedOutsideRhiPrefix,
             "Não atualizado: este arquivo foi alterado fora do RHI, e uma atualização nunca o substitui: "),
-        // Correction round 1 (review w12/mfg F5): a record without the file's hash.
+        // Correction round 1 (review w12/mfg F5, F3): a record without the file's hash; an ASI Loader whose game changed bitness.
         (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.NoRecordedHashPrefix,
             "Não atualizado: o registro do RHI para este arquivo não tem hash, então o RHI não sabe se ele foi alterado fora do RHI. Remova-o e instale-o de novo: "),
+        (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix,
+            "Não atualizado: o executável do jogo não tem mais a arquitetura para a qual o Ultimate ASI Loader foi instalado, e uma atualização nunca o troca pela outra. Remova-o e instale-o de novo. Instalado para → agora: "),
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows

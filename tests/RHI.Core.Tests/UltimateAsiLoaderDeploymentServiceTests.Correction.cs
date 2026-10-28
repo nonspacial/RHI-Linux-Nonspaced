@@ -38,6 +38,40 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
         Assert.Equal(halfUndone, File.ReadAllBytes(proxy));
     }
 
+    // F3: the game's executable reads as the other bitness after the install (a game patch, or Edit game pointing the patch
+    // target at another exe). The check could not check (before any lookup) and the update refuses: the loader picked for
+    // the old bitness is never swapped for the other one behind the user's back; the record keeps its architecture.
+    [Theory]
+    [InlineData((ushort)0x014C, (ushort)0x8664, "x86 → x64")]
+    [InlineData((ushort)0x8664, (ushort)0x014C, "x64 → x86")]
+    public async Task GameNowTheOtherBitness_IsCouldNotCheck_AndTheUpdateNeverSwapsTheLoader(ushort installedFor, ushort now, string change)
+    {
+        using var fixture = CreateGame("correction-arch-" + installedFor.ToString("x"), installedFor);
+        using var release = new UalRelease().Add("9.7.4", 0x96);
+        release.Add("9.7.5", 0x98);
+        release.Version = "9.7.4";
+        using var http = new HttpClient(release);
+        var (service, records) = UalService(fixture, http);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+        var proxy = Path.Combine(fixture.Bin, "winmm.dll");
+        var installed = File.ReadAllBytes(proxy);
+        WritePe(fixture.Game.ExecutablePath!, now, 64 * 1024, 0x11);
+        release.Version = "9.7.5";
+        var lookups = release.ApiRequests;
+
+        var check = await service.CheckManagedUpdateAsync(fixture.Game);
+        Assert.Equal(lookups, release.ApiRequests);
+        var update = await service.UpdateAsync(fixture.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + change, check.Message);
+        Assert.False(update.Success);
+        Assert.Equal(UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + change, update.Message);
+        Assert.Equal(installed, File.ReadAllBytes(proxy));
+        var record = records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!;
+        Assert.Equal(("9.7.4", installedFor == 0x8664 ? "X64" : "X86"), (record.Version, record.Metadata["UAL.Architecture"]));
+    }
+
     [Theory]
     [InlineData("blank")]
     [InlineData("no-entry")]
