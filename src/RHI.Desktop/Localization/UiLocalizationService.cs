@@ -1765,7 +1765,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.ChainedOriginalBackNote,
             " A DLL original encadeada voltou ao próprio nome."),
         (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.ChainedOriginalMissingNote,
-            " A DLL original encadeada está faltando, então a DLL do ASI Loader ficou onde estava."),
+            " A DLL original encadeada está faltando, então a DLL do ASI Loader ficou onde estava; apague-a você mesmo antes de instalar de novo, ou o novo ASI Loader a mantém como a DLL do próprio jogo."),
         (RHI.Platform.Linux.Deployment.ProxylessRecordRemoval.ChainedOriginalKeptNote,
             " A DLL original encadeada não foi recolocada, porque a DLL do ASI Loader foi alterada fora do RHI ou o RHI não sabe qual arquivo ela substituiu."),
         // w12 final review 2 (m1): Install refused over an existing Hooked backup (proxy and backup names in between).

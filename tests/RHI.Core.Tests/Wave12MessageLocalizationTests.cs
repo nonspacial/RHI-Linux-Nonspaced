@@ -59,6 +59,7 @@ public sealed class Wave12MessageLocalizationTests
         { ProxylessRecordRemoval.Message("RTX 20 FG Unlock", [P]), "Files RHI did not delete" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [], ProxylessRecordRemoval.ChainedOriginalBackNote), "is back under its own name" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P], ProxylessRecordRemoval.ChainedOriginalMissingNote), "was left where it is" },
+        { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P], ProxylessRecordRemoval.ChainedOriginalMissingNote), "delete it yourself" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P, P], ProxylessRecordRemoval.ChainedOriginalKeptNote), "was not put back" },
         // w12 final review 2 (m1): the Install refusal over an existing Hooked backup says what to do
         { UltimateAsiLoaderDeploymentService.HookedBackupExistsMessage("winmm.dll", "winmmHooked.dll"), "Cannot chain" },
@@ -71,7 +72,7 @@ public sealed class Wave12MessageLocalizationTests
         { Dlssg2030UnlockDeploymentService.ExternalIniRefusal, "Mova ou apague" }, // w12 final review 2 (m1)
     };
 
-    // w12 final review 2 (m1): the advice added to two messages reads in full in both languages.
+    // w12 final review 2 (m1, nit 5): the advice added to three messages reads in full in both languages.
     [Fact]
     public void FinalReview2_Advice_IsExactInBothLanguages()
     {
@@ -88,6 +89,14 @@ public sealed class Wave12MessageLocalizationTests
         Assert.Equal("Não foi possível encadear winmm.dll: winmmHooked.dll já existe. O RHI não sobrescreve uma cópia de segurança Hooked"
                      + " existente. Mova ou apague esse arquivo, ou escolha outro nome de DLL, e instale de novo.",
             UiLocalizationService.PresentFor("pt-BR", hooked));
+
+        var missing = ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P], ProxylessRecordRemoval.ChainedOriginalMissingNote);
+        Assert.Contains(" The chained original DLL is missing, so the ASI Loader's DLL was left where it is; delete it yourself before you"
+                        + " Install again, or the new ASI Loader keeps it as the game's own DLL. Files RHI did not delete: " + P,
+            UiLocalizationService.PresentFor("en-US", missing), StringComparison.Ordinal);
+        Assert.Contains(" A DLL original encadeada está faltando, então a DLL do ASI Loader ficou onde estava; apague-a você mesmo antes"
+                        + " de instalar de novo, ou o novo ASI Loader a mantém como a DLL do próprio jogo. Arquivos que o RHI não apagou: " + P,
+            UiLocalizationService.PresentFor("pt-BR", missing), StringComparison.Ordinal);
     }
 
     // w12 follow-up (re-review pins M1): every component the DLSS batch can name has its pair, so a failed game's reason

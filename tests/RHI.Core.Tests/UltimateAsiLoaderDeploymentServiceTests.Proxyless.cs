@@ -153,6 +153,19 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
         var pt = UiLocalizationService.PresentFor("pt-BR", remove.Message);
         Assert.EndsWith(" Arquivos que o RHI não apagou: " + target, pt, StringComparison.Ordinal);
         Assert.Empty(UiLocalizationService.EnglishMarkersIn(pt.Replace(target, "", StringComparison.Ordinal)));
+
+        // w12 final review 2 (nit 5): the note says to delete RHI's old loader first; doing it, Install chains nothing.
+        Assert.Contains("; delete it yourself before you Install again, or the new ASI Loader keeps it as the game's own DLL.",
+            remove.Message, StringComparison.Ordinal);
+        Assert.Contains("; apague-a você mesmo antes de instalar de novo, ou o novo ASI Loader a mantém como a DLL do próprio jogo.",
+            pt, StringComparison.Ordinal);
+        File.Delete(target);
+
+        var install = await service.InstallAsync(fixture.Game, "winmm.dll");
+
+        Assert.True(install.Success, install.Message);
+        Assert.True(File.Exists(target));
+        Assert.False(File.Exists(hooked));
     }
 
     [Fact]

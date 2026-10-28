@@ -25,9 +25,12 @@ public static class ProxylessRecordRemoval
     /// <summary>Ultimate ASI Loader: the chained original was put back over RHI's proxy.</summary>
     public const string ChainedOriginalBackNote = " The chained original DLL is back under its own name.";
 
-    /// <summary>Ultimate ASI Loader: the chained original is gone, so the proxy stays (named among the files not deleted).</summary>
+    /// <summary>
+    /// Ultimate ASI Loader: the chained original is gone, so the proxy stays (named among the files not deleted). The next
+    /// Install would chain it as the game's own DLL, so the note says to delete it first (w12 final review 2, nit 5).
+    /// </summary>
     public const string ChainedOriginalMissingNote =
-        " The chained original DLL is missing, so the ASI Loader's DLL was left where it is.";
+        " The chained original DLL is missing, so the ASI Loader's DLL was left where it is; delete it yourself before you Install again, or the new ASI Loader keeps it as the game's own DLL.";
 
     /// <summary>
     /// Ultimate ASI Loader: the chained original exists, but RHI's proxy was changed outside RHI (or RHI cannot tell which
