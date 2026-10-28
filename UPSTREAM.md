@@ -1187,6 +1187,33 @@ every launch, x86 never updated" never existed here (per-architecture stamped ca
 - Not covered: the new launcher's native Linux build (`~/.local/share/com.epicgames.eglv2`, Proton-run Windows games) is not read; Epic games installed through Heroic/Legendary are unchanged.
 
 <!-- w12/nr-logs notes -->
+### #248 — Check Neural Rendering: three DLSS5 Feeder failures in plain words
+
+Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in `b057033..c1076d3`). Extends #234's
+**Log findings** (same rows: log, line, plain headline, a "Fix:" line; the matching text and path in the ~2 s tooltip).
+
+- `0xBAD00012` (NotImplemented) for the Feeder's NGX "feature 18" requirements query: the driver did not confirm Neural
+  Rendering support. The line proves only that (the DLSS5 Feeder's README records the same answer on a driver where the
+  neural pass ran), so the row is worded that way and does not contradict the page's recommended method: nothing to
+  change in RHI or the game; if the picture shows no neural effect, this driver and Proton (dxvk-nvapi) do not run it
+  yet; DLSS Super Resolution still works. The same code for another feature is no finding, even on a line that mentions
+  neural rendering. #248 also asked to name a method that works without Neural Rendering: every RHI Neural Rendering
+  method needs it, so the row names none; DLSS Super Resolution (the game's own DLSS) is what keeps working.
+- The Feeder's depth probe "depth is FLAT while the scene moves": a setting in ReShade's in-game overlay (Add-ons tab →
+  Generic Depth → the buffer that moves with the scene), stated plainly as not an RHI control. Its "sampled depth is
+  flat" line (a still scene or a menu) is no finding.
+- The Feeder's "stopped: the DLSS evaluate crashed" after a change of the game's picture (swapchain colour space,
+  ReShade's effect runtime made again, the feature rebuilt) that no delivered frame has come through yet, since the
+  feature was ready in that run. A frame delivered while a rebuild for the change is announced ("holding the feature
+  (re)build", "building:") but not ready yet is the old feature's and settles nothing; a change the feature survives
+  without a rebuild (an alt-tab or effect reload on a D3D12 game, per the Feeder's README) is settled by the next
+  delivered frame, so a later crash gets the generic row. Then: restart the game with its final display mode (HDR,
+  resolution) set in the game's own options; if it stops again, turn HDR off in the game's options (the Feeder's README
+  records the same evaluate fault inside NGX with the DLSS 5 add-on, which a restart may not cure). This row replaces the generic `0xC0000005` row of the same crash (the
+  evaluate lines right after the stopped line included, whichever the Feeder writes first); the generic row ("remove
+  the method") stays for every other crash, including a Feeder crash on its first build, and a stopped line in a run
+  with no other crash line is that run's generic row (never "No known errors").
+- Every hint is a plain step (no RHI control named). Reads stay bounded; nothing is written.
 
 <!-- w12/pins notes -->
 
