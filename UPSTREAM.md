@@ -1147,7 +1147,8 @@ existed here (per-architecture stamped cache); tests pin it. No start-up push (D
   named this way (`LinuxUpdateItemResult.LocalReason`): a check made first because it is local (`ChecksBeforeManualRefresh`),
   or a check that says so itself (`ManagedUpdateCheck.LocalReason`: the MFG families' and GitHub add-ons' game held by its
   own failed undo, file removed or changed outside RHI, record without its file's hash or proxy name, game whose bitness
-  changed); a source that could not be reached (a reshade.me or GitHub outage) stays in the
+  changed; the GitHub add-ons' and RenoDX's missing or unreadable game executable, and a RenoDX installed from a local
+  file); a source that could not be reached (a reshade.me or GitHub outage) stays in the
   "could not be checked" count. Difference: upstream writes its note on the game's card; the Linux card has no note
   line, so the reason shows in the Update All line (its tooltip holds the whole line) and in the ReShade section's
   update-check line. A source still there is refreshed as before. Stable, Nightly, No Addons and Legacy still refresh
@@ -1193,20 +1194,25 @@ existed here (per-architecture stamped cache); tests pin it. No start-up push (D
 - The check (`Network/NexusModUpdateCheck`, the one Nexus "newer file" check; #198 reuses it) uses the connected
   account's API key only (owner rule; upstream asks the anonymous GraphQL API), Nexus's v1 file list, and compares the
   newest MAIN/UPDATE file's upload time with the install time (upstream's baseline; no Luma install records a Nexus file
-  id). No account / Nexus error / rate limit / a refused key (401/403) = could not check; a refused key's line names
-  Settings → Accounts & updates → Disconnect, then Connect Nexus account. One file list per mod is kept for an hour;
-  after a 429 Nexus is left alone for 5 minutes (the limit is the account's).
+  id). No account / Nexus error / rate limit / a refused key = could not check. Only a 401 is a refused key (coordinator
+  ruling in the w12 follow-up): its line names Settings → Accounts & updates → Disconnect, then Connect Nexus account,
+  and that key is not asked with again this session until a key is saved (the account connected again). A 403 (a mod
+  Nexus hides or removed) reads "Nexus Mods would not show this mod's files …" and never advises disconnecting a key
+  that works. One file list per mod is kept for an hour; after a 429 Nexus is left alone for 5 minutes (the limit is
+  the account's).
 - Update never downloads it: Update All and the background pass count it as could not be checked (never failed). The
   fork's rows have no per-row Update button, so the Luma row has a Nexus button in its own column, first among the row's
   buttons (Nexus → ⚙ → Install/Remove → ⓘ; an Unreal game's Luma Engine.ini ⚙, #189, stays beside it). Every other
   row keeps the ⚙ → Install/Remove → ⓘ order and layout it had before: only the Nexus column takes no place while its
-  button is hidden (`ResponsiveRow.SkipEmptyColumns="3"`). "Update on Nexus" (opens the page through
+  button is hidden (`ResponsiveRow.SkipEmptyColumns="3"`, a column list read once when set; an entry that is not a
+  column number is ignored). "Update on Nexus" (opens the page through
   `LinkHosts.NexusMod`) when Nexus has a newer file; "Open on Nexus" when no account is connected or Nexus refused the
   key (the 2 s tooltip names the control that fixes it) and, without asking Nexus, when RHI has not installed the mod
   (upstream's card links these mods' Nexus page; download it there and drop the file on RHI). Hidden otherwise.
 - Pins gap 2 (upstream `b8094e6`, `SafeCombine` on Luma uninstall): Luma removal and update delete a recorded file or
   folder only inside the game folder, its binary folder or ReShade's `AddonPath` (where Luma's add-on goes); a ledger
-  entry naming anything else is left in place (logged) and never blocks the removal.
+  entry naming anything else is left in place and never blocks the removal; removal and update each log one line per
+  such entry (an update also leaves it out of the new record).
 
 ### #246 — Luma mode: no manifest default (upstream removed lumaDefaultGames)
 - Upstream 2.8.8 Beta `230ac6a` removed `lumaDefaultGames` from `manifest.json` (no upstream consumer since at least
@@ -1221,7 +1227,7 @@ existed here (per-architecture stamped cache); tests pin it. No start-up push (D
 - Upstream (`c1076d3`, `GameDetectionService.Epic.cs`; classic manifests since before 2.8.5) reads the classic launcher's `ProgramData\Epic\EpicGamesLauncher\Data\Manifests\*.item` and the new launcher's (`com.epicgames.eglv2`) `%LOCALAPPDATA%\com.epicgames.eglv2\installations.jsonl` (last entry per installationId wins, only `complete: true`), naming its games from `HKCU\…\Uninstall\EpicGames-<artifactId>`, then the migrated `import-scan\v1-items\<installationId>.item`; uninstall entries the log does not mention are listed too; de-duplicated by path. The fork reads the same records inside every Wine prefix (standalone, Lutris, Heroic, Steam non-Steam shortcut), read-only, through the #90 store-launcher reader: `user.reg` only where the prefix holds Epic data; regular files only, opened without blocking, capped (manifest 4 MiB, log 32 MiB); a malformed log line is skipped with one scan warning per file; folders go through the prefix's drive links and the root-folder guard.
 - Launch: upstream starts `com.epicgames.launcher://apps/<AppName>?action=launch&silent=true` (AppName = the new launcher's artifactId). The fork hands that URI to the launcher exe in the prefix (the `com.epicgames.launcher` URL handler's program from the registry, else the classic launcher's default places, then the new launcher's per-user `AppData\Local\Epic Games\Launcher\EpicGamesLauncher.exe`), with the #90 parent rules (Lutris: the game's own Lutris store entry, else the launcher's own config, else the prefix's parent launcher; Steam shortcut to the launcher: started through Steam; Heroic: its sideloaded launcher, else no command). A store id that is not plain letters/digits/`_ . -` never reaches the command (the launcher only opens).
 - Lutris store services (fork only; w12 correction): Lutris' Epic Games Store, Ubisoft Connect, EA app and Battle.net services write one config per game — a copy of the client's config plus that game's start argument (`-com.epicgames.launcher://apps/<AppName>?action=launch`, `uplay://launch/<id>`, `origin2://game/launch?offerIds=<id>`, `--exec="launch <code>"`). Such an entry is its own game's Play and is not listed again as a card at the client's folder; an entry that starts another game is never a game's Play or a prefix's parent launcher (before, the first such entry in file-name order started every game of that store in the prefix). The dashed Lutris form of the Epic URI counts as a store hand-off.
-- A prefix whose only store entries start one game each (no entry for the client itself, e.g. a per-game installer put the client into the game's prefix, or the client's own entry was removed from Lutris): every other game recorded there, and every store-library game found by folder layout, is still listed — with the prefix's runner and Wine fields but no launch command and no parent launcher (Play says to set one in Edit game), plus one scan warning per prefix. A prefix where only games share (no store entry at all) lists no extra games, as before.
+- A prefix whose only store entries start one game each (no entry for the client itself, e.g. a per-game installer put the client into the game's prefix, or the client's own entry was removed from Lutris): every other game recorded there, and every store-library game found by folder layout, is still listed — with the prefix's runner and Wine fields but no launch command and no parent launcher (Play says to set one in Edit game), plus one log line per prefix. The scan notice counts them on their own line ("Lutris: N game(s) listed without a launch command — set one in Edit game", EN + PT-BR), never as skipped items; Wine prefixes whose runtime markers cannot be read report their games the same way. A prefix where only games share (no store entry at all) lists no extra games, as before.
 - A per-game store entry that becomes its game's card moves from the client's folder to the game's folder, so its library key changes: favourite/hidden marks and Edit-game changes saved on the old card (keyed by the Lutris config file) do not follow it and must be set again. Not migrated.
 - Uninstall entries (`EpicGames-<artifactId>`) the log does not mention are listed wherever the prefix holds Epic data (classic manifests or the new launcher's data folder), as upstream lists them whether or not its data folder is found.
 - Ubisoft: Lutris names a game by its launch id, Ubisoft's record by its install id; where the two differ, the game keeps its card (Play through the client) at its real folder and its per-game Lutris entry stays a second card at the client's folder (no wrong game, nothing dropped; the same as before #247).
@@ -1277,7 +1283,10 @@ Loader cache per architecture; Follow newest and the Streamline dropdown with `2
 Two pins found real gaps, both fixed in this wave. The DLSS result line (batch apply and restore, Apply defaults,
 Restore all) now names each failed game with its reason after the counts ("Failed: N game(s) • <game>: <reason>", EN +
 PT-BR), as upstream `d61a696` does in its mass-deploy summary, and its counts now follow the UI language (they were
-English in PT-BR) (pins correction). Luma removal's inside-the-game check on the paths its record lists (upstream
+English in PT-BR) (pins correction). Follow-up: the reasons a swap gives without one of its own ("Could not apply
+<component> <version>.", the two Streamline refusals) are Portuguese in PT-BR too; games are told apart by library
+key, so the same game on two stores is two entries; the platform's English-only count summary is gone; on a DLSS batch
+dialog narrower than 700 px the line has its own row above the buttons (wide dialogs unchanged). Luma removal's inside-the-game check on the paths its record lists (upstream
 `b8094e6`, `SafeCombine` on uninstall) is fixed and pinned in lane w12/luma. The default 3 s wait for `pcgw_data.json`
 during a selection is pinned with its literal value.
 

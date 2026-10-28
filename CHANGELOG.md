@@ -53,7 +53,8 @@ Components
   update pass when automatic updates are on), with the per-game **Choose what Update All changes…** exclusions, like
   every other component. Unlike upstream, nothing is updated at start-up while automatic updates are off. The ASI Loader
   is only ever updated for the bitness it was installed for; when the game's executable changes bitness, remove it and
-  install it again.
+  install it again (the Extras section's ASI Loader check says so too). A record that lost its DLL name reads one line
+  for all three: remove the component, then install it again.
 - **A file you deleted outside RHI is never put back by an update** — Universal MFG, MFG Ada Unlock, DLSSG 20/30, the
   ASI Loader, ReLimiter, Display Commander and the DLSS5 DX11 Bridge. Update All says it could not be checked, with the
   reason; the row still offers **Remove**, which clears RHI's record (then **Install** puts it back). A file changed
@@ -62,7 +63,9 @@ Components
   Luma row gets a **Nexus** button, before the ⚙, reading **Update on Nexus** when Nexus has a newer file and **Open on
   Nexus** when RHI has not installed the mod or no account is connected (its tooltip names **Connect Nexus account**).
   RHI never downloads these mods; Update All counts them as could not be checked. Before, such a mod could never be
-  checked, and a GitHub mod whose wiki entry listed the Nexus link first could not be installed.
+  checked, and a GitHub mod whose wiki entry listed the Nexus link first could not be installed. Only a key Nexus
+  refuses reads **Open on Nexus** with **Disconnect, then Connect** in its tooltip, and RHI asks no more with it until
+  you connect again; a mod Nexus hides or removed just reads as could not be checked.
 - **Luma mode follows only your choice** (upstream 2.8.8 dropped the manifest's list of Luma default games): Luma mode
   is on where you chose **Enabled**, off for **Disabled** and **Automatic**, online or offline. Saved choices are kept.
 - Luma removal deletes a recorded file only inside the game folder or ReShade's add-on folder.
@@ -77,7 +80,8 @@ Shaders
 - **Applying shaders changes only what changed** (upstream 2.8.8): unchanged files are left alone, so applying the same
   shaders again (Shaders/Add-ons, Update All, a ReShade update) writes nothing in the game. A file in RHI's shader
   folder that is not the one RHI placed stops the sync with a line saying what to do (move or delete it, or untick its
-  pack).
+  pack; for `ReShade.fxh`/`ReShadeUI.fxh`, which go with every pack, move or delete it). When `reshade-shaders/RHI` is a
+  link to a folder of yours, RHI removes no empty folder there.
 
 HDR
 
@@ -99,8 +103,8 @@ Updates
   once a minute while automatic updates are on, and the status line says when such an update ran.
 - **Update All names what it could not check for a reason on your machine:** a Custom-channel ReShade whose source DLL
   is gone (upstream 2.8.8), a component file removed or changed outside RHI, a game held after an undo RHI could not
-  finish, and the like, each with its game and the reason, instead of only counting them (the Custom ReShade used to
-  count as failed).
+  finish, a missing or unreadable game executable, a RenoDX installed from a local file, and the like, each with its
+  game and the reason, instead of only counting them (the Custom ReShade used to count as failed).
 - **GitHub answers are kept between launches** (upstream 2.8.8) and overlapping lookups share one request, which saves
   the anonymous API allowance; a saved answer is used only once GitHub confirms it, or while GitHub's rate limit lasts.
   A GitHub API request that takes longer than 30 seconds is given up and counts as could not be checked.
@@ -113,19 +117,21 @@ Library
 - **Lutris store entries:** a Lutris entry that Lutris' Epic, Ubisoft, EA or Battle.net service made for one game now
   starts only that game; before, the first such entry started every game of that store in the prefix. A game in a prefix
   that has only other games' entries is still listed, without a launch command (set one in **Edit game**), and the scan
-  says so. Such an entry's card now sits in the game's own folder, so favourite, hidden and **Edit game** changes saved
-  on its old card must be set again.
+  line says how many such games each detector listed (no longer counted as "skipped"). Such an entry's card now sits in
+  the game's own folder, so favourite, hidden and **Edit game** changes saved on its old card must be set again.
 
 Check Neural Rendering
 
 - **Three DLSS5 Feeder failures in plain words** (Borderlands 3's log): the driver not confirming Neural Rendering
   support (DLSS Super Resolution still works), a flat depth buffer (set in ReShade's in-game overlay, not in RHI), and
-  the Feeder stopping after the game's display mode changed (restart the game with its HDR and resolution set first).
+  the Feeder stopping after the game's display mode changed (restart the game with its HDR and resolution set first; if
+  the Feeder stops again, turn HDR off in the game's options).
 
 DLSS
 
 - **The DLSS result line names each failed game with its reason** (upstream 2.8.8; Batch DLSS apply and restore, Apply
-  defaults, Restore all), and its counts follow the interface language.
+  defaults, Restore all), in the interface language, counts included; the same game owned on two stores is named twice.
+  On a narrow DLSS batch dialog the line sits on its own row above the buttons.
 
 ## 2.8.7 — 2026-10-27: first release
 
