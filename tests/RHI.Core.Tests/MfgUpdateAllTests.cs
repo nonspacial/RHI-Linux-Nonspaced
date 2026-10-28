@@ -221,6 +221,38 @@ public sealed class MfgUpdateAllTests
 
     // ---- Correction round 1 (review w12-review-mfg.md) -----------------------------------------------------------------
 
+    // F2: on a game moved after the install (the record still points at the old folder), Remove refuses until Repair after
+    // move, so the row never shows the removed-file note that tells the user to press Remove; the base note stays.
+    [Theory]
+    [InlineData(ManagedComponentKind.MfgAdaUnlock, "renodx-mfgunlock.addon64")]
+    [InlineData(ManagedComponentKind.Rtx40MfgStandalone, "dinput8.dll")]
+    [InlineData(ManagedComponentKind.Dlssg2030Unlock, "winmm.dll")]
+    public async Task MovedGame_RowNeverPointsAtRemove_WhichRefusesUntilRepairAfterMove(ManagedComponentKind kind, string fileName)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = StreamlineGame(fx.Root, "Moved " + kind);
+        var oldDir = Path.Combine(fx.Root, "old-library", "Moved " + kind);
+        var moved = Path.Combine(game.BinaryDirectory!, fileName);
+        var bytes = UniversalMfgRelease.Pe(0x31);
+        File.WriteAllBytes(moved, bytes);
+        var record = new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind, BinaryDirectory = oldDir, Version = "0.5",
+            Files = [new LinuxDeployedFile { Path = Path.Combine(oldDir, fileName), Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(moved) }]
+        };
+        if (kind == ManagedComponentKind.Dlssg2030Unlock) record.Metadata["FG2030.ProxyName"] = fileName;
+        if (kind == ManagedComponentKind.Rtx40MfgStandalone) record.Metadata["UniversalMFG.ProxyName"] = fileName;
+        fx.Records.Upsert(record);
+
+        var row = Row(fx, game, kind);
+        var remove = await fx.Managed.RemoveAsync(game, kind);
+
+        Assert.NotEqual(ManagedUpdateFileGuard.RemovedOutsideRhiRowNote, row.Note);
+        Assert.Equal("Managed by RHI Linux · 0.5.", row.Note);
+        Assert.False(remove.Success);
+        Assert.StartsWith(DeploymentRelocation.GuardPrefix, remove.Message);
+    }
+
     // F5: a Universal MFG record without the proxy's hash is "could not be checked" in Update All with the one reason (never a
     // failed row on every pass, as when the check planned an update the swap refused).
     [Fact]
