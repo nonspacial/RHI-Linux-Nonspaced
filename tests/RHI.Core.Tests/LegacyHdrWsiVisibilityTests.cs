@@ -199,6 +199,40 @@ public sealed class LegacyHdrWsiVisibilityTests : IDisposable
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
+    // ---- correction round 1, F2: no "Legacy WSI is off." where the tick is hidden ---------------------------------------
+
+    [Theory]
+    [InlineData("en-US", "615.78.08")]
+    [InlineData("en-US", null)]
+    [InlineData("en-US", "unknown")]
+    [InlineData("pt-BR", "615.78.08")]
+    [InlineData("pt-BR", null)]
+    [InlineData("pt-BR", "unknown")]
+    public void WhereTheTickIsHidden_AndNothingIsSaved_TheHintSaysNothingAboutLegacyWsi(string language, string? driver)
+    {
+        UiLocalizationService.Apply(language);
+        try
+        {
+            var service = LegacyHdrWsiPlanTests.Service(driver);
+            var host = service.ProbeHost();
+            Assert.False(LinuxHdrLaunchProfileService.OffersLegacyWsi(host));
+            foreach (var mode in new[] { LinuxHdrModes.NativeWayland, LinuxHdrModes.Gamescope })
+                foreach (var launch in new[] { "direct", "steam", "xbox" })
+                {
+                    var plan = service.BuildPlan(LegacyHdrWsiPlanTests.Game(launch), new LinuxHdrGameProfile { Mode = mode }, host);
+                    Assert.True(plan.Enabled && plan.CanApply, $"{mode}/{launch}");
+                    var hint = HdrLaunchText.Describe(plan);
+                    Assert.DoesNotContain("WSI", hint, StringComparison.Ordinal);
+                    Assert.DoesNotContain(language == "pt-BR" ? "desativado" : "is off", hint, StringComparison.Ordinal);
+                }
+            // Where the tick shows, the hint still says why it may be needed.
+            var older = LegacyHdrWsiPlanTests.Service(LegacyHdrWsiViewModelTests.Older);
+            var olderPlan = older.BuildPlan(LegacyHdrWsiPlanTests.Game("direct"), new LinuxHdrGameProfile { Mode = LinuxHdrModes.NativeWayland }, older.ProbeHost());
+            Assert.Contains(language == "pt-BR" ? "anterior ao 595" : "older than 595", HdrLaunchText.Describe(olderPlan), StringComparison.Ordinal);
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
     [Theory]
     [InlineData("en-US", "older than 595")]
     [InlineData("pt-BR", "anterior ao 595")]

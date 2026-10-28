@@ -111,6 +111,10 @@ public enum LinuxHdrPlanReason
 /// <summary>What the plan says about the legacy HDR WSI layer (ENABLE_HDR_WSI).</summary>
 public enum LinuxHdrLegacyWsiNote
 {
+    /// <summary>
+    /// Nothing to say: the host does not need the layer (the tick is hidden there) and none is saved — #250 correction F2,
+    /// no "Legacy WSI is off." for a control that is not on screen.
+    /// </summary>
     Off,
     Enabled,
     /// <summary>Not enabled, but the NVIDIA driver is older than 595 and may need it.</summary>
