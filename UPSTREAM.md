@@ -2,7 +2,7 @@
 
 RHI Linux targets functional parity with [RankFTW/RHI](https://github.com/RankFTW/RHI) for Windows games running through Wine and Proton.
 
-The wizardkof RHI Linux v0.9.23.4-beta.1 release this fork started from was synchronized through the upstream RHI 2.7.5 line; this fork's `main` is synchronized through upstream RHI 2.8.7 (tag `RHI-2.8.7`). The notes below describe each ported feature and its Linux adaptation.
+The wizardkof RHI Linux v0.9.23.4-beta.1 release this fork started from was synchronized through the upstream RHI 2.7.5 line; this fork's `main` is synchronized through upstream RHI 2.8.8 (its v2.8.8 Beta notes, up to commit `c1076d3`; upstream had not tagged 2.8.8 when the fork released 2.8.8). The notes below describe each ported feature and its Linux adaptation.
 
 Functional parity is the goal; source-code or platform-implementation parity is not. When upstream provides a feature that can function under Wine/Proton, RHI Linux should expose the same capability and workflow, adapting the implementation where Linux requires it. A feature may remain unavailable when its required runtime behavior genuinely cannot function on the target Linux/Wine/Proton configuration.
 
