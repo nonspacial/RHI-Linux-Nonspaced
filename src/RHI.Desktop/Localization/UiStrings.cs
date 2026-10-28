@@ -577,6 +577,7 @@ internal static class UiStrings
         ("Win.ProviderOther", "Outro", "Other"),
         ("Scan.DetectorFailed", "{0}: falhou ({1})", "{0}: failed ({1})"),
         ("Scan.DetectorSkippedItems", "{0}: {1} item(ns) ignorado(s)", "{0}: {1} item(s) skipped"),
+        ("Scan.ListedWithoutLaunchCommand", "{0}: {1} jogo(s) listado(s) sem comando de inicialização — defina um em Editar jogo", "{0}: {1} game(s) listed without a launch command — set one in Edit game"),
         ("Scan.UpstreamManifest", "Manifesto do RHI upstream", "Upstream RHI manifest"),
         ("Scan.PolicyNotApplied", "{0}: não aplicado ({1})", "{0}: not applied ({1})"),
         ("Scan.Problems", "Problemas na verificação: {0}", "Scan problems: {0}"),

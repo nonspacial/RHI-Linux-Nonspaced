@@ -131,12 +131,15 @@ public sealed class RenoDxDeploymentService
         var record = _records.Find(game, ManagedComponentKind.RenoDX);
         if (record is null) return new ManagedUpdateCheck(false, false, "RenoDX is not managed by RHI Linux.");
         // #195: an add-on the user dropped (or the watch folder found) has no source to compare with: never "current".
-        if (IsLocalPackage(record)) return new ManagedUpdateCheck(true, false, LocalPackageCheckMessage, record.Version, CouldNotCheck: true);
+        // w12 follow-up (merge review nit 2): these three reasons are on this machine, so Update All names them (LocalReason).
+        if (IsLocalPackage(record)) return new ManagedUpdateCheck(true, false, LocalPackageCheckMessage, record.Version, CouldNotCheck: true, LocalReason: true);
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
-            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
+            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; RenoDX update check skipped.", record.Version, CouldNotCheck: true,
+                LocalReason: true);
         var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
-            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
+            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; RenoDX update check skipped.", record.Version, CouldNotCheck: true,
+                LocalReason: true);
         try
         {
             var mod = await ResolveModAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false); // #182 UE-Extended choice

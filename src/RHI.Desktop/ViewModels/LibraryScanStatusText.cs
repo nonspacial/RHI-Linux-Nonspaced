@@ -26,6 +26,9 @@ public static class LibraryScanStatusText
                 problems.Add(UiLocalizationService.Format("Scan.DetectorFailed", detector.Name, UiLocalizationService.Present(detector.Error)));
             else if (detector.Warnings.Count > 0)
                 problems.Add(UiLocalizationService.Format("Scan.DetectorSkippedItems", detector.Name, detector.Warnings.Count));
+            // w12 follow-up (merge review nit 1): listed games without a launch command are not skipped items.
+            if (!detector.Failed && detector.ListedWithoutLaunchCommand > 0)
+                problems.Add(UiLocalizationService.Format("Scan.ListedWithoutLaunchCommand", detector.Name, detector.ListedWithoutLaunchCommand));
         }
         foreach (var policy in scan.PolicyFailures)
         {

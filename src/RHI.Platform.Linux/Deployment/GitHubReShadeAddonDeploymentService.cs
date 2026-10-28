@@ -71,10 +71,12 @@ public sealed class GitHubReShadeAddonDeploymentService
         if (ManagedUpdateFileGuard.Removed(record.Files.Select(file => file.Path), record.Version) is { } removed)
             return removed;
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
-            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; update check skipped.", record.Version, CouldNotCheck: true);
+            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; update check skipped.", record.Version, CouldNotCheck: true,
+                LocalReason: true); // w12 follow-up (merge review nit 2): a reason on this machine, named by Update All
         var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
-            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; update check skipped.", record.Version, CouldNotCheck: true);
+            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; update check skipped.", record.Version, CouldNotCheck: true,
+                LocalReason: true);
         try
         {
             var latest = await ResolveReleaseAsync(architecture, releaseTag, cancellationToken).ConfigureAwait(false);

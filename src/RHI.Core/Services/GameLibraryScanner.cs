@@ -62,10 +62,11 @@ public sealed class GameLibraryScanner
 
             try
             {
-                var (raw, warnings) = await DetectorDiagnostics
-                    .CollectAsync(() => detector.DetectAsync(cancellationToken))
+                var (raw, warnings, listedWithoutCommand) = await DetectorDiagnostics
+                    .CollectScanAsync(() => detector.DetectAsync(cancellationToken))
                     .ConfigureAwait(false);
-                return (detector.Name, raw, status: new DetectorScanStatus(detector.Name, raw.Count, null, warnings));
+                return (detector.Name, raw, status: new DetectorScanStatus(detector.Name, raw.Count, null, warnings,
+                    ListedWithoutLaunchCommand: listedWithoutCommand));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)

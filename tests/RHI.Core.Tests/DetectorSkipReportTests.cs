@@ -134,8 +134,12 @@ public sealed class DetectorSkipReportTests : IDisposable
         // Nor any other host-Wine route (w2-launch re-review, major 1): the Winetricks button and the automatic
         // D3DCompiler step refuse it (RuntimeUnknownPrefixTests runs them).
         Assert.False(RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.CanInstallWithWinetricks(game));
-        Assert.Contains(prefix, Assert.Single(scan.Detectors.Single().Warnings), StringComparison.Ordinal);
-        Assert.Contains("Wine", LibraryScanStatusText.Problems(scan, null));
+        // w12 follow-up (merge review nit 1): the game is listed, so the scan counts it as listed without a launch command
+        // (its own line, naming Edit game), never as a skipped item; the log line still names the prefix.
+        var status = scan.Detectors.Single();
+        Assert.Empty(status.Warnings);
+        Assert.Equal(1, status.ListedWithoutLaunchCommand);
+        Assert.True(scan.HasProblems);
     }
 
     private static string Write(string path, string content)

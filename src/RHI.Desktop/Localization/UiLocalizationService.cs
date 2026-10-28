@@ -677,6 +677,9 @@ public static class UiLocalizationService
             "Nenhuma DLL do Streamline existente corresponde ao conjunto baixado; o RHI não cria um layout adivinhado."),
         (RHI.Core.Services.DlssManagerService.NoStreamlineBackupsMessage,
             "Nenhum backup .original do Streamline criado pelo RHI foi encontrado."),
+        // Merge review nit 2: the GitHub add-ons' local refusals, now named in the Update All line.
+        ("Game executable is unavailable; update check skipped.", "Executável do jogo indisponível; a verificação de atualização foi ignorada."),
+        ("Game architecture is unknown; update check skipped.", "Arquitetura do jogo desconhecida; a verificação de atualização foi ignorada."),
         // Coordinator ruling on re-review luma N2: a 403 is a hidden or removed mod (never "key refused").
         (RHI.Platform.Linux.Network.NexusModUpdateCheck.ModNotShownMessage,
             "O Nexus Mods não mostrou os arquivos deste mod (ele pode estar oculto ou removido), então o RHI não pôde verificar se há atualizações."),

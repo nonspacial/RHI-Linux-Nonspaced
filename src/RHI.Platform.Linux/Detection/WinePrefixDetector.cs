@@ -69,12 +69,14 @@ public sealed class WinePrefixDetector : IGameDetector
                 // wineboot over a Proton prefix. The games stay listed (and moddable) without a launch command, like a
                 // Proton prefix whose Wine is gone; the warning names the prefix (Refs #144, w2-launch review major 2).
                 PrefixRuntime? runtime;
+                Exception? unreadable = null;
                 try { runtime = PrefixRuntime.Read(prefix); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    DetectorDiagnostics.Warn($"Wine prefix {prefix}: runtime markers unreadable; its games are listed without a launch command", ex);
+                    unreadable = ex;
                     runtime = null;
                 }
+                var listedBefore = games.Count;
                 var records = Launchers.StoreLauncherRecords.Find(prefix, _home, ct)
                     .ToDictionary(record => PathIdentity.Canonicalize(record.InstallDirectory), StringComparer.Ordinal);
                 var entries = PrefixGameFolders.Find(Path.Combine(prefix, "drive_c")).ToList();
@@ -123,6 +125,15 @@ public sealed class WinePrefixDetector : IGameDetector
                         // With no launch argument the launcher only opens: the user starts the game there.
                         ParentLauncherName = launcherExe is not null && record!.PlayArguments.Count == 0 ? record.LauncherName : null
                     });
+                }
+                // w12 follow-up (merge review nit 1): the games stay listed, so the scan says how many and that Play needs a
+                // command set in Edit game (its own line, never "skipped"); with none found it is only logged.
+                if (unreadable is not null)
+                {
+                    var listed = games.Count - listedBefore;
+                    var message = $"Wine prefix {prefix}: runtime markers unreadable; {listed} game(s) listed without a launch command";
+                    if (listed > 0) DetectorDiagnostics.ListedWithoutLaunchCommand(listed, message, unreadable);
+                    else AppLog.Warn("scan", message, unreadable);
                 }
             }
         }

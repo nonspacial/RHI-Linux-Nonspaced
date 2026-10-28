@@ -210,9 +210,10 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     }
                     found.Add(LauncherPrefixGame(fallback, Path.GetFileName(entry.Directory), entry.Directory, exe));
                 }
-                if (listedWithoutCommand > 0)
-                    DetectorDiagnostics.Warn($"Lutris prefix {prefixPath}: {listedWithoutCommand} game(s) listed with no launch command " +
-                                             "(the prefix's store entries each start another game, and Lutris lists no entry for the store client itself)");
+                // w12 follow-up (merge review nit 1): its own plain line in the scan notice, never counted as skipped.
+                DetectorDiagnostics.ListedWithoutLaunchCommand(listedWithoutCommand,
+                    $"Lutris prefix {prefixPath}: {listedWithoutCommand} game(s) listed with no launch command " +
+                    "(the prefix's store entries each start another game, and Lutris lists no entry for the store client itself)");
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)

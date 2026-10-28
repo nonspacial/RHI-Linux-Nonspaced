@@ -100,6 +100,37 @@ public sealed class MfgLocalReasonUpdateAllTests
         Assert.DoesNotContain("proxy DLL name", pt, StringComparison.Ordinal);
     }
 
+    // w12 follow-up (merge review nit 2): the GitHub add-ons' and RenoDX's refusals that come from this machine (no game exe,
+    // an architecture RHI cannot read, a RenoDX installed from a local file) are named in the Update All line, EN + PT-BR.
+    [Theory]
+    [InlineData(ManagedComponentKind.ReLimiter, "no-exe")]
+    [InlineData(ManagedComponentKind.ReLimiter, "unknown-arch")]
+    [InlineData(ManagedComponentKind.RenoDX, "no-exe")]
+    [InlineData(ManagedComponentKind.RenoDX, "unknown-arch")]
+    [InlineData(ManagedComponentKind.RenoDX, "local-package")]
+    public async Task AddonAndRenoDx_LocalRefusals_AreNamedInTheSummary(ManagedComponentKind kind, string shape)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = MfgUpdateAllTests.StreamlineGame(fx.Root, $"Local {kind} {shape}");
+        var file = Path.Combine(game.BinaryDirectory!, kind == ManagedComponentKind.RenoDX ? "renodx-game.addon64" : "relimiter.addon64");
+        File.WriteAllBytes(file, [0x4D, 0x5A, 1, 2]);
+        var record = Record(game, kind, file);
+        if (shape == "local-package") record.Metadata[RenoDxDeploymentService.LocalPackageMetadataKey] = "1";
+        fx.Records.Upsert(record);
+        if (shape == "no-exe") File.Delete(game.ExecutablePath!);
+        if (shape == "unknown-arch") File.WriteAllText(game.ExecutablePath!, "not a Windows executable");
+
+        var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new MfgUpdateAllTests.SwitchableRunning()).RunAsync([game], _ => [], LinuxUpdateRunMode.Manual);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal((true, true), (item.Unchecked, item.LocalReason));
+        Assert.Contains($"Not checked: {game.Name} (", UiLocalizationService.UpdateAllSummaryFor("en-US", result), StringComparison.Ordinal);
+        var pt = UiLocalizationService.UpdateAllSummaryFor("pt-BR", result);
+        Assert.Contains($"Não verificado: {game.Name} (", pt, StringComparison.Ordinal);
+        Assert.DoesNotContain(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt, StringComparison.Ordinal);
+        Assert.DoesNotContain("update check skipped", pt, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task AsiLoader_GameWhoseBitnessChanged_IsALocalReason_NamedInTheSummary()
     {

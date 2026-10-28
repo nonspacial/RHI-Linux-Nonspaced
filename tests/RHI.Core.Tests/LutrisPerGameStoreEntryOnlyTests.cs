@@ -44,7 +44,7 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
     {
         var (prefix, root, own, other) = UbiPrefixWithOnlyAPerGameEntry("p1");
 
-        var (games, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(LutrisGameDetector.DetectIn([root], Home, CancellationToken.None)));
+        var (games, warnings, listed) = await DetectorDiagnostics.CollectScanAsync(() => Task.FromResult(LutrisGameDetector.DetectIn([root], Home, CancellationToken.None)));
 
         var card = Assert.Single(games, g => g.InstallPath == other);
         Assert.Null(card.LaunchCommand); // never Own's "lutris:rungame/own-game-ubisoft"
@@ -54,7 +54,10 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
         Assert.Equal("Lutris", card.Source);
         // The game with its own entry keeps that entry's Play.
         Assert.Equal("lutris 'lutris:rungame/own-game-ubisoft'", Assert.Single(games, g => g.InstallPath == own).LaunchCommand);
-        Assert.Single(warnings, w => w.Contains(prefix, StringComparison.Ordinal) && w.Contains("no launch command", StringComparison.Ordinal));
+        // w12 follow-up (merge review nit 1): counted as listed without a launch command (its own scan line), never as a
+        // skipped item (no warning).
+        Assert.Equal(1, listed);
+        Assert.Empty(warnings);
     }
 
     [Fact]
@@ -64,7 +67,7 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
         var layout = Path.Combine(prefix, "drive_c", "Games", "Layout");
         Pe(layout, "Layout.exe", 8192);
 
-        var (games, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(LutrisGameDetector.DetectIn([root], Home, CancellationToken.None)));
+        var (games, warnings, listed) = await DetectorDiagnostics.CollectScanAsync(() => Task.FromResult(LutrisGameDetector.DetectIn([root], Home, CancellationToken.None)));
 
         var card = Assert.Single(games, g => g.InstallPath == layout);
         Assert.Null(card.LaunchCommand);
@@ -73,7 +76,8 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
         Assert.Null(Assert.Single(games, g => g.InstallPath == other).LaunchCommand);
         Assert.DoesNotContain(games, g => g.InstallPath != Path.Combine(prefix, "drive_c", "StoreGames", "Own") &&
                                           g.LaunchCommand?.Contains("own-game-ubisoft", StringComparison.Ordinal) == true);
-        Assert.Single(warnings, w => w.Contains(prefix, StringComparison.Ordinal)); // one per prefix, not one per game
+        Assert.Equal(2, listed); // Other and Layout, in the prefix's one count (follow-up: no longer a "skipped" warning)
+        Assert.Empty(warnings);
     }
 
     [Fact]
@@ -89,10 +93,11 @@ public sealed class LutrisPerGameStoreEntryOnlyTests : IDisposable
         File.WriteAllText(Path.Combine(configRoot, "plain-1763420700.yml"),
             $"game:\n  exe: drive_c/Games/Plain/Plain.exe\n  prefix: {prefix}\nname: Plain\n");
 
-        var (games, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(LutrisGameDetector.DetectIn([configRoot], Home, CancellationToken.None)));
+        var (games, warnings, listed) = await DetectorDiagnostics.CollectScanAsync(() => Task.FromResult(LutrisGameDetector.DetectIn([configRoot], Home, CancellationToken.None)));
 
         Assert.Equal(plain, Assert.Single(games).InstallPath);
         Assert.Empty(warnings);
+        Assert.Equal(0, listed);
     }
 
     private string Prefix(string name)
