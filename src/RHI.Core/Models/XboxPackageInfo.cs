@@ -22,6 +22,11 @@ namespace RHI.Core.Models;
 /// The package's declared <c>ProcessorArchitecture</c> (appxmanifest.xml, else MicrosoftGame.config): the game's bitness
 /// when its exe is encrypted on disk (<see cref="RHI.Core.Services.GameArchitecture"/>, #167); null when it declares none.
 /// </param>
+/// <param name="StateDir">
+/// w12/hdr-wsi (#251 correction F4): the state folder of the installer-app instance owning the title, where RHI reads its
+/// Microsoft Store catalogue records (<c>catalogue/products/&lt;StoreId&gt;.json</c>) for the name and the HDR flag;
+/// null for Xodus-only installs and unknown instances.
+/// </param>
 public sealed record XboxPackageInfo(
     string? StoreId,
     string OwningApp,
@@ -30,4 +35,5 @@ public sealed record XboxPackageInfo(
     IReadOnlyList<string>? PlayArgv = null,
     IReadOnlyList<string>? ShowArgv = null,
     IReadOnlyDictionary<string, string>? LaunchEnvironment = null,
-    PeArchitecture? Architecture = null);
+    PeArchitecture? Architecture = null,
+    string? StateDir = null);

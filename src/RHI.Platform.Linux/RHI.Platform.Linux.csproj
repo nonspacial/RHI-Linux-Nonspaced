@@ -13,6 +13,7 @@
     <EmbeddedResource Include="Deployment/OptiScalerTemplates/*.ini" LogicalName="OptiScalerTemplates.%(Filename)%(Extension)" />
     <!-- w5/ini-presets (#181): upstream 2.8.7's ReShade, ReLimiter and Display Commander INI templates, seeded once. -->
     <EmbeddedResource Include="Deployment/UserIniTemplates/*.ini" LogicalName="UserIniTemplates.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Hdr/hdr-support-overrides.json" LogicalName="HdrSupportOverrides.json" /><!-- w12/hdr-wsi (#251) -->
   </ItemGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">

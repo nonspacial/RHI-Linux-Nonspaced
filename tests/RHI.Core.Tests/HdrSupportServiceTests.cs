@@ -1,0 +1,486 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using RHI.Core.Models;
+using RHI.Platform.Linux.Detection;
+using RHI.Platform.Linux.Hdr;
+
+namespace RHI.Core.Tests;
+
+/// <summary>
+/// #251: the HDR support resolver. RHI's curated list wins, then PCGamingWiki's <c>hdr</c> field (wikitext through
+/// <c>action=parse</c>; HTTP fakes only, never the live wiki), then a Microsoft Store record's PC HDR flag for a game the
+/// app that installed it keeps one for. Offline, a rate limit or a time-out is Unknown (shown) and never cached; answers
+/// are cached with the page name and fetch time and asked again only after an explicit full Refresh.
+/// </summary>
+public sealed class HdrSupportServiceTests : IDisposable
+{
+    private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-hdr-support-" + Guid.NewGuid().ToString("N"))).FullName;
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    [Theory]
+    [InlineData("true", HdrSupportAnswer.Yes, HdrSupportSource.PcGamingWiki)]
+    [InlineData("True ", HdrSupportAnswer.Yes, HdrSupportSource.PcGamingWiki)]
+    [InlineData("hackable", HdrSupportAnswer.Yes, HdrSupportSource.PcGamingWikiHackable)]
+    [InlineData("true<ref>Patch 1.1</ref>", HdrSupportAnswer.Yes, HdrSupportSource.PcGamingWiki)]
+    [InlineData("false{{note|x}}", HdrSupportAnswer.No, HdrSupportSource.PcGamingWiki)]
+    [InlineData("limited", HdrSupportAnswer.Yes, HdrSupportSource.PcGamingWiki)]
+    [InlineData("always on", HdrSupportAnswer.Yes, HdrSupportSource.PcGamingWiki)]
+    [InlineData("false", HdrSupportAnswer.No, HdrSupportSource.PcGamingWiki)]
+    [InlineData("unknown", HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown)]
+    [InlineData("n/a", HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown)]
+    [InlineData("", HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown)]
+    [InlineData(null, HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown)]
+    public void PcgwsHdrField_MapsToAnAnswer(string? value, HdrSupportAnswer answer, HdrSupportSource source)
+    {
+        var evidence = HdrSupportService.FromWikitext(Wikitext(value), "Some Game");
+
+        Assert.Equal((answer, source, "Some Game"), (evidence.Answer, evidence.Source, evidence.Page));
+    }
+
+    [Fact]
+    public void TheHdrNotesRow_IsNotTheHdrField()
+    {
+        var text = "{{Video\n|hdr notes                  = Needs a mod.\n|ultrawidescreen = true\n}}";
+        Assert.Equal(HdrSupportAnswer.Unknown, HdrSupportService.FromWikitext(text, null).Answer);
+        Assert.Equal(HdrSupportAnswer.No, HdrSupportService.FromWikitext(text + "\n|hdr = false\n", null).Answer);
+    }
+
+    [Fact]
+    public async Task ASteamGame_IsFoundThroughItsAppId_AndItsAnswerIsCachedWithThePageAndTime()
+    {
+        var wiki = new FakeWiki { AppIdPages = { [397540] = "Borderlands_3" }, Pages = { ["Borderlands 3"] = Wikitext("true") } };
+        var game = Steam("Borderlands 3", 397540);
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.Yes, HdrSupportSource.PcGamingWiki, "Borderlands 3"), evidence);
+        Assert.Equal(2, wiki.Requests.Count); // appid.php, then the page's wikitext
+        Assert.Contains(wiki.Requests, r => r.Contains("action=parse&page=Borderlands%203&prop=wikitext&format=json&formatversion=2&redirects=1", StringComparison.Ordinal));
+        using var cache = JsonDocument.Parse(File.ReadAllText(CachePath));
+        var entry = cache.RootElement.GetProperty("Games").GetProperty("steam:397540");
+        Assert.Equal("Borderlands 3", entry.GetProperty("Page").GetString());
+        Assert.Equal("Yes", entry.GetProperty("Answer").GetString());
+        Assert.True(entry.TryGetProperty("FetchedAt", out _));
+
+        // Looked up once per game: a new start reads the cache, no request.
+        var again = Service(wiki);
+        Assert.Equal(evidence, await again.ResolveAsync(game));
+        Assert.Equal(evidence, again.Peek(game));
+        Assert.Equal(2, wiki.Requests.Count);
+    }
+
+    [Fact]
+    public async Task AGameWithoutAppId_IsFoundByPcgwsSearch()
+    {
+        var wiki = new FakeWiki { Search = { ["A Game About Digging A Hole"] = "A_Game_About_Digging_A_Hole" }, Pages = { ["A Game About Digging A Hole"] = Wikitext("false") } };
+
+        var evidence = await Service(wiki).ResolveAsync(Named("A Game About Digging A Hole"));
+
+        Assert.Equal((HdrSupportAnswer.No, "A Game About Digging A Hole"), (evidence.Answer, evidence.Page));
+    }
+
+    [Fact]
+    public async Task TheManifestsPageUrl_IsUsedWithoutASearch()
+    {
+        var wiki = new FakeWiki { Pages = { ["Metro Exodus"] = Wikitext("true") } };
+        var game = Named("Metro Exodus Enhanced Edition");
+        game.PcgwUrlOverride = "https://www.pcgamingwiki.com/wiki/Metro_Exodus";
+
+        Assert.Equal(HdrSupportAnswer.Yes, (await Service(wiki).ResolveAsync(game)).Answer);
+        Assert.Single(wiki.Requests);
+    }
+
+    [Fact]
+    public async Task TheCuratedList_Wins_WithoutAnyRequest()
+    {
+        var wiki = new FakeWiki { AppIdPages = { [1449560] = "Metro_Exodus" }, Pages = { ["Metro Exodus"] = Wikitext("true") } };
+        var service = Service(wiki, """{"games":{"steam:1449560":{"hdr":false,"note":"test"}, "name:control":{"hdr":true}}}""");
+
+        var metro = await service.ResolveAsync(Steam("Metro Exodus Enhanced Edition", 1449560));
+        var control = service.Peek(Named("Control"));
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.CuratedList), metro);
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.Yes, HdrSupportSource.CuratedList), control);
+        Assert.Empty(wiki.Requests);
+    }
+
+    [Fact]
+    public void TheShippedCuratedList_Reads()
+    {
+        // The embedded resource parses (empty at first): no warning, nothing decided by it.
+        var log = Path.Combine(_root, "rhi.log");
+        using (RHI.Core.Services.AppLog.UseInThisFlow(new RHI.Core.Services.AppLog(log)))
+            Assert.Null(new HdrSupportService(null, cachePath: CachePath).Peek(Named("Control")));
+        Assert.False(File.Exists(log) && File.ReadAllText(log).Contains("curated", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("offline")]
+    [InlineData("rate-limit")]
+    [InlineData("server-error")]
+    public async Task AFailedLookup_IsUnknown_AndNotCached(string how)
+    {
+        var wiki = new FakeWiki { Fail = how, AppIdPages = { [397540] = "Borderlands_3" }, Pages = { ["Borderlands 3"] = Wikitext("false") } };
+        var game = Steam("Borderlands 3", 397540);
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal(HdrSupportEvidence.Unchecked, evidence);
+        Assert.True(HdrSupportRule.ShowsHdrSection(evidence, hdrModInstalled: false));
+        Assert.False(File.Exists(CachePath));
+        // Back online, a later start asks again and gets the answer.
+        wiki.Fail = null;
+        Assert.Equal(HdrSupportAnswer.No, (await Service(wiki).ResolveAsync(game)).Answer);
+    }
+
+    [Fact]
+    public async Task NoPage_IsADefiniteUnknown_AndIsCached()
+    {
+        var wiki = new FakeWiki();
+        var game = Named("Obscure Game Nobody Wrote Up");
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal((HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown), (evidence.Answer, evidence.Source));
+        var requests = wiki.Requests.Count;
+        Assert.Equal(evidence, await Service(wiki).ResolveAsync(game));
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    // ---- correction round 1, F5 + F7 (R7): pages PCGW has not got ------------------------------------------------------
+
+    [Fact]
+    public async Task ASteamGamePcgwDoesNotKnowByAppId_IsFoundByName_AndTheAnswerIsCached()
+    {
+        // Live: appid.php?appid=<unknown> answers 200 with wgPageName "Special:IdLookup", never 404.
+        var wiki = new FakeWiki { Search = { ["Digging Quest"] = "Digging_Quest" }, Pages = { ["Digging Quest"] = Wikitext("false") } };
+        var game = Steam("Digging Quest", 999999999);
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.PcGamingWiki, "Digging Quest"), evidence);
+        Assert.DoesNotContain(wiki.Requests, r => r.Contains("Special", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(wiki.Requests, r => r.Contains("action=opensearch", StringComparison.Ordinal));
+        var requests = wiki.Requests.Count;
+        Assert.Equal(evidence, await Service(wiki).ResolveAsync(game)); // cached: no request on the next start
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    [Fact]
+    public async Task ASteamGamePcgwDoesNotKnowAtAll_IsADefiniteUnknown_AskedOnce()
+    {
+        var wiki = new FakeWiki();
+        var game = Steam("Obscure Quest", 999999999);
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal((HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown), (evidence.Answer, evidence.Source));
+        var requests = wiki.Requests.Count;
+        Assert.Equal(evidence, await Service(wiki).ResolveAsync(game));
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("missingtitle")]
+    [InlineData("pagecannotexist")]
+    public async Task APageThatIsNotThere_IsADefiniteUnknown_AndIsCached(string code)
+    {
+        // The search (or a manifest URL) names a page, but PCGW's parse says it is not there.
+        var wiki = new FakeWiki { Search = { ["Gone Quest"] = "Gone_Quest" }, ParseErrors = { ["Gone Quest"] = code } };
+        var game = Named("Gone Quest");
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.Unknown, HdrSupportSource.PcGamingWikiUnknown, "Gone Quest"), evidence);
+        var requests = wiki.Requests.Count;
+        Assert.Equal(evidence, await Service(wiki).ResolveAsync(game));
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    // ---- correction round 1, F6 + F7 (R1) ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ALookupWhoseCallerLeft_IsNeverHandedToTheNextCaller()
+    {
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wiki = new FakeWiki { Search = { ["Digging Quest"] = "Digging_Quest" }, Pages = { ["Digging Quest"] = Wikitext("false") }, Hold = held.Task };
+        var game = Named("Digging Quest");
+        var service = Service(wiki);
+        using var left = new CancellationTokenSource();
+
+        var first = service.ResolveAsync(game, left.Token);
+        await wiki.Arrived.Task.WaitAsync(TimeSpan.FromSeconds(30)); // its request is out
+        left.Cancel(); // the user selected another game
+        var second = service.ResolveAsync(game); // and came back
+        wiki.Hold = null;
+        held.SetResult();
+
+        Assert.Equal(HdrSupportEvidence.Unchecked, await first.WaitAsync(TimeSpan.FromSeconds(30))); // the left caller: nothing, not cached
+        Assert.Equal(HdrSupportAnswer.No, (await second.WaitAsync(TimeSpan.FromSeconds(30))).Answer); // asked anew
+    }
+
+    [Fact]
+    public async Task AFinishedLookup_IsNeverReused_AfterARefresh()
+    {
+        // F7 R1: resolve, MarkStale, resolve again at once — a new request, never the finished lookup's answer.
+        var wiki = new FakeWiki { AppIdPages = { [377160] = "Fallout_4" }, Pages = { ["Fallout 4"] = Wikitext("false") } };
+        var game = Steam("Fallout 4", 377160);
+        var clock = new ManualClock(new DateTimeOffset(2026, 10, 28, 3, 0, 0, TimeSpan.Zero));
+        var service = Service(wiki, time: clock);
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        var requests = wiki.Requests.Count;
+
+        wiki.Pages["Fallout 4"] = Wikitext("true");
+        clock.Now += TimeSpan.FromMinutes(1);
+        service.MarkStale();
+        Assert.Equal(HdrSupportAnswer.Yes, (await service.ResolveAsync(game)).Answer);
+        Assert.Equal(requests * 2, wiki.Requests.Count);
+    }
+
+    // ---- correction round 1, N1 ----------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ClearingTheCache_ForgetsTheAnswersHeldInMemory()
+    {
+        var wiki = new FakeWiki { AppIdPages = { [377160] = "Fallout_4" }, Pages = { ["Fallout 4"] = Wikitext("false") } };
+        var game = Steam("Fallout 4", 377160);
+        var service = Service(wiki);
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        Assert.True(File.Exists(CachePath));
+        var requests = wiki.Requests.Count;
+
+        Directory.Delete(Path.GetDirectoryName(CachePath)!, recursive: true); // what Settings → Clear cache does to the folder
+        wiki.Pages["Fallout 4"] = Wikitext("true");
+
+        Assert.Null(service.Peek(game)); // nothing known any more
+        Assert.Equal(HdrSupportAnswer.Yes, (await service.ResolveAsync(game)).Answer); // asked again
+        Assert.Equal(requests * 2, wiki.Requests.Count);
+        using var cache = JsonDocument.Parse(File.ReadAllText(CachePath)); // the new answer only, nothing written back
+        Assert.Equal("Yes", cache.RootElement.GetProperty("Games").GetProperty("steam:377160").GetProperty("Answer").GetString());
+        Assert.Single(cache.RootElement.GetProperty("Games").EnumerateObject());
+    }
+
+    [Fact]
+    public async Task ACacheThatCannotBeSaved_StillServesFromMemory()
+    {
+        var wiki = new FakeWiki { AppIdPages = { [377160] = "Fallout_4" }, Pages = { ["Fallout 4"] = Wikitext("false") } };
+        var game = Steam("Fallout 4", 377160);
+        File.WriteAllText(Path.Combine(_root, "not-a-folder"), "");
+        var service = new HdrSupportService(new PcGamingWikiGraphicsApiService(new HttpClient(wiki), Path.Combine(_root, "pcgw-api.json"), minRequestGap: TimeSpan.Zero),
+            cachePath: Path.Combine(_root, "not-a-folder", "pcgw_hdr_cache.json"), overridesJson: """{"games":{}}""");
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        var requests = wiki.Requests.Count;
+
+        Assert.Equal(HdrSupportAnswer.No, service.Peek(game)?.Answer); // a file never saved is not a purge
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("offline")]
+    [InlineData("server-error")]
+    [InlineData("timeout")]
+    public async Task AFailedLookup_WritesOneLogLine(string how)
+    {
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wiki = new FakeWiki { AppIdPages = { [397540] = "Borderlands_3" }, Pages = { ["Borderlands 3"] = Wikitext("true") } };
+        if (how == "timeout") wiki.Hold = held.Task; else wiki.Fail = how;
+        var log = Path.Combine(_root, "rhi.log");
+        var service = new HdrSupportService(new PcGamingWikiGraphicsApiService(new HttpClient(wiki), Path.Combine(_root, "cache", "pcgw-api.json"), minRequestGap: TimeSpan.Zero),
+            cachePath: CachePath, overridesJson: """{"games":{}}""", lookupTimeout: TimeSpan.FromMilliseconds(300));
+        try
+        {
+            using (RHI.Core.Services.AppLog.UseInThisFlow(new RHI.Core.Services.AppLog(log)))
+                Assert.Equal(HdrSupportEvidence.Unchecked, await service.ResolveAsync(Steam("Borderlands 3", 397540)).WaitAsync(TimeSpan.FromSeconds(30)));
+        }
+        finally { held.TrySetResult(); }
+        var lines = File.ReadAllLines(log).Where(line => line.Contains("[pcgw]", StringComparison.Ordinal) || line.Contains("[hdr-support]", StringComparison.Ordinal)).ToList();
+        Assert.True(lines.Count == 1, string.Join("\n", lines));
+    }
+
+    [Fact]
+    public async Task AFullRefresh_AsksAgain_AndKeepsTheEarlierAnswerWhenThatFails()
+    {
+        var wiki = new FakeWiki { AppIdPages = { [377160] = "Fallout_4" }, Pages = { ["Fallout 4"] = Wikitext("false") } };
+        var game = Steam("Fallout 4", 377160);
+        var clock = new ManualClock(new DateTimeOffset(2026, 10, 27, 20, 0, 0, TimeSpan.Zero));
+        var service = Service(wiki, time: clock);
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        var requests = wiki.Requests.Count;
+
+        clock.Now += TimeSpan.FromMinutes(1);
+        service.MarkStale();
+        Assert.Null(service.Peek(game));
+        wiki.Fail = "offline";
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer); // the earlier answer stands
+        Assert.True(wiki.Requests.Count > requests);
+
+        wiki.Fail = null;
+        clock.Now += TimeSpan.FromMinutes(20); // past PCGW's pause after the failure
+        wiki.Pages["Fallout 4"] = Wikitext("true");
+        Assert.Equal(HdrSupportAnswer.Yes, (await service.ResolveAsync(game)).Answer);
+        Assert.Equal(HdrSupportAnswer.Yes, service.Peek(game)?.Answer);
+    }
+
+    [Theory]
+    [InlineData("""["Desktop","Xbox"]""", null, HdrSupportAnswer.Yes)]
+    [InlineData("null", null, HdrSupportAnswer.Yes)]
+    [InlineData("""["Xbox"]""", null, HdrSupportAnswer.Unknown)]
+    [InlineData("""["Desktop"]""", "false", HdrSupportAnswer.Yes)] // correction F3: the Store's PC yes beats PCGW false
+    [InlineData("""["Xbox"]""", "false", HdrSupportAnswer.No)] // a console-only flag does not
+    [InlineData("""["Desktop"]""", "unknown", HdrSupportAnswer.Yes)]
+    [InlineData("""["Desktop"]""", "true", HdrSupportAnswer.Yes)]
+    public async Task AnXboxGame_UsesItsStoreRecordsPcHdrFlag_UnlessPcgwSaysYes(string platforms, string? pcgw, HdrSupportAnswer expected)
+    {
+        var state = Directory.CreateDirectory(Path.Combine(_root, "installer-state")).FullName;
+        var products = Directory.CreateDirectory(Path.Combine(state, "catalogue", "products")).FullName;
+        File.WriteAllText(Path.Combine(products, "9NBLGGH4R315.json"),
+            """{"ProductId":"9NBLGGH4R315","Properties":{"Attributes":[{"Name":"XblLocalCoop","ApplicablePlatforms":null},{"Name":"CapabilityHDR","ApplicablePlatforms":"""
+            + platforms + "}]}}");
+        var wiki = new FakeWiki();
+        if (pcgw is not null)
+        {
+            wiki.Search["Forza Quest"] = "Forza_Quest";
+            wiki.Pages["Forza Quest"] = Wikitext(pcgw);
+        }
+        var game = Named("Forza Quest");
+        game.Source = "Xbox";
+        game.XboxPackage = new XboxPackageInfo("9NBLGGH4R315", "Installer", null, Path.Combine(state, "jobs.json"), StateDir: state);
+
+        var evidence = await Service(wiki).ResolveAsync(game);
+
+        Assert.Equal(expected, evidence.Answer);
+        if (pcgw != "true" && expected == HdrSupportAnswer.Yes) Assert.Equal(HdrSupportSource.MicrosoftStore, evidence.Source); // its tooltip
+        if (pcgw == "true") Assert.Equal(HdrSupportSource.PcGamingWiki, evidence.Source);
+    }
+
+    [Fact]
+    public async Task TheCuratedList_StillBeatsTheStoreFlag()
+    {
+        var state = Directory.CreateDirectory(Path.Combine(_root, "installer-state")).FullName;
+        var products = Directory.CreateDirectory(Path.Combine(state, "catalogue", "products")).FullName;
+        File.WriteAllText(Path.Combine(products, "9NBLGGH4R315.json"),
+            """{"ProductId":"9NBLGGH4R315","Properties":{"Attributes":[{"Name":"CapabilityHDR","ApplicablePlatforms":["Desktop"]}]}}""");
+        var game = Named("Forza Quest");
+        game.Source = "Xbox";
+        game.XboxPackage = new XboxPackageInfo("9NBLGGH4R315", "Installer", null, Path.Combine(state, "jobs.json"), StateDir: state);
+
+        var evidence = await Service(new FakeWiki(), """{"games":{"xbox:9NBLGGH4R315":{"hdr":false}}}""").ResolveAsync(game);
+
+        Assert.Equal(new HdrSupportEvidence(HdrSupportAnswer.No, HdrSupportSource.CuratedList), evidence);
+    }
+
+    [Theory]
+    [InlineData(HdrSupportAnswer.Yes, false, true)]
+    [InlineData(HdrSupportAnswer.Unknown, false, true)]
+    [InlineData(HdrSupportAnswer.No, false, false)]
+    [InlineData(HdrSupportAnswer.No, true, true)]
+    [InlineData(HdrSupportAnswer.No, null, true)]
+    public void TheRule_HidesOnlyANoWithoutAnHdrMod(HdrSupportAnswer answer, bool? hdrMod, bool shown)
+    {
+        Assert.Equal(shown, HdrSupportRule.ShowsHdrSection(new HdrSupportEvidence(answer, HdrSupportSource.PcGamingWiki), hdrMod));
+        Assert.True(HdrSupportRule.ShowsHdrSection(null, false)); // not known yet
+    }
+
+    [Fact]
+    public void TheHdrMods_AreRenoDxLumaAndDx9Hdr_InstalledByRhi()
+    {
+        ManagedComponent Row(ManagedComponentKind kind, bool rhi, ComponentAvailability availability)
+            => new() { Kind = kind, DisplayName = kind.ToString(), ManagedByRhi = rhi, Availability = availability };
+
+        foreach (var kind in new[] { ManagedComponentKind.RenoDX, ManagedComponentKind.LumaFramework, ManagedComponentKind.DxvkHdr })
+        {
+            Assert.NotNull(HdrSupportRule.InstalledHdrMod([Row(kind, true, ComponentAvailability.Installed)]));
+            Assert.NotNull(HdrSupportRule.InstalledHdrMod([Row(kind, true, ComponentAvailability.UpdateAvailable)]));
+            Assert.Null(HdrSupportRule.InstalledHdrMod([Row(kind, false, ComponentAvailability.Installed)]));
+            Assert.Null(HdrSupportRule.InstalledHdrMod([Row(kind, true, ComponentAvailability.Available)]));
+        }
+        Assert.Null(HdrSupportRule.InstalledHdrMod([Row(ManagedComponentKind.ReShade, true, ComponentAvailability.Installed)]));
+    }
+
+    // ---- helpers ----------------------------------------------------------------------------------------------------
+
+    private string CachePath => Path.Combine(_root, "cache", "pcgw_hdr_cache.json");
+
+    private HdrSupportService Service(FakeWiki wiki, string? overrides = """{"games":{}}""", TimeProvider? time = null)
+        => new(new PcGamingWikiGraphicsApiService(new HttpClient(wiki), Path.Combine(_root, "cache", "pcgw-api.json"), time, minRequestGap: TimeSpan.Zero),
+            cachePath: CachePath, overridesJson: overrides, timeProvider: time, lookupTimeout: TimeSpan.FromSeconds(20));
+
+    private sealed class ManualClock(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    internal static string Wikitext(string? hdr)
+        => "{{Video\n|4k ultra hd               = true\n" + (hdr is null ? "" : $"|hdr                        = {hdr}\n") + "|hdr notes                  = \n}}";
+
+    private static DetectedGame Steam(string name, int appId) => new() { Name = name, Source = "Steam", SteamAppId = appId, InstallPath = "/games/" + name };
+
+    private static DetectedGame Named(string name) => new() { Name = name, Source = "Manual", InstallPath = "/games/" + name };
+
+    /// <summary>PCGamingWiki as the service reads it: appid.php pages, opensearch, action=parse; counts every request.</summary>
+    internal sealed class FakeWiki : HttpMessageHandler
+    {
+        public Dictionary<int, string> AppIdPages { get; } = new();
+        public Dictionary<string, string> Search { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, string> Pages { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Titles whose parse answers this API error code (e.g. <c>missingtitle</c>, <c>pagecannotexist</c>).</summary>
+        public Dictionary<string, string> ParseErrors { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public ConcurrentQueue<string> Requests { get; } = new();
+        public volatile string? Fail;
+        /// <summary>While set, every request waits for it or for its caller to cancel (a server slow to answer).</summary>
+        public volatile Task? Hold;
+        /// <summary>Completed when a request arrives (replace it to wait for the next one).</summary>
+        public TaskCompletionSource Arrived { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Enqueue(request.RequestUri!.AbsoluteUri);
+            Arrived.TrySetResult();
+            if (Hold is { } hold) await hold.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return await Answer(request).ConfigureAwait(false);
+        }
+
+        private Task<HttpResponseMessage> Answer(HttpRequestMessage request)
+        {
+            var uri = request.RequestUri!;
+            switch (Fail)
+            {
+                case "offline": throw new HttpRequestException("offline test");
+                case "rate-limit": return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+                case "server-error": return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+            }
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            // An AppID PCGW does not know: 200 with its own lookup page, as the live wiki answers (read 2026-10-28).
+            if (uri.AbsolutePath == "/api/appid.php")
+                return Task.FromResult(Text($"<html><script>RLCONF={{\"wgPageName\":\"{(AppIdPages.TryGetValue(int.Parse(query["appid"]!), out var page) ? page : "Special:IdLookup")}\",\"wgTitle\":\"x\"}};</script></html>"));
+            if (query["action"] == "opensearch")
+            {
+                var name = query["search"]!;
+                var urls = Search.TryGetValue(name, out var found) ? $"[\"https://www.pcgamingwiki.com/wiki/{found}\"]" : "[]";
+                return Task.FromResult(Text($"[\"{name}\",[],[],{urls}]"));
+            }
+            if (query["action"] == "parse")
+            {
+                var title = query["page"]!;
+                if (title.StartsWith("Special:", StringComparison.OrdinalIgnoreCase))
+                    return Task.FromResult(Text("""{"error":{"code":"pagecannotexist","info":"Namespace doesn't allow actual pages."}}"""));
+                if (ParseErrors.TryGetValue(title, out var code))
+                    return Task.FromResult(Text("{\"error\":{\"code\":\"" + code + "\",\"info\":\"test\"}}"));
+                return Task.FromResult(Pages.TryGetValue(title, out var text)
+                    ? Text(JsonSerializer.Serialize(new { parse = new { title, pageid = 1, wikitext = text } }))
+                    : Text("""{"error":{"code":"missingtitle","info":"The page you specified doesn't exist."}}"""));
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+
+        private static HttpResponseMessage Text(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8) };
+    }
+}

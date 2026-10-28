@@ -268,8 +268,10 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
     [Fact]
     public void AnHdrMode_KeepsItsVariablesAndWrapper_AndGainsTheNvidiaOnes()
     {
+        // #250: a driver older than 595, so the Legacy WSI tick is used (on a newer one the plan leaves it out).
+        var olderDriver = Rtx40 with { NvidiaDriverVersion = "580.95.05", LegacyWsiLikelyRequired = true };
         var plan = Service(gamescope: true).BuildPlan(Direct(), Profile(LinuxHdrModes.Gamescope,
-            new NvidiaGameSettings { SuperResolutionRenderScale = 75 }, legacyWsi: true), Rtx40, AllFiles);
+            new NvidiaGameSettings { SuperResolutionRenderScale = 75 }, legacyWsi: true), olderDriver, AllFiles);
 
         Assert.True(plan.AppliesAtLaunch);
         Assert.Equal("1", plan.Environment["ENABLE_HDR_WSI"]);

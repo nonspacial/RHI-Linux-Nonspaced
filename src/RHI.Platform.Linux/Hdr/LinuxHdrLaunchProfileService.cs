@@ -111,10 +111,19 @@ public enum LinuxHdrPlanReason
 /// <summary>What the plan says about the legacy HDR WSI layer (ENABLE_HDR_WSI).</summary>
 public enum LinuxHdrLegacyWsiNote
 {
+    /// <summary>
+    /// Nothing to say: the host does not need the layer (the tick is hidden there) and none is saved — #250 correction F2,
+    /// no "Legacy WSI is off." for a control that is not on screen.
+    /// </summary>
     Off,
     Enabled,
     /// <summary>Not enabled, but the NVIDIA driver is older than 595 and may need it.</summary>
-    OlderNvidiaDriver
+    OlderNvidiaDriver,
+    /// <summary>
+    /// #250: ticked in the saved profile, but the host does not need the layer (NVIDIA 595 or newer, or no NVIDIA driver
+    /// read), so the plan leaves it out; the saved tick is kept for a host that needs it.
+    /// </summary>
+    NotUsed
 }
 
 /// <param name="Handoff">
@@ -296,7 +305,7 @@ public sealed partial class LinuxHdrLaunchProfileService
             return Blocked(profile, host, LinuxHdrPlanReason.NoRunnerContract);
         }
 
-        ApplyLegacyWsi(profile, env);
+        ApplyLegacyWsi(profile, host, env);
         var options = BuildLaunchOptions(env, null);
         return new LinuxHdrLaunchPlan(true, true, env, null, options, reason, host, LegacyNote(profile, host));
     }
@@ -310,7 +319,7 @@ public sealed partial class LinuxHdrLaunchProfileService
         // Gamescope is the HDR authority in this mode. Do not layer runner-specific HDR toggles
         // on top of it; that would duplicate policy already owned by the compositor/runner path.
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
-        ApplyLegacyWsi(profile, env);
+        ApplyLegacyWsi(profile, host, env);
         // #191: with the resolution toggle on, gamescope's own output size is the game's resolution (no display switch).
         var prefix = DisplayModeSwitcher.GamescopeSize(profile) is { } size
             ? $"gamescope -W {size.Width} -H {size.Height} --hdr-enabled --"
@@ -325,19 +334,32 @@ public sealed partial class LinuxHdrLaunchProfileService
     private static LinuxHdrLaunchPlan Blocked(LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host, LinuxHdrPlanReason reason)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
-        ApplyLegacyWsi(profile, env);
+        ApplyLegacyWsi(profile, host, env);
         return new LinuxHdrLaunchPlan(true, false, env, null, "%command%", reason, host, LegacyNote(profile, host));
     }
 
-    private static void ApplyLegacyWsi(LinuxHdrGameProfile profile, IDictionary<string, string> environment)
+    /// <summary>
+    /// #250: the Legacy HDR WSI tick applies (and is offered) only on a probed host that needs the layer — an NVIDIA
+    /// driver older than 595 (<see cref="LinuxHdrHostSnapshot.LegacyWsiLikelyRequired"/>). Elsewhere a saved tick stays in
+    /// the profile but is left out of every plan: its environment, the line copied for Steam or the app that installed
+    /// the game, and a direct start (with it, a game on a newer driver could crash on load).
+    /// </summary>
+    public static bool OffersLegacyWsi(LinuxHdrHostSnapshot host)
     {
-        if (profile.EnableLegacyWsi) environment["ENABLE_HDR_WSI"] = "1";
+        ArgumentNullException.ThrowIfNull(host);
+        return host.Probed && host.LegacyWsiLikelyRequired;
+    }
+
+    private static void ApplyLegacyWsi(LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host, IDictionary<string, string> environment)
+    {
+        if (profile.EnableLegacyWsi && OffersLegacyWsi(host)) environment["ENABLE_HDR_WSI"] = "1";
     }
 
     private static LinuxHdrLegacyWsiNote LegacyNote(LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host)
     {
-        if (profile.EnableLegacyWsi) return LinuxHdrLegacyWsiNote.Enabled;
-        return host.LegacyWsiLikelyRequired ? LinuxHdrLegacyWsiNote.OlderNvidiaDriver : LinuxHdrLegacyWsiNote.Off;
+        // #250: never "enabled" where the tick is not used.
+        if (!OffersLegacyWsi(host)) return profile.EnableLegacyWsi ? LinuxHdrLegacyWsiNote.NotUsed : LinuxHdrLegacyWsiNote.Off;
+        return profile.EnableLegacyWsi ? LinuxHdrLegacyWsiNote.Enabled : LinuxHdrLegacyWsiNote.OlderNvidiaDriver;
     }
 
     private static IReadOnlyDictionary<string, string> EmptyEnvironment()

@@ -1126,3 +1126,34 @@ every launch, x86 never updated" never existed here (per-architecture stamped ca
 <!-- w12/pins notes -->
 
 <!-- w12/hdr-wsi notes -->
+
+### #250 — Legacy HDR WSI: the tick only where the host needs it
+
+Fork-only fix (owner report, no upstream commit; upstream RHI is Windows-only and has no HDR WSI layer). The per-game
+"Legacy WSI" tick shows only when the HDR host probe says the layer is needed (an NVIDIA driver older than 595); it is
+hidden on newer drivers, without a readable NVIDIA driver and until the host is probed. `ENABLE_HDR_WSI=1` goes into a
+launch plan only on such a host (`LinuxHdrLaunchProfileService.OffersLegacyWsi`), so a tick saved earlier is left out of
+the launch line RHI shows for pasting into Steam or into the app that installed an Xbox game, the Heroic/Lutris steps
+and a game RHI starts directly — and stays saved (it applies again on an older driver; `game-library.json` is not
+rewritten). The plan's note then says the saved tick is not used with this driver; with nothing saved it says nothing
+about Legacy WSI there (no sentence about a control that is not shown). HDR Off is unchanged (no variables).
+
+### #251 — HDR launch section only for games that can use HDR
+
+Fork-only (owner decision; upstream RHI has no Linux HDR launch section). The HDR launch section shows unless RHI's data
+says the game has no HDR and RHI installed no HDR mod on it (RenoDX, RenoDX Upgrade, Luma Framework, DX9 HDR); unknown,
+offline, a rate limit or a failed lookup show it ("safe, not sorry"). `HdrSupportService` answers, first decisive source
+wins: RHI's curated list (embedded `Hdr/hdr-support-overrides.json`, keyed `steam:`/`heroic:`/`xbox:`/`name:`), the
+PCGamingWiki page's `hdr` field (page found as the graphics-API lookup finds it — manifest page URL, pcgw_data.json title,
+Steam AppID, PCGW search — and read as wikitext through `action=parse`, sharing that lookup's request gate; `true`,
+`hackable`, `limited`, `always on` → Yes, `false` → No, anything else → Unknown; an AppID PCGW does not know answers its
+`Special:IdLookup` page, which falls back to the name search). For a game the app that installed it keeps a Microsoft
+Store record for (the instance's `catalogue/products/<id>.json`, the file RHI reads the card's name from), that record's
+`CapabilityHDR` attribute on PC turns a PCGW `false` or unknown into Yes (the publisher's own listing; the curated list
+still wins). Answers are cached in `~/.cache/rhi-linux/pcgw_hdr_cache.json` with page and fetch time, asked again only
+after a full Refresh or Settings → Clear cache; the lookup of a game the user has left is cancelled. A hidden section's
+saved HDR mode stays in `game-library.json` but is not applied at a direct launch nor offered as launch text (HDR Off).
+"Change resolution while playing" is not HDR: it has its own row below; when the HDR row is hidden it stays wherever a
+desktop switch can apply (a game RHI starts, the desktop's tool installed) and switches the resolution around a direct
+start; gamescope-only cases (store hand-offs, no desktop tool) need the HDR row and hide with it. Provenance is only in the
+section label's 2 s tooltip (EN + PT-BR).

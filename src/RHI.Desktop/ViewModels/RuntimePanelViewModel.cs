@@ -1,9 +1,11 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Hdr;
+using RHI.Platform.Linux.Launch;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
 
@@ -146,12 +148,14 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             ResetGraphicsApiOverride();
             ResetOptiScalerVariant();
             ResetHdrProfile();
+            LoadHdrSupport(null); // #251
             return;
         }
         LoadGraphicsApiOverride(value);
         LoadOptiScalerVariant(value);
         LoadLumaModePreference(value);
         LoadHdrProfile(value);
+        LoadHdrSupport(value); // #251
     }
 
     /// <summary>The selection, its analysis or the language changed: every derived row.</summary>
@@ -165,6 +169,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(LumaPolicyText));
         OnPropertyChanged(nameof(LumaCoexistenceText));
         OnPropertyChanged(nameof(SelectedEngineHint));
+        OnPropertyChanged(nameof(ResolutionRowLabel)); // w12/hdr-wsi: follows the UI language
         NotifyHdrProfile();
     }
 
@@ -285,8 +290,44 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         RaiseHdrPlanChanged();
     }
 
-    /// <summary>#191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).</summary>
-    public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost);
+    /// <summary>
+    /// #191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).
+    /// w12/hdr-wsi (#251 correction F1): it has its own row and stays when the HDR row is hidden, wherever a plan with HDR
+    /// Off can apply — a desktop switch around a game RHI starts. Gamescope (and so a store hand-off, whose size travels
+    /// only in gamescope's launch options) needs the HDR row, so with that row hidden it no longer counts.
+    /// </summary>
+    public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost)
+                                        && (ShowHdrSection || CanSwitchDesktop(game, HdrHost));
+
+    /// <summary>
+    /// A display switch with HDR Off: a game RHI starts, on a probed desktop whose tool is installed (an unprobed host has no
+    /// desktop or tool to read, so a hidden-HDR game shows the toggle once the probe says it can apply).
+    /// </summary>
+    private static bool CanSwitchDesktop(DetectedGame game, LinuxHdrHostSnapshot host)
+        => !LaunchHandoffClassifier.IsHandoff(game) && DisplayModeSwitcher.AvailableTool(host) != DisplayTool.None;
+
+    /// <summary>w12/hdr-wsi (#251 correction): the label of the resolution toggle's own row.</summary>
+    public string ResolutionRowLabel => T("Hw.ResolutionRow");
+
+    /// <summary>
+    /// #250: the Legacy HDR WSI tick shows only where the probed host needs the layer (NVIDIA driver older than 595);
+    /// hidden, not disabled, elsewhere and until the host is probed. Hidden, it keeps the saved value: <see cref="HdrLegacyWsi"/>
+    /// still holds the profile's tick, so a save from another HDR control never turns it off (the plan leaves it out).
+    /// </summary>
+    public bool ShowHdrLegacyWsi => SelectedGame is not null && LinuxHdrLaunchProfileService.OffersLegacyWsi(HdrHost);
+
+    /// <summary>
+    /// #251: the profile a launch uses. While the HDR section is hidden (RHI's data says the game has no HDR and no HDR mod
+    /// is installed) its saved HDR mode is kept but not used: HDR Off — no HDR variables, no wrapper, nothing to paste.
+    /// The resolution toggle is not HDR (coordinator, correction round 1): it applies as for any HDR-Off game (a desktop
+    /// switch around a direct start; a hand-off keeps its own rule). The NVIDIA settings (DLSS section) still apply.
+    /// </summary>
+    private LinuxHdrGameProfile PlannedProfile()
+    {
+        var profile = ShownProfile();
+        if (!ShowHdrSection) profile.Mode = LinuxHdrModes.Off;
+        return profile;
+    }
 
     /// <summary>The profile the controls show (HDR mode, legacy WSI, resolution toggle and size).</summary>
     private LinuxHdrGameProfile ShownProfile() => new LinuxHdrGameProfile
@@ -299,7 +340,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     /// <summary>#191: what happens to the display when Play starts the selected game.</summary>
     public ResolutionPlan SelectedResolutionPlan => SelectedGame is null
         ? ResolutionPlan.Off
-        : DisplayModeSwitcher.Plan(SelectedGame, ShownProfile(), SelectedHdrPlan, HdrHost);
+        : DisplayModeSwitcher.Plan(SelectedGame, PlannedProfile(), SelectedHdrPlan, HdrHost);
 
     /// <summary>#191: the plain line under the resolution controls (hidden while the toggle is off).</summary>
     public string ResolutionHint => ResolutionText.Hint(SelectedResolutionPlan, SelectedGame);
@@ -415,9 +456,92 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     public bool CanEditHdrProfile => SelectedGame is not null && !IsBusy;
 
+    // ---- #251: the HDR launch section only for games that can use HDR -------------------------------------------------
+
+    private HdrSupportService? _hdrSupport;
+    private HdrSupportEvidence? _hdrSupportEvidence;
+    private DetectedGame? _hdrSupportFor;
+    private CancellationTokenSource? _hdrSupportCancel;
+
+    /// <summary>#251: the HDR support resolver (wired by <c>AppComposition</c>); null = nothing known, the section always shows.</summary>
+    internal HdrSupportService? HdrSupport
+    {
+        get => _hdrSupport;
+        set
+        {
+            _hdrSupport = value;
+            LoadHdrSupport(SelectedGame);
+        }
+    }
+
+    /// <summary>#251: the lookup started for the selected game (tests await it); null when none was needed.</summary>
+    internal Task? HdrSupportLookup { get; private set; }
+
+    /// <summary>#251: what RHI's data says about the selected game's HDR (null while not known).</summary>
+    internal HdrSupportEvidence? HdrSupportKnown => _hdrSupportEvidence;
+
+    /// <summary>The HDR mod RHI installed on the selected game, from its analysis; null when none (or not analysed yet).</summary>
+    private ManagedComponent? InstalledHdrMod => CurrentAnalysis is { } analysis ? HdrSupportRule.InstalledHdrMod(analysis.Components) : null;
+
+    /// <summary>
+    /// #251 (owner rule: hide what cannot apply; "safe, not sorry"): the HDR launch section shows unless RHI's data says the
+    /// game has no HDR and no HDR mod RHI installed is on it. Unknown, a failed lookup and a game not analysed yet show it.
+    /// </summary>
+    public bool ShowHdrSection => SelectedGame is null
+                                  || HdrSupportRule.ShowsHdrSection(_hdrSupportEvidence, CurrentAnalysis is null ? null : InstalledHdrMod is not null);
+
+    /// <summary>#251: why the section shows, for the ~2 s tooltip on its label (provenance only there).</summary>
+    public string? HdrSectionTip
+    {
+        get
+        {
+            if (SelectedGame is null || !ShowHdrSection) return null;
+            var evidence = _hdrSupportEvidence ?? HdrSupportEvidence.Unchecked;
+            if (evidence.Answer != HdrSupportAnswer.Yes && InstalledHdrMod is { } mod) return TF("Hw.HdrTipMod", mod.DisplayName);
+            return T(evidence.Source switch
+            {
+                HdrSupportSource.CuratedList => "Hw.HdrTipCurated",
+                HdrSupportSource.PcGamingWiki => "Hw.HdrTipPcgw",
+                HdrSupportSource.PcGamingWikiHackable => "Hw.HdrTipPcgwHackable",
+                HdrSupportSource.MicrosoftStore => "Hw.HdrTipStore",
+                HdrSupportSource.PcGamingWikiUnknown => "Hw.HdrTipUnknown",
+                _ => "Hw.HdrTipUnchecked"
+            });
+        }
+    }
+
+    /// <summary>A game was selected (or none): its known answer at once, else a lookup whose answer arrives later.</summary>
+    private void LoadHdrSupport(DetectedGame? game)
+    {
+        // Correction F6: the lookup for the game the user has left is cancelled, so arrowing through the library never
+        // queues PCGamingWiki requests nobody waits for in front of the selected game's (and the graphics-API lookup's).
+        _hdrSupportCancel?.Cancel();
+        _hdrSupportCancel = null;
+        _hdrSupportFor = game;
+        _hdrSupportEvidence = game is null ? null : _hdrSupport?.Peek(game);
+        HdrSupportLookup = null;
+        RaiseHdrPlanChanged();
+        if (game is not null && _hdrSupportEvidence is null && _hdrSupport is { } support)
+        {
+            var cancel = _hdrSupportCancel = new CancellationTokenSource();
+            var lookup = ResolveHdrSupportAsync(support, game, cancel.Token);
+            HdrSupportLookup = lookup;
+            UiExceptionGuard.Forget(lookup, "hdr-support");
+        }
+    }
+
+    private async Task ResolveHdrSupportAsync(HdrSupportService support, DetectedGame game, CancellationToken cancellationToken)
+    {
+        var evidence = await support.ResolveAsync(game, cancellationToken);
+        // An answer for a game the user has left (late, or the Unknown of a cancelled lookup) never lands on another game.
+        if (!ReferenceEquals(_hdrSupportFor, game) || !ReferenceEquals(SelectedGame, game)) return;
+        _hdrSupportEvidence = evidence;
+        RaiseHdrPlanChanged();
+    }
+
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
         ? LinuxHdrLaunchPlan.NoGame
-        : _hdrProfiles.BuildPlan(SelectedGame, ShownProfile(), HdrHost, NvidiaFamilies());
+        : _hdrProfiles.BuildPlan(SelectedGame, PlannedProfile(), HdrHost, NvidiaFamilies());
 
     /// <summary>
     /// The HDR host the plan is built for: the selected game's analysis probed it off the UI thread; before the first
@@ -557,6 +681,9 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(SelectedResolutionPlan));
         OnPropertyChanged(nameof(ResolutionHint));
         OnPropertyChanged(nameof(ShowResolutionToggle));
+        OnPropertyChanged(nameof(ShowHdrLegacyWsi)); // #250: follows the host snapshot
+        OnPropertyChanged(nameof(ShowHdrSection)); // #251: follows the evidence and the analysis' HDR mods
+        OnPropertyChanged(nameof(HdrSectionTip));
         Nvidia?.Notify(); // #211
     }
 

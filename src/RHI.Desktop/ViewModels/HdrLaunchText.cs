@@ -46,12 +46,15 @@ public static class HdrLaunchText
         if (plan.Host is { } host) text += " " + TF("Hdr.Host", Host(host));
         if (plan.Enabled && plan.CanApply)
         {
-            text += " " + plan.LegacyWsi switch
+            var legacy = plan.LegacyWsi switch
             {
                 LinuxHdrLegacyWsiNote.Enabled => T("Hdr.LegacyWsiEnabled"),
                 LinuxHdrLegacyWsiNote.OlderNvidiaDriver => T("Hdr.LegacyWsiOlderDriver"),
-                _ => T("Hdr.LegacyWsiOff")
+                LinuxHdrLegacyWsiNote.NotUsed => T("Hw.LegacyWsiNotUsed"), // #250: a saved tick this driver does not need
+                // #250 correction F2: the tick is hidden on this host and nothing is saved, so say nothing about it.
+                _ => null
             };
+            if (legacy is not null) text += " " + legacy;
         }
         return text;
     }

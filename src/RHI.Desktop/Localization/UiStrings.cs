@@ -157,7 +157,6 @@ internal static class UiStrings
         ("Hdr.HostLegacyWsiMayBeNeeded", "WSI HDR legado pode ser necessário", "legacy HDR WSI may be required"),
         ("Hdr.LegacyWsiEnabled", "A compatibilidade com WSI HDR legado está ativada explicitamente (ENABLE_HDR_WSI=1).", "Legacy HDR WSI compatibility is explicitly enabled (ENABLE_HDR_WSI=1)."),
         ("Hdr.LegacyWsiOlderDriver", "O driver NVIDIA detectado é anterior ao 595; o WSI legado pode ser necessário se o driver não tiver WSI HDR Vulkan nativo.", "The detected NVIDIA driver is older than 595; Legacy WSI may be needed if the driver lacks native Vulkan HDR WSI."),
-        ("Hdr.LegacyWsiOff", "WSI legado desativado.", "Legacy WSI is off."),
         ("Hdr.ApplyInSteam", "O Steam inicia este jogo, então o RHI não aplica o perfil HDR ao Iniciar. No Steam, abra Propriedades do jogo → Geral → Opções de inicialização e cole: {0}", "Steam starts this game, so RHI does not apply the HDR profile on Launch. In Steam, open the game's Properties → General → Launch Options and paste: {0}"),
         ("Hdr.ApplyInHeroic", "O Heroic inicia este jogo, então o RHI não aplica o perfil HDR ao Iniciar. No Heroic, abra as Configurações de “{0}” → Avançado e adicione: {1}.", "Heroic starts this game, so RHI does not apply the HDR profile on Launch. In Heroic, open the settings of “{0}” → Advanced and add: {1}."),
         ("Hdr.ApplyInLutris", "O Lutris inicia este jogo, então o RHI não aplica o perfil HDR ao Iniciar. No Lutris, clique com o botão direito em “{0}” → Configurar, marque “Mostrar opções avançadas” (o prefixo de comando só aparece assim) e, em Opções do sistema, adicione: {1}.", "Lutris starts this game, so RHI does not apply the HDR profile on Launch. In Lutris, right-click “{0}” → Configure, tick “Show advanced options” (Command prefix only shows then) and, under System options, add: {1}."),
@@ -1461,5 +1460,14 @@ internal static class UiStrings
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        ("Hw.HdrTipCurated", "HDR: a lista de jogos do próprio RHI diz que este jogo tem HDR.", "HDR: RHI's own game list says this game supports HDR."),
+        ("Hw.HdrTipPcgw", "HDR: listado como compatível pelo PCGamingWiki.", "HDR: listed as supported by PCGamingWiki."),
+        ("Hw.HdrTipPcgwHackable", "HDR: o PCGamingWiki indica que é possível com uma correção.", "HDR: PCGamingWiki lists it as possible with a fix."),
+        ("Hw.HdrTipStore", "HDR: a Microsoft Store indica HDR para este jogo no PC.", "HDR: the Microsoft Store lists HDR for this game on PC."),
+        ("Hw.HdrTipUnknown", "HDR: não consta no PCGamingWiki; exibido caso se aplique.", "HDR: not listed on PCGamingWiki, shown in case it applies."),
+        ("Hw.HdrTipUnchecked", "HDR: o suporte ainda não pôde ser verificado; exibido caso se aplique.", "HDR: support could not be checked yet, shown in case it applies."),
+        ("Hw.HdrTipMod", "HDR: um mod de HDR está instalado ({0}).", "HDR: an HDR mod is installed ({0})."),
+        ("Hw.LegacyWsiNotUsed", "A marcação de WSI legado salva não é usada com este driver, que não precisa dela.", "The saved Legacy WSI tick is not used with this driver, which does not need it."),
+        ("Hw.ResolutionRow", "Resolução", "Resolution"),
     ];
 }

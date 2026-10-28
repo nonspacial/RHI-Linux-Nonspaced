@@ -26,6 +26,7 @@ public sealed class LabelValuePanel : Panel
     private bool _stacked;
     private double _labelWidth;
     private double[] _rowHeights = [];
+    private bool[] _rowShown = [];
 
     static LabelValuePanel() => AffectsMeasure<LabelValuePanel>(ColumnSpacingProperty, RowSpacingProperty, StackedSpacingProperty, StackBelowProperty);
 
@@ -43,6 +44,11 @@ public sealed class LabelValuePanel : Panel
     {
         var rows = RowCount;
         _rowHeights = new double[rows];
+        // w12/hdr-wsi (#251): a row whose every cell is hidden takes no row spacing either (no gap where it was).
+        _rowShown = new bool[rows];
+        foreach (var child in Children)
+            if (child.IsVisible) _rowShown[Grid.GetRow(child)] = true;
+        var gaps = RowSpacing * Math.Max(0, _rowShown.Count(shown => shown) - 1);
         _stacked = !double.IsInfinity(availableSize.Width) && availableSize.Width < StackBelow;
         if (rows == 0) return default;
 
@@ -64,7 +70,7 @@ public sealed class LabelValuePanel : Panel
                 _rowHeights[r] = rowHeight;
                 height += rowHeight;
             }
-            return new Size(width, height + RowSpacing * Math.Max(0, rows - 1));
+            return new Size(width, height + gaps);
         }
 
         // Auto label column: labels measured unconstrained, as Grid does for Auto columns.
@@ -83,7 +89,7 @@ public sealed class LabelValuePanel : Panel
         }
         foreach (var child in Children)
             _rowHeights[Grid.GetRow(child)] = Math.Max(_rowHeights[Grid.GetRow(child)], child.DesiredSize.Height);
-        return new Size(_labelWidth + ColumnSpacing + maxValue, _rowHeights.Sum() + RowSpacing * Math.Max(0, rows - 1));
+        return new Size(_labelWidth + ColumnSpacing + maxValue, _rowHeights.Sum() + gaps);
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -115,7 +121,7 @@ public sealed class LabelValuePanel : Panel
                     child.Arrange(rect);
                 }
             }
-            y += _rowHeights[r] + RowSpacing;
+            y += _rowHeights[r] + (r < _rowShown.Length && !_rowShown[r] ? 0 : RowSpacing);
         }
         return finalSize;
     }

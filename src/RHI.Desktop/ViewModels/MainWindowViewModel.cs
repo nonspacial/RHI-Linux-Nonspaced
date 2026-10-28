@@ -911,6 +911,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         {
             _session.Cancel();
             if (onlyDetectors is null) _session.InvalidateAll();
+            if (onlyDetectors is null) Runtime.HdrSupport?.MarkStale(); // w12/hdr-wsi hook (#251): a full Refresh asks PCGW again
             // Full Refresh bypasses the session NR version and latest-version caches (upstream 2.7.9).
             var neuralCatalogRefresh = onlyDetectors is null ? Extras.ReportNeuralCatalogLoadAsync(Extras.Versions.FullRefreshAsync()) : null;
             if (onlyDetectors is null && Parity is { } catalogue) UiExceptionGuard.Forget(catalogue.RefreshCatalogueListsAsync(), "CatalogueLists"); // w5/catalogue-info: web lists too
