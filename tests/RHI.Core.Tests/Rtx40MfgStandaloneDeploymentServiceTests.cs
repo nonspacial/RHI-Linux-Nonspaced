@@ -18,8 +18,8 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposab
     [Fact]
     public void UpstreamContract_UsesSingleDllAndFullProxySet()
     {
-        Assert.Equal("RTXMFG.dll", Rtx40MfgStandaloneDeploymentService.InnerDllName);
-        Assert.Equal("https://github.com/dashdogy/RTX40MFG-Unlock", Rtx40MfgStandaloneDeploymentService.RepositoryUrl);
+        Assert.Equal("RTXMFG.dll", Rtx40MfgStandaloneDeploymentService.InnerDllName); // the cached name; #236: MFGUnlocker.dll is accepted from releases
+        Assert.Equal("https://github.com/dashdogy/MFG-Unlocker", Rtx40MfgStandaloneDeploymentService.RepositoryUrl);
         Assert.Equal(
             new[]
             {
@@ -879,6 +879,14 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposab
         public bool OmitDigest { get; set; }
         public bool OmitChecksumsAsset { get; set; }
         public int RequestCount { get; private set; }
+        /// <summary>#236: the asset prefix per version (MFGUnlocker- from v1.5.0 on); unlisted versions use RTXMFG-.</summary>
+        public Dictionary<string, string> Prefixes { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>#236: further zip assets the release lists after the active one (name, bytes).</summary>
+        public List<(string Name, byte[] Bytes)> ExtraAssets { get; } = [];
+        /// <summary>#236: a release API URL answered the way .NET follows GitHub's 301 for a renamed repository.</summary>
+        public string? RedirectFrom { get; set; }
+        /// <summary>#236: every request (URL asked for, whether it carried a token), in order.</summary>
+        public List<(string Url, bool Authorized)> Seen { get; } = [];
 
         private Rtx40Handler(Dictionary<string, byte[]> assets, string activeVersion)
         {
@@ -894,22 +902,40 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposab
                 versions[^1].Version);
         }
 
+        public const string RedirectedApiUrl = "https://api.github.com/repositories/1350762381/releases/latest";
         public string DigestFor(string version) => Sha256(_assets[version]);
+        public string AssetNameOf(string version) => $"{Prefixes.GetValueOrDefault(version, "RTXMFG-")}v{version}.zip";
+        public string AssetUrlOf(string version) => $"https://github.com/rhi-tests/{AssetNameOf(version)}";
         public static string AssetUrl(string version) => $"https://github.com/rhi-tests/RTXMFG-v{version}.zip";
         public static string ChecksumsUrl(string version) => $"https://github.com/rhi-tests/v{version}/SHA256SUMS.txt";
+        private static string ExtraUrl(string name) => $"https://github.com/rhi-tests/extra/{name}";
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
             var url = request.RequestUri!.ToString();
+            Seen.Add((url, request.Headers.Authorization is not null));
+            if (url == RedirectFrom)
+            {
+                // What HttpClientHandler does with GitHub's 301 for a renamed repository: the request goes on to the
+                // new location without its Authorization header, and the response names where it came from.
+                request.Headers.Authorization = null;
+                request.RequestUri = new Uri(RedirectedApiUrl);
+                return Task.FromResult(JsonResponse(BuildLatestRelease(), request));
+            }
             if (url == Rtx40MfgStandaloneDeploymentService.ReleasesApiUrl)
-                return Task.FromResult(JsonResponse(BuildLatestRelease()));
-            if (url == AssetUrl(ActiveVersion))
+                return Task.FromResult(JsonResponse(BuildLatestRelease(), request));
+            if (url == AssetUrlOf(ActiveVersion))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(_assets[ActiveVersion]) });
+            foreach (var (name, bytes) in ExtraAssets)
+                if (url == ExtraUrl(name))
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) });
             if (url == ChecksumsUrl(ActiveVersion))
             {
                 var hash = ChecksumOverride ?? DigestFor(ActiveVersion);
-                var text = $"{hash}  RTXMFG-v{ActiveVersion}.zip\n";
+                // As the live v1.5.0+ lists: the DLL first, then the zip (the zip's line decides).
+                var text = $"{new string('c', 64)}  MFGUnlocker.dll\n{hash}  {AssetNameOf(ActiveVersion)}\n"
+                           + string.Concat(ExtraAssets.Select(extra => $"{Sha256(extra.Bytes)}  {extra.Name}\n"));
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(text, Encoding.UTF8, "text/plain") });
             }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
@@ -929,6 +955,14 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposab
                   "digest":"sha256:{{new string('a', 64)}}"
                 }
                 """;
+            var extras = string.Concat(ExtraAssets.Select(extra => $$"""
+                ,
+                {
+                  "name":"{{extra.Name}}",
+                  "browser_download_url":"{{ExtraUrl(extra.Name)}}",
+                  "digest":"sha256:{{Sha256(extra.Bytes)}}"
+                }
+                """));
             return $$"""
             {
               "tag_name":"v{{ActiveVersion}}",
@@ -936,15 +970,15 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposab
               "prerelease":false,
               "assets":[
                 {
-                  "name":"RTXMFG-v{{ActiveVersion}}.zip",
-                  "browser_download_url":"{{AssetUrl(ActiveVersion)}}"{{digestProperty}}
-                }{{checksumAsset}}
+                  "name":"{{AssetNameOf(ActiveVersion)}}",
+                  "browser_download_url":"{{AssetUrlOf(ActiveVersion)}}"{{digestProperty}}
+                }{{checksumAsset}}{{extras}}
               ]
             }
             """;
         }
 
-        private static HttpResponseMessage JsonResponse(string json)
-            => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        private static HttpResponseMessage JsonResponse(string json, HttpRequestMessage request)
+            => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json"), RequestMessage = request };
     }
 }

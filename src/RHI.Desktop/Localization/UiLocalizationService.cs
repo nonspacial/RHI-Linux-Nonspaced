@@ -174,10 +174,10 @@ public static class UiLocalizationService
         ["Ui.Rtx40MfgSettingsTip"] = "Universal MFG — geração da GPU, DLL proxy e atualização",
         ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — nome do arquivo, Neural Rendering e atualização",
         ["Ui.Rtx40MfgTitle"] = "Universal MFG — Experimental",
-        ["Ui.Rtx40MfgIntro"] = "Instala o Universal RTXMFG como uma única DLL proxy ao lado do executável alvo. RTX 40 usa DX12 e Vulkan experimental; RTX 30 usa somente DX12 e permanece experimental upstream. Exige uma pilha funcional de Streamline DLSS Frame Generation, fornecida pelo jogo ou pelo fluxo OptiScaler Nightly/DLSS NR/F5 DLSSNR + Streamline/DLSS Enabler. O RHI valida SHA-256/PE x64 e protege slots existentes.",
+        ["Ui.Rtx40MfgIntro"] = "Instala o Universal MFG (o MFG Unlocker do autor, MFGUnlocker.dll) como uma única DLL proxy ao lado do executável alvo. RTX 40 usa DX12 e Vulkan experimental; no RHI, RTX 30 usa somente DX12 e é experimental. Exige uma pilha funcional de Streamline DLSS Frame Generation, fornecida pelo jogo ou pelo fluxo OptiScaler Nightly/DLSS NR/F5 DLSSNR + Streamline/DLSS Enabler. O RHI valida SHA-256/PE x64 e protege slots existentes.",
         ["Ui.Rtx40MfgGpuGeneration"] = "Geração da GPU",
         ["Ui.Rtx40MfgProxy"] = "DLL proxy",
-        ["Ui.Rtx40MfgCompatibility"] = "RTX 40: DirectX 12 principal e Vulkan experimental. RTX 30: DirectX 12 apenas e suporte ainda muito experimental upstream. RTX 20 permanece no caminho legado SM75. Proxies Bink continuam bloqueados até existir chaining/rollback dedicado. Backspace abre o menu do RTXMFG.",
+        ["Ui.Rtx40MfgCompatibility"] = "RTX 40: DirectX 12 principal e Vulkan experimental. RTX 30: o RHI habilita somente DirectX 12; o suporte do autor é experimental. RTX 20 permanece no caminho legado SM75. Proxies Bink continuam bloqueados até existir chaining/rollback dedicado. Backspace abre o menu do MFG Unlocker.",
         ["Ui.Rtx40MfgCheck"] = "Verificar atualização",
         ["Ui.Rtx40MfgUpdate"] = "Atualizar",
         ["Ui.Rtx40MfgCompatibilityNote"] = "Compatibilidade experimental: valide em hardware real sob Wine/Proton. O menu deve abrir, Frame Generation/MFG deve funcionar e não deve haver crash, congelamento, tela preta, perda do dispositivo ou regressão de apresentação.",
@@ -402,10 +402,10 @@ public static class UiLocalizationService
         ["Ui.Rtx40MfgSettingsTip"] = "Universal MFG — GPU generation, proxy DLL and updates",
         ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — file name, Neural Rendering and updates",
         ["Ui.Rtx40MfgTitle"] = "Universal MFG — Experimental",
-        ["Ui.Rtx40MfgIntro"] = "Installs Universal RTXMFG as a single proxy DLL beside the target executable. RTX 40 uses DX12 plus experimental Vulkan; RTX 30 is DX12-only and remains experimental upstream. A functional Streamline DLSS Frame Generation stack is required, either game-provided or managed through OptiScaler Nightly/DLSS NR/F5 DLSSNR + Streamline/DLSS Enabler. RHI validates SHA-256/PE x64 and protects occupied slots.",
+        ["Ui.Rtx40MfgIntro"] = "Installs Universal MFG (the publisher's MFG Unlocker, MFGUnlocker.dll) as a single proxy DLL beside the target executable. RTX 40 uses DX12 plus experimental Vulkan; RHI runs RTX 30 on DX12 only, and it is experimental. A functional Streamline DLSS Frame Generation stack is required, either game-provided or managed through OptiScaler Nightly/DLSS NR/F5 DLSSNR + Streamline/DLSS Enabler. RHI validates SHA-256/PE x64 and protects occupied slots.",
         ["Ui.Rtx40MfgGpuGeneration"] = "GPU generation",
         ["Ui.Rtx40MfgProxy"] = "Proxy DLL",
-        ["Ui.Rtx40MfgCompatibility"] = "RTX 40: DirectX 12 primary plus experimental Vulkan. RTX 30: DirectX 12 only and still very experimental upstream. RTX 20 remains on the legacy SM75 path. Bink proxies stay blocked until dedicated chaining/rollback exists. Press Backspace in-game to open the RTXMFG menu.",
+        ["Ui.Rtx40MfgCompatibility"] = "RTX 40: DirectX 12 primary plus experimental Vulkan. RTX 30: RHI enables DirectX 12 only; the publisher's support is experimental. RTX 20 remains on the legacy SM75 path. Bink proxies stay blocked until dedicated chaining/rollback exists. Press Backspace in-game to open the MFG Unlocker menu.",
         ["Ui.Rtx40MfgCheck"] = "Check for update",
         ["Ui.Rtx40MfgUpdate"] = "Update",
         ["Ui.Rtx40MfgCompatibilityNote"] = "Experimental compatibility: validate on real hardware under Wine/Proton. The menu must open, Frame Generation/MFG must work, and there must be no crash, freeze, black screen, device loss, or presentation regression.",
@@ -1678,6 +1678,27 @@ public static class UiLocalizationService
         ("New OptiScaler package file collides with an external/untracked file: ", "Um arquivo do novo pacote do OptiScaler colide com um arquivo externo/não rastreado: "),
         // w11/nr-check rows
         // w12/mfg rows
+        // #236: Universal MFG takes MFG Unlocker releases (asset/DLL naming refusals and the existing failure prefixes they reach).
+        ("Universal MFG download/validation failed: ", "Falha ao baixar ou validar o Universal MFG: "),
+        ("Universal MFG update check/download failed: ", "Falha ao verificar ou baixar a atualização do Universal MFG: "),
+        (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix,
+            "A versão do Universal MFG foi recusada: ela lista vários arquivos chamados "),
+        (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.NoAssetMessage,
+            "A versão do Universal MFG foi recusada: ela não tem um arquivo MFGUnlocker-*.zip nem RTXMFG-*.zip."),
+        (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix,
+            "O pacote do Universal MFG foi recusado por ser ambíguo: ele contém várias entradas chamadas "),
+        (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.NoDllMessage,
+            "O pacote do Universal MFG foi recusado: ele não contém MFGUnlocker.dll nem RTXMFG.dll."),
+        // #236/#237/#238: an update check that meets a component file removed or changed outside RHI (the path follows).
+        (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.RemovedOutsideRhiPrefix,
+            "Não atualizado: este arquivo foi removido fora do RHI, e uma atualização nunca o coloca de volta. Remover apaga o registro dele no RHI: "),
+        (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.ChangedOutsideRhiPrefix,
+            "Não atualizado: este arquivo foi alterado fora do RHI, e uma atualização nunca o substitui: "),
+        // Correction round 1 (review w12/mfg F5, F3): a record without the file's hash; an ASI Loader whose game changed bitness.
+        (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.NoRecordedHashPrefix,
+            "Não atualizado: o registro do RHI para este arquivo não tem hash, então o RHI não sabe se ele foi alterado fora do RHI. Remova-o e instale-o de novo: "),
+        (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix,
+            "Não atualizado: o executável do jogo não tem mais a arquitetura para a qual o Ultimate ASI Loader foi instalado, e uma atualização nunca o troca pela outra. Remova-o e instale-o de novo. Instalado para → agora: "),
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows

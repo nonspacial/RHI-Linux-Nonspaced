@@ -609,6 +609,15 @@ public sealed class WaveOneMessageLocalizationTests
             + DownloadStalledException.MessageFor("OptiScaler", TimeSpan.FromSeconds(60));
         // w11/nr-check rows
         // w12/mfg rows
+        // #236 / #237 / #238
+        yield return "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoAssetMessage;
+        yield return "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-*.zip";
+        yield return "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix + "MFGUnlocker.dll";
+        yield return "Universal MFG update check/download failed: " + Rtx40MfgStandaloneDeploymentService.NoDllMessage;
+        yield return ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + "/jogos/exemplo/version.dll";
+        yield return ManagedUpdateFileGuard.ChangedOutsideRhiPrefix + "/jogos/exemplo/renodx-mfgunlock.addon64";
+        yield return ManagedUpdateFileGuard.NoRecordedHashPrefix + "/jogos/exemplo/winmm.dll"; // correction round 1 (F5)
+        yield return UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + "x86 → x64"; // correction round 1 (F3)
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows

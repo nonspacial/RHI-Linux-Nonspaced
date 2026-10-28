@@ -1062,6 +1062,41 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 
 <!-- w12/mfg notes -->
 
+### #236 — Universal MFG accepts MFG Unlocker releases
+
+Behavioural port of upstream `bb9b2fd` (`Rtx40MfgService.ReleaseDllNames`) and the Rtx40Mfg part of `1b51cb2`. The publisher
+renamed the project (`dashdogy/RTX40MFG-Unlock` → `dashdogy/MFG-Unlocker`; the old API URL answers 301): from v1.5.0 the
+release ships `MFGUnlocker-v<ver>.zip` holding `MFGUnlocker.dll`, so every release since v1.5.0 was refused. RHI now asks the
+new repository, takes the `MFGUnlocker-*.zip` asset first and `RTXMFG-*.zip` second (exactly one zip of the chosen naming), and
+inside it `MFGUnlocker.dll` first, `RTXMFG.dll` second (exactly one entry of the chosen name). The fail-closed SHA rule (GitHub
+digest or `SHA256SUMS.txt`), PE x64, size and the per-release cache stamp are unchanged. A v1.4.x install updates in place under
+its proxy name through the journaled update (history `1.4.2 → 1.7.0`). Upstream's staging-format bump fixes a bug the fork
+never had (the cache stamp is written only after a verified extraction). Upstream pushes these at start and compares file
+contents (`IsOutdatedIn`); the fork keeps its one rule (owner decision D1 = No): Update All, and the background pass when
+automatic updates are on, with a game that was running caught up at the next pass. Fork-only: the check reports a proxy
+removed outside RHI (never put back), changed outside RHI, or recorded without its hash or proxy name as "could not be checked"
+with a line saying why; a game held by its own failed undo reads the hold's restart text first, before any file is read; and
+the row keeps Remove for a removed proxy (not on a game moved after the install, where Remove waits for Repair after move).
+
+### #237 — MFG Ada Unlock updates
+
+Behavioural port of upstream `abf18c7` (`AddonPackService.RedeployToTrackedGames`, `UntrackAddonDeployment`) and the add-on part
+of `49d4473`. MFG Ada Unlock is an Update All family (after the other add-ons), with exclusions and No Addons holds as every
+family; a game held by its own failed undo reads the hold's restart text in the check (before the manifest or any file is read)
+and in the update, never "changed outside RHI" about RHI's own half-undone add-on. Upstream's "removed copies reinstalled" bug was latent here (the generic add-on update re-ran the install): an
+update of any GitHub add-on (ReLimiter, Display Commander, MFG Ada Unlock, the DLSS5 DX11 Bridge's version switch) never
+re-creates a file removed outside RHI; only Remove, then Install, puts it back. No start-up push (D1 = No).
+
+### #238 — DLSSG 20/30 Unlock and Ultimate ASI Loader in Update All
+
+Behavioural port of upstream `bb9b2fd` (DLSSG 20/30 deployed at start) and `a1a4e48` (ASI Loader updates reach games). Both are
+Update All families with their existing checks adapted (could not check when the lookup fails, the game is held by a failed
+undo, or the record lacks its proxy name or hash; never a swap over a file removed or changed outside RHI), proxy names kept. The
+ASI Loader updates only for the bitness it was installed for: once the game's executable reads as the other one (a game patch,
+or Edit game pointing at another exe) the check could not check and the update refuses (Remove, then Install, picks the right
+loader); never an unattended cross-bitness swap. Upstream's "x64 re-downloaded at
+every launch, x86 never updated" never existed here (per-architecture stamped cache); tests pin it. No start-up push (D1 = No).
+
 <!-- w12/shaders notes -->
 
 <!-- w12/update-all notes -->

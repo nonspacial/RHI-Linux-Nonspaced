@@ -24,6 +24,7 @@ internal sealed class ManagedComponentRowDecorator
     private readonly RtxEncoreDeploymentService? _rtxEncore; // w4/encore (#158)
     private readonly DxvkHdrDeploymentService? _dxvkHdr; // w7/dxvk-hdr (#200)
     private readonly UpdateInclusionStore? _updateInclusion; // w5/update-policy (#178)
+    private readonly DeploymentRelocation _relocation; // F2 (review w12/mfg)
 
     internal ManagedComponentRowDecorator(
         LinuxDeploymentRecordStore records,
@@ -49,6 +50,7 @@ internal sealed class ManagedComponentRowDecorator
         _rtxEncore = rtxEncore;
         _dxvkHdr = dxvkHdr;
         _updateInclusion = updateInclusion;
+        _relocation = new DeploymentRelocation(records);
     }
 
     public void Decorate(DetectedGame game, IReadOnlyList<ManagedComponent> components)
@@ -89,6 +91,10 @@ internal sealed class ManagedComponentRowDecorator
             reFrameworkComponent.Availability = ComponentAvailability.Installed;
             reFrameworkComponent.ManagedByRhi = true;
         }
+
+        // F2 (review w12/mfg): whether the game has records left at a folder it moved from (Remove refuses there until
+        // Repair after move); asked only when a removed-file note would be shown.
+        var moved = new Lazy<bool>(() => _relocation.FindMoved(game).Count > 0);
 
         foreach (var component in components)
         {
@@ -155,9 +161,17 @@ internal sealed class ManagedComponentRowDecorator
                         component.Availability = ComponentAvailability.Installed;
                 }
 
-                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.RtxEncore && record is not null &&
+                if (component.Kind is ManagedComponentKind.RtxEncore && record is not null &&
                     component.Availability == ComponentAvailability.Available &&
                     record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path) && File.Exists(file.Path)))
+                {
+                    component.Availability = ComponentAvailability.Installed;
+                }
+
+                // #236/#237/#238: RHI's record alone makes the row Installed, so Remove is offered after the user deleted
+                // the file (an update never puts it back, and Install refuses or would re-create it behind the record).
+                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock && record is not null &&
+                    component.Availability == ComponentAvailability.Available)
                 {
                     component.Availability = ComponentAvailability.Installed;
                 }
@@ -775,6 +789,14 @@ internal sealed class ManagedComponentRowDecorator
                     // w4/encore (#158): every RTX Encore row says it is not confirmed under Proton yet.
                     if (component.Kind == ManagedComponentKind.RtxEncore && component.ActionAllowed)
                         component.Note = RtxEncoreDeploymentService.NotYetConfirmedNote;
+                    // #236/#237/#238: a file of RHI's removed outside RHI is never put back by an update; the row (Installed
+                    // through the record above) says so beside its Remove. F2 (review w12/mfg): not on a game moved after
+                    // the install — its files are only away from the recorded folder, and Remove refuses until Repair after
+                    // move (the hint would name a control that does not do it); the base note stays.
+                    if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock
+                        && record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path) && !File.Exists(file.Path))
+                        && !moved.Value)
+                        component.Note = ManagedUpdateFileGuard.RemovedOutsideRhiRowNote;
                 }
             }
             else

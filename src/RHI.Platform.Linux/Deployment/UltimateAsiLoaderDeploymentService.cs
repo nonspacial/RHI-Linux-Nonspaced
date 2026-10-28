@@ -23,6 +23,13 @@ public sealed class UltimateAsiLoaderDeploymentService
     public const string ReleasesUrl = "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases";
     public const string DefaultInnerDllName = "dinput8.dll";
 
+    /// <summary>
+    /// F3 (review w12/mfg): the check's line (and the update's refusal) when the game's executable no longer has the
+    /// architecture the loader was installed for; "x86 → x64" (installed for → now) follows.
+    /// </summary>
+    public const string ArchitectureChangedPrefix =
+        "Not updated: the game's executable no longer has the architecture Ultimate ASI Loader was installed for, and an update never swaps it for the other one. Remove it, then Install it again. Installed for → now: ";
+
     private const string Asset32 = "Ultimate-ASI-Loader.zip";
     private const string Asset64 = "Ultimate-ASI-Loader_x64.zip";
     private const string MetaProxyName = "UAL.ProxyName";
@@ -131,6 +138,35 @@ public sealed class UltimateAsiLoaderDeploymentService
         {
             return new UalUpdateStatus(false, InstalledVersion(game), null, false, $"Could not check Ultimate ASI Loader: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// #238: the Update All check, for the game's own architecture (x86 and x64 each from their own asset). The proxy removed
+    /// outside RHI is never put back (seen before any network call); the update is planned only while the proxy still holds
+    /// RHI's bytes (hashed only then); a failed lookup or an unknown architecture could not check.
+    /// </summary>
+    public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var record = GetRecord(game);
+        if (record is null)
+            return new ManagedUpdateCheck(false, false, "Ultimate ASI Loader is not RHI-managed.");
+        // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
+        if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.UltimateAsiLoader, record.Version).ConfigureAwait(false) is { } held)
+            return held;
+        if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
+            return new ManagedUpdateCheck(true, false, "Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.",
+                record.Version, CouldNotCheck: true);
+        // F3 (review w12/mfg): never an unattended swap to the other bitness (seen before any network call).
+        if (ArchitectureChanged(record, game) is { } changed)
+            return new ManagedUpdateCheck(true, false, changed, record.Version, CouldNotCheck: true);
+        var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
+        if (ManagedUpdateFileGuard.Removed([targetPath], record.Version) is { } removed)
+            return removed;
+        var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
+        var planned = new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
+            CouldNotCheck: !status.Success);
+        var fileRecord = record.Files.FirstOrDefault(f => Path.GetFullPath(f.Path).Equals(Path.GetFullPath(targetPath), StringComparison.Ordinal));
+        return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(targetPath, fileRecord?.Sha256)], cancellationToken).ConfigureAwait(false);
     }
 
     public Task<ComponentOperationResult> InstallAsync(
@@ -297,8 +333,15 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("Ultimate ASI Loader is not managed by RHI Linux for this game.");
 
+        // F1 (review w12/mfg; toolkit rule since w10 D15): the hold's restart text before the hash check below.
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.UltimateAsiLoader).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
         if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
             return ComponentOperationResult.Fail("Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.");
+        // F3 (review w12/mfg): the loader picked for the game's old bitness is never swapped for the other one behind the
+        // user's back (Update All reaches this unattended); Remove, then Install, picks the right one.
+        if (ArchitectureChanged(record, game) is { } changed)
+            return ComponentOperationResult.Fail(changed);
 
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(f => Path.GetFullPath(f.Path).Equals(Path.GetFullPath(targetPath), StringComparison.Ordinal));
@@ -440,6 +483,22 @@ public sealed class UltimateAsiLoaderDeploymentService
     }
 
     internal static PeArchitecture ResolveArchitecture(DetectedGame game) => GameArchitecture.Of(game);
+
+    /// <summary>
+    /// F3 (review w12/mfg): the refusal when the record names the architecture it was installed for and the game's
+    /// executable now reads as the other one (a game patch, or Edit game pointing at another exe); null otherwise (no
+    /// recorded architecture, the same one, or an architecture the update would refuse on its own).
+    /// </summary>
+    private static string? ArchitectureChanged(LinuxDeploymentRecord record, DetectedGame game)
+    {
+        if (!record.Metadata.TryGetValue(MetaArchitecture, out var recordedText)
+            || !Enum.TryParse<PeArchitecture>(recordedText, ignoreCase: true, out var recorded)
+            || recorded is not (PeArchitecture.X86 or PeArchitecture.X64))
+            return null;
+        var now = ResolveArchitecture(game);
+        if (now is not (PeArchitecture.X86 or PeArchitecture.X64) || now == recorded) return null;
+        return ArchitectureChangedPrefix + $"{recorded.ToString().ToLowerInvariant()} → {now.ToString().ToLowerInvariant()}";
+    }
 
     internal static string? ResolveBinaryDirectory(DetectedGame game)
     {

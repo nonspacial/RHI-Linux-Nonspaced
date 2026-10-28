@@ -10,7 +10,10 @@ public sealed class UpdateAllBackgroundTests
     [Fact]
     public void SupportedComponents_MirrorsLinuxNativeFamilies()
     {
-        Assert.Equal(17, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Equal(20, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Contains(ManagedComponentKind.MfgAdaUnlock, LinuxUpdateAllService.SupportedComponents); // w12/mfg (#237)
+        Assert.Contains(ManagedComponentKind.Dlssg2030Unlock, LinuxUpdateAllService.SupportedComponents); // w12/mfg (#238)
+        Assert.Contains(ManagedComponentKind.UltimateAsiLoader, LinuxUpdateAllService.SupportedComponents); // w12/mfg (#238)
         Assert.Contains(ManagedComponentKind.NrCostScaler, LinuxUpdateAllService.SupportedComponents); // #199
         Assert.Contains(ManagedComponentKind.DxvkHdr, LinuxUpdateAllService.SupportedComponents); // w7/dxvk-hdr (#200)
         Assert.Contains(ManagedComponentKind.RtxEncore, LinuxUpdateAllService.SupportedComponents); // w4/encore (#158)
@@ -32,7 +35,6 @@ public sealed class UpdateAllBackgroundTests
     {
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Dlss));
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Streamline));
-        Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.UltimateAsiLoader));
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.RenoDXUpgrade));
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Unknown));
     }
@@ -339,7 +341,7 @@ public sealed class UpdateAllBackgroundTests
         using var fixture = new Fixture();
         var game = fixture.Game("unsupported");
         fixture.Record(game, ManagedComponentKind.Dlss);
-        fixture.Record(game, ManagedComponentKind.UltimateAsiLoader);
+        fixture.Record(game, ManagedComponentKind.Streamline); // w12/mfg (#238): the ASI Loader is a family now; Streamline is not
         var backend = new FakeBackend();
         var service = fixture.Service(backend);
 
