@@ -86,8 +86,9 @@ public sealed class LumaNexusRowTests : IDisposable
         Assert.Empty(opened);
     }
 
-    // Review F1: an Unreal Engine game (Mass Effect, Borderlands 2 … are UE3) shows the Luma Engine.ini ⚙ (#189) and the
-    // Nexus button on the same row; both stay (the layout keeps them apart: LumaNexusRowLayoutTests).
+    // Review F1 / correction 2: an Unreal Engine game (Mass Effect, Borderlands 2 … are UE3) shows the Luma Engine.ini ⚙
+    // (#189) and the Nexus button on the same row. Laid out by the row template with this row's own visibility, both are
+    // whole, apart and each the hit target at its centre, in the order Nexus → ⚙ → Install/Remove → ⓘ, at every width.
     [Theory]
     [InlineData("en-US", null)]
     [InlineData("pt-BR", null)]
@@ -101,6 +102,17 @@ public sealed class LumaNexusRowTests : IDisposable
         Assert.True(row.HasIniSettings);
         Assert.True(row.LumaNexus.IsVisible);
         Assert.Equal(RHI.Desktop.Localization.UiLocalizationService.Text(key is null ? "Lu.OpenOnNexus" : "Lu.UpdateOnNexus"), row.LumaNexus.Label);
+        foreach (var width in new[] { 2061.0, 1600.0, 900.0, 520.0, 300.0 })
+            LumaNexusRowLayoutTests.AssertNexusFirst_BothWholeAndHitTargets(LumaNexusRowLayoutTests.FromTemplate(path => Shown(row, path)), width);
+    }
+
+    /// <summary>The row's value for a template <c>IsVisible</c> binding path ("LumaNexus.IsVisible", "HasIniSettings" …).</summary>
+    private static bool Shown(ComponentRowViewModel row, string path)
+    {
+        object? value = row;
+        foreach (var name in path.Split('.'))
+            value = value?.GetType().GetProperty(name)?.GetValue(value) ?? throw new Xunit.Sdk.XunitException($"No '{path}' on the row");
+        return (bool)value!;
     }
 
     // Review F2: a Nexus-only mod RHI has not installed: "Open on Nexus" opens its page (where to get it); Nexus is not
