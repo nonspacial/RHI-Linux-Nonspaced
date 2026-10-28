@@ -257,7 +257,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
                 IReadOnlyList<string>? files = Host.Session.CachedFiles(game)
                     ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
                 result = await _dlssDefaults.ApplyDefaultsAsync(game, DlssVersionDefaults, files, op.Token);
-                lines.Add(UiLocalizationService.Present(result.Summary));
+                lines.Add(CountsLine(result));
+                lines.Add(FailedGamesLine(result)); // #249
                 lines.Add(NrNotForThisCardLine(result.Items, DlssVersionDefaults.NeuralRendering)); // #229
             }
             // #215 (upstream's Apply defaults): after the DLL swaps, the preset defaults go into the game's own NVIDIA
@@ -280,6 +281,30 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         {
             NotifyDlssDefaults();
         }
+    }
+
+    /// <summary>
+    /// #249: the DLSS/Streamline result counts in the UI language (the platform's <see cref="LinuxDlssBatchResult.Summary"/>
+    /// is English only and was shown as is in PT-BR).
+    /// </summary>
+    internal static string CountsLine(LinuxDlssBatchResult result)
+        => result.Items.Count == 0
+            ? T("Dp.BatchNoTargets")
+            : TF("Dp.BatchCounts", result.ChangedCount, result.CurrentCount, result.SkippedCount, result.DeferredCount, result.FailedCount);
+
+    /// <summary>
+    /// #249 (upstream 2.8.8 <c>d61a696</c>, "Failed: N game(s) • game: reason"): the games a DLSS/Streamline result
+    /// counts as failed, each named once with its reasons; "" when none.
+    /// </summary>
+    internal static string FailedGamesLine(LinuxDlssBatchResult result)
+    {
+        var games = result.FailedItems
+            .GroupBy(item => item.GameName, StringComparer.Ordinal)
+            .Select(game => game.Key + ": " + string.Join("; ", game
+                .Select(item => UiLocalizationService.Present(item.Message).TrimEnd('.'))
+                .Distinct(StringComparer.Ordinal)))
+            .ToArray();
+        return games.Length == 0 ? "" : TF("Dp.BatchFailedGames", games.Length, string.Join(" • ", games)) + ".";
     }
 
     /// <summary>
@@ -314,7 +339,7 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             IReadOnlyList<string>? indexed = Host.Session.CachedFiles(game)
                 ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
             var result = await _dlssDefaults.RestoreAllAsync(game, indexed, op.Token);
-            StatusText = nvidiaLine is null ? UiLocalizationService.Present(result.Summary) : UiLocalizationService.Present(result.Summary) + " " + nvidiaLine;
+            StatusText = Join(CountsLine(result), FailedGamesLine(result), nvidiaLine ?? ""); // #249
             if (result.ChangedCount > 0)
                 await ReprobeGameAsync(game);
         }
@@ -397,7 +422,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             }
             var result = defaults.HasAny ? new LinuxDlssBatchResult(items) : null;
             await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
-            var line = Join(result is null ? "" : Join(UiLocalizationService.Present(result.Summary), NrNotForThisCardLine(result.Items, defaults.NeuralRendering)),
+            var line = Join(result is null ? "" : Join(CountsLine(result), FailedGamesLine(result), // #249
+                    NrNotForThisCardLine(result.Items, defaults.NeuralRendering)),
                 presets is { HasAny: true } ? tally.Line() : ""); // #229: the NR step skipped for a DLL made for another card
             StatusText = line;
             return new(result ?? new LinuxDlssBatchResult([]), line);
@@ -455,7 +481,7 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             }
             var result = new LinuxDlssBatchResult(items);
             await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
-            var line = Join(UiLocalizationService.Present(result.Summary),
+            var line = Join(CountsLine(result), FailedGamesLine(result), // #249
                 reset.Count > 0 ? TF("Dp.BatchPresetsReset", reset.Count) : "", refused ?? "");
             StatusText = line;
             return new(result, line);

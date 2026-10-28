@@ -1468,6 +1468,9 @@ internal static class UiStrings
         ("Nrl.FixGenericDepth", "isto se ajusta no overlay do ReShade dentro do jogo, não no RHI: no jogo, abra o overlay do ReShade, vá à aba Add-ons, abra Generic Depth e escolha o buffer de profundidade que se move com a cena.", "this is set in ReShade's overlay inside the game, not in RHI: in the game, open the ReShade overlay, go to the Add-ons tab, open Generic Depth and pick the depth buffer that moves with the scene."),
         ("Nrl.FixRestartDisplayMode", "reinicie o jogo com o modo de exibição que você quer (HDR e resolução) já escolhido nas opções do jogo, para que ele não mude enquanto o Feeder roda. Se ele parar de novo, desligue o HDR nas opções do jogo. Não há nada a mudar no RHI para isso.", "restart the game with the display mode you want (HDR and resolution) already chosen in the game's options, so it does not change while the Feeder runs. If it stops again, turn HDR off in the game's options. There is nothing to change in RHI for this."),
         // w12/pins rows
+        ("Dp.BatchFailedGames", "Falha em {0} jogo(s) • {1}", "Failed: {0} game(s) • {1}"),
+        ("Dp.BatchCounts", "DLSS/Streamline: {0} alterado(s) · {1} já atualizado(s) · {2} ignorado(s) · {3} adiado(s) · {4} com falha.", "DLSS/Streamline: {0} changed · {1} current · {2} skipped · {3} deferred · {4} failed."),
+        ("Dp.BatchNoTargets", "Nenhum alvo de DLSS/Streamline elegível foi encontrado.", "No eligible DLSS/Streamline targets were found."),
         // w12/hdr-wsi rows
         ("Hw.HdrTipCurated", "HDR: a lista de jogos do próprio RHI diz que este jogo tem HDR.", "HDR: RHI's own game list says this game supports HDR."),
         ("Hw.HdrTipPcgw", "HDR: listado como compatível pelo PCGamingWiki.", "HDR: listed as supported by PCGamingWiki."),

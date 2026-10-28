@@ -58,7 +58,9 @@ public sealed record LinuxDlssBatchItemResult(
 public sealed record LinuxDlssBatchResult(IReadOnlyList<LinuxDlssBatchItemResult> Items)
 {
     public int ChangedCount => Items.Count(item => item.Changed);
-    public int FailedCount => Items.Count(item => !item.Success && !item.Deferred && !item.Skipped);
+    public int FailedCount => FailedItems.Count();
+    /// <summary>The items <see cref="FailedCount"/> counts (#249: the result line names their games and reasons).</summary>
+    public IEnumerable<LinuxDlssBatchItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred && !item.Skipped);
     public int DeferredCount => Items.Count(item => item.Deferred);
     public int SkippedCount => Items.Count(item => item.Skipped);
     public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Skipped);
@@ -311,7 +313,7 @@ public sealed class LinuxDlssDefaultsService
             catch (Exception ex)
             {
                 all.Add(new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
-                    false, false, false, false, $"Batch deploy failed: {ex.Message}"));
+                    false, false, false, false, BatchDeployFailedPrefix + ex.Message));
             }
         }
         return new LinuxDlssBatchResult(all);
@@ -339,7 +341,7 @@ public sealed class LinuxDlssDefaultsService
             catch (Exception ex)
             {
                 all.Add(new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
-                    false, false, false, false, $"Batch restore failed: {ex.Message}"));
+                    false, false, false, false, BatchRestoreFailedPrefix + ex.Message));
             }
         }
         return new LinuxDlssBatchResult(all);
@@ -509,6 +511,10 @@ public sealed class LinuxDlssDefaultsService
 
     /// <summary>#229: fixed text of the skipped NR step; the version follows.</summary>
     public const string NotMadeForThisCardPrefix = "Neural Rendering skipped: the chosen DLL is made for another graphics card generation, so no file was changed. DLL: ";
+
+    /// <summary>#249: a batch game whose apply/restore threw; the result line names the game with this reason.</summary>
+    public const string BatchDeployFailedPrefix = "Batch deploy failed: ";
+    public const string BatchRestoreFailedPrefix = "Batch restore failed: ";
 
     private static string Display(LinuxDlssBatchComponent component) => component switch
     {

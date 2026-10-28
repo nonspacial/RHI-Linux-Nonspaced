@@ -1217,6 +1217,25 @@ Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in
 
 <!-- w12/pins notes -->
 
+### #249 — Regression pins for upstream 2.8.8 bugs that never existed here
+
+Upstream v2.8.8 Beta fixed these in `713c222`, `d61a696`, `e634e52`, `79f5680`, `feb126c`, `49d4473`, `abf18c7`,
+`a1a4e48`, `b8094e6`, `1b51cb2`, `f170aa6`/`865f784`. The rewrite never had them; tests (`Upstream288Pins*.cs`, plus the
+existing tests named in the lane's report) pin today's behaviour, each proved by a mutant of the line it guards: numeric
+DLSS version equality and the DLSS section re-read after a swap; a failed swap rolled back and the DLSS batch carrying on
+past a failing game; OptiScaler Stable / DLSS NR / F5 updates keeping their variant, reporting the new version and
+landing in Update History, as Luma updates do; the ReShade nightly reused for an unchanged Actions run; unchanged RenoDX
+snapshots judged by HEAD validators; concurrent ledger writes; Luma TAA kept across a display-name change; the GitHub
+token only on `https://api.github.com` and not carried through a redirect to `codeload.github.com`; Luma and shader
+archive members with `..` or an absolute path refused; Luma removal deleting only its recorded files; the Ultimate ASI
+Loader cache per architecture; Follow newest and the Streamline dropdown with `2.14.16.0-v2`.
+Two pins found real gaps, both fixed in this wave. The DLSS result line (batch apply and restore, Apply defaults,
+Restore all) now names each failed game with its reason after the counts ("Failed: N game(s) • <game>: <reason>", EN +
+PT-BR), as upstream `d61a696` does in its mass-deploy summary, and its counts now follow the UI language (they were
+English in PT-BR) (pins correction). Luma removal's inside-the-game check on the paths its record lists (upstream
+`b8094e6`, `SafeCombine` on uninstall) is fixed and pinned in lane w12/luma. The default 3 s wait for `pcgw_data.json`
+during a selection is pinned with its literal value.
+
 <!-- w12/hdr-wsi notes -->
 
 ### #250 — Legacy HDR WSI: the tick only where the host needs it

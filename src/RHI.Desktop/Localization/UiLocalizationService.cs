@@ -1713,6 +1713,9 @@ public static class UiLocalizationService
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
+        // #249: the DLSS batch names a game whose step threw; the exception text follows.
+        (RHI.Platform.Linux.Deployment.LinuxDlssDefaultsService.BatchDeployFailedPrefix, "Falha na implantação em lote: "),
+        (RHI.Platform.Linux.Deployment.LinuxDlssDefaultsService.BatchRestoreFailedPrefix, "Falha na restauração em lote: "),
         // w12/hdr-wsi rows
     ];
 
