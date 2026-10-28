@@ -1179,6 +1179,38 @@ every launch, x86 never updated" never existed here (per-architecture stamped ca
 
 <!-- w12/luma notes -->
 
+### #245 — Luma: Nexus-only mods are checked on Nexus, never updated from a GitHub build
+- Upstream 2.8.8 Beta `20d3297` (`UpdateOrchestrationService` leaves Nexus-only Luma mods out of the GitHub build check
+  and clears the stale badge; `MainViewModel.CheckLumaNexusUpdatesAsync` compares Nexus with a baseline). Behavioural
+  port: the wiki's Download Link cell gives a download link, a Nexus Mods link, or both, in either order; a Nexus link is
+  the mod's page, never its download (`LumaCatalogEntry.NexusUrl`, `IsNexusOnly`), and the release merge never fills a
+  Nexus-only row from a same-named GitHub build. Before this the fork took the first link as the download, so a
+  Nexus-only mod could never be checked (could not check, forever) and a GitHub mod listed Nexus-first was unusable.
+- The check (`Network/NexusModUpdateCheck`, the one Nexus "newer file" check; #198 reuses it) uses the connected
+  account's API key only (owner rule; upstream asks the anonymous GraphQL API), Nexus's v1 file list, and compares the
+  newest MAIN/UPDATE file's upload time with the install time (upstream's baseline; no Luma install records a Nexus file
+  id). No account / Nexus error / rate limit / a refused key (401/403) = could not check; a refused key's line names
+  Settings → Accounts & updates → Disconnect, then Connect Nexus account. One file list per mod is kept for an hour;
+  after a 429 Nexus is left alone for 5 minutes (the limit is the account's).
+- Update never downloads it: Update All and the background pass count it as could not be checked (never failed). The
+  fork's rows have no per-row Update button, so the Luma row has a Nexus button in its own column, first among the row's
+  buttons (Nexus → ⚙ → Install/Remove → ⓘ; an Unreal game's Luma Engine.ini ⚙, #189, stays beside it). Every other
+  row keeps the ⚙ → Install/Remove → ⓘ order and layout it had before: only the Nexus column takes no place while its
+  button is hidden (`ResponsiveRow.SkipEmptyColumns="3"`). "Update on Nexus" (opens the page through
+  `LinkHosts.NexusMod`) when Nexus has a newer file; "Open on Nexus" when no account is connected or Nexus refused the
+  key (the 2 s tooltip names the control that fixes it) and, without asking Nexus, when RHI has not installed the mod
+  (upstream's card links these mods' Nexus page; download it there and drop the file on RHI). Hidden otherwise.
+- Pins gap 2 (upstream `b8094e6`, `SafeCombine` on Luma uninstall): Luma removal and update delete a recorded file or
+  folder only inside the game folder, its binary folder or ReShade's `AddonPath` (where Luma's add-on goes); a ledger
+  entry naming anything else is left in place (logged) and never blocks the removal.
+
+### #246 — Luma mode: no manifest default (upstream removed lumaDefaultGames)
+- Upstream 2.8.8 Beta `230ac6a` removed `lumaDefaultGames` from `manifest.json` (no upstream consumer since at least
+  2.7.5). The fork still read it, so with the live manifest (no key) no game defaulted to Luma mode while the pinned 2.8.7
+  fallback (offline) turned it on for 35 games. Now `LumaPolicyService` reads only `lumaRenodxCompat`: Luma mode is on
+  only where the user chose Enabled, off for Disabled and Automatic, whichever manifest answers; saved choices are kept.
+  The Luma library filter still lists games with RHI's Luma installed (record) or Luma mode turned on by the user.
+
 <!-- w12/epic notes -->
 
 ### #247 — Epic Games Launcher in a Wine/Lutris prefix (classic manifests and the new launcher)

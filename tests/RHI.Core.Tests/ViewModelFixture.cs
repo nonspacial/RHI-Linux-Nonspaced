@@ -74,6 +74,7 @@ internal sealed class ViewModelFixture : IDisposable
         , RHI.Platform.Linux.Deployment.IGameRunningProbe? runningProbe = null
         // w12/github-cache rows
         // w12/luma rows
+        , Func<string?>? lumaNexusKey = null
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
@@ -128,6 +129,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w12/update-all rows
             // w12/github-cache rows
             // w12/luma rows
+            , lumaNexusKey
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
@@ -222,6 +224,7 @@ internal sealed class ViewModelFixture : IDisposable
         , RHI.Platform.Linux.Deployment.IGameRunningProbe? runningProbe = null
         // w12/github-cache rows
         // w12/luma rows
+        , Func<string?>? lumaNexusKey = null
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
@@ -269,6 +272,7 @@ internal sealed class ViewModelFixture : IDisposable
             , runningProbe
             // w12/github-cache rows
             // w12/luma rows
+            , lumaNexusKey
             // w12/epic rows
             // w12/nr-logs rows
             // w12/pins rows
@@ -360,6 +364,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows
+        , Func<string?>? lumaNexusKey
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows
@@ -451,6 +456,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows
+        luma.NexusUpdates = new NexusModUpdateCheck(new NexusApiClient(http), lumaNexusKey ?? (() => null)); // #245: no Nexus account unless a test connects one
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

@@ -70,13 +70,12 @@ public sealed class UpstreamRhiManifestServiceTests
 
 
     [Fact]
-    public async Task FetchLumaPolicyFields_ParsesDefaultAndRenoDxCompatCaseInsensitively()
+    public async Task FetchLumaPolicyFields_ParsesRenoDxCompatCaseInsensitively()
     {
         var json = """
         {
           "version": 2,
-          "lumaDefaultGames": [ "Default Game", " default game " ],
-          "lumaRenodxCompat": [ "Compat Game" ]
+          "lumaRenodxCompat": [ "Compat Game", " compat game " ]
         }
         """;
         using var http = new HttpClient(new FakeHandler(new HttpResponseMessage(HttpStatusCode.OK)
@@ -85,12 +84,10 @@ public sealed class UpstreamRhiManifestServiceTests
         }));
         var service = new UpstreamRhiManifestService(http, "https://example.test/manifest.json");
 
-        var defaults = await service.FetchLumaDefaultGamesAsync();
         var compat = await service.FetchLumaRenoDxCompatAsync();
 
-        Assert.Single(defaults);
-        Assert.True(defaults.Contains("DEFAULT GAME"));
-        Assert.True(compat.Contains("compat game"));
+        Assert.Single(compat);
+        Assert.True(compat.Contains("COMPAT GAME"));
     }
 
     [Fact]
@@ -566,7 +563,7 @@ public sealed class UpstreamRhiManifestServiceTests
             if (request.RequestUri?.AbsoluteUri == UpstreamRhiManifestService.PinnedManifestUrl)
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new StringContent("{\"version\":2,\"lumaDefaultGames\":[\"Fallback Game\"]}", Encoding.UTF8, "application/json")
+                    Content = new StringContent("{\"version\":2,\"lumaRenodxCompat\":[\"Fallback Game\"]}", Encoding.UTF8, "application/json")
                 };
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
@@ -574,9 +571,9 @@ public sealed class UpstreamRhiManifestServiceTests
         var cachePath = Path.Combine(Path.GetTempPath(), "rhi-manifest-missing-" + Guid.NewGuid().ToString("N") + ".json");
         var service = new UpstreamRhiManifestService(http, fallbackManifestUrl: UpstreamRhiManifestService.PinnedManifestUrl, cachePath: cachePath);
 
-        var defaults = await service.FetchLumaDefaultGamesAsync();
+        var compat = await service.FetchLumaRenoDxCompatAsync();
 
-        Assert.True(defaults.Contains("fallback game"));
+        Assert.True(compat.Contains("fallback game"));
         Assert.Equal(2, handler.RequestCount);
     }
 

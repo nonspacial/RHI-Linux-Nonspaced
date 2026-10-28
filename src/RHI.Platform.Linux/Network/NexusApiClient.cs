@@ -13,7 +13,9 @@ namespace RHI.Platform.Linux.Network;
 public sealed record NexusUser(int UserId, string Name, bool IsPremium);
 
 /// <summary>A file of a Nexus mod (what the confirmation names before anything is downloaded).</summary>
-public sealed record NexusModFile(int FileId, string Name, string? Version, string FileName, long SizeKb, string Category);
+/// <param name="UploadedUtc">#245: when the file was uploaded (Nexus's <c>uploaded_timestamp</c>), when Nexus said.</param>
+public sealed record NexusModFile(int FileId, string Name, string? Version, string FileName, long SizeKb, string Category,
+    DateTimeOffset? UploadedUtc = null);
 
 /// <summary>A Nexus API call that failed; <see cref="Rejected"/> is true for 401/403 (bad key, not allowed).</summary>
 public sealed class NexusApiException(string message, HttpStatusCode? status, Exception? inner = null) : IOException(message, inner)
@@ -86,7 +88,8 @@ public sealed class NexusApiClient
     {
         var body = await GetAsync($"{BaseUrl}/games/{Uri.EscapeDataString(gameDomain)}/mods/{modId}/files.json", apiKey, cancellationToken).ConfigureAwait(false);
         var files = JsonSerializer.Deserialize<FilesResponse>(body)?.Files ?? [];
-        return files.Select(f => new NexusModFile(f.FileId, f.Name ?? "", f.Version, f.FileName ?? "", f.SizeKb, f.CategoryName ?? "")).ToList();
+        return files.Select(f => new NexusModFile(f.FileId, f.Name ?? "", f.Version, f.FileName ?? "", f.SizeKb, f.CategoryName ?? "",
+            f.UploadedTimestamp is long seconds && seconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null)).ToList();
     }
 
     /// <summary>Download URIs for a file: with an nxm link's key and expiry (any account), or without (Premium only).</summary>
@@ -202,6 +205,7 @@ public sealed class NexusApiClient
         [JsonPropertyName("category_name")] public string? CategoryName { get; set; }
         [JsonPropertyName("size_kb")] public long SizeKb { get; set; }
         [JsonPropertyName("file_name")] public string? FileName { get; set; }
+        [JsonPropertyName("uploaded_timestamp")] public long? UploadedTimestamp { get; set; } // #245
     }
 
     private sealed class DownloadLink

@@ -14,23 +14,7 @@ public sealed class LumaPolicyServiceTests : IDisposable
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
     [Fact]
-    public async Task ManifestDefault_AutoEnablesModeWithoutCreatingUserOverride()
-    {
-        var service = BuildService("""
-        { "version":2, "lumaDefaultGames":["Default Game"] }
-        """);
-        var game = Game("Default Game");
-
-        var policy = await service.PrimeAsync(game);
-
-        Assert.True(policy.ManifestDefault);
-        Assert.True(policy.EffectiveModeEnabled);
-        Assert.Equal(LumaModePreference.Auto, policy.UserPreference);
-        Assert.Equal("upstream lumaDefaultGames", policy.Authority);
-    }
-
-    [Fact]
-    public async Task ExplicitDisabled_WinsOverManifestDefaultAndSurvivesNewServiceInstance()
+    public async Task ExplicitDisabled_SurvivesNewServiceInstance()
     {
         var manifest = """{ "version":2, "lumaDefaultGames":["Default Game"] }""";
         var storePath = Path.Combine(_root, "prefs-persist.json");
@@ -42,7 +26,6 @@ public sealed class LumaPolicyServiceTests : IDisposable
         var second = BuildService(manifest, storePath);
         var policy = await second.PrimeAsync(game);
 
-        Assert.True(policy.ManifestDefault);
         Assert.False(policy.EffectiveModeEnabled);
         Assert.Equal(LumaModePreference.Disabled, policy.UserPreference);
         Assert.Equal("user disabled", policy.Authority);
@@ -57,24 +40,8 @@ public sealed class LumaPolicyServiceTests : IDisposable
 
         var policy = service.SetPreference(game, LumaModePreference.Enabled);
 
-        Assert.False(policy.ManifestDefault);
         Assert.True(policy.EffectiveModeEnabled);
         Assert.Equal("user enabled", policy.Authority);
-    }
-
-    [Fact]
-    public async Task ReturningToAuto_ReappliesManifestDefaultInsteadOfRememberingManualState()
-    {
-        var service = BuildService("""{ "version":2, "lumaDefaultGames":["Default Game"] }""");
-        var game = Game("Default Game");
-        await service.PrimeAsync(game);
-        service.SetPreference(game, LumaModePreference.Disabled);
-
-        var policy = service.SetPreference(game, LumaModePreference.Auto);
-
-        Assert.Equal(LumaModePreference.Auto, policy.UserPreference);
-        Assert.True(policy.EffectiveModeEnabled);
-        Assert.Equal("upstream lumaDefaultGames", policy.Authority);
     }
 
     [Fact]
@@ -86,7 +53,6 @@ public sealed class LumaPolicyServiceTests : IDisposable
         var policy = await service.PrimeAsync(Game("Compat Game"));
 
         Assert.True(policy.RenoDxCompatible);
-        Assert.False(policy.ManifestDefault);
         Assert.False(policy.EffectiveModeEnabled);
         Assert.Contains("coexistence allowed", policy.Summary, StringComparison.OrdinalIgnoreCase);
     }
@@ -95,11 +61,11 @@ public sealed class LumaPolicyServiceTests : IDisposable
     public async Task ManifestMatching_IsCaseAndPunctuationTolerant()
     {
         var service = BuildService("""
-        { "version":2, "lumaDefaultGames":["Street Fighter™ 6"] }
+        { "version":2, "lumaRenodxCompat":["Street Fighter™ 6"] }
         """);
         var policy = await service.PrimeAsync(Game("street fighter 6"));
 
-        Assert.True(policy.ManifestDefault);
+        Assert.True(policy.RenoDxCompatible);
     }
 
     [Fact]
@@ -119,13 +85,13 @@ public sealed class LumaPolicyServiceTests : IDisposable
     public async Task AmbiguousPathEvidence_DoesNotAdoptTwoManifestTitles()
     {
         var service = BuildService("""
-        { "version":2, "lumaDefaultGames":["Alpha Game","Beta Game"] }
+        { "version":2, "lumaRenodxCompat":["Alpha Game","Beta Game"] }
         """);
         var game = Game("Launcher", Path.Combine(_root, "Alpha Game", "Beta Game"));
 
         var policy = await service.PrimeAsync(game);
 
-        Assert.False(policy.ManifestDefault);
+        Assert.False(policy.RenoDxCompatible);
     }
 
     [Fact]

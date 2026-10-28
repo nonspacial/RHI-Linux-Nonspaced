@@ -153,6 +153,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w12/update-all rows
     // w12/github-cache rows
     // w12/luma rows
+    public LumaNexusRowState LumaNexus { get; } = new(); // #245: the Luma row's Nexus button, set by LumaNexusUpdatePresenter
     // w12/epic rows
     // w12/nr-logs rows
     // w12/pins rows

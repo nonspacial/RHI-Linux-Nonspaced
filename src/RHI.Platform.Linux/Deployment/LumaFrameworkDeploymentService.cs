@@ -90,10 +90,79 @@ public sealed class LumaFrameworkDeploymentService
     public LinuxDeploymentRecord? GetRecord(DetectedGame game)
         => _records.Find(game, ManagedComponentKind.LumaFramework);
 
+    /// <summary>
+    /// #245: asks Nexus Mods whether a Nexus-only Luma mod has a newer file (the app wires the connected account's key;
+    /// unset = no account). Upstream asks Nexus on its start-up/interval update check; here the update check does
+    /// (Update All, the background pass, and the selected game's Luma row).
+    /// </summary>
+    public RHI.Platform.Linux.Network.NexusModUpdateCheck? NexusUpdates { get; set; }
+
+    // Fixed messages (PT-BR presentation pairs); values come last.
+    public const string NexusNewerPrefix = "A newer Luma file is on Nexus Mods: ";
+    public const string NexusCurrentMessage = "No newer Luma file is on Nexus Mods.";
+    public const string NexusOnlyUpdatePrefix = "This Luma mod is published on Nexus Mods only, so RHI does not download it; get the newer file from its page: ";
+    public const string NexusOnlyInstallMessage = "This game's Luma mod is published on Nexus Mods only, so RHI cannot download it. Download it from its Nexus Mods page and drop the file on RHI to install it.";
+
+    /// <summary>#245: the game's Luma mod as the wiki lists it when it is Nexus-only (resolved now if needed), else null.</summary>
+    private async Task<LumaCatalogEntry?> NexusOnlyEntryAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _catalog.ResolveAsync(game, cancellationToken).ConfigureAwait(false) is { IsNexusOnly: true } entry ? entry : null;
+        }
+        catch when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// #245 (review F2): what the game's Luma row shows for a mod the wiki lists only on Nexus Mods: its page, and Nexus's
+    /// answer when RHI installed it (<see cref="LumaNexusPage.Installed"/> null: RHI has no Luma install for the game, so
+    /// the row only opens the page and Nexus is not asked). Null when the mod is not Nexus-only, and on native Linux games
+    /// (Luma is never deployed there, so the row offers nothing).
+    /// </summary>
+    public async Task<LumaNexusPage?> NexusPageAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)) return null;
+        if (await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is not { } entry) return null;
+        return GetRecord(game) is { } record
+            ? new LumaNexusPage(entry.NexusUrl!, await AskNexusAsync(record, entry, cancellationToken).ConfigureAwait(false))
+            : new LumaNexusPage(entry.NexusUrl!, null);
+    }
+
+    // #245 (upstream CheckLumaNexusUpdatesAsync): the baseline is the install time (no Luma install records a Nexus file id:
+    // a Nexus download installs through the local-package path).
+    private Task<RHI.Platform.Linux.Network.NexusModUpdateAnswer> AskNexusAsync(LinuxDeploymentRecord record, LumaCatalogEntry entry, CancellationToken cancellationToken)
+        => NexusUpdates is { } nexus
+            ? nexus.CheckAsync(entry.NexusUrl!, new DateTimeOffset(DateTime.SpecifyKind(record.InstalledAtUtc, DateTimeKind.Utc)), null, cancellationToken)
+            : Task.FromResult(new RHI.Platform.Linux.Network.NexusModUpdateAnswer(RHI.Platform.Linux.Network.NexusModUpdateOutcome.NoKey, entry.NexusUrl!,
+                RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage));
+
+    /// <summary>#245: the Nexus answer as an update check: newer = an update (never downloaded); no account / Nexus error = could not check.</summary>
+    private async Task<ManagedUpdateCheck> CheckOnNexusAsync(LinuxDeploymentRecord record, LumaCatalogEntry entry, CancellationToken cancellationToken)
+    {
+        var answer = await AskNexusAsync(record, entry, cancellationToken).ConfigureAwait(false);
+        return answer.Outcome switch
+        {
+            RHI.Platform.Linux.Network.NexusModUpdateOutcome.Newer => new ManagedUpdateCheck(true, true,
+                NexusNewerPrefix + NexusFileLabel(answer.Newest!), record.Version, answer.Newest!.Version ?? answer.Newest.Name),
+            RHI.Platform.Linux.Network.NexusModUpdateOutcome.Current => new ManagedUpdateCheck(true, false, NexusCurrentMessage, record.Version,
+                answer.Newest?.Version),
+            _ => new ManagedUpdateCheck(true, false, answer.Message, record.Version, CouldNotCheck: true)
+        };
+    }
+
+    private static string NexusFileLabel(RHI.Platform.Linux.Network.NexusModFile file)
+        => string.IsNullOrWhiteSpace(file.Version) ? file.Name : $"{file.Name} {file.Version}";
+
     public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var record = GetRecord(game);
         if (record is null) return new ManagedUpdateCheck(false, false, "Luma Framework is not managed by RHI Linux.");
+        // #245: before every GitHub path (a local package included: a Nexus download installs as one).
+        if (await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is { } nexusOnly)
+            return await CheckOnNexusAsync(record, nexusOnly, cancellationToken).ConfigureAwait(false);
         if (record.Metadata.GetValueOrDefault(MetaLocalPackage) == "1")
             return new ManagedUpdateCheck(true, false,
                 "This Luma package was installed from a local drag/drop file. Drop a Luma archive/add-on onto the game again to reinstall or change it; automatic update has no trusted source URL.",
@@ -119,15 +188,19 @@ public sealed class LumaFrameworkDeploymentService
         }
     }
 
-    public Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    public async Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var record = GetRecord(game);
         if (record is null)
-            return Task.FromResult(ComponentOperationResult.Fail("Luma Framework is not managed by RHI Linux."));
+            return ComponentOperationResult.Fail("Luma Framework is not managed by RHI Linux.");
+        // #245: a Nexus-only mod is never downloaded (from GitHub or anywhere); Update All counts it as could not be
+        // checked, never failed, and the row opens the Nexus page instead.
+        if (await NexusOnlyEntryAsync(game, cancellationToken).ConfigureAwait(false) is { } nexusOnly)
+            return ComponentOperationResult.Unavailable(NexusOnlyUpdatePrefix + nexusOnly.NexusUrl);
         if (record.Metadata.GetValueOrDefault(MetaLocalPackage) == "1")
-            return Task.FromResult(ComponentOperationResult.Fail(
-                "This Luma install came from a local drag/drop package and has no trusted automatic download URL. Drop the Luma archive/add-on onto the game again to reinstall it."));
-        return InstallAsync(game, cancellationToken);
+            return ComponentOperationResult.Fail(
+                "This Luma install came from a local drag/drop package and has no trusted automatic download URL. Drop the Luma archive/add-on onto the game again to reinstall it.");
+        return await InstallAsync(game, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task PrimeNamedMatchAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -210,6 +283,7 @@ public sealed class LumaFrameworkDeploymentService
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return "Luma Framework is a Windows injection component and is not deployed to native Linux games.";
+        if (entry.IsNexusOnly) return NexusOnlyInstallMessage; // #245
         if (string.IsNullOrWhiteSpace(entry.DownloadUrl))
             return $"Named Luma match '{entry.Name}' has no downloadable package in the upstream Completed Mods table.";
         if (!IsTrustedFiloppiUrl(entry.DownloadUrl))
@@ -418,7 +492,7 @@ public sealed class LumaFrameworkDeploymentService
 
         if (existingRecord is not null)
         {
-            var preflight = await PreflightManagedFilesAsync(existingRecord, cancellationToken).ConfigureAwait(false);
+            var preflight = await PreflightManagedFilesAsync(game, existingRecord, cancellationToken).ConfigureAwait(false);
             if (preflight is not null) return ComponentOperationResult.Fail(preflight);
         }
 
@@ -606,7 +680,7 @@ public sealed class LumaFrameworkDeploymentService
                     foreach (var old in existingRecord.Files)
                     {
                         if (string.IsNullOrWhiteSpace(old.Path) || !File.Exists(old.Path)) continue;
-                        if (newTargets.Contains(Path.GetFullPath(old.Path))) continue;
+                        if (newTargets.Contains(Path.GetFullPath(old.Path)) || !IsLumaPlace(game, old.Path)) continue;
                         await scope.DeleteAsync(old.Path, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
@@ -661,7 +735,6 @@ public sealed class LumaFrameworkDeploymentService
                         ["LumaFramework.UeVersion"] = selection.GenericMetadata?.UeVersion ?? "",
                         ["LumaFramework.EngineIniProjectOverride"] = game.EngineIniProjectOverride ?? "",
                         ["LumaFramework.PolicyAuthority"] = _policy?.GetCachedOrDefault(game).Authority ?? "",
-                        ["LumaFramework.ManifestDefault"] = _policy is null ? "" : (_policy.GetCachedOrDefault(game).ManifestDefault ? "1" : "0"),
                         ["LumaFramework.RenoDxCompatible"] = _policy is null ? "" : (_policy.GetCachedOrDefault(game).RenoDxCompatible ? "1" : "0"),
                         ["LumaFramework.UserPreference"] = _policy?.GetCachedOrDefault(game).UserPreference.ToString() ?? "",
                         [MetaDx9Migration] = dx9Migration is null ? "" : JsonSerializer.Serialize(dx9Migration),
@@ -752,7 +825,7 @@ public sealed class LumaFrameworkDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail("Luma Framework is not managed by RHI Linux. External files are protected from removal.");
 
-        var preflight = await PreflightManagedFilesAsync(record, cancellationToken).ConfigureAwait(false);
+        var preflight = await PreflightManagedFilesAsync(game, record, cancellationToken).ConfigureAwait(false);
         if (preflight is not null) return ComponentOperationResult.Fail(preflight);
 
         var dx9State = ReadDx9Migration(record, MetaDx9Migration);
@@ -797,7 +870,8 @@ public sealed class LumaFrameworkDeploymentService
             {
                 foreach (var name in new[] { "D3D9.dll", "dgVoodoo.conf" })
                 {
-                    var managed = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase));
+                    var managed = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase)
+                                                                      && IsLumaPlace(game, file.Path));
                     if (managed is null || !File.Exists(managed.Path)) continue;
                     await scope.DeleteAsync(managed.Path, CancellationToken.None).ConfigureAwait(false);
                     changed.Add(managed.Path);
@@ -812,6 +886,11 @@ public sealed class LumaFrameworkDeploymentService
                                              Path.GetFileName(file.Path).Equals("dgVoodoo.conf", StringComparison.OrdinalIgnoreCase)))
                     continue;
                 if (string.IsNullOrWhiteSpace(file.Path) || !File.Exists(file.Path)) continue;
+                if (!IsLumaPlace(game, file.Path))
+                {
+                    AppLog.Warn("luma", $"Removal left a recorded path outside the game folder in place: {file.Path}");
+                    continue;
+                }
                 await scope.DeleteAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
                 changed.Add(file.Path);
             }
@@ -828,7 +907,7 @@ public sealed class LumaFrameworkDeploymentService
         }
         await scope.CommitAsync().ConfigureAwait(false);
         // Past the commit point: emptied folders RHI created go (best effort; never rolled back).
-        FileCleanup.TryDeleteEmptyDirectories(record.DirectoriesCreatedByRhi);
+        FileCleanup.TryDeleteEmptyDirectories(record.DirectoriesCreatedByRhi.Where(directory => IsLumaPlace(game, directory)));
         return ComponentOperationResult.Ok("Luma Framework removed. ReShade, DLSS and user/runtime data were preserved; [Luma] and RHI-owned wiki Engine.ini settings were restored.", changed.ToArray());
     }
 
@@ -1035,12 +1114,30 @@ public sealed class LumaFrameworkDeploymentService
         return null;
     }
 
-    private static async Task<string?> PreflightManagedFilesAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    /// <summary>
+    /// Pins gap 2 (upstream 2.8.8 <c>b8094e6</c>, <c>SafeCombine</c> on Luma uninstall): a recorded path is Luma's to delete
+    /// only inside the game folder, its binary folder or ReShade's add-on folder (<c>AddonPath</c>), where Luma installs.
+    /// A ledger entry naming anything else (hand-edited or damaged <c>deployments.json</c>) is never deleted or hashed.
+    /// </summary>
+    internal static bool IsLumaPlace(DetectedGame game, string path)
+    {
+        var roots = new List<string>();
+        if (!string.IsNullOrWhiteSpace(game.InstallPath)) roots.Add(game.InstallPath);
+        if (!string.IsNullOrWhiteSpace(game.BinaryDirectory))
+        {
+            roots.Add(game.BinaryDirectory);
+            roots.Add(RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory));
+        }
+        return roots.Any(root => PathIdentity.IsSameOrInside(path, root));
+    }
+
+    private static async Task<string?> PreflightManagedFilesAsync(DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
         foreach (var file in record.Files)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(file.Path) || !File.Exists(file.Path)) continue;
+            if (!IsLumaPlace(game, file.Path)) continue; // not Luma's: never deleted, so never a reason to refuse
             if (string.IsNullOrWhiteSpace(file.Sha256))
                 return "Luma Framework ownership hash is missing; update/remove is blocked conservatively.";
             var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
@@ -1114,3 +1211,6 @@ public sealed class LumaFrameworkDeploymentService
 }
 
 public sealed record LumaPlanItem(string StagingPath, string TargetPath, string ArchivePath);
+
+/// <summary>#245: a Nexus-only Luma mod's page and, when RHI installed it, Nexus's answer about a newer file.</summary>
+public sealed record LumaNexusPage(string PageUrl, RHI.Platform.Linux.Network.NexusModUpdateAnswer? Installed);

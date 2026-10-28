@@ -626,6 +626,16 @@ public sealed class WaveOneMessageLocalizationTests
         // w12/github-cache rows
         yield return DownloadTimedOutException.MessageFor(DownloadSources.GitHubApi.Name, RHI.Platform.Linux.Network.GitHubConditionalCacheHandler.DefaultApiTimeout); // #244: 30 s API timeout
         // w12/luma rows
+        yield return RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage;
+        yield return RHI.Platform.Linux.Network.NexusModUpdateCheck.FailedPrefix + RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage;
+        yield return RHI.Platform.Linux.Network.NexusModUpdateCheck.FailedPrefix + RHI.Platform.Linux.Network.NexusApiClient.AnsweredPrefix + "429.";
+        yield return RHI.Platform.Linux.Network.NexusModUpdateCheck.FailedPrefix + RHI.Platform.Linux.Network.NexusModUpdateCheck.NotAModPageMessage;
+        yield return RHI.Platform.Linux.Network.NexusModUpdateCheck.FailedPrefix + RHI.Platform.Linux.Network.NexusModUpdateCheck.NoDatedFileMessage;
+        yield return LumaFrameworkDeploymentService.NexusNewerPrefix + "Luma-Mass_Effect_Andromeda 1.2";
+        yield return LumaFrameworkDeploymentService.NexusCurrentMessage;
+        yield return LumaFrameworkDeploymentService.NexusOnlyUpdatePrefix + "https://www.nexusmods.com/masseffectandromeda/mods/1351";
+        yield return LumaFrameworkDeploymentService.NexusOnlyInstallMessage;
+        yield return RHI.Platform.Linux.Network.NexusModUpdateCheck.KeyRefusedMessage;
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

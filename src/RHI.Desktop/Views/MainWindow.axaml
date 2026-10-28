@@ -576,35 +576,39 @@
                     <DataTemplate x:DataType="vm:ComponentRowViewModel">
                       <Border Background="#101820" BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="14,11">
                         <StackPanel Spacing="6">
-                          <views:ResponsiveRow Columns="220,180,*,Auto,Auto,Auto" ColumnSpacing="12" LineSpacing="8" HeadColumns="2" MinStarWidth="160">
+                          <!-- w12/luma (#245 correction 2): Nexus → ⚙ → Install/Remove → ⓘ, each in its own column. The ⚙ → Install/Remove → ⓘ
+                               order and columns are the ones every row had before; only the Nexus column (3) is new, and it takes no
+                               spacing when its button is hidden, so every row without it lays out exactly as before. -->
+                          <views:ResponsiveRow Columns="220,180,*,Auto,Auto,Auto,Auto" ColumnSpacing="12" LineSpacing="8" HeadColumns="2" MinStarWidth="160" SkipEmptyColumns="3">
                             <!-- Names wider than the 220 px column end in a word ellipsis; the full name is in a 2 s tooltip. -->
                             <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
                                        TextTrimming="WordEllipsis" ToolTip.Tip="{Binding Name}" ToolTip.ShowDelay="2000"/>
                             <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="#5ECB7D" FontSize="12" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="2" Text="{Binding Note}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRenoDxSettings}"
+                            <Button Grid.Column="3" Classes="rhi" Content="{Binding LumaNexus.Label}" IsVisible="{Binding LumaNexus.IsVisible}" Command="{Binding LumaNexus.Command}" CommandParameter="{Binding LumaNexus.Url}" ToolTip.Tip="{Binding LumaNexus.Tip}" ToolTip.ShowDelay="2000" Padding="10,6"/><!-- w12/luma (#245): Nexus-only Luma mod; opens its Nexus page, downloads nothing -->
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasRenoDxSettings}"
                                     Click="RenoDxSettings_Click" ToolTip.Tip="{DynamicResource Ui.RenoDxSettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasOptiScalerSettings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasOptiScalerSettings}"
                                     Click="OptiScalerSettings_Click" ToolTip.Tip="{DynamicResource Ui.OptiScalerSettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasDlssg2030Settings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasDlssg2030Settings}"
                                     Click="Dlssg2030Settings_Click" ToolTip.Tip="{DynamicResource Ui.Dlssg2030SettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasStandaloneDlssEnablerSettings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasStandaloneDlssEnablerSettings}"
                                     Click="StandaloneDlssEnablerSettings_Click" ToolTip.Tip="{DynamicResource Ui.DlssEnablerStandaloneSettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtx40MfgSettings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtx40MfgSettings}"
                                     Click="Rtx40MfgSettings_Click" ToolTip.Tip="{DynamicResource Ui.Rtx40MfgSettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtxEncoreSettings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtxEncoreSettings}"
                                     Click="RtxEncoreSettings_Click" ToolTip.Tip="{DynamicResource Ui.RtxEncoreSettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasReFrameworkSettings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasReFrameworkSettings}"
                                     Click="ReFrameworkSettings_Click" ToolTip.Tip="{Binding ReFrameworkSettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasIniSettings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasIniSettings}"
                                     Click="IniSettings_Click" ToolTip.Tip="{Binding IniSettingsTip}" Padding="10,6"/>
-                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasDxvkHdrSettings}"
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasDxvkHdrSettings}"
                                     Click="DxvkHdrSettings_Click" ToolTip.Tip="{Binding DxvkHdrSettingsTip}" ToolTip.ShowDelay="2000" Padding="10,6"/>
-                            <Button Grid.Column="4" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"
+                            <Button Grid.Column="5" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"
                                     Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" Command="{Binding Command}"
                                     CommandParameter="{Binding CommandParameter}" ToolTip.Tip="{Binding Note}" MinWidth="80" IsVisible="{Binding HasAction}"/>
                             <!-- #210: highlighted (accent border on the pressed-state surface) when the dialog has notes for this game. -->
-                            <Button Grid.Column="5" Classes="rhi" Classes.gameNotes="{Binding InfoHighlight.IsGameSpecific}" Content="ⓘ"
+                            <Button Grid.Column="6" Classes="rhi" Classes.gameNotes="{Binding InfoHighlight.IsGameSpecific}" Content="ⓘ"
                                     IsVisible="{Binding HasInfo}" Click="ComponentInfo_Click"
                                     ToolTip.Tip="{Binding InfoHighlight.Tip}" ToolTip.ShowDelay="2000" Padding="10,6">
                               <Button.Styles>

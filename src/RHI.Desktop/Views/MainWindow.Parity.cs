@@ -17,6 +17,7 @@ public partial class MainWindow
         parity.GameLinks.OfferFile = OfferDownloadedFileAsync;
         if (parity.ComponentInfo is { } info) info.Open = CreateComponentInfoDialog; // w5/catalogue-info (#184)
         if (parity.ComponentInfo is { } highlights && DataContext is MainWindowViewModel shell) highlights.FollowRows(shell.Components, () => shell.SelectedGame); // w7/smalls (#210)
+        if (DataContext is MainWindowViewModel lumaShell) lumaShell.LumaNexus.FollowRows(); // w12/luma (#245)
     }
 
     private async Task<bool> ConfirmNxmAsync(NxmConfirmation confirmation)
