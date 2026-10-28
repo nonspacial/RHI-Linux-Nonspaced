@@ -245,7 +245,8 @@ public sealed class HdrSectionViewModelTests : IDisposable
             Search = { [a.Name] = "Alpha_Quest", [b.Name] = "Beta_Quest" },
             Pages = { [a.Name] = HdrSupportServiceTests.Wikitext("true"), [b.Name] = HdrSupportServiceTests.Wikitext("false") }
         };
-        var slow = new SlowWiki(wiki) { Holding = false };
+        // A's server answers only when released, even after RHI cancelled the request (so A's late result lands after B's).
+        var slow = new SlowWiki(wiki) { Holding = false, IgnoreCancel = true };
         using var fx = await LegacyHdrWsiViewModelTests.StartAsync([b, a], LegacyHdrWsiViewModelTests.Modern, new LegacyHdrWsiViewModelTests.RecordingLauncher());
         var runtime = fx.Vm.Runtime;
         runtime.HdrSupport = Service(slow);
@@ -269,7 +270,8 @@ public sealed class HdrSectionViewModelTests : IDisposable
 
     /// <summary>
     /// A slow PCGamingWiki in front of <see cref="HdrSupportServiceTests.FakeWiki"/>: while <see cref="Holding"/>, each request
-    /// waits until <see cref="Release"/> or until its caller cancels (then it never reaches the wiki). Counts every request.
+    /// waits until <see cref="Release"/> or until its caller cancels (then it never reaches the wiki; unless
+    /// <see cref="IgnoreCancel"/>). Counts every request.
     /// </summary>
     private sealed class SlowWiki(HdrSupportServiceTests.FakeWiki inner) : DelegatingHandler(inner)
     {
@@ -278,6 +280,8 @@ public sealed class HdrSectionViewModelTests : IDisposable
         private int _requests;
 
         public volatile bool Holding = true;
+        /// <summary>A held request ignores its caller's cancellation (a server that answers late whatever happens).</summary>
+        public volatile bool IgnoreCancel;
         public int Requests => Volatile.Read(ref _requests);
 
         public Task NextArrival()
@@ -293,7 +297,7 @@ public sealed class HdrSectionViewModelTests : IDisposable
         {
             Interlocked.Increment(ref _requests);
             Volatile.Read(ref _arrival).TrySetResult();
-            if (Holding) await _released.Task.WaitAsync(cancellationToken);
+            if (Holding) await (IgnoreCancel ? _released.Task : _released.Task.WaitAsync(cancellationToken));
             return await base.SendAsync(request, cancellationToken);
         }
     }
