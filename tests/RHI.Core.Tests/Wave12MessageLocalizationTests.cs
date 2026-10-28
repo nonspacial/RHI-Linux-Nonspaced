@@ -33,6 +33,16 @@ public sealed class Wave12MessageLocalizationTests
         // pins (#249)
         { LinuxDlssDefaultsService.BatchDeployFailedPrefix + "E/S negada", "Batch deploy failed" },
         { LinuxDlssDefaultsService.BatchRestoreFailedPrefix + "E/S negada", "Batch restore failed" },
+        // luma (#245)
+        { LumaFrameworkDeploymentService.NexusNewerPrefix + "2026-10-01", "A newer Luma file" },
+        { LumaFrameworkDeploymentService.NexusCurrentMessage, "No newer Luma file" },
+        { LumaFrameworkDeploymentService.NexusOnlyUpdatePrefix + "https://www.nexusmods.com/x/mods/1", "published on Nexus Mods only" },
+        { LumaFrameworkDeploymentService.NexusOnlyInstallMessage, "published on Nexus Mods only" },
+        { RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage, "with a connected Nexus account" },
+        { RHI.Platform.Linux.Network.NexusModUpdateCheck.FailedPrefix + "E/S negada", "could not be asked" },
+        { RHI.Platform.Linux.Network.NexusModUpdateCheck.KeyRefusedMessage, "refused the saved Nexus key" },
+        { RHI.Platform.Linux.Network.NexusModUpdateCheck.NotAModPageMessage, "is not a Nexus Mods mod page" },
+        { RHI.Platform.Linux.Network.NexusModUpdateCheck.NoDatedFileMessage, "no dated main file" },
     };
 
     public static TheoryData<string, string> PortugueseSourced() => new()
