@@ -98,7 +98,8 @@ public sealed class ReShadeShaderPackService
 
     /// <summary>
     /// w12 follow-up (re-review shaders N3): two catalogue packs whose ids give the same folder name would place the same file.
-    /// RHI's own catalogue clash, never a file of the user's; nothing is changed. The path follows.
+    /// RHI's own catalogue clash, never a file of the user's; nothing is changed. w12 final review nit 4: the two packs follow,
+    /// named as Shaders/Add-ons lists them (<c>_Core</c> for ReShade's core headers), then " — " and the path.
     /// </summary>
     public const string PackFolderClashPrefix =
         "Two shader packs in RHI's catalogue would place the same file, so RHI changed nothing. This clash is RHI's, not a file of yours; tick only one of those packs in Shaders/Add-ons: ";
@@ -155,6 +156,13 @@ public sealed class ReShadeShaderPackService
                 p.Requires ?? Array.Empty<string>(),
                 p.IsCustom))
             .ToArray();
+
+    /// <summary>A pack's name as Shaders/Add-ons lists it (its id when the catalogue no longer has it).</summary>
+    private string PackDisplayName(string packId)
+        => _packs.FirstOrDefault(p => p.Id.Equals(packId, StringComparison.OrdinalIgnoreCase))?.DisplayName is { Length: > 0 } name ? name : packId;
+
+    /// <summary>Test seam: the catalogue a test's packs come from (the built-in one otherwise).</summary>
+    internal IReadOnlyList<ReShadeShaderPackDefinition> CatalogForTesting { set => _packs = value; }
 
     public string[] GetRequiredPacks(string packId) =>
         _packs.FirstOrDefault(p => p.Id.Equals(packId, StringComparison.OrdinalIgnoreCase))?.Requires?.ToArray()
@@ -417,7 +425,7 @@ public sealed class ReShadeShaderPackService
         // Everything is staged and validated: from the first change in the game folder on, the sync runs to the end
         // (a cancel half-way used to leave copied packs that no manifest owns).
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        var plan = PlanMirror(prepared);
+        var plan = PlanMirror(prepared, PackDisplayName);
         var wanted = plan.Select(file => file.RelativePath).ToHashSet(StringComparer.Ordinal);
         await RemoveManifestFilesAsync(root, new Manifest { Files = previous.Files.Where(file => !wanted.Contains(file.RelativePath)).ToList() },
             operation).ConfigureAwait(false);
@@ -480,20 +488,21 @@ public sealed class ReShadeShaderPackService
     /// folder. Core headers that could not be staged this time keep the copy a previous sync placed (never removed for
     /// being unavailable offline).
     /// </summary>
-    private static List<MirrorFile> PlanMirror(PreparedShaderSync prepared)
+    private static List<MirrorFile> PlanMirror(PreparedShaderSync prepared, Func<string, string> packName)
     {
         var (root, _, previous, normalized, stagedById, exclusionsById, needsCoreHeaders, coreHeadersStaged) = prepared;
         var rootWithSep = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var plan = new List<MirrorFile>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        void Add(string destination, string? source)
+        // Nit 4 (w12 final review): which pack placed each file, so a clash names both packs.
+        var placedBy = new Dictionary<string, string>(StringComparer.Ordinal);
+        void Add(string destination, string? source, string placer)
         {
             destination = Path.GetFullPath(destination);
             if (!destination.StartsWith(rootWithSep, StringComparison.Ordinal))
                 throw new InvalidOperationException($"Shader path escapes managed root: {destination}");
             var relative = Path.GetRelativePath(root, destination);
-            if (!seen.Add(relative))
-                throw new IOException(PackFolderClashPrefix + destination);
+            if (!placedBy.TryAdd(relative, placer))
+                throw new IOException(PackFolderClashPrefix + placedBy[relative] + ", " + placer + " — " + destination);
             plan.Add(new MirrorFile(relative, destination, source));
         }
 
@@ -504,15 +513,15 @@ public sealed class ReShadeShaderPackService
                 if (!Directory.Exists(sourceRoot)) continue;
                 foreach (var source in SafeFileEnumeration.Files(sourceRoot))
                     if (!IsExcluded(exclusionsById[id], category, sourceRoot, source))
-                        Add(Path.Combine(root, SafePackDirectoryName(id), category, Path.GetRelativePath(sourceRoot, source)), source);
+                        Add(Path.Combine(root, SafePackDirectoryName(id), category, Path.GetRelativePath(sourceRoot, source)), source, packName(id));
             }
 
         foreach (var header in CoreHeaderNames)
         {
             var destination = Path.Combine(root, CoreFolder, "Shaders", header);
-            if (coreHeadersStaged is not null) Add(destination, Path.Combine(coreHeadersStaged, "Shaders", header));
+            if (coreHeadersStaged is not null) Add(destination, Path.Combine(coreHeadersStaged, "Shaders", header), CoreFolder);
             else if (needsCoreHeaders && previous.Files.Any(file => file.RelativePath == Path.GetRelativePath(root, destination)))
-                Add(destination, null);
+                Add(destination, null, CoreFolder);
         }
         return plan;
     }

@@ -101,7 +101,15 @@ public sealed class ShaderPackFolderClashTests : IDisposable
         }
         var game = Directory.CreateDirectory(Path.Combine(_root, "game")).FullName;
         var root = Path.Combine(game, "reshade-shaders", "RHI");
-        var service = new ReShadeShaderPackService(new HttpClient(), Path.Combine(_root, "cache"), customRoot: Path.Combine(_root, "custom"));
+        var service = new ReShadeShaderPackService(new HttpClient(), Path.Combine(_root, "cache"), customRoot: Path.Combine(_root, "custom"))
+        {
+            // w12 final review nit 4: the clash names both packs as Shaders/Add-ons lists them.
+            CatalogForTesting =
+            [
+                new("Pack/One", "Pack One (slash build)", "", ReShadeShaderPackSourceKind.DirectUrl, "https://github.com/rhi-tests/a.zip"),
+                new("Pack_One", "Pack One (underscore build)", "", ReShadeShaderPackSourceKind.DirectUrl, "https://github.com/rhi-tests/b.zip"),
+            ]
+        };
         var prepared = new ReShadeShaderPackService.PreparedShaderSync(root, Path.Combine(root, ".rhi-manifest.json"),
             new ReShadeShaderPackService.Manifest(), ["Pack/One", "Pack_One"],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Pack/One"] = Staged("a"), ["Pack_One"] = Staged("b") },
@@ -110,10 +118,38 @@ public sealed class ShaderPackFolderClashTests : IDisposable
 
         var refusal = await Assert.ThrowsAsync<IOException>(() => service.ApplySyncAsync(prepared, null));
 
-        Assert.Equal(ReShadeShaderPackService.PackFolderClashPrefix + Path.Combine(root, "Pack_One", "Shaders", "Same.fx"), refusal.Message);
+        Assert.Equal(ReShadeShaderPackService.PackFolderClashPrefix + "Pack One (slash build), Pack One (underscore build) — "
+                     + Path.Combine(root, "Pack_One", "Shaders", "Same.fx"), refusal.Message);
         Assert.DoesNotContain("outside RHI", refusal.Message, StringComparison.Ordinal);
         Assert.False(Directory.Exists(root));
         var pt = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", refusal.Message);
         Assert.StartsWith("Dois pacotes de shaders do catálogo do RHI", pt, StringComparison.Ordinal);
+        Assert.Contains("Pack One (slash build), Pack One (underscore build) — ", pt, StringComparison.Ordinal);
+    }
+
+    // Nit 4: a pack whose folder is _Core clashes with ReShade's core headers; the headers' placer is named "_Core".
+    [Fact]
+    public async Task APackPlacingACoreHeader_NamesThePackAndCore()
+    {
+        var game = Directory.CreateDirectory(Path.Combine(_root, "game-core")).FullName;
+        var root = Path.Combine(game, "reshade-shaders", "RHI");
+        var staged = Directory.CreateDirectory(Path.Combine(_root, "staged-core", "pack", "Shaders")).FullName;
+        File.WriteAllText(Path.Combine(staged, "ReShade.fxh"), "// pack copy");
+        var core = Directory.CreateDirectory(Path.Combine(_root, "staged-core", "core", "Shaders")).FullName;
+        foreach (var header in new[] { "ReShade.fxh", "ReShadeUI.fxh" }) File.WriteAllText(Path.Combine(core, header), "// " + header);
+        var service = new ReShadeShaderPackService(new HttpClient(), Path.Combine(_root, "cache"), customRoot: Path.Combine(_root, "custom"))
+        {
+            CatalogForTesting = [new("_Core", "Core lookalike", "", ReShadeShaderPackSourceKind.DirectUrl, "https://github.com/rhi-tests/c.zip")]
+        };
+        var prepared = new ReShadeShaderPackService.PreparedShaderSync(root, Path.Combine(root, ".rhi-manifest.json"),
+            new ReShadeShaderPackService.Manifest(), ["_Core"],
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["_Core"] = Path.GetDirectoryName(staged)! },
+            new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase) { ["_Core"] = [] },
+            NeedsCoreHeaders: true, CoreHeadersStaged: Path.GetDirectoryName(core)!);
+
+        var refusal = await Assert.ThrowsAsync<IOException>(() => service.ApplySyncAsync(prepared, null));
+
+        Assert.Equal(ReShadeShaderPackService.PackFolderClashPrefix + "Core lookalike, _Core — "
+                     + Path.Combine(root, "_Core", "Shaders", "ReShade.fxh"), refusal.Message);
     }
 }
