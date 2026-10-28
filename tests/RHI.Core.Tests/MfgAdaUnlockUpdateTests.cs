@@ -489,6 +489,43 @@ public sealed class MfgAdaUnlockUpdateTests : IDisposable
         Assert.Equal(0, offline.Requests);
     }
 
+    // w12 follow-up (re-review mfg N4): a direct Update (the row's own, offline on a cold start) tells a held game the hold's
+    // restart text and a removed add-on the removed line before the manifest is asked, as the check does.
+    [PermissionDenialFact]
+    public async Task HeldGame_Offline_DirectUpdate_ReadsTheHoldsRestartText_BeforeTheManifest()
+    {
+        var f = await InstalledAsync("followup-held-update-offline");
+        var halfUndone = Release.Payload(0x37);
+        using var hold = await FailedUndoHold.ArmAsync(f.Journal, f.Records, f.Game, ManagedComponentKind.MfgAdaUnlock, f.Addon, halfUndone);
+        var offline = new Offline();
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+            Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
+
+        var update = await cold.UpdateAsync(f.Game);
+
+        Assert.False(update.Success);
+        Assert.Equal(DeploymentJournal.EarlierUndoFailedMessage, update.Message);
+        Assert.Equal(0, offline.Requests);
+        Assert.Equal(halfUndone, File.ReadAllBytes(f.Addon));
+    }
+
+    [Fact]
+    public async Task RemovedAddon_Offline_DirectUpdate_ReadsTheRemovedLine_BeforeTheManifest()
+    {
+        var f = await InstalledAsync("followup-removed-update-offline");
+        File.Delete(f.Addon);
+        var offline = new Offline();
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+            Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
+
+        var update = await cold.UpdateAsync(f.Game);
+
+        Assert.False(update.Success);
+        Assert.Equal(ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + f.Addon, update.Message);
+        Assert.Equal(0, offline.Requests);
+        Assert.False(File.Exists(f.Addon)); // never put back
+    }
+
     // F1: the generic GitHub add-on check (ReLimiter, Display Commander) asks the hold first too, before it reads the file.
     [PermissionDenialFact]
     public async Task ReLimiter_HeldGame_CheckIsTheHoldsRestartText_BeforeAnyLookup()

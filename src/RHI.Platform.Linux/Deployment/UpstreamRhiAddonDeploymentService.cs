@@ -144,6 +144,16 @@ public sealed class UpstreamRhiAddonDeploymentService
         string? releaseTag = null,
         CancellationToken cancellationToken = default)
     {
+        // w12 follow-up (re-review mfg N4): as the check (F6), a held game and a file removed outside RHI are told before the
+        // manifest is asked, so a direct Update offline reads the hold's restart text or the removed line, not a network
+        // failure.
+        if (_records.Find(game, _options.Kind) is { } managed)
+        {
+            if (await DeploymentScope.HoldRefusalAsync(_journal, game, _options.Kind).ConfigureAwait(false) is { } held)
+                return ComponentOperationResult.Fail(held);
+            if (managed.Files.FirstOrDefault(file => !File.Exists(file.Path)) is { } removed)
+                return ComponentOperationResult.Fail(ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + removed.Path);
+        }
         try
         {
             var (displayName, releaseApiUrl) = await ResolveDefinitionAsync(cancellationToken).ConfigureAwait(false);

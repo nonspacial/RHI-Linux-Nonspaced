@@ -425,7 +425,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             return held;
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
-            return new ManagedUpdateCheck(true, false, "Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.",
+            return new ManagedUpdateCheck(true, false, ManagedUpdateFileGuard.MissingProxyNameMessage,
                 record.Version, CouldNotCheck: true, LocalReason: true);
         var proxyPath = Path.Combine(record.BinaryDirectory, proxyName);
         if (ManagedUpdateFileGuard.Removed([proxyPath, Path.Combine(record.BinaryDirectory, IniFileName)], record.Version) is { } removed)
@@ -450,7 +450,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail(held);
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.");
+            return ComponentOperationResult.Fail(ManagedUpdateFileGuard.MissingProxyNameMessage);
         var proxyPath = Path.Combine(record.BinaryDirectory, proxyName);
         var iniPath = Path.Combine(record.BinaryDirectory, IniFileName);
         var proxyRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));

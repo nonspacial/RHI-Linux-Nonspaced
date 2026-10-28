@@ -24,7 +24,7 @@ public sealed class Wave12MessageLocalizationTests
         { Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix + "MFGUnlocker.dll", "several entries" },
         { Rtx40MfgStandaloneDeploymentService.NoDllMessage, "neither" },
         { UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + "x86 → x64", "no longer has the architecture" },
-        { "Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.", "missing its proxy filename" },
+        { ManagedUpdateFileGuard.MissingProxyNameMessage, "has no proxy DLL name" }, // w12 follow-up (re-review mfg N2)
         { "Ultimate ASI Loader is not RHI-managed.", "is not RHI-managed" },
         { "RTX 20 FG Unlock is not RHI-managed.", "is not RHI-managed" },
         // shaders (#239–#241)
@@ -48,8 +48,6 @@ public sealed class Wave12MessageLocalizationTests
     public static TheoryData<string, string> PortugueseSourced() => new()
     {
         { ManagedUpdateFileGuard.RemovedOutsideRhiRowNote, "foi removido fora do RHI" },
-        { Rtx40MfgStandaloneDeploymentService.MissingProxyMessage, "não possui proxy" },
-        { "Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.", "está sem proxy" },
     };
 
     [Theory]

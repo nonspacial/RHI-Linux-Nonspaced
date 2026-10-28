@@ -76,6 +76,30 @@ public sealed class MfgLocalReasonUpdateAllTests
         Assert.Equal((true, false, true, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck, check.LocalReason));
     }
 
+    // w12 follow-up (re-review mfg N2): the three families say the same thing, with its way out, in the check and in the
+    // update (a direct Update and Update All alike), EN + PT-BR.
+    [Theory]
+    [InlineData(ManagedComponentKind.Rtx40MfgStandalone)]
+    [InlineData(ManagedComponentKind.Dlssg2030Unlock)]
+    [InlineData(ManagedComponentKind.UltimateAsiLoader)]
+    public async Task RecordWithoutItsProxyName_OneLine_WithItsWayOut_InTheCheckAndTheUpdate(ManagedComponentKind kind)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = MfgUpdateAllTests.StreamlineGame(fx.Root, "One line " + kind);
+        SeedRecord(fx, game, kind, fileOnDisk: true, proxyName: false);
+
+        var check = await fx.Managed.CheckManagedUpdateAsync(game, kind, []);
+        var update = await fx.Managed.UpdateManagedAsync(game, kind, []);
+
+        Assert.Equal(ManagedUpdateFileGuard.MissingProxyNameMessage, check.Message);
+        Assert.False(update.Success);
+        Assert.Equal(ManagedUpdateFileGuard.MissingProxyNameMessage, update.Message);
+        Assert.EndsWith("Remove it, then Install it again.", check.Message, StringComparison.Ordinal);
+        var pt = UiLocalizationService.PresentFor("pt-BR", check.Message);
+        Assert.EndsWith("Remova-o e instale-o de novo.", pt, StringComparison.Ordinal);
+        Assert.DoesNotContain("proxy DLL name", pt, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task AsiLoader_GameWhoseBitnessChanged_IsALocalReason_NamedInTheSummary()
     {

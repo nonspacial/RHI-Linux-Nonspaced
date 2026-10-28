@@ -120,6 +120,10 @@ public sealed class UltimateAsiLoaderDeploymentService
         var architecture = ResolveArchitecture(game);
         if (architecture is not (PeArchitecture.X86 or PeArchitecture.X64))
             return new UalUpdateStatus(false, InstalledVersion(game), null, false, "ASI Loader requires a detected x86 or x64 Windows executable.");
+        // w12 follow-up (re-review mfg N3): the Extras check reads as Update All's does once the game's executable is the
+        // other bitness (could not check, Remove then Install), never "Update available" for an update that would refuse.
+        if (GetRecord(game) is { } record && ArchitectureChanged(record, game) is { } changed)
+            return new UalUpdateStatus(false, record.Version, null, false, changed);
 
         try
         {
@@ -154,7 +158,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.UltimateAsiLoader, record.Version).ConfigureAwait(false) is { } held)
             return held;
         if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
-            return new ManagedUpdateCheck(true, false, "Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.",
+            return new ManagedUpdateCheck(true, false, ManagedUpdateFileGuard.MissingProxyNameMessage,
                 record.Version, CouldNotCheck: true, LocalReason: true);
         // F3 (review w12/mfg): never an unattended swap to the other bitness (seen before any network call).
         if (ArchitectureChanged(record, game) is { } changed)
@@ -337,7 +341,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.UltimateAsiLoader).ConfigureAwait(false) is { } held)
             return ComponentOperationResult.Fail(held);
         if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.");
+            return ComponentOperationResult.Fail(ManagedUpdateFileGuard.MissingProxyNameMessage);
         // F3 (review w12/mfg): the loader picked for the game's old bitness is never swapped for the other one behind the
         // user's back (Update All reaches this unattended); Remove, then Install, picks the right one.
         if (ArchitectureChanged(record, game) is { } changed)

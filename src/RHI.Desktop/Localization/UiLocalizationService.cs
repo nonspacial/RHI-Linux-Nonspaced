@@ -668,8 +668,10 @@ public static class UiLocalizationService
         // w12 integration rows (message sweep): wave-12 check results that had no PT-BR presentation.
         ("RTX 20 FG Unlock is not RHI-managed.", "O RTX 20 FG Unlock não é gerenciado pelo RHI."),
         ("Ultimate ASI Loader is not RHI-managed.", "O Ultimate ASI Loader não é gerenciado pelo RHI."),
-        ("Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.",
-            "O registro de implantação do Ultimate ASI Loader está sem o nome do arquivo proxy. Remover é mais seguro do que adotar este registro."),
+        // w12 follow-up rows
+        // Re-review mfg N2: one line, with its way out, for a record without its proxy DLL's name (three MFG families).
+        (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.MissingProxyNameMessage,
+            "Não atualizado: o registro do RHI deste componente não tem o nome da DLL proxy, então o RHI não sabe qual arquivo é dele. Remova-o e instale-o de novo."),
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =

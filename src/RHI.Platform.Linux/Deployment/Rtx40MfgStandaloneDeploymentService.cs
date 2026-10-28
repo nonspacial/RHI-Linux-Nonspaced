@@ -40,8 +40,6 @@ public sealed class Rtx40MfgStandaloneDeploymentService
     public const string SeveralDllsPrefix = "Universal MFG archive refused as ambiguous: it holds several entries named ";
     /// <summary>#236: a zip holding neither DLL name.</summary>
     public const string NoDllMessage = "Universal MFG archive refused: it holds neither MFGUnlocker.dll nor RTXMFG.dll.";
-    /// <summary>A record without its proxy name: the update refuses it, and the check could not check it (F5).</summary>
-    public const string MissingProxyMessage = "Registro do Universal MFG não possui proxy; update bloqueado.";
     public const string DefaultProxyName = "version.dll";
     public const string GpuGenRtx40 = "RTX 40 Series";
     public const string GpuGenRtx30 = "RTX 30 Series";
@@ -430,7 +428,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return ComponentOperationResult.Fail(held);
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName) ?? record.Metadata.GetValueOrDefault(LegacyMetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail(MissingProxyMessage);
+            return ComponentOperationResult.Fail(ManagedUpdateFileGuard.MissingProxyNameMessage);
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, targetPath));
         if (fileRecord?.Sha256 is not { Length: > 0 })
@@ -510,7 +508,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         // planned update that fails on every pass.
         var proxyPath = ProxyPathOf(record);
         if (proxyPath is null)
-            return new ManagedUpdateCheck(true, false, MissingProxyMessage, record.Version, CouldNotCheck: true, LocalReason: true);
+            return new ManagedUpdateCheck(true, false, ManagedUpdateFileGuard.MissingProxyNameMessage, record.Version, CouldNotCheck: true, LocalReason: true);
         // #236: the proxy the user deleted is never put back by an update; seen before any network call.
         if (ManagedUpdateFileGuard.Removed([proxyPath], record.Version) is { } removed)
             return removed;

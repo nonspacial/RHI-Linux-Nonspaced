@@ -72,6 +72,34 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
         Assert.Equal(("9.7.4", installedFor == 0x8664 ? "X64" : "X86"), (record.Version, record.Metadata["UAL.Architecture"]));
     }
 
+    // w12 follow-up (re-review mfg N3): the Extras section's Check (CheckUltimateAsiLoaderUpdateAsync → CheckLatestAsync)
+    // says the same as Update All's check once the game reads as the other bitness — could not check, before any lookup —
+    // never "Update available" for an update that refuses.
+    [Theory]
+    [InlineData((ushort)0x014C, (ushort)0x8664, "x86 → x64")]
+    [InlineData((ushort)0x8664, (ushort)0x014C, "x64 → x86")]
+    public async Task GameNowTheOtherBitness_TheExtrasCheck_CouldNotCheck_NeverUpdateAvailable(ushort installedFor, ushort now, string change)
+    {
+        using var fixture = CreateGame("correction-extras-arch-" + installedFor.ToString("x"), installedFor);
+        using var release = new UalRelease().Add("9.7.4", 0x96);
+        release.Add("9.7.5", 0x98);
+        release.Version = "9.7.4";
+        using var http = new HttpClient(release);
+        var (service, _) = UalService(fixture, http);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+        release.Version = "9.7.5";
+        Assert.True((await service.CheckLatestAsync(fixture.Game)).HasUpdate); // same bitness: the update is offered
+        WritePe(fixture.Game.ExecutablePath!, now, 64 * 1024, 0x11);
+        var lookups = release.ApiRequests;
+
+        var status = await service.CheckLatestAsync(fixture.Game);
+
+        Assert.Equal((false, false), (status.Success, status.HasUpdate));
+        Assert.Equal(UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + change, status.Message);
+        Assert.Equal("9.7.4", status.InstalledVersion);
+        Assert.Equal(lookups, release.ApiRequests);
+    }
+
     [Theory]
     [InlineData("blank")]
     [InlineData("no-entry")]

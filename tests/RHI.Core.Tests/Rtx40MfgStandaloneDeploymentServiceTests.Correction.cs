@@ -104,9 +104,9 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
         var update = await service.UpdateAsync(fixture.Game);
 
         Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
-        Assert.Equal(Rtx40MfgStandaloneDeploymentService.MissingProxyMessage, check.Message);
+        Assert.Equal(ManagedUpdateFileGuard.MissingProxyNameMessage, check.Message);
         Assert.Equal(requests, handler.RequestCount);
         Assert.False(update.Success);
-        Assert.Equal(Rtx40MfgStandaloneDeploymentService.MissingProxyMessage, update.Message);
+        Assert.Equal(ManagedUpdateFileGuard.MissingProxyNameMessage, update.Message);
     }
 }

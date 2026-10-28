@@ -37,6 +37,14 @@ public static class ManagedUpdateFileGuard
         "Not updated: RHI's record of this file has no hash, so RHI cannot tell whether it was changed outside RHI. Remove it, then Install it again: ";
 
     /// <summary>
+    /// w12 follow-up (re-review mfg N2): the one line for a record that lost its proxy DLL's name (Universal MFG, DLSSG 20/30,
+    /// Ultimate ASI Loader), in the check and in the update alike: RHI cannot tell which file is its own, so nothing is
+    /// swapped; Remove, then Install, records it again.
+    /// </summary>
+    public const string MissingProxyNameMessage =
+        "Not updated: RHI's record of this component has no proxy DLL name, so RHI cannot tell which file is its own. Remove it, then Install it again.";
+
+    /// <summary>
     /// F1 (review w12/mfg; the toolkit rule since w10 D15): a game held by its own earlier undo (or an undecided change) gets
     /// the hold's restart text as a could-not-check result before the check reads any of its files, which would take RHI's
     /// own half-undone file for one removed or changed outside RHI. Null while nothing holds the game. Cheap when nothing
