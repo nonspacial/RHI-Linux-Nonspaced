@@ -200,12 +200,15 @@ public static class NeuralRenderingDiagnosis
     ];
 
     // #248: the Feeder's own lines that tell where a run is — a new run (the add-on attached), the DLSS feature ready, a
-    // frame delivered, and a change of the game's picture once the feature was ready (the swapchain's colour space, ReShade's
-    // effect runtime made again, the feature rebuilt for a new size or format).
+    // frame delivered, a change of the game's picture once the feature was ready (the swapchain's colour space, ReShade's
+    // effect runtime made again, the feature rebuilt for a new size or format), and a rebuild announced for a change (its
+    // "holding the feature (re)build" line, or the rebuild itself) that has not come back ready yet.
     private static readonly Regex FeederRunStart = new(@"\bdlss5-feed\b.*\battached\.", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex FeederFeatureReady = new(@"\[feed\] feature ready:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex FeederFrameDelivered = new(@"\[feed\] frame \d+ delivered\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex FeederDisplayChange = new(@"\[feed\] (?:swapchain colour space:|effect runtime \S+ initialised\b|building: \d+x\d+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex FeederRebuildAnnounced = new(@"\[feed\] (?:holding the feature \(re\)build\b|building: \d+x\d+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>Folders and files anti-cheat software puts in a game (wizardkof's list). Information only.</summary>
@@ -226,8 +229,11 @@ public static class NeuralRenderingDiagnosis
     /// order. <paramref name="firstLine"/> is the number of the text's first line, or null when it is not known (only the
     /// end of a large log: the run's start was not read, so its feature counts as ready already).
     /// <para>#248: the Feeder's "stopped: the DLSS evaluate crashed" is a finding only after a change of the game's picture
-    /// that no delivered frame has come through yet (since the feature was ready in that run); it then replaces the generic
-    /// crash rows of that crash (those seen since the change). Without that context the generic row stays.</para>
+    /// (since the feature was ready in that run) that no delivered frame has come through yet; a frame delivered while a
+    /// rebuild for the change is announced but not ready is the old feature's and settles nothing (review F2: a change the
+    /// feature survives without a rebuild, an alt-tab or effect reload on D3D12, is settled by the next frame). It then
+    /// replaces the generic crash rows of that crash (those seen since the change). Without that context the generic row
+    /// stays.</para>
     /// </summary>
     public static IReadOnlyList<NrLogFinding> Classify(string log, string? text, int? firstLine = 1)
     {
@@ -235,12 +241,12 @@ public static class NeuralRenderingDiagnosis
         var last = new Dictionary<NrLogSignature, NrLogFinding>();
         var ready = firstLine is null;
         var changed = false;
-        var rebuilt = false;
+        var rebuildPending = false;
         NrLogFinding? crashSinceChange = null;
         void SettleChange()
         {
             if (crashSinceChange is { } crash) last[NrLogSignature.CrashOrDeviceLost] = crash;
-            changed = rebuilt = false;
+            changed = rebuildPending = false;
             crashSinceChange = null;
         }
         var lines = text.Split('\n');
@@ -248,9 +254,10 @@ public static class NeuralRenderingDiagnosis
         {
             var line = lines[i];
             if (FeederRunStart.IsMatch(line)) { SettleChange(); ready = false; }
-            else if (FeederFrameDelivered.IsMatch(line) && changed && rebuilt) SettleChange();
-            else if (FeederDisplayChange.IsMatch(line) && ready) { changed = true; rebuilt = false; }
-            else if (FeederFeatureReady.IsMatch(line)) { rebuilt = changed; ready = true; }
+            else if (FeederFrameDelivered.IsMatch(line) && changed && !rebuildPending) SettleChange();
+            else if (FeederDisplayChange.IsMatch(line) && ready) { changed = true; rebuildPending |= FeederRebuildAnnounced.IsMatch(line); }
+            else if (FeederRebuildAnnounced.IsMatch(line) && changed) rebuildPending = true;
+            else if (FeederFeatureReady.IsMatch(line)) { rebuildPending = false; ready = true; }
             foreach (var (signature, fix, pattern) in Signatures)
             {
                 if (!pattern.IsMatch(line)) continue;

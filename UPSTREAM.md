@@ -1090,7 +1090,10 @@ Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in
   flat" line (a still scene or a menu) is no finding.
 - The Feeder's "stopped: the DLSS evaluate crashed" after a change of the game's picture (swapchain colour space,
   ReShade's effect runtime made again, the feature rebuilt) that no delivered frame has come through yet, since the
-  feature was ready in that run: restart the game with its final display mode (HDR, resolution) set in the game's own
+  feature was ready in that run. A frame delivered while a rebuild for the change is announced ("holding the feature
+  (re)build", "building:") but not ready yet is the old feature's and settles nothing; a change the feature survives
+  without a rebuild (an alt-tab or effect reload on a D3D12 game, per the Feeder's README) is settled by the next
+  delivered frame, so a later crash gets the generic row. Then: restart the game with its final display mode (HDR, resolution) set in the game's own
   options. This row replaces the generic `0xC0000005` row of the same crash; the generic row ("remove the method")
   stays for every other crash, including a Feeder crash on its first build.
 - Every hint is a plain step (no RHI control named). Reads stay bounded; nothing is written.

@@ -70,6 +70,8 @@ public sealed class NeuralRenderingFeederLogTests
         Assert.Null(Find(Bl3Lines[56] + "\n" + Bl3Lines[143] + "\n", NrLogSignature.FlatDepth));
         Assert.Empty(NeuralRenderingDiagnosis.Classify("dlss5-feed.log", Bl3Lines[56] + "\n" + Bl3Lines[55] + "\n"));
         Assert.Null(Find("[feed] Depth probe: depth is FLAT\n[feed] Generic Depth: picked buffer 3\n", NrLogSignature.FlatDepth));
+        // Review F6 (R3): the verdict counts only on the depth probe's own line.
+        Assert.Null(Find("[feed] MV probe (frame 600): <-- depth is FLAT while the scene moves\n", NrLogSignature.FlatDepth));
     }
 
     // ---- the evaluate crash after a change, and the generic crash row --------------------------------------------
@@ -104,14 +106,65 @@ public sealed class NeuralRenderingFeederLogTests
         Assert.Equal(7, finding.Line);
     }
 
-    [Fact]
-    public void AFrameTheOldFeatureDeliveredBeforeTheRebuild_DoesNotClearTheChange()
+    private const string Holding = "[feed] holding the feature (re)build for 60 frames (the DLSS 5 add-on re-arms its hooks asynchronously)\n";
+
+    // The change lands and the Feeder announces the rebuild for it (its "holding the feature (re)build" line, or the rebuild
+    // itself); the old feature still delivers a frame; then the rebuilt feature crashes on its first evaluate.
+    [Theory]
+    [InlineData("[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n" + Holding)]
+    [InlineData("[feed] building: 3840x2160 backbuffer R16G16B16A16_FLOAT (same-device D3D12, depth reversed=1)\n")]
+    public void AFrameTheOldFeatureDeliveredBeforeTheRebuild_DoesNotClearTheChange(string changeAndRebuildPending)
     {
-        // The change lands, the old feature still delivers a frame, then the rebuilt feature crashes on its first evaluate.
-        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + "[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n"
-                   + "[feed] frame 1800 delivered\n" + Ready + Crash;
+        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + changeAndRebuildPending + "[feed] frame 1800 delivered\n" + Ready + Crash;
 
         Assert.Equal([NrLogSignature.EvaluateCrashAfterDisplayChange], NeuralRenderingDiagnosis.Classify("dlss5-feed.log", text).Select(f => f.Signature));
+    }
+
+    // Review F2 (probe P07): an alt-tab or effect reload re-makes ReShade's effect runtime and reports the colour space again,
+    // but on a D3D12 game the feature survives it untouched — no rebuild is announced, and frames keep coming. A crash
+    // thousands of frames later is not "after the display mode changed": the generic row, never the restart advice.
+    [Fact]
+    public void AChangeTheFeatureCameThroughWithoutARebuild_KeepsTheGenericRow()
+    {
+        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + "[feed] frame 1 delivered\n"
+                   + "[feed] effect runtime 0000000030D7B050 destroyed -- it was the bound one (0 runtimes left)\n"
+                   + "[feed] swapchain colour space: sRGB G2.2 BT.709 (SDR)\n"
+                   + "[feed] effect runtime 0000000030D7B050 initialised (device 0000000033F50080; 1 runtime in this process)\n"
+                   + "[feed] frame 1800 delivered\n[feed] frame 3600 delivered\n" + Crash;
+
+        var finding = Assert.Single(NeuralRenderingDiagnosis.Classify("dlss5-feed.log", text));
+
+        Assert.Equal(NrLogSignature.CrashOrDeviceLost, finding.Signature);
+        Assert.Equal(9, finding.Line);
+        Assert.Equal(NrFixHint.RemoveNrMethod, finding.Fix);
+    }
+
+    // Review F6 (R2, probe P08): a crash between the change and any rebuild (the old feature, the new picture) is the
+    // specific row alone — the generic hit of that crash is absorbed, not shown beside it.
+    [Fact]
+    public void ACrashBetweenTheChangeAndTheRebuild_IsTheSpecificRowAlone()
+    {
+        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + "[feed] frame 1 delivered\n[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n" + Crash;
+
+        var finding = Assert.Single(NeuralRenderingDiagnosis.Classify("dlss5-feed.log", text));
+
+        Assert.Equal(NrLogSignature.EvaluateCrashAfterDisplayChange, finding.Signature);
+        Assert.Equal(6, finding.Line);
+    }
+
+    // Review F6 (R1, probe P09): a generic crash held after a change and then settled (no stopped line followed) replaces
+    // an older run's generic row — the page shows the newest crash, as for every signature.
+    [Fact]
+    public void ANewerHeldGenericCrash_ReplacesAnOlderRunsGenericRow()
+    {
+        var av = "[feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)\n";
+        var text = "dlss5-feed 1.19.0 attached.\n" + Ready + av
+                   + "dlss5-feed 1.19.0 attached.\n" + Ready + "[feed] frame 1 delivered\n[feed] swapchain colour space: linear BT.709 (scRGB, HDR)\n" + Ready + av;
+
+        var finding = Assert.Single(NeuralRenderingDiagnosis.Classify("dlss5-feed.log", text));
+
+        Assert.Equal(NrLogSignature.CrashOrDeviceLost, finding.Signature);
+        Assert.Equal(9, finding.Line);
     }
 
     [Fact]
