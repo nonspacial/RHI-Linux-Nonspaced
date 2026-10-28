@@ -243,6 +243,67 @@ public sealed class HdrSupportServiceTests : IDisposable
         Assert.Equal(requests * 2, wiki.Requests.Count);
     }
 
+    // ---- correction round 1, N1 ----------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ClearingTheCache_ForgetsTheAnswersHeldInMemory()
+    {
+        var wiki = new FakeWiki { AppIdPages = { [377160] = "Fallout_4" }, Pages = { ["Fallout 4"] = Wikitext("false") } };
+        var game = Steam("Fallout 4", 377160);
+        var service = Service(wiki);
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        Assert.True(File.Exists(CachePath));
+        var requests = wiki.Requests.Count;
+
+        Directory.Delete(Path.GetDirectoryName(CachePath)!, recursive: true); // what Settings → Clear cache does to the folder
+        wiki.Pages["Fallout 4"] = Wikitext("true");
+
+        Assert.Null(service.Peek(game)); // nothing known any more
+        Assert.Equal(HdrSupportAnswer.Yes, (await service.ResolveAsync(game)).Answer); // asked again
+        Assert.Equal(requests * 2, wiki.Requests.Count);
+        using var cache = JsonDocument.Parse(File.ReadAllText(CachePath)); // the new answer only, nothing written back
+        Assert.Equal("Yes", cache.RootElement.GetProperty("Games").GetProperty("steam:377160").GetProperty("Answer").GetString());
+        Assert.Single(cache.RootElement.GetProperty("Games").EnumerateObject());
+    }
+
+    [Fact]
+    public async Task ACacheThatCannotBeSaved_StillServesFromMemory()
+    {
+        var wiki = new FakeWiki { AppIdPages = { [377160] = "Fallout_4" }, Pages = { ["Fallout 4"] = Wikitext("false") } };
+        var game = Steam("Fallout 4", 377160);
+        File.WriteAllText(Path.Combine(_root, "not-a-folder"), "");
+        var service = new HdrSupportService(new PcGamingWikiGraphicsApiService(new HttpClient(wiki), Path.Combine(_root, "pcgw-api.json"), minRequestGap: TimeSpan.Zero),
+            cachePath: Path.Combine(_root, "not-a-folder", "pcgw_hdr_cache.json"), overridesJson: """{"games":{}}""");
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        var requests = wiki.Requests.Count;
+
+        Assert.Equal(HdrSupportAnswer.No, service.Peek(game)?.Answer); // a file never saved is not a purge
+        Assert.Equal(HdrSupportAnswer.No, (await service.ResolveAsync(game)).Answer);
+        Assert.Equal(requests, wiki.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("offline")]
+    [InlineData("server-error")]
+    [InlineData("timeout")]
+    public async Task AFailedLookup_WritesOneLogLine(string how)
+    {
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wiki = new FakeWiki { AppIdPages = { [397540] = "Borderlands_3" }, Pages = { ["Borderlands 3"] = Wikitext("true") } };
+        if (how == "timeout") wiki.Hold = held.Task; else wiki.Fail = how;
+        var log = Path.Combine(_root, "rhi.log");
+        var service = new HdrSupportService(new PcGamingWikiGraphicsApiService(new HttpClient(wiki), Path.Combine(_root, "cache", "pcgw-api.json"), minRequestGap: TimeSpan.Zero),
+            cachePath: CachePath, overridesJson: """{"games":{}}""", lookupTimeout: TimeSpan.FromMilliseconds(300));
+        try
+        {
+            using (RHI.Core.Services.AppLog.UseInThisFlow(new RHI.Core.Services.AppLog(log)))
+                Assert.Equal(HdrSupportEvidence.Unchecked, await service.ResolveAsync(Steam("Borderlands 3", 397540)).WaitAsync(TimeSpan.FromSeconds(30)));
+        }
+        finally { held.TrySetResult(); }
+        var lines = File.ReadAllLines(log).Where(line => line.Contains("[pcgw]", StringComparison.Ordinal) || line.Contains("[hdr-support]", StringComparison.Ordinal)).ToList();
+        Assert.True(lines.Count == 1, string.Join("\n", lines));
+    }
+
     [Fact]
     public async Task AFullRefresh_AsksAgain_AndKeepsTheEarlierAnswerWhenThatFails()
     {
@@ -374,7 +435,7 @@ public sealed class HdrSupportServiceTests : IDisposable
         public Dictionary<string, string> ParseErrors { get; } = new(StringComparer.OrdinalIgnoreCase);
         public ConcurrentQueue<string> Requests { get; } = new();
         public volatile string? Fail;
-        /// <summary>While set, every request waits for it (a server that is slow to answer, whatever the caller does).</summary>
+        /// <summary>While set, every request waits for it or for its caller to cancel (a server slow to answer).</summary>
         public volatile Task? Hold;
         /// <summary>Completed when a request arrives (replace it to wait for the next one).</summary>
         public TaskCompletionSource Arrived { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -383,7 +444,7 @@ public sealed class HdrSupportServiceTests : IDisposable
         {
             Requests.Enqueue(request.RequestUri!.AbsoluteUri);
             Arrived.TrySetResult();
-            if (Hold is { } hold) await hold.ConfigureAwait(false);
+            if (Hold is { } hold) await hold.WaitAsync(cancellationToken).ConfigureAwait(false);
             return await Answer(request).ConfigureAwait(false);
         }
 

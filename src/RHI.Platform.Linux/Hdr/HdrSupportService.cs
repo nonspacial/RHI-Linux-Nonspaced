@@ -88,6 +88,7 @@ public sealed partial class HdrSupportService
     private readonly SemaphoreSlim _cacheGate = new(1, 1);
     private readonly Dictionary<string, Lookup> _running = new(StringComparer.Ordinal);
     private CacheFile? _cache;
+    private bool _cacheOnDisk;
     private long _staleBeforeUtcTicks;
 
     /// <param name="overridesJson">Test seam: the curated list's text (default: the embedded resource).</param>
@@ -123,6 +124,7 @@ public sealed partial class HdrSupportService
     public HdrSupportEvidence? Peek(DetectedGame game)
     {
         if (Curated(game) is { } curated) return curated;
+        ForgetIfPurged();
         var cache = _cache;
         if (cache is null) return null;
         lock (cache)
@@ -318,14 +320,33 @@ public sealed partial class HdrSupportService
 
     private bool IsStale(CacheEntry entry) => entry.FetchedAt.UtcTicks < Volatile.Read(ref _staleBeforeUtcTicks);
 
+    /// <summary>
+    /// Correction N1: Settings → Clear cache deletes the cache file, and the answers held in memory go with it (otherwise
+    /// they would be used, and written back by the next save). A file that could never be saved is not a purge.
+    /// </summary>
+    private void ForgetIfPurged()
+    {
+        if (_cache is null || !Volatile.Read(ref _cacheOnDisk) || File.Exists(CachePath)) return;
+        _cacheGate.Wait();
+        try
+        {
+            if (_cache is null || !_cacheOnDisk || File.Exists(CachePath)) return;
+            _cache = null;
+            _cacheOnDisk = false;
+        }
+        finally { _cacheGate.Release(); }
+    }
+
     private async Task<CacheFile> LoadCacheAsync(CancellationToken cancellationToken)
     {
-        if (_cache is not null) return _cache;
+        ForgetIfPurged();
+        if (_cache is { } loaded) return loaded;
         await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_cache is not null) return _cache;
+            if (_cache is { } again) return again;
             var load = _cacheFile.Load();
+            Volatile.Write(ref _cacheOnDisk, load.Value is not null);
             return _cache = load.Value ?? new CacheFile();
         }
         finally { _cacheGate.Release(); }
@@ -342,6 +363,7 @@ public sealed partial class HdrSupportService
                 cache.Games[key] = new CacheEntry { Answer = evidence.Answer, Source = evidence.Source, Page = evidence.Page, FetchedAt = _time.GetUtcNow() };
                 _cacheFile.Save(cache);
             }
+            Volatile.Write(ref _cacheOnDisk, true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
