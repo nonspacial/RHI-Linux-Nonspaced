@@ -138,7 +138,6 @@ internal sealed class AppComposition
         return new WineRecovery(overrides, LinuxDeploymentRecovery.CreateJournal(overrides, journalDirectory, isPrefixInUse, records));
     }
 
-    /// <param name="displayModes">#191: the display switcher the app runs with; null (tests) = the display is never touched.</param>
     /// <summary>
     /// #245: the Nexus update check over the connected account's key; w12 follow-up (re-review luma N3): a key Nexus refused
     /// is remembered until the account is connected again (a key saved).
@@ -150,6 +149,7 @@ internal sealed class AppComposition
         return check;
     }
 
+    /// <param name="displayModes">#191: the display switcher the app runs with; null (tests) = the display is never touched.</param>
     public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal,
         RHI.Platform.Linux.Hdr.DisplayModeSwitcher? displayModes = null)
     {
