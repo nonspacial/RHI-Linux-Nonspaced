@@ -85,9 +85,11 @@
         </StackPanel>
       </Grid>
     </ScrollViewer>
-    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="16">
-      <!-- #249: a result line naming many failed games scrolls inside the footer instead of squeezing the body. -->
-      <ScrollViewer x:Name="StatusScroll" MaxHeight="96" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <Grid x:Name="Footer" Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="16">
+      <!-- #249: a result line naming many failed games scrolls inside the footer instead of squeezing the body. Narrow
+           dialogs give it its own full-width row above the buttons (code-behind); hidden while there is nothing to say. -->
+      <ScrollViewer x:Name="StatusScroll" MaxHeight="96" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                    IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
         <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.78"/>
       </ScrollViewer>
       <Button Grid.Column="1" Content="{l:T Win.RestoreSelected}" Padding="14,7" Command="{Binding RestoreCommand}" IsEnabled="{Binding CanRun}"/>

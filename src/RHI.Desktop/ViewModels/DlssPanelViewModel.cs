@@ -284,8 +284,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
     }
 
     /// <summary>
-    /// #249: the DLSS/Streamline result counts in the UI language (the platform's <see cref="LinuxDlssBatchResult.Summary"/>
-    /// is English only and was shown as is in PT-BR).
+    /// #249: the DLSS/Streamline result counts in the UI language (the platform's English-only summary, shown as is in PT-BR
+    /// before, is gone: w12 follow-up, re-review pins N3).
     /// </summary>
     internal static string CountsLine(LinuxDlssBatchResult result)
         => result.Items.Count == 0
@@ -298,9 +298,10 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
     /// </summary>
     internal static string FailedGamesLine(LinuxDlssBatchResult result)
     {
+        // w12 follow-up (re-review pins N1): one entry per game (its library key), so two library games of one name are two.
         var games = result.FailedItems
-            .GroupBy(item => item.GameName, StringComparer.Ordinal)
-            .Select(game => game.Key + ": " + string.Join("; ", game
+            .GroupBy(item => item.GameKey ?? item.GameName, StringComparer.Ordinal)
+            .Select(game => game.First().GameName + ": " + string.Join("; ", game
                 .Select(item => UiLocalizationService.Present(item.Message).TrimEnd('.'))
                 .Distinct(StringComparer.Ordinal)))
             .ToArray();

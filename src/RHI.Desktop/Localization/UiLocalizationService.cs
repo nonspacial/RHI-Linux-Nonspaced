@@ -672,6 +672,11 @@ public static class UiLocalizationService
         // Re-review mfg N2: one line, with its way out, for a record without its proxy DLL's name (three MFG families).
         (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.MissingProxyNameMessage,
             "Não atualizado: o registro do RHI deste componente não tem o nome da DLL proxy, então o RHI não sabe qual arquivo é dele. Remova-o e instale-o de novo."),
+        // Re-review pins M1: the two Streamline refusals the DLSS result line names after a failed game.
+        (RHI.Core.Services.DlssManagerService.NoMatchingStreamlineMessage,
+            "Nenhuma DLL do Streamline existente corresponde ao conjunto baixado; o RHI não cria um layout adivinhado."),
+        (RHI.Core.Services.DlssManagerService.NoStreamlineBackupsMessage,
+            "Nenhum backup .original do Streamline criado pelo RHI foi encontrado."),
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1740,6 +1745,12 @@ public static class UiLocalizationService
         // #249: the DLSS batch names a game whose step threw; the exception text follows.
         (RHI.Platform.Linux.Deployment.LinuxDlssDefaultsService.BatchDeployFailedPrefix, "Falha na implantação em lote: "),
         (RHI.Platform.Linux.Deployment.LinuxDlssDefaultsService.BatchRestoreFailedPrefix, "Falha na restauração em lote: "),
+        // w12 follow-up (re-review pins M1): a swap that failed without a reason of its own (component and version follow).
+        ("Could not apply Super Resolution ", "Não foi possível aplicar o Super Resolution "),
+        ("Could not apply Ray Reconstruction ", "Não foi possível aplicar o Ray Reconstruction "),
+        ("Could not apply Frame Generation ", "Não foi possível aplicar o Frame Generation "),
+        ("Could not apply Neural Rendering ", "Não foi possível aplicar o Neural Rendering "),
+        ("Could not apply Streamline ", "Não foi possível aplicar o Streamline "),
         // w12/hdr-wsi rows
     ];
 

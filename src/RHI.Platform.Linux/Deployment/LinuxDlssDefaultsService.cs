@@ -53,7 +53,9 @@ public sealed record LinuxDlssBatchItemResult(
     bool Skipped,
     string Message,
     // #229: a Neural Rendering default/batch choice made for another card generation, skipped before any file changed.
-    bool NotForThisCard = false);
+    bool NotForThisCard = false,
+    // w12 follow-up (re-review pins N1): the game's library key, so two games of one name (two stores) stay two entries.
+    string? GameKey = null);
 
 public sealed record LinuxDlssBatchResult(IReadOnlyList<LinuxDlssBatchItemResult> Items)
 {
@@ -64,10 +66,6 @@ public sealed record LinuxDlssBatchResult(IReadOnlyList<LinuxDlssBatchItemResult
     public int DeferredCount => Items.Count(item => item.Deferred);
     public int SkippedCount => Items.Count(item => item.Skipped);
     public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Skipped);
-
-    public string Summary => Items.Count == 0
-        ? "No eligible DLSS/Streamline targets were found."
-        : $"DLSS/Streamline: {ChangedCount} changed · {CurrentCount} current · {SkippedCount} skipped · {DeferredCount} deferred · {FailedCount} failed.";
 }
 
 public sealed record LinuxDlssBatchCandidate(
@@ -212,6 +210,20 @@ public sealed class LinuxDlssDefaultsService
         LinuxDlssVersionDefaults defaults,
         IReadOnlyList<string>? indexedFiles = null,
         CancellationToken cancellationToken = default)
+        => ForGame(game, await ApplyDefaultsCoreAsync(game, defaults, indexedFiles, cancellationToken).ConfigureAwait(false));
+
+    /// <summary>Every item of <paramref name="result"/> carries <paramref name="game"/>'s library key (re-review pins N1).</summary>
+    private static LinuxDlssBatchResult ForGame(DetectedGame game, LinuxDlssBatchResult result)
+    {
+        var key = LinuxDeploymentRecordStore.GameKey(game);
+        return new LinuxDlssBatchResult(result.Items.Select(item => item with { GameKey = key }).ToArray());
+    }
+
+    private async Task<LinuxDlssBatchResult> ApplyDefaultsCoreAsync(
+        DetectedGame game,
+        LinuxDlssVersionDefaults defaults,
+        IReadOnlyList<string>? indexedFiles,
+        CancellationToken cancellationToken)
     {
         defaults = defaults.Normalize();
         if (!defaults.HasAny)
@@ -249,6 +261,12 @@ public sealed class LinuxDlssDefaultsService
         DetectedGame game,
         IReadOnlyList<string>? indexedFiles = null,
         CancellationToken cancellationToken = default)
+        => ForGame(game, await RestoreAllCoreAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false));
+
+    private async Task<LinuxDlssBatchResult> RestoreAllCoreAsync(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles,
+        CancellationToken cancellationToken)
     {
         if (XboxWriteGate.Refusal(game) is { } xbox) throw new XboxTitleBusyException(xbox); // w3/scan hook (Refs #90)
         var candidate = Inspect(game, indexedFiles, cancellationToken);
@@ -313,7 +331,7 @@ public sealed class LinuxDlssDefaultsService
             catch (Exception ex)
             {
                 all.Add(new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
-                    false, false, false, false, BatchDeployFailedPrefix + ex.Message));
+                    false, false, false, false, BatchDeployFailedPrefix + ex.Message, GameKey: LinuxDeploymentRecordStore.GameKey(game)));
             }
         }
         return new LinuxDlssBatchResult(all);
@@ -341,7 +359,7 @@ public sealed class LinuxDlssDefaultsService
             catch (Exception ex)
             {
                 all.Add(new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
-                    false, false, false, false, BatchRestoreFailedPrefix + ex.Message));
+                    false, false, false, false, BatchRestoreFailedPrefix + ex.Message, GameKey: LinuxDeploymentRecordStore.GameKey(game)));
             }
         }
         return new LinuxDlssBatchResult(all);
@@ -385,7 +403,7 @@ public sealed class LinuxDlssDefaultsService
                 ? changed > 0
                     ? $"Applied {Display(batchComponent)} {version} to {changed} existing target(s); true originals remain as .original."
                     : $"{Display(batchComponent)} already matches {version}; no backup was created."
-                : swap.Error ?? $"Could not apply {Display(batchComponent)} {version}."));
+                : swap.Error ?? CouldNotApplyMessage(Display(batchComponent), version)));
     }
 
     private async Task ApplyStreamlineAsync(
@@ -409,7 +427,7 @@ public sealed class LinuxDlssDefaultsService
                 ? changed > 0
                     ? $"Applied Streamline {version} to {changed} existing DLL(s); true originals remain as .original."
                     : $"Existing Streamline DLLs already match {version}; nothing changed."
-                : swap.Error ?? $"Could not apply Streamline {version}."));
+                : swap.Error ?? CouldNotApplyMessage(Display(LinuxDlssBatchComponent.Streamline), version)));
     }
 
     private async Task RestoreDllAsync(
@@ -515,6 +533,18 @@ public sealed class LinuxDlssDefaultsService
     /// <summary>#249: a batch game whose apply/restore threw; the result line names the game with this reason.</summary>
     public const string BatchDeployFailedPrefix = "Batch deploy failed: ";
     public const string BatchRestoreFailedPrefix = "Batch restore failed: ";
+
+    /// <summary>
+    /// The reason of a swap that failed without one of its own (w12 follow-up, re-review pins M1: the result line names it,
+    /// PT-BR through one presentation pair per component, <see cref="CouldNotApplyPrefix"/> + component name + space).
+    /// </summary>
+    public static string CouldNotApplyMessage(string component, string version) => CouldNotApplyPrefix + component + " " + version + ".";
+
+    public const string CouldNotApplyPrefix = "Could not apply ";
+
+    /// <summary>The component names <see cref="CouldNotApplyMessage"/> uses (each has its PT-BR presentation pair).</summary>
+    public static IReadOnlyList<string> ComponentDisplayNames { get; } =
+        Enum.GetValues<LinuxDlssBatchComponent>().Select(Display).ToArray();
 
     private static string Display(LinuxDlssBatchComponent component) => component switch
     {

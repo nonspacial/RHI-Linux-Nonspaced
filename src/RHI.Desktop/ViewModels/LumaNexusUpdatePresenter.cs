@@ -15,7 +15,7 @@ namespace RHI.Desktop.ViewModels;
 
 /// <summary>
 /// #245 (upstream 2.8.8 <c>20d3297</c>): the Luma row of the selected game when the Luma wiki lists the game's Luma mod
-/// only on Nexus Mods. The row's own Nexus button (its own column: Install/Remove → Nexus → ⚙ → ⓘ) opens the mod's Nexus
+/// only on Nexus Mods. The row's own Nexus button (its own column, first among the row's buttons: Nexus → ⚙ → Install/Remove → ⓘ) opens the mod's Nexus
 /// page through <see cref="LinkHosts.NexusMod"/> and downloads nothing. When RHI installed the mod, RHI asks Nexus
 /// (connected account's key only) whether a newer file is there: "Update on Nexus" when it is; hidden when Nexus has
 /// nothing newer or could not be asked. "Open on Nexus" with a ~2 s tooltip naming the control that fixes it when no

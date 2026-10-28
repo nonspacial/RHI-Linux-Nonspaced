@@ -21,6 +21,10 @@ public sealed class DlssManagerService
 {
     public const string ManifestUrl = "https://raw.githubusercontent.com/RankFTW/RHI/main/dlss_manifest.json";
 
+    /// <summary>Streamline refusals the DLSS result line names (PT-BR presentation pairs; w12 follow-up, re-review pins M1).</summary>
+    public const string NoMatchingStreamlineMessage = "No existing Streamline DLLs matched the downloaded set; refusing to create a guessed layout.";
+    public const string NoStreamlineBackupsMessage = "No RHI-created Streamline .original backups were found.";
+
     public static readonly string[] KnownStreamlineDlls =
     [
         "sl.common.dll", "sl.deepdvc.dll", "sl.directsr.dll", "sl.dlss.dll", "sl.dlss_d.dll",
@@ -549,7 +553,7 @@ public sealed class DlssManagerService
             .DistinctBy(x => x.Target, StringComparer.Ordinal)
             .ToArray();
         if (replacements.Length == 0)
-            return new(false, [], "No existing Streamline DLLs matched the downloaded set; refusing to create a guessed layout.");
+            return new(false, [], NoMatchingStreamlineMessage);
 
         return await _deployment.ReplaceBatchAsync(replacements, cancellationToken).ConfigureAwait(false);
     }
@@ -572,7 +576,7 @@ public sealed class DlssManagerService
             .ToArray();
 
         if (targets.Length == 0)
-            return Task.FromResult(new FileDeploymentBatchResult(false, [], "No RHI-created Streamline .original backups were found."));
+            return Task.FromResult(new FileDeploymentBatchResult(false, [], NoStreamlineBackupsMessage));
 
         return _deployment.RestoreBatchAsync(targets, cancellationToken);
     }

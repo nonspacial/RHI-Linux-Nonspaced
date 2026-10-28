@@ -35,6 +35,14 @@ public sealed class Wave12MessageLocalizationTests
         // pins (#249)
         { LinuxDlssDefaultsService.BatchDeployFailedPrefix + "E/S negada", "Batch deploy failed" },
         { LinuxDlssDefaultsService.BatchRestoreFailedPrefix + "E/S negada", "Batch restore failed" },
+        // w12 follow-up (re-review pins M1): the reasons the DLSS result line names after a failed game
+        { LinuxDlssDefaultsService.CouldNotApplyMessage("Super Resolution", "310.4.0"), "Could not apply" },
+        { LinuxDlssDefaultsService.CouldNotApplyMessage("Ray Reconstruction", "310.4.0"), "Could not apply" },
+        { LinuxDlssDefaultsService.CouldNotApplyMessage("Frame Generation", "310.4.0"), "Could not apply" },
+        { LinuxDlssDefaultsService.CouldNotApplyMessage("Neural Rendering", "310.4.0"), "Could not apply" },
+        { LinuxDlssDefaultsService.CouldNotApplyMessage("Streamline", "2.9.0"), "Could not apply" },
+        { RHI.Core.Services.DlssManagerService.NoMatchingStreamlineMessage, "matched the downloaded set" },
+        { RHI.Core.Services.DlssManagerService.NoStreamlineBackupsMessage, "backups were found" },
         // luma (#245)
         { LumaFrameworkDeploymentService.NexusNewerPrefix + "2026-10-01", "A newer Luma file" },
         { LumaFrameworkDeploymentService.NexusCurrentMessage, "No newer Luma file" },
@@ -51,6 +59,18 @@ public sealed class Wave12MessageLocalizationTests
     {
         { ManagedUpdateFileGuard.RemovedOutsideRhiRowNote, "foi removido fora do RHI" },
     };
+
+    // w12 follow-up (re-review pins M1): every component the DLSS batch can name has its pair, so a failed game's reason
+    // reaches the PT-BR result line in Portuguese ("Falha em 1 jogo(s) • Jogo: Não foi possível aplicar o …").
+    [Fact]
+    public void EveryDlssComponent_CouldNotApply_IsPortugueseOnTheResultLine()
+    {
+        foreach (var component in LinuxDlssDefaultsService.ComponentDisplayNames)
+        {
+            var pt = UiLocalizationService.PresentFor("pt-BR", LinuxDlssDefaultsService.CouldNotApplyMessage(component, "310.4.0"));
+            Assert.Equal("Não foi possível aplicar o " + component + " 310.4.0.", pt);
+        }
+    }
 
     [Theory]
     [MemberData(nameof(EnglishSourced))]
