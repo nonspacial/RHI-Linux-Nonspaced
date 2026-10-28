@@ -20,6 +20,9 @@ public sealed class MfgMessageLocalizationTests
         { "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoDllMessage, "holds neither" },
         { ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + "/jogos/exemplo/version.dll", "removed outside RHI" },
         { ManagedUpdateFileGuard.ChangedOutsideRhiPrefix + "/jogos/exemplo/renodx-mfgunlock.addon64", "changed outside RHI" },
+        // Correction round 1 (review F5)
+        { ManagedUpdateFileGuard.NoRecordedHashPrefix + "/jogos/exemplo/winmm.dll", "has no hash" },
+        { ManagedUpdateFileGuard.NoRecordedHashPrefix + "/jogos/exemplo/winmm.dll", "Install it again" },
     };
 
     [Theory]
@@ -35,4 +38,12 @@ public sealed class MfgMessageLocalizationTests
     public void RemovedFileLine_KeepsThePathAfterThePortugueseText()
         => Assert.EndsWith("Remover apaga o registro dele no RHI: /jogos/exemplo/version.dll",
             UiLocalizationService.PresentFor("pt-BR", ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + "/jogos/exemplo/version.dll"));
+
+    // Correction round 1: the values stay last, after the Portuguese text.
+    [Fact]
+    public void CorrectionLines_KeepTheirValuesAfterThePortugueseText()
+    {
+        Assert.EndsWith("instale-o de novo: /jogos/exemplo/winmm.dll",
+            UiLocalizationService.PresentFor("pt-BR", ManagedUpdateFileGuard.NoRecordedHashPrefix + "/jogos/exemplo/winmm.dll"));
+    }
 }

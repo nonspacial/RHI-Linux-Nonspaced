@@ -219,6 +219,34 @@ public sealed class MfgUpdateAllTests
         Assert.False(File.Exists(missing));
     }
 
+    // ---- Correction round 1 (review w12-review-mfg.md) -----------------------------------------------------------------
+
+    // F5: a Universal MFG record without the proxy's hash is "could not be checked" in Update All with the one reason (never a
+    // failed row on every pass, as when the check planned an update the swap refused).
+    [Fact]
+    public async Task UniversalMfg_RecordWithoutTheProxysHash_IsCouldNotCheck_NotFailed_InBothModes()
+    {
+        var release = new UniversalMfgRelease().Add("1.4.2", "RTXMFG-", "RTXMFG.dll", 0x57);
+        release.Add("1.7.0", "MFGUnlocker-", "MFGUnlocker.dll", 0x58);
+        release.Active = "1.4.2";
+        using var fx = await ViewModelFixture.StartAsync([], httpResponse: release.Answer);
+        var game = StreamlineGame(fx.Root, "Hashless MFG Game");
+        Assert.True((await fx.Managed.InstallAsync(game, ManagedComponentKind.Rtx40MfgStandalone, [])).Success);
+        var record = fx.Records.Find(game, ManagedComponentKind.Rtx40MfgStandalone)!;
+        var proxy = record.Files.Single().Path;
+        record.Files.Clear();
+        fx.Records.Upsert(record);
+        release.Active = "1.7.0";
+
+        foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
+        {
+            var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new SwitchableRunning()).RunAsync([game], _ => [], mode);
+            Assert.Equal((0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount));
+            Assert.Equal(ManagedUpdateFileGuard.NoRecordedHashPrefix + proxy, Assert.Single(result.Items).Message);
+        }
+        Assert.Equal(UniversalMfgRelease.Pe(0x57), File.ReadAllBytes(proxy));
+    }
+
     // ---- Ultimate ASI Loader (#238) through the app's services ---------------------------------------------------------
 
     private sealed class UalRelease

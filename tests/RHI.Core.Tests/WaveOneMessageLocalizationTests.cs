@@ -616,6 +616,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return "Universal MFG update check/download failed: " + Rtx40MfgStandaloneDeploymentService.NoDllMessage;
         yield return ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + "/jogos/exemplo/version.dll";
         yield return ManagedUpdateFileGuard.ChangedOutsideRhiPrefix + "/jogos/exemplo/renodx-mfgunlock.addon64";
+        yield return ManagedUpdateFileGuard.NoRecordedHashPrefix + "/jogos/exemplo/winmm.dll"; // correction round 1 (F5)
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows

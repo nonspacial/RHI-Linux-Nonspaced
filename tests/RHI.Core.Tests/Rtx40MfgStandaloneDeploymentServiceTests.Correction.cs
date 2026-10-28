@@ -34,4 +34,58 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
         Assert.Equal(requests, handler.RequestCount);
         Assert.Equal(halfUndone, File.ReadAllBytes(target));
     }
+
+    // F5: a record without the proxy's hash (blank, or no file entry for the proxy) is "could not be checked" with the one
+    // reason every family gives — never a planned update that fails on every pass, never "changed outside RHI".
+    [Theory]
+    [InlineData("blank")]
+    [InlineData("no-entry")]
+    public async Task RecordWithoutTheProxysHash_IsCouldNotCheck_WithTheOneReason(string shape)
+    {
+        using var fixture = CreateGame("correction-hashless-" + shape, 0x8664, GraphicsApi.DirectX12);
+        using var handler = V142ThenV170(0x85, 0x86);
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+        var target = Path.Combine(fixture.Bin, "winmm.dll");
+        var record = records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone)!;
+        if (shape == "blank") record.Files.Single().Sha256 = "";
+        else record.Files.Clear();
+        records.Upsert(record);
+        handler.ActiveVersion = "1.7.0";
+
+        var check = await service.CheckManagedUpdateAsync(fixture.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(ManagedUpdateFileGuard.NoRecordedHashPrefix + target, check.Message);
+        Assert.Equal(CreatePe(0x8664, 512 * 1024, 0x85), File.ReadAllBytes(target));
+    }
+
+    // F5: a record without its proxy name cannot be updated (the update refuses it), so the check says so before any lookup.
+    [Fact]
+    public async Task RecordWithoutItsProxyName_IsCouldNotCheck_BeforeAnyLookup()
+    {
+        using var fixture = CreateGame("correction-noproxy", 0x8664, GraphicsApi.DirectX12);
+        using var handler = V142ThenV170(0x87, 0x88);
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+        var record = records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone)!;
+        record.Metadata.Remove("UniversalMFG.ProxyName");
+        record.Metadata.Remove("RTX40MFG.ProxyName");
+        records.Upsert(record);
+        handler.ActiveVersion = "1.7.0";
+        var requests = handler.RequestCount;
+
+        var check = await service.CheckManagedUpdateAsync(fixture.Game);
+        var update = await service.UpdateAsync(fixture.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(Rtx40MfgStandaloneDeploymentService.MissingProxyMessage, check.Message);
+        Assert.Equal(requests, handler.RequestCount);
+        Assert.False(update.Success);
+        Assert.Equal(Rtx40MfgStandaloneDeploymentService.MissingProxyMessage, update.Message);
+    }
 }

@@ -43,7 +43,8 @@ public sealed class ManagedUpdateFileGuardTests : IDisposable
         var check = await ManagedUpdateFileGuard.BeforePlanningAsync(Planned, [(path, null)], CancellationToken.None);
 
         Assert.Equal((false, true), (check.UpdateAvailable, check.CouldNotCheck));
-        Assert.Equal(ManagedUpdateFileGuard.ChangedOutsideRhiPrefix + path, check.Message);
+        // Correction round 1 (review F5): the one "RHI's record has no hash" line, not "changed outside RHI".
+        Assert.Equal(ManagedUpdateFileGuard.NoRecordedHashPrefix + path, check.Message);
     }
 
     // An unreadable file reads as not matching (never as "unchanged"), and a check that plans no update never reads it.

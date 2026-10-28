@@ -37,4 +37,25 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         Assert.Equal(requests, handler.RequestCount);
         Assert.Equal(halfUndone, File.ReadAllBytes(proxy));
     }
+
+    [Theory]
+    [InlineData("blank")]
+    [InlineData("no-entry")]
+    public async Task RecordWithoutTheProxysHash_IsCouldNotCheck_WithTheOneReason(string shape)
+    {
+        var (fixture, handler, service, records) = await InstalledAsync("correction-hashless-" + shape);
+        var proxy = Path.Combine(fixture.Bin, "winmm.dll");
+        var record = records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock)!;
+        var entry = record.Files.Single(file => string.Equals(file.Path, proxy, StringComparison.Ordinal));
+        if (shape == "blank") entry.Sha256 = "";
+        else record.Files.Remove(entry);
+        records.Upsert(record);
+        handler.CommitSha = NewerCommit;
+        handler.Dll = CreatePe(0x8664, 320 * 1024, 0x39);
+
+        var check = await service.CheckManagedUpdateAsync(fixture.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(ManagedUpdateFileGuard.NoRecordedHashPrefix + proxy, check.Message);
+    }
 }

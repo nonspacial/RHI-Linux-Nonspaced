@@ -37,4 +37,30 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
         Assert.Equal(lookups, release.ApiRequests);
         Assert.Equal(halfUndone, File.ReadAllBytes(proxy));
     }
+
+    [Theory]
+    [InlineData("blank")]
+    [InlineData("no-entry")]
+    public async Task RecordWithoutTheProxysHash_IsCouldNotCheck_WithTheOneReason(string shape)
+    {
+        using var fixture = CreateGame("correction-hashless-" + shape, 0x8664);
+        using var release = new UalRelease().Add("9.7.4", 0x9A);
+        release.Add("9.7.5", 0x9C);
+        release.Version = "9.7.4";
+        using var http = new HttpClient(release);
+        var (service, records) = UalService(fixture, http);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+        var proxy = Path.Combine(fixture.Bin, "winmm.dll");
+        var record = records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!;
+        var entry = record.Files.Single(file => string.Equals(file.Path, proxy, StringComparison.Ordinal));
+        if (shape == "blank") entry.Sha256 = "";
+        else record.Files.Remove(entry);
+        records.Upsert(record);
+        release.Version = "9.7.5";
+
+        var check = await service.CheckManagedUpdateAsync(fixture.Game);
+
+        Assert.Equal((true, false, true), (check.Managed, check.UpdateAvailable, check.CouldNotCheck));
+        Assert.Equal(ManagedUpdateFileGuard.NoRecordedHashPrefix + proxy, check.Message);
+    }
 }

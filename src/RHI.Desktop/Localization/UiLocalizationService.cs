@@ -1693,6 +1693,9 @@ public static class UiLocalizationService
             "Não atualizado: este arquivo foi removido fora do RHI, e uma atualização nunca o coloca de volta. Remover apaga o registro dele no RHI: "),
         (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.ChangedOutsideRhiPrefix,
             "Não atualizado: este arquivo foi alterado fora do RHI, e uma atualização nunca o substitui: "),
+        // Correction round 1 (review w12/mfg F5): a record without the file's hash.
+        (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.NoRecordedHashPrefix,
+            "Não atualizado: o registro do RHI para este arquivo não tem hash, então o RHI não sabe se ele foi alterado fora do RHI. Remova-o e instale-o de novo: "),
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows

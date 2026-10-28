@@ -30,6 +30,13 @@ public static class ManagedUpdateFileGuard
         "Not updated: this file was changed outside RHI, and an update never replaces it: ";
 
     /// <summary>
+    /// The check's line for a component file RHI recorded without its hash (F5, review w12/mfg): RHI cannot tell whether it
+    /// was changed outside RHI, so no swap is planned; Remove, then Install, records it again. The path follows.
+    /// </summary>
+    public const string NoRecordedHashPrefix =
+        "Not updated: RHI's record of this file has no hash, so RHI cannot tell whether it was changed outside RHI. Remove it, then Install it again: ";
+
+    /// <summary>
     /// F1 (review w12/mfg; the toolkit rule since w10 D15): a game held by its own earlier undo (or an undecided change) gets
     /// the hold's restart text as a could-not-check result before the check reads any of its files, which would take RHI's
     /// own half-undone file for one removed or changed outside RHI. Null while nothing holds the game. Cheap when nothing
@@ -52,8 +59,8 @@ public static class ManagedUpdateFileGuard
 
     /// <summary>
     /// <paramref name="planned"/> turned into a could-not-check result when a file no longer has the hash RHI recorded
-    /// (or cannot be read, or has no recorded hash); <paramref name="planned"/> itself when it plans no update or every file
-    /// still matches.
+    /// (or cannot be read), or RHI recorded it without a hash (<see cref="NoRecordedHashPrefix"/>); <paramref name="planned"/>
+    /// itself when it plans no update or every file still matches.
     /// </summary>
     public static async Task<ManagedUpdateCheck> BeforePlanningAsync(
         ManagedUpdateCheck planned,
@@ -65,16 +72,16 @@ public static class ManagedUpdateFileGuard
         {
             if (!File.Exists(path))
                 return planned with { UpdateAvailable = false, CouldNotCheck = true, Message = RemovedOutsideRhiPrefix + path };
-            if (!await MatchesAsync(path, sha, cancellationToken).ConfigureAwait(false))
+            if (string.IsNullOrWhiteSpace(sha))
+                return planned with { UpdateAvailable = false, CouldNotCheck = true, Message = NoRecordedHashPrefix + path };
+            if (!await MatchesAsync(path, sha!, cancellationToken).ConfigureAwait(false))
                 return planned with { UpdateAvailable = false, CouldNotCheck = true, Message = ChangedOutsideRhiPrefix + path };
         }
         return planned;
     }
 
-    private static async Task<bool> MatchesAsync(string path, string? sha, CancellationToken cancellationToken)
+    private static async Task<bool> MatchesAsync(string path, string sha, CancellationToken cancellationToken)
     {
-        // A record without the file's hash cannot show the file is unchanged: not swapped.
-        if (string.IsNullOrWhiteSpace(sha)) return false;
         try
         {
             var current = await FileHash.Sha256HexAsync(path, cancellationToken).ConfigureAwait(false);

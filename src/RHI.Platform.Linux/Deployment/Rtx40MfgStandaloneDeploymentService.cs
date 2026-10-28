@@ -40,6 +40,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
     public const string SeveralDllsPrefix = "Universal MFG archive refused as ambiguous: it holds several entries named ";
     /// <summary>#236: a zip holding neither DLL name.</summary>
     public const string NoDllMessage = "Universal MFG archive refused: it holds neither MFGUnlocker.dll nor RTXMFG.dll.";
+    /// <summary>A record without its proxy name: the update refuses it, and the check could not check it (F5).</summary>
+    public const string MissingProxyMessage = "Registro do Universal MFG não possui proxy; update bloqueado.";
     public const string DefaultProxyName = "version.dll";
     public const string GpuGenRtx40 = "RTX 40 Series";
     public const string GpuGenRtx30 = "RTX 30 Series";
@@ -428,7 +430,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return ComponentOperationResult.Fail(held);
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName) ?? record.Metadata.GetValueOrDefault(LegacyMetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
-            return ComponentOperationResult.Fail("Registro do Universal MFG não possui proxy; update bloqueado.");
+            return ComponentOperationResult.Fail(MissingProxyMessage);
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, targetPath));
         if (fileRecord?.Sha256 is not { Length: > 0 })
@@ -504,18 +506,21 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
         if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.Rtx40MfgStandalone, record.Version).ConfigureAwait(false) is { } held)
             return held;
-        // #236: the proxy the user deleted is never put back by an update; seen before any network call.
+        // F5 (review w12/mfg): a record without its proxy cannot be updated (UpdateAsync refuses it): could not check, never a
+        // planned update that fails on every pass.
         var proxyPath = ProxyPathOf(record);
-        if (proxyPath is not null && ManagedUpdateFileGuard.Removed([proxyPath], record.Version) is { } removed)
+        if (proxyPath is null)
+            return new ManagedUpdateCheck(true, false, MissingProxyMessage, record.Version, CouldNotCheck: true);
+        // #236: the proxy the user deleted is never put back by an update; seen before any network call.
+        if (ManagedUpdateFileGuard.Removed([proxyPath], record.Version) is { } removed)
             return removed;
         var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
         var planned = new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
             CouldNotCheck: !status.Success);
-        // w11 lesson: a swap is planned only while the proxy still holds RHI's bytes (hashed only then).
-        var fileRecord = proxyPath is null ? null : record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
-        return fileRecord is null
-            ? planned
-            : await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(fileRecord.Path, fileRecord.Sha256)], cancellationToken).ConfigureAwait(false);
+        // w11 lesson: a swap is planned only while the proxy still holds RHI's bytes (hashed only then); F5: a record without
+        // the proxy's hash reads as the guard's one "no recorded hash" line.
+        var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
+        return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(proxyPath, fileRecord?.Sha256)], cancellationToken).ConfigureAwait(false);
     }
 
     private static string? ProxyPathOf(LinuxDeploymentRecord record)
