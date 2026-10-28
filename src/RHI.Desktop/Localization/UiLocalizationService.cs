@@ -658,6 +658,11 @@ public static class UiLocalizationService
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        // w12 integration rows (message sweep): wave-12 check results that had no PT-BR presentation.
+        ("RTX 20 FG Unlock is not RHI-managed.", "O RTX 20 FG Unlock não é gerenciado pelo RHI."),
+        ("Ultimate ASI Loader is not RHI-managed.", "O Ultimate ASI Loader não é gerenciado pelo RHI."),
+        ("Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.",
+            "O registro de implantação do Ultimate ASI Loader está sem o nome do arquivo proxy. Remover é mais seguro do que adotar este registro."),
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =

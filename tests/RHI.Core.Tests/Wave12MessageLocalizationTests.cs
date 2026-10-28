@@ -1,0 +1,68 @@
+using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Deployment;
+
+namespace RHI.Core.Tests;
+
+/// <summary>
+/// w12 integration (message sweep): every user-reachable message the wave-12 lanes added in platform code (check results,
+/// refusals, row notes) has an EN + PT-BR presentation. English-source messages: the PT-BR presentation is not the generic
+/// fallback, carries none of the message's fixed English text, and English stays as is. Portuguese-source messages: the
+/// English presentation is not the fallback and carries none of the Portuguese fixed text.
+/// </summary>
+public sealed class Wave12MessageLocalizationTests
+{
+    private const string P = "/jogos/Exemplo/dinput8.dll";
+
+    public static TheoryData<string, string> EnglishSourced() => new()
+    {
+        // mfg (#236–#238)
+        { ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + P, "removed outside RHI" },
+        { ManagedUpdateFileGuard.ChangedOutsideRhiPrefix + P, "changed outside RHI" },
+        { ManagedUpdateFileGuard.NoRecordedHashPrefix + P, "has no hash" },
+        { Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-v1.7.0.zip", "several assets" },
+        { Rtx40MfgStandaloneDeploymentService.NoAssetMessage, "neither" },
+        { Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix + "MFGUnlocker.dll", "several entries" },
+        { Rtx40MfgStandaloneDeploymentService.NoDllMessage, "neither" },
+        { UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + "x86 → x64", "no longer has the architecture" },
+        { "Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.", "missing its proxy filename" },
+        { "Ultimate ASI Loader is not RHI-managed.", "is not RHI-managed" },
+        { "RTX 20 FG Unlock is not RHI-managed.", "is not RHI-managed" },
+        // shaders (#239–#241)
+        { ReShadeShaderPackService.ProtectedShaderFilePrefix + "/jogos/Exemplo/reshade-shaders/RHI/Prod80/Shaders/x.fx", "outside RHI" },
+        { ReShadeShaderPackService.LinkedShaderFolderPrefix + "/jogos/Exemplo/reshade-shaders/RHI", "is a link" },
+        // pins (#249)
+        { LinuxDlssDefaultsService.BatchDeployFailedPrefix + "E/S negada", "Batch deploy failed" },
+        { LinuxDlssDefaultsService.BatchRestoreFailedPrefix + "E/S negada", "Batch restore failed" },
+    };
+
+    public static TheoryData<string, string> PortugueseSourced() => new()
+    {
+        { ManagedUpdateFileGuard.RemovedOutsideRhiRowNote, "foi removido fora do RHI" },
+        { Rtx40MfgStandaloneDeploymentService.MissingProxyMessage, "não possui proxy" },
+        { "Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.", "está sem proxy" },
+    };
+
+    [Theory]
+    [MemberData(nameof(EnglishSourced))]
+    public void EnglishMessage_HasAPortuguesePresentation_WithNoEnglishFixedText(string message, string englishFixedText)
+    {
+        var pt = UiLocalizationService.PresentFor("pt-BR", message);
+
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt);
+        Assert.DoesNotContain(englishFixedText, pt, StringComparison.Ordinal);
+        var english = UiLocalizationService.EnglishMarkersIn(pt).Where(w => !w.Equals("no", StringComparison.OrdinalIgnoreCase)).ToArray();
+        Assert.True(english.Length == 0, $"English left ({string.Join(", ", english)}): {pt}");
+        Assert.Equal(message, UiLocalizationService.PresentFor("en-US", message));
+    }
+
+    [Theory]
+    [MemberData(nameof(PortugueseSourced))]
+    public void PortugueseMessage_HasAnEnglishPresentation_WithNoPortugueseFixedText(string message, string portugueseFixedText)
+    {
+        var en = UiLocalizationService.PresentFor("en-US", message);
+
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("en-US"), en);
+        Assert.DoesNotContain(portugueseFixedText, en, StringComparison.Ordinal);
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), UiLocalizationService.PresentFor("pt-BR", message));
+    }
+}
