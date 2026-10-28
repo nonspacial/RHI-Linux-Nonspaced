@@ -1064,31 +1064,36 @@ inventory PAR-D108), which credits Mhsbrian/DLSS5oneclick-forlinux (MIT). Behavi
 
 ### #236 — Universal MFG accepts MFG Unlocker releases
 
-Behavioural port of upstream `bb9b2fd` (`Rtx40MfgService.ReleaseDllNames`) and the Rtx40Mfg part of `1b51cb2`. The publisher
-renamed the project (`dashdogy/RTX40MFG-Unlock` → `dashdogy/MFG-Unlocker`; the old API URL answers 301): from v1.5.0 the
-release ships `MFGUnlocker-v<ver>.zip` holding `MFGUnlocker.dll`, so every release since v1.5.0 was refused. RHI now asks the
-new repository, takes the `MFGUnlocker-*.zip` asset first and `RTXMFG-*.zip` second (exactly one zip of the chosen naming), and
-inside it `MFGUnlocker.dll` first, `RTXMFG.dll` second (exactly one entry of the chosen name). The fail-closed SHA rule (GitHub
-digest or `SHA256SUMS.txt`), PE x64, size and the per-release cache stamp are unchanged. A v1.4.x install updates in place under
-its proxy name through the journaled update (history `1.4.2 → 1.7.0`). Upstream's staging-format bump fixes a bug the fork
-never had (the cache stamp is written only after a verified extraction). Upstream pushes these at start and compares file
-contents (`IsOutdatedIn`); the fork keeps its one rule (owner decision D1 = No): Update All, and the background pass when
-automatic updates are on, with a game that was running caught up at the next pass. Fork-only: the check reports a proxy
-removed outside RHI (never put back), changed outside RHI, or recorded without its hash or proxy name as "could not be checked"
-with a line saying why (a record without its proxy name: one line for Universal MFG, DLSSG 20/30 and the ASI Loader, ending
-"Remove it, then Install it again", in the check and the update); a game held by its own failed undo reads the hold's
-restart text first, before any file is read; and the row keeps Remove and notes the removed proxy (no note on a game moved
-after the install, where Remove waits for Repair after move).
+Behavioural port of upstream `bb9b2fd` (`Rtx40MfgService.ReleaseDllNames`) and the Rtx40Mfg part of `1b51cb2`. The
+publisher renamed the project (`dashdogy/RTX40MFG-Unlock` → `dashdogy/MFG-Unlocker`; the old API URL answers 301): from
+v1.5.0 the release ships `MFGUnlocker-v<ver>.zip` holding `MFGUnlocker.dll`, so every release since v1.5.0 was refused.
+RHI now asks the new repository, takes the `MFGUnlocker-*.zip` asset first and `RTXMFG-*.zip` second (exactly one zip of
+the chosen naming), and inside it `MFGUnlocker.dll` first, `RTXMFG.dll` second (exactly one entry of the chosen name).
+The fail-closed SHA rule (GitHub digest or `SHA256SUMS.txt`), PE x64, size and the per-release cache stamp are
+unchanged. A v1.4.x install updates in place under its proxy name through the journaled update (history
+`1.4.2 → 1.7.0`). Upstream's staging-format bump fixes a bug the fork never had (the cache stamp is written only after a
+verified extraction). Upstream pushes these at start and compares file contents (`IsOutdatedIn`); the fork keeps its one
+rule (owner decision D1 = No): Update All, and the background pass when automatic updates are on, with a game that was
+running caught up at the next pass. Fork-only: the check reports a proxy removed outside RHI (never put back), changed
+outside RHI, or recorded without its hash or proxy name as "could not be checked" with a line saying why (a record
+without its proxy name: one line for Universal MFG, DLSSG 20/30 and the ASI Loader, ending "Remove it, then Install it
+again", in the check and the update); a game held by its own failed undo reads the hold's restart text first, before any
+file is read; and the row keeps Remove and notes the removed proxy (no note on a game moved after the install, where
+Remove waits for Repair after move). Remove follows that line through (w12 final review M1): for a record without its
+proxy name it deletes only the listed files that still hold RHI's bytes, restores the recorded Wine override, drops the
+record and names every file it left (missing, without a hash or changed outside RHI; the ASI Loader puts a chained
+original back over its proxy while the original exists, else leaves the proxy), so Install works again.
 
 ### #237 — MFG Ada Unlock updates
 
-Behavioural port of upstream `abf18c7` (`AddonPackService.RedeployToTrackedGames`, `UntrackAddonDeployment`) and the add-on
-part of `49d4473`. MFG Ada Unlock is an Update All family (after the other add-ons), with exclusions and No Addons holds as
-every family; a game held by its own failed undo reads the hold's restart text in the check and in a direct Update (both before
-the manifest or any file is read; offline too, as does an add-on removed outside RHI), never "changed outside RHI" about RHI's
-own half-undone add-on. Upstream's "removed copies reinstalled" bug was latent here (the generic add-on update re-ran the
-install): an update of any GitHub add-on (ReLimiter, Display Commander, MFG Ada Unlock, the DLSS5 DX11 Bridge's version switch)
-never re-creates a file removed outside RHI; only Remove, then Install, puts it back. No start-up push (D1 = No).
+Behavioural port of upstream `abf18c7` (`AddonPackService.RedeployToTrackedGames`, `UntrackAddonDeployment`) and the
+add-on part of `49d4473`. MFG Ada Unlock is an Update All family (after the other add-ons), with exclusions and No
+Addons holds as every family; a game held by its own failed undo reads the hold's restart text in the check and in a
+direct Update (both before the manifest or any file is read; offline too, as does an add-on removed outside RHI), never
+"changed outside RHI" about RHI's own half-undone add-on. Upstream's "removed copies reinstalled" bug was latent here
+(the generic add-on update re-ran the install): an update of any GitHub add-on (ReLimiter, Display Commander, MFG Ada
+Unlock, the DLSS5 DX11 Bridge's version switch) never re-creates a file removed outside RHI; only Remove, then Install,
+puts it back. No start-up push (D1 = No).
 
 ### #238 — DLSSG 20/30 Unlock and Ultimate ASI Loader in Update All
 
@@ -1259,11 +1264,12 @@ Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in
   `log_frames` frames and then every 1800 frames, so after such a change a crash before the next delivered line (up to
   about 30 s at 60 fps) still gets this row; no other Feeder line proves a frame was delivered (its STALL lines also
   appear while a rebuild is held), and the row's last sentence covers that case. Then: restart the game with its final
-  display mode (HDR, resolution) set in the game's own options; if the Feeder stops again, turn HDR off in the game's options (the Feeder's README
-  records the same evaluate fault inside NGX with the DLSS 5 add-on, which a restart may not cure). This row replaces the generic `0xC0000005` row of the same crash (the
-  evaluate lines right after the stopped line included, whichever the Feeder writes first); the generic row ("remove
-  the method") stays for every other crash, including a Feeder crash on its first build, and a stopped line in a run
-  with no other crash line is that run's generic row (never "No known errors").
+  display mode (HDR, resolution) set in the game's own options; if the Feeder stops again, turn HDR off in the game's
+  options (the Feeder's README records the same evaluate fault inside NGX with the DLSS 5 add-on, which a restart may
+  not cure). This row replaces the generic `0xC0000005` row of the same crash (the evaluate lines right after the
+  stopped line included, whichever the Feeder writes first); the generic row ("remove the method") stays for every other
+  crash, including a Feeder crash on its first build, and a stopped line in a run with no other crash line is that run's
+  generic row (never "No known errors").
 - Every hint is a plain step (no RHI control named). Reads stay bounded; nothing is written.
 
 <!-- w12/pins notes -->
@@ -1273,22 +1279,22 @@ Fork-only (owner-reported, Borderlands 3 `dlss5-feed.log`; no upstream commit in
 Upstream v2.8.8 Beta fixed these in `713c222`, `d61a696`, `e634e52`, `79f5680`, `feb126c`, `49d4473`, `abf18c7`,
 `a1a4e48`, `b8094e6`, `1b51cb2`, `f170aa6`/`865f784`. The rewrite never had them; tests (`Upstream288Pins*.cs`, plus the
 existing tests named in the lane's report) pin today's behaviour, each proved by a mutant of the line it guards: numeric
-DLSS version equality and the DLSS section re-read after a swap; a failed swap rolled back and the DLSS batch carrying on
-past a failing game; OptiScaler Stable / DLSS NR / F5 updates keeping their variant, reporting the new version and
+DLSS version equality and the DLSS section re-read after a swap; a failed swap rolled back and the DLSS batch carrying
+on past a failing game; OptiScaler Stable / DLSS NR / F5 updates keeping their variant, reporting the new version and
 landing in Update History, as Luma updates do; the ReShade nightly reused for an unchanged Actions run; unchanged RenoDX
 snapshots judged by HEAD validators; concurrent ledger writes; Luma TAA kept across a display-name change; the GitHub
 token only on `https://api.github.com` and not carried through a redirect to `codeload.github.com`; Luma and shader
 archive members with `..` or an absolute path refused; Luma removal deleting only its recorded files; the Ultimate ASI
-Loader cache per architecture; Follow newest and the Streamline dropdown with `2.14.16.0-v2`.
-Two pins found real gaps, both fixed in this wave. The DLSS result line (batch apply and restore, Apply defaults,
-Restore all) now names each failed game with its reason after the counts ("Failed: N game(s) • <game>: <reason>", EN +
-PT-BR), as upstream `d61a696` does in its mass-deploy summary, and its counts now follow the UI language (they were
-English in PT-BR) (pins correction). Follow-up: the reasons a swap gives without one of its own ("Could not apply
-<component> <version>.", the two Streamline refusals) are Portuguese in PT-BR too; games are told apart by library
-key, so the same game on two stores is two entries; the platform's English-only count summary is gone; on a DLSS batch
-dialog narrower than 700 px the line has its own row above the buttons (wide dialogs unchanged). Luma removal's inside-the-game check on the paths its record lists (upstream
-`b8094e6`, `SafeCombine` on uninstall) is fixed and pinned in lane w12/luma. The default 3 s wait for `pcgw_data.json`
-during a selection is pinned with its literal value.
+Loader cache per architecture; Follow newest and the Streamline dropdown with `2.14.16.0-v2`. Two pins found real gaps,
+both fixed in this wave. The DLSS result line (batch apply and restore, Apply defaults, Restore all) now names each
+failed game with its reason after the counts ("Failed: N game(s) • <game>: <reason>", EN + PT-BR), as upstream `d61a696`
+does in its mass-deploy summary, and its counts now follow the UI language (they were English in PT-BR) (pins
+correction). Follow-up: the reasons a swap gives without one of its own ("Could not apply <component> <version>.", the
+two Streamline refusals) are Portuguese in PT-BR too; games are told apart by library key, so the same game on two
+stores is two entries; the platform's English-only count summary is gone; on a DLSS batch dialog narrower than 700 px
+the line has its own row above the buttons (wide dialogs unchanged). Luma removal's inside-the-game check on the paths
+its record lists (upstream `b8094e6`, `SafeCombine` on uninstall) is fixed and pinned in lane w12/luma. The default 3 s
+wait for `pcgw_data.json` during a selection is pinned with its literal value.
 
 <!-- w12/hdr-wsi notes -->
 

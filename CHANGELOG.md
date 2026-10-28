@@ -54,7 +54,8 @@ Components
   every other component. Unlike upstream, nothing is updated at start-up while automatic updates are off. The ASI Loader
   is only ever updated for the bitness it was installed for; when the game's executable changes bitness, remove it and
   install it again (the Extras section's ASI Loader check says so too). A record that lost its DLL name reads one line
-  for all three: remove the component, then install it again.
+  for all three: remove the component, then install it again. **Remove** works on such a record: it deletes only the
+  files that still hold what RHI installed, puts the Wine setting back and names any file it left.
 - **A file you deleted outside RHI is never put back by an update** — Universal MFG, MFG Ada Unlock, DLSSG 20/30, the
   ASI Loader, ReLimiter, Display Commander and the DLSS5 DX11 Bridge. Update All says it could not be checked, with the
   reason; the row still offers **Remove**, which clears RHI's record (then **Install** puts it back). A file changed
@@ -117,7 +118,7 @@ Library
 - **Lutris store entries:** a Lutris entry that Lutris' Epic, Ubisoft, EA or Battle.net service made for one game now
   starts only that game; before, the first such entry started every game of that store in the prefix. A game in a prefix
   that has only other games' entries is still listed, without a launch command (set one in **Edit game**), and the scan
-  line says how many such games each detector listed (no longer counted as "skipped"). Such an entry's card now sits in
+  line says how many such games still have none (no longer counted as "skipped"). Such an entry's card now sits in
   the game's own folder, so favourite, hidden and **Edit game** changes saved on its old card must be set again.
 
 Check Neural Rendering
