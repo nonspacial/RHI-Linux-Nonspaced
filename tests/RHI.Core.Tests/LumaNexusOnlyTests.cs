@@ -186,10 +186,10 @@ public sealed class LumaNexusOnlyTests : IDisposable
         Assert.StartsWith(NexusModUpdateCheck.FailedPrefix, check.Message, StringComparison.Ordinal);
     }
 
-    // Review F3: a refused key (401/403) is a blocker the user fixes in RHI: could-not-check, naming the control.
+    // Review F3: a refused key (401; the coordinator's w12 follow-up ruling on re-review N2: not a 403) is a blocker the user
+    // fixes in RHI: could-not-check, naming the control.
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
     public async Task Check_RefusedKey_CouldNotCheck_NamingAccountsAndUpdates(HttpStatusCode status)
     {
         var (service, game, _) = Build(key: "revoked", files: null, nexusStatus: status);
@@ -202,6 +202,24 @@ public sealed class LumaNexusOnlyTests : IDisposable
         Assert.DoesNotContain("revoked", check.Message, StringComparison.Ordinal);
         Assert.Contains("Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus",
             UiLocalizationService.PresentFor("pt-BR", check.Message), StringComparison.Ordinal);
+    }
+
+    // w12 follow-up (coordinator ruling on re-review luma N2): a 403 is a hidden or removed mod, not the key: could not
+    // check with a plain reason, never advice to disconnect a key that works, EN + PT-BR.
+    [Fact]
+    public async Task Check_Forbidden_CouldNotCheck_WithAPlainReason_NeverAdvisingDisconnect()
+    {
+        var (service, game, _) = Build(key: "works", files: null, nexusStatus: HttpStatusCode.Forbidden);
+
+        var check = await service.CheckUpdateAsync(game);
+
+        Assert.True(check.CouldNotCheck);
+        Assert.False(check.UpdateAvailable);
+        Assert.Equal(NexusModUpdateCheck.ModNotShownMessage, check.Message);
+        Assert.DoesNotContain("Disconnect", check.Message, StringComparison.Ordinal);
+        var pt = UiLocalizationService.PresentFor("pt-BR", check.Message);
+        Assert.DoesNotContain("Desconectar", pt, StringComparison.Ordinal);
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt);
     }
 
     [Fact]
@@ -430,10 +448,9 @@ public sealed class NexusModUpdateCheckTests
         Assert.Empty(requests);
     }
 
-    // Review F3 at the check: 401/403 is "key refused" (named control), never a passing hiccup.
+    // Review F3 at the check: 401 is "key refused" (named control), never a passing hiccup (403: see below).
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
     public async Task ARefusedKey_IsKeyRefused_NamingAccountsAndUpdates(HttpStatusCode status)
     {
         var (check, _) = Build("", status: () => status);
@@ -442,6 +459,49 @@ public sealed class NexusModUpdateCheckTests
 
         Assert.Equal("KeyRefused", answer.Outcome.ToString());
         Assert.Contains("Settings → Accounts & updates", answer.Message, StringComparison.Ordinal);
+    }
+
+    // w12 follow-up (coordinator ruling on re-review luma N2): 403 = the mod's files are not shown (hidden or removed), never
+    // "key refused"; nothing is kept, so the next check asks again.
+    [Fact]
+    public async Task A403_IsCouldNotCheck_WithAPlainReason_NotTheKey()
+    {
+        var (check, requests) = Build("", status: () => HttpStatusCode.Forbidden);
+
+        var answer = await check.CheckAsync(Page, Installed);
+        await check.CheckAsync(Page, Installed);
+
+        Assert.Equal((NexusModUpdateOutcome.Failed, NexusModUpdateCheck.ModNotShownMessage), (answer.Outcome, answer.Message));
+        Assert.DoesNotContain("Accounts & updates", answer.Message, StringComparison.Ordinal);
+        Assert.Equal(2, requests.Count);
+    }
+
+    // w12 follow-up (re-review luma N3): a key Nexus refused is remembered for the session — no 401 per re-selection —
+    // until the account is disconnected or connected again (ForgetRefusedKey), or another key is saved.
+    [Fact]
+    public async Task ARefusedKey_IsRemembered_UntilTheAccountIsConnectedAgain()
+    {
+        var key = "revoked";
+        HttpStatusCode? status = HttpStatusCode.Unauthorized;
+        var (check, requests) = Build(LumaNexusOnlyTests.Files((1, "MAIN", Installed.UtcDateTime.AddDays(2), "1.3")), status: () => status,
+            keyOf: () => key);
+
+        Assert.Equal(NexusModUpdateOutcome.KeyRefused, (await check.CheckAsync(Page, Installed)).Outcome);
+        Assert.Equal(NexusModUpdateOutcome.KeyRefused, (await check.CheckAsync(Page, Installed)).Outcome);
+        Assert.Equal(NexusModUpdateOutcome.KeyRefused, (await check.CheckAsync("https://www.nexusmods.com/borderlands2/mods/700", Installed)).Outcome);
+        Assert.Single(requests); // asked once
+
+        status = null;
+        key = "another";
+        Assert.Equal(NexusModUpdateOutcome.Newer, (await check.CheckAsync(Page, Installed)).Outcome); // another key: asked
+        Assert.Equal(2, requests.Count);
+
+        key = "revoked";
+        Assert.Equal(NexusModUpdateOutcome.KeyRefused, (await check.CheckAsync("https://www.nexusmods.com/borderlands2/mods/701", Installed)).Outcome);
+        Assert.Equal(2, requests.Count); // the refused key is still remembered
+        check.ForgetRefusedKey(); // connected again
+        Assert.Equal(NexusModUpdateOutcome.Newer, (await check.CheckAsync("https://www.nexusmods.com/borderlands2/mods/701", Installed)).Outcome);
+        Assert.Equal(3, requests.Count);
     }
 
     // Review F5: after a 429 (the client already retried once) nothing is asked for five minutes, for any mod (the limit is
@@ -500,7 +560,7 @@ public sealed class NexusModUpdateCheckTests
     }
 
     private static (NexusModUpdateCheck Check, ConcurrentQueue<string> Requests) Build(string files, TimeProvider? time = null, Func<bool>? fail = null,
-        Func<HttpStatusCode?>? status = null, string? key = "key")
+        Func<HttpStatusCode?>? status = null, string? key = "key", Func<string?>? keyOf = null)
     {
         var requests = new ConcurrentQueue<string>();
         var fake = new NexusApiClientTests.FakeNexus(request =>
@@ -509,7 +569,7 @@ public sealed class NexusModUpdateCheckTests
             if (status?.Invoke() is { } answer) return new HttpResponseMessage(answer);
             return fail?.Invoke() == true ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : LumaNexusOnlyTests.Answer(files, "application/json");
         });
-        return (new NexusModUpdateCheck(new NexusApiClient(new HttpClient(fake), (_, _) => Task.CompletedTask), () => key, time), requests);
+        return (new NexusModUpdateCheck(new NexusApiClient(new HttpClient(fake), (_, _) => Task.CompletedTask), keyOf ?? (() => key), time), requests);
     }
 
     private sealed class ManualTime(DateTimeOffset now) : TimeProvider

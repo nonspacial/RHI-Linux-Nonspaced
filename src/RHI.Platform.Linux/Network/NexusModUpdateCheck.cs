@@ -13,7 +13,10 @@ public enum NexusModUpdateOutcome
     Current,
     /// <summary>No Nexus account is connected, so Nexus was not asked.</summary>
     NoKey,
-    /// <summary>Nexus refused the saved key (401/403): the user fixes it in Settings → Accounts &amp; updates.</summary>
+    /// <summary>
+    /// Nexus refused the saved key (401 only): the user fixes it in Settings → Accounts &amp; updates. Remembered for the session
+    /// (no request per re-selection) until the account is connected again.
+    /// </summary>
     KeyRefused,
     /// <summary>Nexus could not be asked or gave no dated file (error, rate limit, not a mod page).</summary>
     Failed
@@ -45,6 +48,11 @@ public sealed class NexusModUpdateCheck
     public const string KeyRefusedMessage = "Nexus Mods refused the saved Nexus key, so RHI could not check this mod for updates. Connect the account again: Settings → Accounts & updates → Disconnect, then Connect Nexus account.";
     public const string NotAModPageMessage = "The link is not a Nexus Mods mod page.";
     public const string NoDatedFileMessage = "Nexus Mods lists no dated main file for this mod.";
+    /// <summary>
+    /// w12 follow-up (coordinator ruling on re-review luma N2): a 403 is Nexus not showing this mod's files (hidden or
+    /// removed), never the key: could not check, with no advice to disconnect a key that works.
+    /// </summary>
+    public const string ModNotShownMessage = "Nexus Mods would not show this mod's files (the mod may be hidden or removed), so RHI could not check it for updates.";
 
     private static readonly HashSet<string> UpdateCategories = new(StringComparer.OrdinalIgnoreCase) { "MAIN", "UPDATE" };
 
@@ -54,6 +62,9 @@ public sealed class NexusModUpdateCheck
     private readonly object _gate = new();
     private readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<NexusModFile> Files)> _files = new(StringComparer.OrdinalIgnoreCase);
     private (DateTimeOffset Until, string Message)? _rateLimited;
+    // w12 follow-up (re-review luma N3): the key Nexus refused (401), answered KeyRefused without asking again until
+    // ForgetRefusedKey (the account connected again) or another key is in use.
+    private string? _refusedKey;
 
     /// <param name="apiKey">The connected account's key, or null (asked on every check: connecting needs no restart).</param>
     public NexusModUpdateCheck(NexusApiClient api, Func<string?> apiKey, TimeProvider? timeProvider = null)
@@ -61,6 +72,12 @@ public sealed class NexusModUpdateCheck
         _api = api;
         _apiKey = apiKey;
         _time = timeProvider ?? TimeProvider.System;
+    }
+
+    /// <summary>The account was connected again (a key saved): a key Nexus refused earlier is asked about again.</summary>
+    public void ForgetRefusedKey()
+    {
+        lock (_gate) _refusedKey = null;
     }
 
     /// <summary>The game domain and mod id of a Nexus mod page (<c>https://www.nexusmods.com/&lt;game&gt;/mods/&lt;id&gt;</c>), else null.</summary>
@@ -83,6 +100,9 @@ public sealed class NexusModUpdateCheck
     {
         if (ParsePage(pageUrl) is not { } page) return new(NexusModUpdateOutcome.Failed, pageUrl, FailedPrefix + NotAModPageMessage);
         if (_apiKey() is not { Length: > 0 } key) return new(NexusModUpdateOutcome.NoKey, pageUrl, NoKeyMessage);
+        lock (_gate)
+            if (string.Equals(_refusedKey, key, StringComparison.Ordinal))
+                return new(NexusModUpdateOutcome.KeyRefused, pageUrl, KeyRefusedMessage);
 
         IReadOnlyList<NexusModFile>? files = null;
         var cacheKey = page.Domain + "/" + page.ModId.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -100,10 +120,16 @@ public sealed class NexusModUpdateCheck
             {
                 files = await _api.GetModFilesAsync(key, page.Domain, page.ModId, cancellationToken).ConfigureAwait(false);
             }
-            catch (NexusApiException ex) when (!cancellationToken.IsCancellationRequested && ex.Rejected)
+            catch (NexusApiException ex) when (!cancellationToken.IsCancellationRequested && ex.Status == System.Net.HttpStatusCode.Unauthorized)
             {
                 AppLog.Warn("nexus", "Nexus Mods refused the saved key while asked for a mod's files", ex);
+                lock (_gate) _refusedKey = key;
                 return new(NexusModUpdateOutcome.KeyRefused, pageUrl, KeyRefusedMessage);
+            }
+            catch (NexusApiException ex) when (!cancellationToken.IsCancellationRequested && ex.Status == System.Net.HttpStatusCode.Forbidden)
+            {
+                AppLog.Warn("nexus", "Nexus Mods would not show a mod's files (403: hidden or removed)", ex);
+                return new(NexusModUpdateOutcome.Failed, pageUrl, ModNotShownMessage);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested
                                        && ex is IOException or JsonException or UntrustedDownloadException or HttpRequestException

@@ -109,6 +109,27 @@ public sealed partial class LumaFrameworkDeploymentServiceTests
         Assert.True(File.Exists(outside));
     }
 
+    // w12 follow-up (re-review luma N5): the update drops the outside entry from the new record and says so in one log line,
+    // as removal does (that line names the path, never deletes it).
+    [Fact]
+    public async Task Update_LogsOneLine_ForAnOutsideEntryItDropsFromTheRecord()
+    {
+        var (game, records, service) = await InstalledLumaAsync("outside-update-log");
+        var outside = await RecordOutsideFileAsync(game, records);
+        var log = Path.Combine(_root, "luma-update-" + Guid.NewGuid().ToString("N") + ".log");
+
+        ComponentOperationResult reinstall;
+        using (AppLog.UseInThisFlow(new AppLog(log)))
+            reinstall = await service.InstallAsync(game);
+
+        Assert.True(reinstall.Success, reinstall.Message);
+        Assert.True(File.Exists(outside));
+        Assert.DoesNotContain(records.Find(game, ManagedComponentKind.LumaFramework)!.Files, file => file.Path == outside);
+        var lines = File.Exists(log) ? File.ReadAllLines(log).Where(line => line.Contains(outside, StringComparison.Ordinal)).ToArray() : [];
+        Assert.Single(lines);
+        Assert.Contains("[luma]", lines[0], StringComparison.Ordinal);
+    }
+
     // The DX9 translation's own files (D3D9.dll, dgVoodoo.conf) are taken from the record too: an entry of that name
     // outside the game is never the one removed; the game's own is.
     [Fact]

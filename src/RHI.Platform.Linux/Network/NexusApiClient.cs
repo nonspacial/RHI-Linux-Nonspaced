@@ -17,7 +17,7 @@ public sealed record NexusUser(int UserId, string Name, bool IsPremium);
 public sealed record NexusModFile(int FileId, string Name, string? Version, string FileName, long SizeKb, string Category,
     DateTimeOffset? UploadedUtc = null);
 
-/// <summary>A Nexus API call that failed; <see cref="Rejected"/> is true for 401/403 (bad key, not allowed).</summary>
+/// <summary>A Nexus API call that failed; <see cref="Rejected"/> is true for 401/403 (bad key, not allowed; the update check reads only 401 as the key).</summary>
 public sealed class NexusApiException(string message, HttpStatusCode? status, Exception? inner = null) : IOException(message, inner)
 {
     public HttpStatusCode? Status { get; } = status;

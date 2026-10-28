@@ -139,10 +139,11 @@ public sealed class LumaNexusRowTests : IDisposable
         Assert.DoesNotContain(_requests, url => url.Contains("api.nexusmods.com", StringComparison.Ordinal));
     }
 
-    // Review F3: Nexus refused the saved key (401/403): "Open on Nexus", its tooltip names the control that fixes it.
+    // Review F3: Nexus refused the saved key (401; w12 follow-up ruling: never a 403): "Open on Nexus", its tooltip names the
+    // control that fixes it.
     [Theory]
     [InlineData("en-US", System.Net.HttpStatusCode.Unauthorized, "Settings → Accounts & updates → Disconnect, then Connect Nexus account")]
-    [InlineData("pt-BR", System.Net.HttpStatusCode.Forbidden, "Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus")]
+    [InlineData("pt-BR", System.Net.HttpStatusCode.Unauthorized, "Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus")]
     public async Task RefusedKey_TheRowOpensThePage_AndItsTipNamesAccountsAndUpdates(string language, System.Net.HttpStatusCode status, string control)
     {
         using var fx = await StartAsync(language, key: "revoked", newer: true, failNexus: true, failStatus: status);
@@ -152,6 +153,21 @@ public sealed class LumaNexusRowTests : IDisposable
         Assert.True(row.LumaNexus.IsVisible);
         Assert.Equal(RHI.Desktop.Localization.UiLocalizationService.Text("Lu.OpenOnNexus"), row.LumaNexus.Label);
         Assert.Contains(control, row.LumaNexus.Tip, StringComparison.Ordinal);
+    }
+
+    // w12 follow-up (coordinator ruling on re-review luma N2): a 403 (hidden or removed mod) never shows the refused-key
+    // button with its Disconnect advice; Nexus could not be asked, so the button stays hidden as for any other failure.
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pt-BR")]
+    public async Task Forbidden_TheRowNeverAdvisesDisconnect(string language)
+    {
+        using var fx = await StartAsync(language, key: "works", newer: true, failNexus: true, failStatus: System.Net.HttpStatusCode.Forbidden);
+        using var _ = Language(language);
+        var row = await LumaRowAsync(fx);
+
+        Assert.False(row.LumaNexus.IsVisible);
+        Assert.NotEqual(RHI.Desktop.ViewModels.LumaNexusRowMode.OpenKeyRefused, row.LumaNexus.Mode);
     }
 
     // Review F4 (R4): a wiki link to Nexus that is not an https Nexus page is never offered (nor opened), installed or not.

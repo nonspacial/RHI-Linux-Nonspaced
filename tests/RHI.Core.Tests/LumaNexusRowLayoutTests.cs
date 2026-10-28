@@ -116,6 +116,44 @@ public sealed class LumaNexusRowLayoutTests
         AssertNexusFirst_BothWholeAndHitTargets(row, width);
     }
 
+    // w12 follow-up (re-review luma N4): a malformed SkipEmptyColumns list never throws during layout; its bad entries are
+    // ignored (the row lays out as with the good ones alone), and a changed list is read again.
+    [Theory]
+    [InlineData(1600.0)]
+    [InlineData(1200.0)]
+    public void SkipEmptyColumns_MalformedEntriesAreIgnored_NeverAThrowDuringLayout(double width)
+    {
+        static Rect[] Bounds(string? skip, double w)
+        {
+            var row = FromTemplate(path => path is "HasAction" or "HasInfo"); // the Nexus column is empty
+            typeof(ResponsiveRow).GetProperty("SkipEmptyColumns")!.SetValue(row.Row, skip);
+            Layout(row.Row, w);
+            return row.Row.Children.Select(c => c.Bounds).ToArray();
+        }
+
+        var good = Bounds("3", width);
+        var malformed = Bounds(" 3, x, -1, , 3.5, 99999999999 ", width);
+        var none = Bounds(null, width);
+
+        Assert.Equal(good, malformed);
+        Assert.NotEqual(good, none); // the list matters here, so the comparison above is not vacuous
+    }
+
+    [Fact]
+    public void SkipEmptyColumns_AChangedList_IsReadAgain()
+    {
+        var row = FromTemplate(path => path is "HasAction" or "HasInfo");
+        var property = typeof(ResponsiveRow).GetProperty("SkipEmptyColumns")!;
+        property.SetValue(row.Row, "3");
+        Layout(row.Row, 1600);
+        var skipped = row.Row.Children.Select(c => c.Bounds).ToArray();
+
+        property.SetValue(row.Row, null);
+        Layout(row.Row, 1600);
+
+        Assert.NotEqual(skipped, row.Row.Children.Select(c => c.Bounds).ToArray());
+    }
+
     internal const double NexusWidth = 140, GearWidth = 36, ActionWidth = 90, InfoWidth = 36;
 
     internal sealed record TemplateRow(ResponsiveRow Row, Border Name, Border Status, Border Note, Border Nexus, Border Gear, Border Action, Border Info);

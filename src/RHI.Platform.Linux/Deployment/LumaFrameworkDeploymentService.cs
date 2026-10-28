@@ -680,7 +680,13 @@ public sealed class LumaFrameworkDeploymentService
                     foreach (var old in existingRecord.Files)
                     {
                         if (string.IsNullOrWhiteSpace(old.Path) || !File.Exists(old.Path)) continue;
-                        if (newTargets.Contains(Path.GetFullPath(old.Path)) || !IsLumaPlace(game, old.Path)) continue;
+                        if (newTargets.Contains(Path.GetFullPath(old.Path))) continue;
+                        if (!IsLumaPlace(game, old.Path))
+                        {
+                            // w12 follow-up (re-review luma N5): left in place and out of the new record, said once, as removal does.
+                            AppLog.Warn("luma", $"Update left a recorded path outside the game folder in place (no longer in RHI's record): {old.Path}");
+                            continue;
+                        }
                         await scope.DeleteAsync(old.Path, CancellationToken.None).ConfigureAwait(false);
                     }
                 }

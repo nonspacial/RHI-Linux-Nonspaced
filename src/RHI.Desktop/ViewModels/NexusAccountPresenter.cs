@@ -61,6 +61,12 @@ public sealed partial class NexusAccountPresenter : ObservableObject
     [ObservableProperty] private string _handlerText;
     [ObservableProperty] private bool _handlerIsRhi;
 
+    /// <summary>
+    /// w12 follow-up (re-review luma N3): a key was saved (the account connected again, after Disconnect or over the old key).
+    /// The Nexus update check forgets a key Nexus refused earlier (a disconnected account has no key to ask with).
+    /// </summary>
+    public event EventHandler? KeyChanged;
+
     /// <summary>The paste box is shown: after "Connect Nexus account", until a key is saved.</summary>
     [ObservableProperty] private bool _isKeyEntryShown;
 
@@ -127,6 +133,7 @@ public sealed partial class NexusAccountPresenter : ObservableObject
             return false;
         }
         SyncAccount();
+        KeyChanged?.Invoke(this, EventArgs.Empty);
         IsKeyEntryShown = false;
         StatusText = TF("Parity.NexusConnected", user.Name, T(user.IsPremium ? "Parity.NexusPremium" : "Parity.NexusFree"));
         return true;

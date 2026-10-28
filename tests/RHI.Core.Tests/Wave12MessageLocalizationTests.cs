@@ -53,6 +53,7 @@ public sealed class Wave12MessageLocalizationTests
         { RHI.Platform.Linux.Network.NexusModUpdateCheck.KeyRefusedMessage, "refused the saved Nexus key" },
         { RHI.Platform.Linux.Network.NexusModUpdateCheck.NotAModPageMessage, "is not a Nexus Mods mod page" },
         { RHI.Platform.Linux.Network.NexusModUpdateCheck.NoDatedFileMessage, "no dated main file" },
+        { RHI.Platform.Linux.Network.NexusModUpdateCheck.ModNotShownMessage, "would not show this mod's files" }, // follow-up B25
     };
 
     public static TheoryData<string, string> PortugueseSourced() => new()

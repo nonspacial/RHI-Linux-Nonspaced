@@ -677,6 +677,9 @@ public static class UiLocalizationService
             "Nenhuma DLL do Streamline existente corresponde ao conjunto baixado; o RHI não cria um layout adivinhado."),
         (RHI.Core.Services.DlssManagerService.NoStreamlineBackupsMessage,
             "Nenhum backup .original do Streamline criado pelo RHI foi encontrado."),
+        // Coordinator ruling on re-review luma N2: a 403 is a hidden or removed mod (never "key refused").
+        (RHI.Platform.Linux.Network.NexusModUpdateCheck.ModNotShownMessage,
+            "O Nexus Mods não mostrou os arquivos deste mod (ele pode estar oculto ou removido), então o RHI não pôde verificar se há atualizações."),
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =

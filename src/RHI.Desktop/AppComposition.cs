@@ -139,6 +139,17 @@ internal sealed class AppComposition
     }
 
     /// <param name="displayModes">#191: the display switcher the app runs with; null (tests) = the display is never touched.</param>
+    /// <summary>
+    /// #245: the Nexus update check over the connected account's key; w12 follow-up (re-review luma N3): a key Nexus refused
+    /// is remembered until the account is connected again (a key saved).
+    /// </summary>
+    internal static NexusModUpdateCheck NexusUpdatesFor(NexusApiClient api, NexusAccountPresenter account)
+    {
+        var check = new NexusModUpdateCheck(api, account.UsableKey);
+        account.KeyChanged += (_, _) => check.ForgetRefusedKey();
+        return check;
+    }
+
     public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal,
         RHI.Platform.Linux.Hdr.DisplayModeSwitcher? displayModes = null)
     {
@@ -415,7 +426,7 @@ internal sealed class AppComposition
         // w12/update-all rows
         // w12/github-cache rows
         // w12/luma rows
-        lumaFramework.NexusUpdates = new NexusModUpdateCheck(nexusApi, nexusAccount.UsableKey); // #245: Nexus-only Luma mods are checked on Nexus (account key only)
+        lumaFramework.NexusUpdates = NexusUpdatesFor(nexusApi, nexusAccount); // #245: Nexus-only Luma mods are checked on Nexus (account key only)
         // w12/epic rows
         // w12/nr-logs rows
         // w12/pins rows

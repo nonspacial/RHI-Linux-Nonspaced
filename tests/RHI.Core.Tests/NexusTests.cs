@@ -506,6 +506,39 @@ public sealed class NexusPresenterTests : IDisposable
         return (account, new GameLinksPresenter(account, api, new NexusDownloadService(http, api, Path.Combine(_root, "cache"))), fake);
     }
 
+    // w12 follow-up (re-review luma N3): the app's Nexus update check (AppComposition.NexusUpdatesFor) remembers a key Nexus
+    // refused — one 401, not one per re-selection — until the account is connected again, even with the same key.
+    [Fact]
+    public async Task UpdateCheck_RefusedKey_IsAskedAgain_OnceTheAccountIsConnectedAgain()
+    {
+        var refuse = true;
+        var fileRequests = 0;
+        var (account, _, _) = Build(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/v1/users/validate.json" => NexusApiClientTests.Json(new { user_id = 3, name = "Robbie", is_premium = false }),
+            var p when p.EndsWith("/files.json", StringComparison.Ordinal) => Interlocked.Increment(ref fileRequests) > 0 && refuse
+                ? new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                : NexusApiClientTests.Json(new { files = Array.Empty<object>() }),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+        });
+        Assert.True(await account.SaveKeyAsync(Key));
+        var check = RHI.Desktop.AppComposition.NexusUpdatesFor(account.Api, account);
+        const string Page = "https://www.nexusmods.com/masseffectandromeda/mods/1351";
+        var installed = DateTimeOffset.UtcNow.AddDays(-30);
+
+        Assert.Equal(NexusModUpdateOutcome.KeyRefused, (await check.CheckAsync(Page, installed)).Outcome);
+        Assert.Equal(NexusModUpdateOutcome.KeyRefused, (await check.CheckAsync(Page, installed)).Outcome);
+        Assert.Equal(1, fileRequests);
+
+        refuse = false;
+        account.Disconnect();
+        Assert.Equal(NexusModUpdateOutcome.NoKey, (await check.CheckAsync(Page, installed)).Outcome);
+        Assert.True(await account.SaveKeyAsync(Key)); // the same key, connected again
+
+        Assert.NotEqual(NexusModUpdateOutcome.KeyRefused, (await check.CheckAsync(Page, installed)).Outcome);
+        Assert.Equal(2, fileRequests);
+    }
+
     [Fact]
     public async Task PastedKey_IsCheckedThenSavedPrivate_AndTheAccountIsShown()
     {

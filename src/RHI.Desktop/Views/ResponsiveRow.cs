@@ -36,8 +36,7 @@ public sealed class ResponsiveRow : Panel
     private readonly List<Placement> _placements = [];
     private string? _parsedSource;
     private ColumnDefinitions _definitions = new("*");
-    private string? _skipSource;
-    private HashSet<int> _skip = [];
+    private IReadOnlySet<int> _skip = new HashSet<int>();
 
     static ResponsiveRow() => AffectsMeasure<ResponsiveRow>(ColumnsProperty, ColumnSpacingProperty, LineSpacingProperty, HeadColumnsProperty, MinStarWidthProperty, SkipEmptyColumnsProperty);
 
@@ -67,18 +66,25 @@ public sealed class ResponsiveRow : Panel
         }
     }
 
-    private HashSet<int> Skipped
+    private IReadOnlySet<int> Skipped => _skip;
+
+    /// <summary>
+    /// w12 follow-up (re-review luma N4): the column list is parsed once, when <see cref="SkipEmptyColumns"/> changes, never
+    /// inside a measure; an entry that is not a non-negative whole number is ignored (never a throw during layout).
+    /// </summary>
+    internal static IReadOnlySet<int> ParseColumnList(string? text)
     {
-        get
-        {
-            if (!string.Equals(_skipSource, SkipEmptyColumns, StringComparison.Ordinal))
-            {
-                _skip = (SkipEmptyColumns ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Select(t => int.Parse(t, System.Globalization.CultureInfo.InvariantCulture)).ToHashSet();
-                _skipSource = SkipEmptyColumns;
-            }
-            return _skip;
-        }
+        var columns = new HashSet<int>();
+        foreach (var entry in (text ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (int.TryParse(entry, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var column))
+                columns.Add(column);
+        return columns;
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == SkipEmptyColumnsProperty) _skip = ParseColumnList(SkipEmptyColumns);
     }
 
     private IEnumerable<Control> InColumn(int column) => Children.Where(c => Grid.GetColumn(c) == column);
