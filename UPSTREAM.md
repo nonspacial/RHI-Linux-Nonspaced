@@ -1139,8 +1139,11 @@ every launch, x86 never updated" never existed here (per-architecture stamped ca
   local: the chosen DLL is still there, and its hash): a source that is gone reads "could not be checked" and nothing is
   touched. The Update All line names it as it names a failure, after the counts: "Not checked: <game> (ReShade) —
   Custom ReShade source file is unavailable; installed DLL remains untouched." (PT-BR too; every such game is named
-  wherever that line shows, so a background pass names it when it writes its line). Only a check that is local (`ChecksBeforeManualRefresh`) is named this way
-  (`LinuxUpdateItemResult.LocalReason`); a source that could not be reached (a reshade.me or GitHub outage) stays in the
+  wherever that line shows, so a background pass names it when it writes its line). Only a check whose reason is local is
+  named this way (`LinuxUpdateItemResult.LocalReason`): a check made first because it is local (`ChecksBeforeManualRefresh`),
+  or a check that says so itself (`ManagedUpdateCheck.LocalReason`: the MFG families' and GitHub add-ons' game held by its
+  own failed undo, file removed or changed outside RHI, record without its file's hash or proxy name, game whose bitness
+  changed); a source that could not be reached (a reshade.me or GitHub outage) stays in the
   "could not be checked" count. Difference: upstream writes its note on the game's card; the Linux card has no note
   line, so the reason shows in the Update All line (its tooltip holds the whole line) and in the ReShade section's
   update-check line. A source still there is refreshed as before. Stable, Nightly, No Addons and Legacy still refresh

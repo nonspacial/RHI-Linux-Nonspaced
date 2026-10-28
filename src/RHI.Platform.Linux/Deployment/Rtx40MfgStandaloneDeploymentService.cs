@@ -510,7 +510,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         // planned update that fails on every pass.
         var proxyPath = ProxyPathOf(record);
         if (proxyPath is null)
-            return new ManagedUpdateCheck(true, false, MissingProxyMessage, record.Version, CouldNotCheck: true);
+            return new ManagedUpdateCheck(true, false, MissingProxyMessage, record.Version, CouldNotCheck: true, LocalReason: true);
         // #236: the proxy the user deleted is never put back by an update; seen before any network call.
         if (ManagedUpdateFileGuard.Removed([proxyPath], record.Version) is { } removed)
             return removed;

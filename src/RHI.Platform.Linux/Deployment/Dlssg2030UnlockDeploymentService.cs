@@ -426,7 +426,7 @@ public sealed class Dlssg2030UnlockDeploymentService
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
             return new ManagedUpdateCheck(true, false, "Registro do RTX 20 FG Unlock legado está sem proxy; remova e reinstale em vez de adotar o estado.",
-                record.Version, CouldNotCheck: true);
+                record.Version, CouldNotCheck: true, LocalReason: true);
         var proxyPath = Path.Combine(record.BinaryDirectory, proxyName);
         if (ManagedUpdateFileGuard.Removed([proxyPath, Path.Combine(record.BinaryDirectory, IniFileName)], record.Version) is { } removed)
             return removed;

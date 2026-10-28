@@ -22,7 +22,12 @@ public sealed record ManagedUpdateCheck(
     bool Blocked = false,
     // w3/parity (#96): an update exists but a layer over the component (NR Cost Scaler) holds it: not a failure, not
     // "current", not attempted. The layer's display name.
-    string? HeldBy = null);
+    string? HeldBy = null,
+    // w12 integration A1 (#243 × #236–#238): CouldNotCheck for a reason on this machine (a game held by its own failed
+    // undo, a file removed or changed outside RHI, a record without its file's hash or proxy name, a game whose bitness
+    // changed): Update All names the game and the reason, as it names a failure. A source that could not be reached
+    // stays a count.
+    bool LocalReason = false);
 
 public sealed record LinuxUpdateItemResult(
     string GameName,
@@ -314,10 +319,12 @@ public sealed class LinuxUpdateAllService
                             if (refreshed ? check.Managed && check.CouldNotCheck : !check.Managed || !check.UpdateAvailable)
                             {
                                 var couldNotCheck = check.Managed && check.CouldNotCheck;
-                                // #243: a local check's "could not check" has its reason here: the summary names it.
+                                // #243: a local check's "could not check" has its reason here: the summary names it. w12
+                                // integration A1: so has a check that says its reason is local (the MFG families' held game,
+                                // file removed/changed outside RHI, missing hash or proxy name, changed bitness).
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false,
                                     check.Message, Unchecked: couldNotCheck,
-                                    LocalReason: couldNotCheck && _backend.ChecksBeforeManualRefresh(game, component)));
+                                    LocalReason: couldNotCheck && (check.LocalReason || _backend.ChecksBeforeManualRefresh(game, component))));
                                 continue;
                             }
                         }

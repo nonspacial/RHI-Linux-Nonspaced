@@ -45,7 +45,7 @@ public static class ManagedUpdateFileGuard
     public static async Task<ManagedUpdateCheck?> HeldAsync(
         DeploymentJournal? journal, DetectedGame game, ManagedComponentKind component, string? installedVersion)
         => await DeploymentScope.HoldRefusalAsync(journal, game, component).ConfigureAwait(false) is { } held
-            ? new ManagedUpdateCheck(true, false, held, installedVersion, CouldNotCheck: true)
+            ? new ManagedUpdateCheck(true, false, held, installedVersion, CouldNotCheck: true, LocalReason: true)
             : null;
 
     /// <summary>The first recorded file that is gone, as a could-not-check result; null while every one is there.</summary>
@@ -53,7 +53,7 @@ public static class ManagedUpdateFileGuard
     {
         foreach (var path in paths)
             if (!File.Exists(path))
-                return new ManagedUpdateCheck(true, false, RemovedOutsideRhiPrefix + path, installedVersion, CouldNotCheck: true);
+                return new ManagedUpdateCheck(true, false, RemovedOutsideRhiPrefix + path, installedVersion, CouldNotCheck: true, LocalReason: true);
         return null;
     }
 
@@ -71,11 +71,11 @@ public static class ManagedUpdateFileGuard
         foreach (var (path, sha) in files)
         {
             if (!File.Exists(path))
-                return planned with { UpdateAvailable = false, CouldNotCheck = true, Message = RemovedOutsideRhiPrefix + path };
+                return planned with { UpdateAvailable = false, CouldNotCheck = true, LocalReason = true, Message = RemovedOutsideRhiPrefix + path };
             if (string.IsNullOrWhiteSpace(sha))
-                return planned with { UpdateAvailable = false, CouldNotCheck = true, Message = NoRecordedHashPrefix + path };
+                return planned with { UpdateAvailable = false, CouldNotCheck = true, LocalReason = true, Message = NoRecordedHashPrefix + path };
             if (!await MatchesAsync(path, sha!, cancellationToken).ConfigureAwait(false))
-                return planned with { UpdateAvailable = false, CouldNotCheck = true, Message = ChangedOutsideRhiPrefix + path };
+                return planned with { UpdateAvailable = false, CouldNotCheck = true, LocalReason = true, Message = ChangedOutsideRhiPrefix + path };
         }
         return planned;
     }

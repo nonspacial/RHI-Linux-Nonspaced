@@ -155,10 +155,10 @@ public sealed class UltimateAsiLoaderDeploymentService
             return held;
         if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
             return new ManagedUpdateCheck(true, false, "Ultimate ASI Loader deployment record is missing its proxy filename. Remove is safer than adopting this record.",
-                record.Version, CouldNotCheck: true);
+                record.Version, CouldNotCheck: true, LocalReason: true);
         // F3 (review w12/mfg): never an unattended swap to the other bitness (seen before any network call).
         if (ArchitectureChanged(record, game) is { } changed)
-            return new ManagedUpdateCheck(true, false, changed, record.Version, CouldNotCheck: true);
+            return new ManagedUpdateCheck(true, false, changed, record.Version, CouldNotCheck: true, LocalReason: true);
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         if (ManagedUpdateFileGuard.Removed([targetPath], record.Version) is { } removed)
             return removed;
