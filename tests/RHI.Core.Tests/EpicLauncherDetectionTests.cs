@@ -373,6 +373,72 @@ public sealed class EpicLauncherDetectionTests : IDisposable
     public void TheLaunchersUri_IsAStoreClientHandOff(string command, LaunchHandoff expected)
         => Assert.Equal(expected, LaunchHandoffClassifier.Classify(new DetectedGame { Name = "x", InstallPath = "/g", Source = "Wine", LaunchCommand = command }));
 
+    // ── w12 correction round 1 ─────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lutris' own Epic Games Store service writes one entry per game: a copy of the store client's config (same prefix,
+    /// EpicGamesLauncher.exe) plus <c>-com.epicgames.launcher://apps/&lt;AppName&gt;?action=launch</c>. Such an entry is
+    /// its game's Play, never another game's, and is not listed again as a card at the launcher's folder (w12 review 1).
+    /// </summary>
+    [Fact]
+    public void LutrisEpicStoreService_EachPerGameEntryStartsOnlyItsOwnGame_OneCardPerGame()
+    {
+        var configRoot = _tree.Dir("home", ".local", "share", "lutris", "games");
+        var prefix = Prefix("lutris-egs");
+        var launcherDir = Path.Combine(prefix, "drive_c", "Program Files (x86)", "Epic Games", "Launcher", "Portal", "Binaries", "Win32");
+        Pe(launcherDir, "EpicGamesLauncher.exe");
+        var alanDir = Path.Combine(prefix, "drive_c", "EGL", "AlanWake2");
+        var alanExe = Pe(alanDir, "AlanWake2.exe", 8192);
+        var hadesDir = Path.Combine(prefix, "drive_c", "EGL", "Hades");
+        Pe(hadesDir, "Hades.exe", 8192);
+        Manifest(prefix, "a.item", "Alan Wake 2", @"C:\EGL\AlanWake2", "Dill");
+        Manifest(prefix, "h.item", "Hades", @"C:\EGL\Hades", "Min");
+        const string exe = "drive_c/Program Files (x86)/Epic Games/Launcher/Portal/Binaries/Win32/EpicGamesLauncher.exe";
+        File.WriteAllText(Path.Combine(configRoot, "epic-games-store-1763437958.yml"),
+            $"game:\n  args: -opengl -SkipBuildPatchPrereq\n  exe: {exe}\n  prefix: {prefix}\nname: Epic Games Store\n");
+        // Sorts before the store's own entry.
+        File.WriteAllText(Path.Combine(configRoot, "alan-wake-2-egs-1763438000.yml"),
+            $"game:\n  args: -opengl -SkipBuildPatchPrereq -com.epicgames.launcher://apps/Dill?action=launch\n  exe: {exe}\n  prefix: {prefix}\nname: Alan Wake 2\n");
+
+        var games = LutrisGameDetector.DetectIn([configRoot], Home, CancellationToken.None);
+
+        var hades = Assert.Single(games, g => g.InstallPath == hadesDir);
+        Assert.Equal("lutris 'lutris:rungame/epic-games-store'", hades.LaunchCommand);
+        Assert.Equal("Epic Games Store", hades.ParentLauncherName);
+        var alan = Assert.Single(games, g => g.Name == "Alan Wake 2");
+        Assert.Equal(alanDir, alan.InstallPath);
+        Assert.Equal(alanExe, alan.ExecutablePath);
+        Assert.Equal("lutris 'lutris:rungame/alan-wake-2-egs'", alan.LaunchCommand);
+        Assert.Null(alan.ParentLauncherName); // its entry starts the game itself
+        LinuxGameIdentityService.ApplyDetectedIdentity(alan);
+        Assert.True(alan.HasConfirmedPatchTarget);
+        // At the launcher's folder: only the store's own entry.
+        Assert.Equal(["Epic Games Store"], games.Where(g => g.InstallPath == launcherDir).Select(g => g.Name));
+    }
+
+    [Fact]
+    public void LutrisEpicStoreService_AnotherGamesEntry_NeverStartsThisGame()
+    {
+        // No entry for the store itself: only Alan Wake 2's. Hades has nothing to start through.
+        var configRoot = _tree.Dir("home", ".local", "share", "lutris", "games");
+        var prefix = Prefix("lutris-egs-only");
+        Pe(Path.Combine(prefix, "drive_c", "Program Files (x86)", "Epic Games", "Launcher", "Portal", "Binaries", "Win32"), "EpicGamesLauncher.exe");
+        var alanDir = Path.Combine(prefix, "drive_c", "EGL", "AlanWake2");
+        Pe(alanDir, "AlanWake2.exe", 8192);
+        var hadesDir = Path.Combine(prefix, "drive_c", "EGL", "Hades");
+        Pe(hadesDir, "Hades.exe", 8192);
+        Manifest(prefix, "a.item", "Alan Wake 2", @"C:\EGL\AlanWake2", "Dill");
+        Manifest(prefix, "h.item", "Hades", @"C:\EGL\Hades", "Min");
+        File.WriteAllText(Path.Combine(configRoot, "alan-wake-2-egs-1763438000.yml"),
+            $"game:\n  args: -opengl -SkipBuildPatchPrereq -com.epicgames.launcher://apps/Dill?action=launch\n" +
+            $"  exe: drive_c/Program Files (x86)/Epic Games/Launcher/Portal/Binaries/Win32/EpicGamesLauncher.exe\n  prefix: {prefix}\nname: Alan Wake 2\n");
+
+        var games = LutrisGameDetector.DetectIn([configRoot], Home, CancellationToken.None);
+
+        Assert.DoesNotContain(games, g => g.InstallPath == hadesDir && g.LaunchCommand?.Contains("alan-wake-2-egs", StringComparison.Ordinal) == true);
+        Assert.Equal("lutris 'lutris:rungame/alan-wake-2-egs'", Assert.Single(games, g => g.InstallPath == alanDir).LaunchCommand);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     private Task<IReadOnlyList<DetectedGame>> DetectWine() => new WinePrefixDetector(Home, []).DetectAsync();
