@@ -144,8 +144,9 @@ public sealed class DetectorSkipReportTests : IDisposable
         Assert.Empty(status.Warnings);
         Assert.Equal([PathIdentity.Canonicalize(game.InstallPath)], status.ListedWithoutLaunchCommand);
         Assert.True(scan.HasProblems);
-        var logged = File.ReadAllLines(log.FilePath).Where(line => line.Contains("runtime markers unreadable", StringComparison.Ordinal)).ToArray();
-        Assert.Contains(logged, line => line.Contains(prefix, StringComparison.Ordinal));
+        // The message itself names the prefix (the exception text after it names config_info's path, which holds it too).
+        Assert.Contains(File.ReadAllLines(log.FilePath),
+            line => line.Contains($"Wine prefix {prefix}: runtime markers unreadable", StringComparison.Ordinal));
     }
 
     private static string Write(string path, string content)
