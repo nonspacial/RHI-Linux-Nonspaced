@@ -325,5 +325,16 @@
     <Style Selector="Border.storeLink">
       <Setter Property="Cursor" Value="Hand"/>
     </Style>
+    <!-- #309 (upstream 2.9.0): a link inside the message of the day's text. -->
+    <Style Selector="Button.motdLink">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.motdLink:pointerover">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
   </Application.Styles>
 </Application>
