@@ -1632,13 +1632,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         var games = _library.AllGames.ToArray();
         var unattended = GameLibraryFilter.Unattended(games); // #291: Update All leaves hidden games out
         bool managed, batch;
+        bool[] reShade;
         try
         {
-            (managed, batch) = await Task.Run(() => (
+            (managed, batch, reShade) = await Task.Run(() => (
                 _updateAll.HasManagedTargets(unattended),
                 games.Any(game => game.HasConfirmedPatchTarget &&
                                   !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) &&
-                                  !game.DlssScanSkippedByManifest && Directory.Exists(game.InstallPath))));
+                                  !game.DlssScanSkippedByManifest && Directory.Exists(game.InstallPath)),
+                games.Select(HasReShade).ToArray())); // #309: the library's greyed names
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -1647,6 +1649,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             return;
         }
         Updates.SetLibraryHasManagedTargets(managed);
+        for (var i = 0; i < games.Length; i++) _library.RowFor(games[i])?.SetReShadeInstalled(reShade[i]); // #309
         _libraryHasDlssBatchCandidates = batch;
         Updates.NotifyCanUpdateAll();
         OnPropertyChanged(nameof(CanOpenDlssBatch));
@@ -1817,6 +1820,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     {
         if (!_filterFacts.TryGetValue(game, out var facts)) _filterFacts[game] = facts = GetLibraryFilterFacts(game);
         return facts;
+    }
+
+    /// <summary>
+    /// #309 (upstream 2.8.9 <c>IsSidebarRsInstalled</c>, the "Installed" filter's ReShade): an RHI ReShade record, or a
+    /// ReShade.ini beside the confirmed game. Reads the ledger and the folder: off the UI thread.
+    /// </summary>
+    private bool HasReShade(DetectedGame game)
+    {
+        if (_deploymentRecords.FindAll(game).Any(record => record.Component == ManagedComponentKind.ReShade)) return true;
+        return game.HasConfirmedPatchTarget
+               && (HasFileIgnoreCase(game.BinaryDirectory ?? game.InstallPath, "ReShade.ini") || HasFileIgnoreCase(game.InstallPath, "ReShade.ini"));
     }
 
     private GameLibraryFilterFacts GetLibraryFilterFacts(DetectedGame game)
@@ -2233,6 +2247,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         OnPropertyChanged(nameof(SelectedBinaryDirectory));
         NotifySteamUpdateBlock(); // #290
         NotifyRemoveFromRhi(); // #293
+        NotifyUiParity(); // #309
         Runtime.NotifySection();
         OnPropertyChanged(nameof(HasSelectedGame));
         OnPropertyChanged(nameof(SelectedGameHasNotes));
@@ -2301,7 +2316,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     bool ILibraryEditHost.FolderChangeRunning { get => FolderChangeRunning; set => FolderChangeRunning = value; }
     void ILibraryEditHost.RaiseNotice(string message) => StatusText = _statusNotice.Raise(message);
     void ILibraryEditHost.ShowAllGames() => LibraryFilterMode = "All Games";
-    void ILibraryEditHost.Select(DetectedGame game) => SelectedGame = game;
+    void ILibraryEditHost.Select(DetectedGame game) => RevealAndSelect(game); // #309: a search or filter hiding it is cleared
     string? IPanelHost.PersistLibraryState(string whatKey) => TryPersist(() => _libraryStore.Save(_libraryState), whatKey);
     void IPanelHost.ForgetFilterFacts(DetectedGame game) => _filterFacts.Remove(game);
 }

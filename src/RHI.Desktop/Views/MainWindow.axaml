@@ -102,10 +102,12 @@
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:GameRowViewModel">
-                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="#151C28" BorderBrush="#1E2C40" BorderThickness="1">
+                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="#151C28" BorderBrush="#1E2C40" BorderThickness="1"
+                        ToolTip.Tip="{Binding ToolTip}">
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                     <StackPanel>
-                      <TextBlock Text="{Binding Name}" Foreground="#E2E8FF" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                      <!-- #309: greyed when ReShade isn't installed for the game (upstream 2.8.9); the tooltip says so. -->
+                      <TextBlock Text="{Binding Name}" Classes="libraryName" Classes.noReShade="{Binding ShowsNoReShade}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                       <TextBlock Text="{Binding Source}" Foreground="#6B7A8E" FontSize="9"/>
                     </StackPanel>
                     <TextBlock Grid.Column="1" Text="{Binding LibraryBadge}" Foreground="#D4A856" VerticalAlignment="Center" FontSize="12"/>
@@ -133,8 +135,10 @@
                     <Binding Path="ShowLaunchProviderBadge"/>
                   </MultiBinding>
                 </StackPanel.IsVisible>
-                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
-                        Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding LibraryProviderToolTip}">
+                <!-- #309: the store badge opens the game's Steam Community page (upstream 2.8.9). -->
+                <Border x:Name="StoreBadge" views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
+                        Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding StoreBadgeToolTip}"
+                        Classes.storeLink="{Binding StoreBadgeOpensCommunity}" PointerPressed="StoreBadge_PointerPressed">
                   <Image Source="{Binding SelectedLibraryProviderIcon}" Stretch="Uniform"/>
                 </Border>
                 <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
@@ -150,7 +154,10 @@
               </StackPanel>
             </DockPanel>
             <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
-              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <!-- #309: quieter, amber "Favourited" once on (upstream 2.8.9). -->
+              <Button x:Name="FavouriteButton" views:DetailHeaderPanel.Role="Action" Classes="rhi favourite" Classes.on="{Binding SelectedGameIsFavourite}"
+                      Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"
+                      ToolTip.Tip="{Binding FavouriteActionTip}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
               <Button x:Name="RemoveFromRhiButton" views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding RemoveFromRhiText}" Command="{Binding RemoveFromRhiCommand}"
                       IsVisible="{Binding CanRemoveFromRhi}" ToolTip.Tip="{Binding RemoveFromRhiTip}"/>
@@ -248,7 +255,8 @@
                              IsVisible="{Binding Runtime.ShowHdrSection}" ToolTip.Tip="{Binding Runtime.HdrSectionTip}" ToolTip.ShowDelay="2000"/>
                   <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrSection}">
                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
-                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}">
+                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
+                                ToolTip.Tip="{Binding HdrModeTip}" ToolTip.ShowDelay="2000">
                               <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
                               </ComboBox.ItemTemplate>

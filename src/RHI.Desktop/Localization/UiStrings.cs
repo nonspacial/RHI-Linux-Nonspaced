@@ -1967,5 +1967,14 @@ internal static class UiStrings
         ("Sb.ActCheckingDlss", "Procurando DLSS e Streamline mais novos...", "Checking for newer DLSS and Streamline..."),
         ("Sb.ActUpdatingDlss", "Levando o DLSS e o Streamline à versão mais nova...", "Updating DLSS and Streamline to the newest..."),
         ("Sb.ActCustomFolders", "Verificando as pastas de jogos personalizadas...", "Checking custom game folders..."),
+        // #309 (upstream 2.8.9–2.9.2): Favourite, the store badge, greyed library names, the HDR and resolution launch tooltips.
+        ("Fav.OnTip", "Favorito. Clique para tirá-lo dos Favoritos.", "Favourite. Click to remove it from Favourites."),
+        ("Fav.OffTip", "Adiciona este jogo aos Favoritos (encontre-o com o filtro Favoritos).", "Add this game to Favourites (find it with the Favourites filter)."),
+        ("Store.OpenCommunityTip", "Clique para abrir a página do jogo na Comunidade Steam.", "Click to open the game's Steam Community page."),
+        ("Lib.NoReShadeTip", "O ReShade não está instalado neste jogo.", "ReShade isn't installed for this game."),
+        ("Launch.HdrOnTip", "HDR ao iniciar: ligado, {0} (definido para este jogo).\nQuando Jogar inicia o jogo, o RHI o inicia com esta configuração de HDR.\nEscolha Desligado para desligá-lo neste jogo.", "HDR on launch: On, {0} (set for this game).\nWhen Play starts the game, RHI starts it with this HDR setup.\nPick Off to turn it off for this game."),
+        ("Launch.HdrOffTip", "HDR ao iniciar: desligado.\nEscolha um modo de HDR para iniciar este jogo com HDR quando Jogar o iniciar.", "HDR on launch: Off.\nPick an HDR mode to start this game with HDR when Play starts it."),
+        ("Launch.ResOnTip", "Mudar a resolução: ligado (definido para este jogo).\n{0}\nDesmarque para desligar neste jogo.", "Change resolution: On (set for this game).\n{0}\nUntick to turn it off for this game."),
+        ("Launch.ResOffTip", "Mudar a resolução: desligado.\n{0}\nMarque para ligar neste jogo.", "Change resolution: Off.\n{0}\nTick to turn it on for this game."),
     ];
 }

@@ -533,6 +533,12 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     public bool ShowHdrSection => SelectedGame is null
                                   || HdrSupportRule.ShowsHdrSection(_hdrSupportEvidence, CurrentAnalysis is null ? null : InstalledHdrMod is not null);
 
+    /// <summary>#309 (upstream 2.8.9): the HDR mode list's tooltip says whether HDR is on for this game, and how.</summary>
+    public string HdrModeTip => LaunchToggleTips.Hdr(ParseHdrMode(SelectedHdrMode) != LinuxHdrModes.Off, SelectedHdrMode?.Display ?? "");
+
+    /// <summary>#309 (upstream 2.8.9): the resolution switch's tooltip says whether it is on for this game.</summary>
+    public string ResolutionToggleTip => LaunchToggleTips.Resolution(ResolutionToggle);
+
     /// <summary>#251: why the section shows, for the ~2 s tooltip on its label (provenance only there).</summary>
     public string? HdrSectionTip
     {
@@ -756,6 +762,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(ShowHdrLegacyWsi)); // #250: follows the host snapshot
         OnPropertyChanged(nameof(ShowHdrSection)); // #251: follows the evidence and the analysis' HDR mods
         OnPropertyChanged(nameof(HdrSectionTip));
+        OnPropertyChanged(nameof(HdrModeTip)); // #309
+        OnPropertyChanged(nameof(ResolutionToggleTip)); // #309
         Nvidia?.Notify(); // #211
     }
 

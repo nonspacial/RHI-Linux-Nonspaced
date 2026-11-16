@@ -20,6 +20,11 @@
       <SolidColorBrush x:Key="RhiRemoveBackgroundBrush">#281818</SolidColorBrush>
       <SolidColorBrush x:Key="RhiRemoveForegroundBrush">#E07A7A</SolidColorBrush>
       <SolidColorBrush x:Key="RhiRemoveBorderBrush">#563030</SolidColorBrush>
+      <!-- w14/ui-settings (small) rows -->
+      <!-- #309 (upstream 2.8.9): "Favourited" in amber; library names bright with ReShade, dimmed without (upstream's colours). -->
+      <SolidColorBrush x:Key="RhiFavouriteBrush">#D4A856</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiLibraryNameBrush">#E2E8FF</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiLibraryNameDimBrush">#5A6880</SolidColorBrush>
     </ResourceDictionary>
   </Application.Resources>
 
@@ -299,6 +304,26 @@
     </Style>
     <Style Selector="TextBlock.secondary">
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <!-- w14/ui-settings (small) rows -->
+    <!-- #309 (upstream 2.8.9 ApplyFavouriteButtonStyle): a quiet Favourite button, amber text once favourited. -->
+    <Style Selector="Button.rhi.favourite">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.rhi.favourite.on">
+      <Setter Property="Foreground" Value="{DynamicResource RhiFavouriteBrush}"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): a greyed library name means ReShade isn't installed for that game. -->
+    <Style Selector="TextBlock.libraryName">
+      <Setter Property="Foreground" Value="{DynamicResource RhiLibraryNameBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.libraryName.noReShade">
+      <Setter Property="Foreground" Value="{DynamicResource RhiLibraryNameDimBrush}"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): the store badge opens the game's Steam Community page when its app id is known. -->
+    <Style Selector="Border.storeLink">
+      <Setter Property="Cursor" Value="Hand"/>
     </Style>
   </Application.Styles>
 </Application>
