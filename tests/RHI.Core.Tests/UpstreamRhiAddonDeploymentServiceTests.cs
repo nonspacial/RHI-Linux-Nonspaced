@@ -63,7 +63,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
         var service = new UpstreamRhiAddonDeploymentService(http, records, manifest, new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.MfgAdaUnlock,
             "mfgunlock",
-            "MFG Ada Unlock",
+            "MFG Unlock",
             "https://api.github.com/repos/rhi-tests/releases/latest",
             128 * 1024,
             ExactAssetName64: "renodx-mfgunlock.addon64",

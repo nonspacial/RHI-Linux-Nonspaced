@@ -102,6 +102,9 @@ public sealed partial class LinuxManagedComponentService
         if (IsDlss5FeederFullManaged(game))
             return TrackNeuralRenderingDll(game, ManagedComponentKind.Dlss5Feeder,
                 () => _dlss5Feeder.SwapNeuralRenderingDllAsync(game, version, cancellationToken));
+        if (GitcUplift?.GetRecord(game) is not null) // w14/nr (#274): the DLL in Uplift's GITC-Uplift folder
+            return TrackNeuralRenderingDll(game, ManagedComponentKind.GitcUplift,
+                () => GitcUplift.SwapNeuralRenderingDllAsync(game, version, cancellationToken));
         return Task.FromResult(ComponentOperationResult.Fail("No ShortFuse or DLSS5 Feeder Full stack owns nvngx_dlssnr.dll for this game; the version applies at the next install."));
     }
 
@@ -118,7 +121,7 @@ public sealed partial class LinuxManagedComponentService
         // No Addons has the add-on turned off; it is refused like an update, before any download.
         var guard = PatchTargetGuard(game) ?? AddonOffGuard(game, kind);
         if (guard is not null) return Task.FromResult(guard);
-        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse))
+        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.GitcUplift))
             return SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken);
         // Logged like Update All's NR updates (which reach the same core through UpdateManagedAsync).
         return Track(game, kind, ComponentUpdateAction.Update, () => SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken));
@@ -153,6 +156,8 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.Dlss5Feeder => _dlss5Feeder.SwapFeederVersionAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
             ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.UpdateAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
             ManagedComponentKind.ShortFuse => _shortFuse.SwapAddonVersionAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
+            // w14/nr (#274): add-on, helper and effects to the picked version together (Latest goes back to following updates).
+            ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.UpdateAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{kind} is not a Neural Rendering add-on."))
         };
 
@@ -164,6 +169,7 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.Dlss5Feeder => _dlss5Feeder.ListVersionsAsync(cancellationToken),
             ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.ListVersionsAsync(cancellationToken),
             ManagedComponentKind.ShortFuse => _shortFuse.ListVersionsAsync(cancellationToken),
+            ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.ListVersionsAsync(cancellationToken), // w14/nr (#274)
             _ => Task.FromException<IReadOnlyList<GitHubReleaseVersion>>(new ArgumentOutOfRangeException(nameof(kind)))
         };
 
@@ -273,6 +279,7 @@ public sealed partial class LinuxManagedComponentService
                 ManagedComponentKind.ShortFuse => await _shortFuse.RemoveAsync(game, cancellationToken).ConfigureAwait(false),
                 ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.RemoveAsync(game, cancellationToken).ConfigureAwait(false),
                 ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.RemoveAsync(game, cancellationToken).ConfigureAwait(false),
+                ManagedComponentKind.GitcUplift when GitcUplift is not null => await GitcUplift.RemoveAsync(game, cancellationToken).ConfigureAwait(false), // #274
                 _ => ComponentOperationResult.Ok("No conflicting method.")
             };
 
@@ -317,9 +324,11 @@ public sealed partial class LinuxManagedComponentService
 
     internal static IReadOnlyList<ManagedComponentKind> NeuralRenderingConflictsFor(ManagedComponentKind target) => target switch
     {
-        ManagedComponentKind.ShortFuse => new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge },
-        ManagedComponentKind.Dlss5Feeder => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge },
-        ManagedComponentKind.Dlss5Dx11Bridge => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder },
+        // w14/nr (#274): GITC Uplift is a fourth method; switching method removes the installed one first (upstream).
+        ManagedComponentKind.ShortFuse => new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift },
+        ManagedComponentKind.Dlss5Feeder => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift },
+        ManagedComponentKind.Dlss5Dx11Bridge => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.GitcUplift },
+        ManagedComponentKind.GitcUplift => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge },
         _ => Array.Empty<ManagedComponentKind>()
     };
 
@@ -333,8 +342,12 @@ public sealed partial class LinuxManagedComponentService
         var architecture = GameArchitecture.Of(game);
         if (architecture == PeArchitecture.X86)
             return ManagedComponentKind.Dlss5Feeder;
+        // w14/nr (#274, upstream 18088a3): GITC Uplift only where DLSS5 Feeder was the default and all of Uplift works —
+        // 64-bit DX11 / DX12 / Vulkan games without DLSS. OpenGL and DX9 keep Feeder; games with DLSS keep their method.
         if (!hasNativeDlss)
-            return ManagedComponentKind.Dlss5Feeder;
+            return architecture == PeArchitecture.X64 && game.EffectiveGraphicsApi is GraphicsApi.DirectX11 or GraphicsApi.DirectX12 or GraphicsApi.Vulkan
+                ? ManagedComponentKind.GitcUplift
+                : ManagedComponentKind.Dlss5Feeder;
         return game.EffectiveGraphicsApi is GraphicsApi.DirectX11 or GraphicsApi.Vulkan
             ? ManagedComponentKind.Dlss5Dx11Bridge
             : ManagedComponentKind.ShortFuse;
@@ -345,6 +358,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.ShortFuse => "ShortFuse",
         ManagedComponentKind.Dlss5Feeder => "DLSS5 Feeder",
         ManagedComponentKind.Dlss5Dx11Bridge => "DLSS5 DX11 Bridge",
+        ManagedComponentKind.GitcUplift => GitcUpliftDeploymentService.DisplayName,
         _ => kind.ToString()
     };
 }

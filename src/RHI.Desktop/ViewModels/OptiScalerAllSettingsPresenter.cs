@@ -125,7 +125,7 @@ public sealed partial class OptiScalerAllSettingsPresenter : ObservableObject
         try { _entries = [.. _managed.GetOptiScalerIniEntries(_game) ?? []]; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Message = UiLocalizationService.Format("Osa.ReadFailed", ex.Message);
+            Message = UiLocalizationService.Format("Osa.ReadFailed", ErrorLineText.Of(ex));
             return;
         }
         var previous = SelectedSection;
@@ -270,7 +270,7 @@ public sealed partial class OptiScalerIniLibraryPresenter : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            Say(UiLocalizationService.Format("Win.CouldNotSave", ex.Message), true);
+            Say(UiLocalizationService.Format("Win.CouldNotSave", ErrorLineText.Of(ex)), true);
         }
         Refresh();
     }
@@ -293,7 +293,7 @@ public sealed partial class OptiScalerIniLibraryPresenter : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Say(UiLocalizationService.Format("Osi.DeleteFailed", ex.Message), true);
+            Say(UiLocalizationService.Format("Osi.DeleteFailed", ErrorLineText.Of(ex)), true);
         }
         Refresh();
     }
@@ -310,7 +310,7 @@ public sealed partial class OptiScalerIniLibraryPresenter : ObservableObject
         catch (InvalidDataException) { Say(UiLocalizationService.Text("Osi.NotAnIni"), true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Say(UiLocalizationService.Format("Osi.AddFailed", ex.Message), true);
+            Say(UiLocalizationService.Format("Osi.AddFailed", ErrorLineText.Of(ex)), true);
         }
         Refresh();
     }

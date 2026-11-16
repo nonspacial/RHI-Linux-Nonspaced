@@ -60,7 +60,7 @@ public static class ComponentProbe
             && BinarySignatureInspector.LooksLikeRtxEncore(path));
 
         // RHI's own OptiScaler FG stack (OptiScaler/Streamline/sl.*) is not the game's Streamline: the DLSS panel and
-        // Universal MFG already ignore the OptiScaler/ folder, and MFG Ada Unlock needs the game's own integration.
+        // Universal MFG already ignore the OptiScaler/ folder, and MFG Unlock needs the game's own integration.
         var stackRoot = !string.IsNullOrWhiteSpace(game.InstallPath) ? game.InstallPath : game.BinaryDirectory;
         var ownStreamline = indexedFiles.Any(path =>
         {
@@ -83,14 +83,14 @@ public static class ComponentProbe
             Make(ManagedComponentKind.Streamline, "Streamline", ownStreamline),
             Make(ManagedComponentKind.ReLimiter, "ReLimiter", files.Any(IsReLimiterAddonFileName)),
             Make(ManagedComponentKind.DisplayCommander, "Display Commander", files.Any(IsDisplayCommanderAddonFileName)),
-            Make(ManagedComponentKind.MfgAdaUnlock, "MFG Ada Unlock", files.Any(IsMfgAdaUnlockAddonFileName)),
+            Make(ManagedComponentKind.MfgAdaUnlock, "MFG Unlock", files.Any(IsMfgAdaUnlockAddonFileName)),
             Make(ManagedComponentKind.Dlssg2030Unlock, "RTX 20 FG Unlock (Legacy Experimental)", dlssg2030Installed),
             // Standalone DLSS Enabler uses a generic proxy filename, so a bare version/dxgi/etc.
             // is not sufficient evidence. RHI ownership records upgrade this row to Installed later.
             Make(ManagedComponentKind.DlssEnablerStandalone, "DLSS Enabler (Standalone)", false),
             // Universal RTXMFG is also a generic proxy DLL; ownership records are the safe
             // authority for Installed state. A bare version/dxgi/etc. must never be adopted.
-            Make(ManagedComponentKind.Rtx40MfgStandalone, "Universal MFG (Experimental)", false),
+            Make(ManagedComponentKind.Rtx40MfgStandalone, "Universal MFG Unlocker", false), // #278 (upstream 2.8.9)
             // Generic proxy names as well, but identified by its own version resource; RHI's record marks it managed.
             Make(ManagedComponentKind.RtxEncore, RtxEncoreDisplayName, rtxEncoreInstalled),
             Make(ManagedComponentKind.Dlss5Feeder, Dlss5FeederDisplayName, files.Any(IsDlss5FeederAddonFileName)),
@@ -122,6 +122,9 @@ public static class ComponentProbe
         var dxvkHdrRow = Make(ManagedComponentKind.DxvkHdr, DxvkHdrDisplayName, dxvkHdrInstalled);
         if (!dxvkHdrInstalled && !IsDxvkHdrCandidate(game)) dxvkHdrRow.Availability = ComponentAvailability.Unsupported;
         result = [.. result, dxvkHdrRow];
+        // w14/nr (#274): GITC Uplift (a Neural Rendering method), after the other rows so their order stays as it was.
+        result = [.. result, Make(ManagedComponentKind.GitcUplift, GitcUpliftDisplayName,
+            files.Contains("gitc-uplift.addon64") || files.Contains("gitc-uplift.addon32"))];
 
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {
@@ -146,13 +149,14 @@ public static class ComponentProbe
     }
 
     /// <summary>The RTX Encore row's name (upstream 2.8.6 "RTX Encore (Beta)": every release so far is a prerelease).</summary>
-    public const string RtxEncoreDisplayName = "RTX Encore (Beta)";
+    public const string RtxEncoreDisplayName = "RTX Encore"; // #280: no longer Beta (upstream 2.8.9)
 
     /// <summary>The Neural Rendering rows' names, as the Managed components list shows them.</summary>
     public const string OptiScalerDisplayName = "OptiScaler";
     public const string Dlss5FeederDisplayName = "DLSS5 Feeder";
     public const string Dlss5BridgeDisplayName = "DLSS5 DX11 Bridge";
     public const string ShortFuseDisplayName = "ShortFuse / DLSS Frame Generation";
+    public const string GitcUpliftDisplayName = "GITC Uplift"; // w14/nr (#274)
 
     /// <summary>
     /// The Managed components row a Neural Rendering method or runtime owner shows as (the Check Neural Rendering page's
@@ -165,6 +169,7 @@ public static class ComponentProbe
         ManagedComponentKind.Dlss5Dx11Bridge => Dlss5BridgeDisplayName,
         ManagedComponentKind.ShortFuse => ShortFuseDisplayName,
         ManagedComponentKind.RtxEncore => RtxEncoreDisplayName,
+        ManagedComponentKind.GitcUplift => GitcUpliftDisplayName, // w14/nr (#274)
         _ => null
     };
 

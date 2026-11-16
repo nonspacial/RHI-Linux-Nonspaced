@@ -41,13 +41,26 @@ internal static class FeederShaderStackInstaller
     /// <summary>
     /// Places the shader tree from the staged downloads. Matches the upstream Feeder refresh invariant: the Lumenite
     /// Kernel and its dependencies only, not every optional LumeniteFX effect (the pack-refresh class of bug fixed
-    /// upstream on Windows). A header already in the tree is left alone.
+    /// upstream on Windows). A header already in the tree is left alone. w14/nr (#275): no LumeniteFX stage (null) when the
+    /// game uses Feeder 2.0's built-in motion vectors.
     /// </summary>
     internal static async Task InstallAsync(
-        DeploymentScope scope, string feederFx, string lumeniteStage, string headersStage, string shaderRoot, string textureRoot, List<string> copied)
+        DeploymentScope scope, string feederFx, string? lumeniteStage, string headersStage, string shaderRoot, string textureRoot, List<string> copied)
     {
         await PlaceAsync(scope, feederFx, Path.Combine(shaderRoot, FeederFxName), copied).ConfigureAwait(false);
+        if (lumeniteStage is not null)
+            await PlaceLumeniteAsync(scope, lumeniteStage, shaderRoot, textureRoot, copied).ConfigureAwait(false);
 
+        foreach (var headerName in RequiredHeaderNames)
+        {
+            var destination = Path.Combine(shaderRoot, headerName);
+            if (!File.Exists(destination))
+                await PlaceAsync(scope, Path.Combine(headersStage, "Shaders", headerName), destination, copied).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task PlaceLumeniteAsync(DeploymentScope scope, string lumeniteStage, string shaderRoot, string textureRoot, List<string> copied)
+    {
         var lumeniteShaders = Path.Combine(lumeniteStage, "Shaders");
         if (!Directory.Exists(lumeniteShaders))
             throw new InvalidDataException("LumeniteFX shader directory is missing.");
@@ -64,13 +77,6 @@ internal static class FeederShaderStackInstaller
         if (Directory.Exists(lumeniteTextures))
             foreach (var source in SafeFileEnumeration.Files(lumeniteTextures, "lumenite_*"))
                 await PlaceAsync(scope, source, Path.Combine(textureRoot, Path.GetRelativePath(lumeniteTextures, source)), copied).ConfigureAwait(false);
-
-        foreach (var headerName in RequiredHeaderNames)
-        {
-            var destination = Path.Combine(shaderRoot, headerName);
-            if (!File.Exists(destination))
-                await PlaceAsync(scope, Path.Combine(headersStage, "Shaders", headerName), destination, copied).ConfigureAwait(false);
-        }
     }
 
     /// <summary>

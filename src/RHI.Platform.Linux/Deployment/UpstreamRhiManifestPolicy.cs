@@ -34,6 +34,11 @@ public sealed class UpstreamLibraryPolicySnapshot
     public IReadOnlyList<string> BlacklistPrefixes { get; init; } = [];
     public IReadOnlyDictionary<string, string> WikiNameOverrides { get; init; } = EmptyStrings();
     public IReadOnlyDictionary<string, string> InstallPathOverrides { get; init; } = EmptyStrings();
+    /// <summary>
+    /// #293 (upstream 2.9.2 <c>installPathMigrations</c>): games whose install folder RHI moves, with their installs. Already
+    /// merged into <see cref="InstallPathOverrides"/> (an entry here wins there); listed so the move can tell them apart.
+    /// </summary>
+    public IReadOnlySet<string> InstallPathMigrations { get; init; } = EmptySet();
     /// <summary>Per-game upstream engine-files template filename. The template itself is fetched separately and applied transactionally.</summary>
     public IReadOnlyDictionary<string, string> EngineIniFiles { get; init; } = EmptyStrings();
     public IReadOnlyDictionary<string, IReadOnlyList<UpstreamSplitGameDefinition>> SplitGames { get; init; }
@@ -103,6 +108,9 @@ public sealed class UpstreamLibraryPolicySnapshot
     /// <summary>#211: manifest <c>dlssPresets</c> (extra DLSS presets for the per-game NVIDIA settings); null when absent.</summary>
     public RHI.Platform.Linux.Hdr.UpstreamDlssPresetsDefinition? DlssPresets { get; init; }
     // w7/dxvk-hdr rows
+    // w14/extras-fg rows
+    /// <summary>#280: manifest <c>rtxEncoreDllNames</c> — game → the DLL name RTX Encore needs there (ETS2: winmm.dll).</summary>
+    public IReadOnlyDictionary<string, string> RtxEncoreDllNames { get; init; } = EmptyStrings();
 
     private static IReadOnlyDictionary<string, string> EmptyStrings()
         => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -135,6 +143,10 @@ internal sealed partial class UpstreamManifestDocument
 
     [JsonPropertyName("installPathOverrides")]
     public Dictionary<string, string>? InstallPathOverrides { get; set; }
+
+    /// <summary>#293 (upstream 2.9.2): same format as installPathOverrides; wins over it, and RHI moves the game's installs.</summary>
+    [JsonPropertyName("installPathMigrations")]
+    public Dictionary<string, string>? InstallPathMigrations { get; set; }
 
     [JsonPropertyName("splitGames")]
     public Dictionary<string, List<UpstreamManifestSplitGame>>? SplitGames { get; set; }
@@ -254,6 +266,9 @@ internal sealed partial class UpstreamManifestDocument
     [JsonPropertyName("dlssPresets")]
     public RHI.Platform.Linux.Hdr.UpstreamManifestDlssPresets? DlssPresets { get; set; } // #211
     // w7/dxvk-hdr rows
+    // w14/extras-fg rows
+    [JsonPropertyName("rtxEncoreDllNames")]
+    public Dictionary<string, string>? RtxEncoreDllNames { get; set; } // #280
 }
 
 internal sealed class UpstreamManifestSplitGame
@@ -318,7 +333,9 @@ public sealed partial class UpstreamRhiManifestService
             Blacklist = NormalizeSet(manifest.Blacklist),
             BlacklistPrefixes = NormalizeList(manifest.BlacklistPrefixes),
             WikiNameOverrides = NormalizeStringDictionary(manifest.WikiNameOverrides),
-            InstallPathOverrides = NormalizeStringDictionaryAllowEmpty(manifest.InstallPathOverrides),
+            InstallPathOverrides = MergeInstallPathMigrations(NormalizeStringDictionaryAllowEmpty(manifest.InstallPathOverrides),
+                NormalizeStringDictionaryAllowEmpty(manifest.InstallPathMigrations)),
+            InstallPathMigrations = new HashSet<string>(NormalizeStringDictionaryAllowEmpty(manifest.InstallPathMigrations).Keys, StringComparer.OrdinalIgnoreCase),
             EngineIniFiles = NormalizeStringDictionary(manifest.EngineIniFiles),
             SplitGames = NormalizeSplitGames(manifest.SplitGames),
             SteamAppIdOverrides = NormalizeIntDictionary(manifest.SteamAppIdOverrides),
@@ -370,6 +387,8 @@ public sealed partial class UpstreamRhiManifestService
             // w7/nvapi-launch rows
             DlssPresets = RHI.Platform.Linux.Hdr.DlssPresetCatalogue.FromManifest(manifest.DlssPresets), // #211
             // w7/dxvk-hdr rows
+            // w14/extras-fg rows
+            RtxEncoreDllNames = NormalizeStringDictionary(manifest.RtxEncoreDllNames), // #280
         };
     }
 
@@ -388,6 +407,7 @@ public sealed partial class UpstreamRhiManifestService
         Add(result, manifest.Blacklist);
         Add(result, manifest.WikiNameOverrides?.Keys);
         Add(result, manifest.InstallPathOverrides?.Keys);
+        Add(result, manifest.InstallPathMigrations?.Keys);
         Add(result, manifest.SplitGames?.Keys);
         if (manifest.SplitGames is not null)
             foreach (var entries in manifest.SplitGames.Values)
@@ -401,6 +421,7 @@ public sealed partial class UpstreamRhiManifestService
         Add(result, manifest.UeExtendedCompatibility?.Keys);
         Add(result, manifest.ForceExternalOnly?.Keys);
         Add(result, manifest.DllNameOverrides?.Keys);
+        Add(result, manifest.RtxEncoreDllNames?.Keys); // w14/extras-fg (#280)
         Add(result, manifest.OptiScalerDllOverrides?.Keys);
         Add(result, manifest.DlssPathOverrides?.Keys);
         Add(result, manifest.StreamlinePathOverrides?.Keys);
@@ -474,6 +495,17 @@ public sealed partial class UpstreamRhiManifestService
             if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
                 result[key.Trim()] = value.Trim();
         return result;
+    }
+
+    // #293: upstream merges installPathMigrations over installPathOverrides with the indexer (a migration wins).
+    private static IReadOnlyDictionary<string, string> MergeInstallPathMigrations(IReadOnlyDictionary<string, string> overrides,
+        IReadOnlyDictionary<string, string> migrations)
+    {
+        if (migrations.Count == 0) return overrides;
+        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in overrides) merged[key] = value;
+        foreach (var (key, value) in migrations) merged[key] = value;
+        return merged;
     }
 
     private static IReadOnlyDictionary<string, string> NormalizeStringDictionaryAllowEmpty(

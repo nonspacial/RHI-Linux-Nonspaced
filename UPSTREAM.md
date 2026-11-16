@@ -1741,20 +1741,15 @@ again. Not journaled: nothing in the game folder changes, and the change is undo
   Hidden included, and a scan does not bring it back: the library file keeps it under `RemovedGames` by its library key
   (omitted while empty, so the file keeps the shape older builds wrote). Upstream places the button in Management;
   Linux has no Management section yet, so it sits with Favourite / Hide (restyle in phase 2). A game the user added is
-  removed with the existing "Remove manual game", as upstream deletes it. Linux deviation: upstream offers to uninstall
-  the game's components at the same time; here they stay installed and the tooltip says to remove them first if wanted.
+  removed with the existing "Remove manual game", as upstream deletes it. Uninstalling the game's components at the
+  same time: see the library-folders lane below.
 - **Settings → Removed games** (ported, as its own Settings tab; upstream Tools & Maintenance › Troubleshooting): every
   removed game, newest first, with Restore, which drops it from the list and rescans so the game comes back.
 - **Reset install folder** (by design here): Linux's Edit game keeps one install-folder override per game; clearing it
   goes back to the folder the scan found, so upstream's "goes back to an earlier pick" bug has no counterpart.
 - **"Folder moved → offer Refresh instead of a folder browser"** (not applicable): RHI Linux never opens a folder
   browser for a missing game folder; it says the folder is missing and offers Refresh and Repair after move (#38).
-- **Not ported in this wave (deferred, see #293):** custom game folders (Settings list, scan on start / Refresh / Scan
-  now, review list with name, exe choice and "Check the exe", ignore list, and on Linux a runner / prefix choice like
-  manual games), and install-folder migration (moving a game's mods, settings and presets after Change / Reset install
-  folder, automatic when RHI corrects the folder, manifest `installPathMigrations`). Both need journaled moves of user
-  and RHI files across folders and a review UI; they were left for a follow-up so this lane's other items could land
-  with their tests.
+- **Custom game folders and install-folder migration:** see the library-folders lane below.
 
 ## Parity notes (upstream 2.8.9–2.9.4, lane extras-addons)
 
@@ -2022,6 +2017,339 @@ Settings rows. Tracked on #271.
   version switch); Save ini / Load saved ini; and the ANR FG preset (Apex Compute's closed-source DLL, verified against
   its published hashes, `nr_fg.ini` kept, the closed-source notice first; #285's shared notice is in the extras lane).
   Until RHI installs ANR FG, the recommended presets leave the ANR FG preset out (#269).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane nr)
+
+### #275 — DLSS5 Feeder 2.0: built-in motion vectors, added to the preset, matching add-on/host pair (2.9.3)
+
+Upstream 2.9.3 `cdff33f` (`FeederPreset.cs`, following Feeder 2.0.0's own `Install-DLSS5Feeder.ps1`). Ported as
+`FeederPreset` and `ReShadePresetText` (pure text edits; upstream's `FeederPresetTests` run here unchanged) and
+`ReShadePresetFile` (which preset a game uses: `[GENERAL] PresetPath` in ReShade.ini relative to the game's binary
+folder, else `ReShadePreset.ini` there, any case).
+
+- **Motion vectors.** A new install reads the game's preset and the release's `DLSS5_Feed.fx`: a preset that already
+  names a provider keeps it; otherwise `DLSS5_MV_PROVIDER=5` (the estimator built into the shader since 2.0.0, found by
+  `float4 BaseLevel(` as Feeder's installer does), or 3 (LumeniteFX Kernel) with an older shader. LumeniteFX is
+  downloaded, placed and recorded only for providers 3 and 4. The provider is written in the preset's
+  `[DLSS5_Feed.fx] PreprocessorDefinitions`, never in ReShade.ini (Linux never wrote it there; upstream's clean-up of
+  its old global entry, `RemoveGlobalProvider`, is ported for completeness but has nothing to remove on Linux).
+  Existing installs keep their LumeniteFX stack; Feeder's own menu (Alt+C) can switch them.
+- **Added to the preset, not replacing it.** Before this, Linux wrote its own `RHI-DLSS5-Feeder.ini` and pointed
+  `PresetPath` at it, so the game's own preset stopped being used while Feeder was installed. Now Feeder's techniques
+  are merged into the preset the game already uses (only Techniques, TechniqueSorting and the one definition change;
+  with the built-in provider a LumeniteFX flow effect that was there only for the feed is switched off, as upstream);
+  `PresetPath` is not touched. The write is journaled (the previous bytes come back on a rollback or a crash) and goes
+  through ReShade.ini's link rule. A preset that did not exist is created and owned by the record (removed with Feeder
+  while unchanged, kept when the user changed it).
+- **Removal never deletes a preset that was there before Feeder.** Linux goes further than upstream, which leaves the
+  merged techniques in the preset: the record keeps what the install changed, and removal takes exactly that out again
+  (entries it added, a flow effect it switched off back on, the provider definition back to its previous value while it
+  still holds the value the install wrote). A preset nobody changed since comes back byte for byte; the user's later
+  edits stay. Installs from before this change still remove as before (their own preset file and `PresetPath` value).
+- **Matching add-on/host pair (32-bit).** Feeder 2.0 add-ons and `host64\dlss5-feed-host64.exe` refuse another
+  release's (IPC v12). Upstream fixed a shared staging copy that a pinned version could overwrite; Linux never shared
+  one: install and the version swap take `dlss5-feed.addon32` and the host from the same release zip and swap them
+  together. A test pins that one archive serves both.
+- **Status and description.** The Feeder row's "Managed by RHI Linux" note names the motion vectors — "Built-in motion
+  vectors" or "LumeniteFX motion vectors" — read from the preset, so a switch made in Feeder's menu shows (upstream's NR
+  status tag). The row's description before install says Feeder 2.0 has its own motion vectors and an in-game menu
+  (Alt+C). Linux has no Neural Rendering section text to change (the method rows are in Managed components).
+- **Check Neural Rendering (#248).** Every Feeder log signature the page reads (`feature 18` with `0xBAD00012`, the
+  depth probe's "depth is FLAT while the scene moves", "stopped: the DLSS evaluate crashed", `frame N delivered`,
+  `building:`, `holding the feature (re)build`, `swapchain colour space:`, `effect runtime … initialised`) is still in
+  the format strings of the 2.0.0 add-on (checked against `DLSS5-Feeder-2.0.0.zip`, commit `9bd0af3`).
+- Linux deviations: a `PresetPath` given as a Windows drive path (`C:\…`) refuses the install with a line saying so
+  (upstream writes wherever it points); upstream also sets `PresetPath=.\ReShadePreset.ini` when it is missing, Linux
+  relies on ReShade's own default for the same file.
+
+### #274 — GITC Uplift as a Neural Rendering method, to its 2.0 behaviour (2.9.2/2.9.3)
+
+Upstream 2.9.2 `93d0fcb`, `d5b2df4`, `18088a3`; 2.9.3 `5f409de`, `7748d10`, `71af41e` (`UpliftService`,
+`MainViewModel.Uplift`, `SettingsHandler.UpliftKey`); ported to the 2.9.4 end state. `GitcUpliftDeploymentService`
+(new component kind `GitcUplift`), `ImmerseLaunchpadService` (shared with HSF, #277), `LinuxManagedComponentService.GitcUplift`.
+
+- **Install** (the GITC Uplift row in Managed components; ReShade is installed first when missing, as for every ReShade
+  add-on): `gitc-uplift.addon64` (`.addon32` on 32-bit games) and `gitc-uplift-helper64.exe` in ReShade's add-on folder
+  (the binary folder, or reshade.ini's `AddonPath`), the NR DLL in its `GITC-Uplift` subfolder, `Uplift.fx` and
+  `UpliftMask.fx` in RHI's shader tree `reshade-shaders/RHI/GITC-Uplift` (added to ReShade.ini's search paths; upstream
+  copies them into `reshade-shaders\Shaders` through its shader sync). An `nvngx_dlssnr.dll` the user already put in
+  `GITC-Uplift` is kept and not owned (upstream). A manual Uplift already in the game is refused, never overwritten.
+  Everything is one journaled operation; the record is the commit point. Supports DX9–12, Vulkan and OpenGL, 32 and
+  64-bit, as upstream (Vulkan through RHI's Vulkan ReShade layer).
+- **Downloads**: the releases of `ghostinthecamera/GITC-Uplift` (full releases only, as upstream), the zip checked against
+  GitHub's digest and the release's `SHA256SUMS.txt`, and each file taken out of the zip against its own line there;
+  fail-closed (a release with neither is not offered; upstream continues without a check). Cached per version with a
+  download stamp. Pinned in the tests: the release listing (2026-11-16), the 2.0.0 zip's entry names and `SHA256SUMS.txt`.
+- **Uplift Version** (upstream's Neural Rendering "Uplift Version"): a list beside Feeder / DX11 Bridge / ShortFuse under
+  NR versions. Latest follows new releases through Update All and the background pass; a picked version stays. Changing it
+  while installed swaps the add-on, helper and effects together. A pin no longer published installs Latest and says so.
+- **Add-on and helper always together** (2.9.3 fix): every update or version change replaces the add-on, the helper and
+  the effects from one release in one journaled swap, all or nothing; a file changed outside RHI refuses the whole swap.
+  Linux equivalent of upstream's "file in use" probe: never while the game runs (Update All already skips running games;
+  a direct change says to close the game).
+- **NR on/off key**: Settings › DLSS/Streamline, a "GITC Uplift" card right after the OptiScaler key (upstream:
+  Settings › Components, after the ReLimiter and OptiScaler card): "NR on/off key" and "Write key to all Uplift games"
+  (hidden games skipped). Install writes `[Uplift] EnableKey` (decimal virtual-key code) into the game's ReShade.ini when a
+  key is set; None leaves each game's own key. Removal puts back the value it replaced while the key still holds RHI's.
+  Linux deviation: the key is picked from a list (F1–F12, Insert, Delete, Home, End, Page Up/Down, Pause, Scroll Lock,
+  Numpad 0–9) as the OptiScaler key here, instead of being pressed into a box. Upstream's removed "Start with NR on" is not
+  ported (2.9.4 end state).
+- **iMMERSE Launchpad** (motion vectors): placed from the `martymcmodding/iMMERSE` archive (only `MartysMods_LAUNCHPAD.fx`,
+  its `MartysMods/*.fxh` includes and `iMMERSE_bluenoise_opt.png`) into `reshade-shaders/RHI/iMMERSE-Launchpad`, switched
+  on in the preset right above the Uplift technique and moved to the top. On by default in games without DLSS; an
+  "iMMERSE Launchpad" check box under NR versions changes it per game (applied at once when Uplift is installed, saved for
+  the install otherwise). Off takes out only a technique RHI switched on. The Launchpad files are shared: a component that
+  finds them listed by another record lists them too, and removal deletes them only when no other record still does
+  (`ImmerseLaunchpadService`, for HSF).
+- **Kept first**: at start and with each background pass, Launchpad goes back to the top of each Uplift game's preset when
+  ReShade or HSF put it lower, only while the game is not running (Linux running-game probe), journaled on Uplift's record,
+  nothing else changed (upstream: launch, the 4-hour refresh and the toggle).
+- **OpenGL MSAA set-up**: on OpenGL games the `Uplift@Uplift.fx` technique is switched on first in the preset at install,
+  so NR runs on ReShade's resolved single-sampled copy (upstream `EnsureTechniqueFor`). A technique the user already had on
+  stays on after removal. Upstream also re-detects OpenGL games once that its older builds saw as DX12 because of the
+  helper; Linux never counted the helper.
+- **Default method**: the Neural Rendering recommendation names GITC Uplift only where DLSS5 Feeder was the default and
+  all of Uplift works — 64-bit DX11 / DX12 / Vulkan games without DLSS; 32-bit, OpenGL and DX9 keep Feeder; games with DLSS
+  keep the DX11 Bridge / ShortFuse. Linux has no automatic method choice: games keep whatever is installed. Installing
+  Uplift removes the other RHI Neural Rendering method first (and the others remove Uplift), as upstream's method switch.
+  OptiScaler DLSS NR / F5 keep refusing a second NR owner.
+- **Link**: a "GITC Uplift" button under NR versions opens the project page with its guide (upstream: the links at the
+  bottom of the Neural Rendering section).
+- **Elsewhere**: the NR DLL list swaps Uplift's own DLL in place; Check Neural Rendering lists Uplift among the methods in
+  use; Update All and the update history name it "GITC Uplift". The NR Cost Scaler stays off for Uplift (upstream hides it:
+  the DLL is not beside the executable).
+- Linux deviations, in short: RHI shader trees instead of the shared shader folder; fail-closed download checks; key list
+  instead of key capture; the card under DLSS/Streamline until the Settings restyle (C1, #296) brings the Components
+  section; no automatic method choice.
+
+### #276 — Foveated DLSS5 Tool switch (2.9.3): not ported yet (owner decision)
+
+Upstream 2.9.3 `77cd3f7` offers the switch only for its "DLSS5 Tool" and "DLSS5 Tool + DX11 Bridge" methods.
+FoveatedDLSS5 (maximedgoulet) is a build of the DLSS5 Tool's `renodx-dlss5.addon64`, published as pre-releases with a
+`.sha256` beside the add-on. RHI Linux has no DLSS5 Tool method: its DX11 Bridge row deploys only
+`dlss5-dx11-bridge.addon64`, and `renodx-dlss5.addon64` is deployed only as the DLSS5 Feeder's consumer, where upstream
+offers no Foveated switch. The switch waits for the owner's choice on the tracker: port the DLSS5 Tool methods first, or
+use another mapping.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane extras-fg)
+
+### #285 — Closed-source notice for RTX Encore, 20/30 FG Unlock and ANR FG (2.9.3)
+
+- Before the first install of RTX Encore or 20/30 FG Unlock (the row's Install; never on update), RHI shows upstream's
+  notice: "<mod> is closed source: <author> publishes only the finished DLL, not its code …", Install / Cancel and
+  **Don't show this again**. As upstream, a tick is saved whatever the answer and is kept per mod (upstream's
+  `RtxEncoreClosedSourceDismissed`, `Dlssg2030ClosedSourceDismissed`, `AnrFgClosedSourceDismissed`).
+- The notice is a reusable confirm (`InstallNoticePresenter.ConfirmAsync`): the Universal MFG ReShade warning (#278)
+  uses it, and the OptiScaler lane calls `ConfirmClosedSourceAsync(ClosedSourceMod.AnrFg)` before an ANR FG preset
+  install; ANR FG has no row, so its notice carries its GitHub page as a link, as upstream.
+- The ⓘ button of the RTX Encore, 20/30 FG Unlock, Universal MFG Unlocker and MFG Unlock rows opens the mod's GitHub
+  page (upstream's Info buttons) instead of a notes dialog.
+- Linux deviations: the dismissals live in `~/.config/rhi-linux/dismissed-notices.json`, not in the main settings file,
+  so Settings → Reset does not bring the notices back. A dismissal that cannot be saved (an unreadable file) is reported
+  on the status line and the notice shows again next time. Without a window (tests, headless runs) every notice is
+  accepted.
+
+### Shared: Intel XeSS files for the frame-generation mods (2.8.9–2.9.3)
+
+- One service (`IntelXessFiles`) downloads and places Intel's XeSS SDK files for Universal MFG Unlocker (#278), MFG
+  Unlock (#279) and RTX Encore (#280), from upstream's source (`intel/xess` at tag `v3.0.2` on
+  raw.githubusercontent.com, policy `IntelXess` in [`docs/download-trust.md`](docs/download-trust.md)).
+- Linux deviation: every file is checked against a pinned SHA-256 (upstream pins them for RTX Encore only and accepts any
+  `MZ` file of at least 1 KiB for the other two mods), and a DLL must be a 64-bit PE. A file that does not match is
+  refused.
+- The moves run inside the component's own journaled operation, so a failure or a crash undoes them with the rest.
+  A step either adds a file the folder lacks (a file RHI did not place is left alone) or replaces the game's own copy in
+  place after copying it to a backup name. Unlike upstream, an existing backup is never overwritten: that file is
+  skipped and named. Removal deletes an added file, or puts the game's copy back from its backup, only while the file
+  still holds RHI's bytes; a file changed since is left, with its backup, and named.
+- Linux deviation: installs from before get the files through Update / Update All, not at start-up (the check plans it
+  even without a new release), as for the 20/30 FG Unlock package repair (#261, D1 = No).
+
+### #278 — Universal MFG Unlocker: rename, RTX 30 and XeMFG, Intel files, OptiScaler-plugin mode, ReShade warning (2.8.9)
+
+- The row is **Universal MFG Unlocker** (internal key and records unchanged) and its ⓘ opens
+  `github.com/dashdogy/MFG-Unlocker`.
+- The GPU-generation dropdown is gone, as upstream. Linux kept a stricter API rule for a saved "RTX 30" choice (DX12
+  only); it now applies one rule to every card: DirectX 12, Vulkan experimental. A saved generation is kept in the
+  record but no longer read. The proxy-name dropdown stays in the ⚙ (upstream asks for the name in a picker at install).
+- Intel files: `libxess_fg.dll` and `libxell.dll` go in `RTXMFG-XeSS` beside the proxy (the binary folder; upstream uses
+  its install folder, which is the same place for the games it supports). A download that fails does not stop the
+  install (upstream); the message says so and Update adds them.
+- OptiScaler-plugin mode: with RHI's OptiScaler Nightly, F5 DLSSNR or DLSS NR (an `OptiScaler` folder beside the game)
+  the mod is placed as `OptiScaler/plugins/MFGUnlocker.asi`, with no Wine override and no Intel files. Installing such an
+  OptiScaler moves an existing proxy install in (proxy, Wine override and Intel files removed); removing RHI's OptiScaler
+  first moves it back beside the game under the name it came from, else version.dll, winmm.dll, dinput8.dll or the next
+  free proxy name, never over an existing file, and puts the Intel files back. OptiScaler keeps `LoadAsiPlugins=true`,
+  which it already sets on every install. Stable OptiScaler is not a host. Linux deviations: upstream also reconciles
+  every game at start-up; RHI Linux moves only through these OptiScaler installs and removals, so an install made before
+  this build stays a proxy until OptiScaler is installed again or the mod is reinstalled. A move that cannot be made (a
+  file changed outside RHI, Wine running) is named in OptiScaler's message and never fails OptiScaler's own result.
+- ReShade warning: before a user-started install beside a ReShade (RHI's or the user's; not for a Vulkan game, whose
+  ReShade is the layer, and not for a plugin install), upstream's "XeMFG and ReShade" notice with Continue / Cancel and
+  **Don't show this again** (key `UmfgReShadeWarningDismissed`, through the #285 confirm).
+- ⚙: upstream's text (Backspace menu and its modes, preset B above 2x), the "Loaded by OptiScaler" section for a plugin
+  install, the XeMFG section with "XeSS files: installed / missing", and the ReShade-as-dxgi.dll warning at 5x/6x
+  (Linux wording points at installing ReShade under another DLL name instead of upstream's DLL naming overrides).
+  Upstream's "Open GitHub page" button is the row's ⓘ.
+
+### #279 — MFG Unlock (formerly MFG Ada Unlock): rename, frame-generation method, XeSS files with backup, DX11 warning (2.8.9/2.9.2)
+
+- The row, its ⚙ and RHI's own messages say **MFG Unlock**; the component key, records and the add-on file
+  (`renodx-mfgunlock.addon64`) are unchanged, and the upstream manifest's `packageName` ("MFG Ada Unlock") is no longer
+  shown (`KeepDisplayName`). The ⓘ opens the mod's GitHub page (#285).
+- New ⚙ (upstream's `BuildMfgAdaCogContent`): **Frame generation method** writes `[Backend] Selected` (`DLSSG`/`XeMFG`)
+  and `[DLSSG] XmxGenerator` (`0`/`1`) to `MFGAdaUnlock.ini` in the game's executable folder (the mod reads it from
+  there, not from the add-on folder); **DLSS-SR input (experimental)** writes `[Adapters] DlssSr` and is greyed out
+  unless the method is Intel XeMFG (CUDA). A missing file reads as the mod's defaults and a change creates it; other
+  lines and comments are kept. The help texts sit under each row, as upstream. **Open MFGAdaUnlock.ini** is greyed out
+  while the file does not exist.
+- Intel XeSS files (shared service above): `libxess_fg.dll` and `libxell.dll` go in the game's executable folder; a game
+  copy of another build is kept as `<file>.mfgada-original` and put back on removal; an identical copy is left alone.
+  The step runs as its own journaled operation after the add-on's install or update, with MFG Unlock's record as its
+  commit point (the add-on's update keeps the list when it rebuilds the record). Removal puts the game's copies back
+  first and refuses, removing nothing, when that cannot be done. Linux deviation: a download that fails never fails the
+  add-on's install; the message says so and Update adds the files.
+- ⚙ status: "ready", "missing (…)" or "a version MFG Unlock doesn't accept (…)", judged by RHI's pinned file or upstream's
+  accepted versions (libxess_fg 1.3.1.78, libxell 1.3.2.10 / 1.3.0.5) read from the PE version resource.
+- API warning, as upstream (only in the ⚙): any DirectX 12 among the game's APIs is fine; Vulkan gets the "experimental"
+  text; DirectX 8–11 or OpenGL get "won't work here". Linux reads the effective API list (manifest or detection).
+
+### #281 — DLSSG 20/30 FG Unlock ⚙ settings (2.8.9)
+
+- The ⚙ shows upstream's six settings as dropdowns of valid values only, in upstream's order and with its help text
+  under each: Frame Generation (`[General] Enabled` 1/0), Engine (`[FrameGeneration] Engine` DLSS/XeSS), Max Frames
+  (`MaxGeneratedFrames` 1–5, "Game decides" 0), Preset (`[DLSSG] Preset` A/B/C), Speed Tier (`[DLSSG] Optimized` 0–3)
+  and Super Resolution (`[SuperResolution] Mode` Off/M-INT8/L-INT8/M-FP16/L-FP16). Upstream's Engine/Max Frames rule is
+  kept: XeSS at 5X/6X moves Max Frames to 4X, and 5X/6X are refused under XeSS. Until the mod is installed the rows are
+  greyed out with upstream's warning. **Open dlssg_sm86.ini** and **Open log** (`dlssg_sm86/logs/dlssg_sm86.log`) are
+  greyed out while the file does not exist. The values are pinned against the 0.4.2 package's INI fixture.
+- Kept on update, as upstream: a change made in the ⚙ keeps RHI's ownership of the INI (the record takes the new hash),
+  so Update puts the new release's INI in place and writes the six values back into it, and Remove deletes it. Linux
+  deviation (unchanged from #261): an INI changed outside RHI is the user's and is kept whole on update and removal.
+- Linux deviation: a missing Speed Tier reads as 1, the mod's documented default (upstream's fallback reads 0 while its
+  label marks 1 as the default).
+- The GPU-generation dropdown is gone, as upstream; the intro now describes the mod (RTX 20 and 30, DirectX 12,
+  driver R580+) instead of "Legacy SM75 path" (EN and PT-BR), and the dialog title is "20/30 FG Unlock". A saved
+  generation is not asked for any more; the preference store already reads an old "RTX 30" choice as RTX 20.
+
+### #280 — RTX Encore: ⚙ settings, XeSS files in place, NR DLL 310.9.16, Bink names, .asi build, DLL-name recommendation (2.8.9–2.9.3)
+
+- The row is **RTX Encore** (no "Beta").
+- ⚙ settings: upstream's sections and settings, with its keys and values (`renderingEngines.frameGenerationEngine`,
+  `frameGeneration.mode`/`multiplier`/`dynamicTargetFrameRate`/…, `xefg.*`, `imageQuality.*`, `hudUi.*`, upscaling,
+  `neuralRendering/core.nrEnabled` and the NR presets, `general.gpuSeries`, `compatibility.*`,
+  `nativeMenuFeatures.hairEnabled`), written at once into `rtx-encore.jsonc` beside RTX Encore by a port of upstream's
+  line editor (`RtxEncoreConfig`): only the value token changes, comments and newline style are kept, a missing key or
+  section is inserted, and a missing file is created with just that setting. Upstream's dependencies grey rows out
+  (Multiplier in Fixed mode, the dynamic rows in Dynamic mode, the XeFG engine rows with XeFG, XeSS on Tensor Cores with
+  the XeSS upscaler, custom scale with Custom). Number boxes check their range and go back to the saved value when it is
+  out of range. Greyed out until RHI's RTX Encore is installed. Pinned against upstream's own editor tests.
+  Linux deviations: Smooth Motion is left out (it needs NVIDIA's Windows driver and does not run under Wine/Proton);
+  the rows have labels but not upstream's long per-row tooltips yet; the "game is running" warning is not shown.
+- Intel XeSS files (shared service above): the game's own `libxess.dll`, `libxess_fg.dll` and `libxell.dll` (any
+  folder under the game, Intel's version resource, links, `OptiScaler.ini` folders, `rtx-encore-runtimes`,
+  `RTXMFG-XeSS` and files another RHI component placed skipped; at most 16 levels and 20 000 folders) are replaced in
+  place, each kept as `<file>.encore-original`; the others and Intel's licence (`license.txt`) go in
+  `rtx-encore-runtimes/intel` beside RTX Encore. All in RTX Encore's own journaled install, removal or update. The ⚙
+  says whether they are installed and how many replace the game's copies.
+- Neural Rendering file 310.9.16 (`nvngx_dlssnr.dll`, pinned SHA-256 `CDFA6C1E…FEABF3ED`, from the DLSS list's
+  "310.9.16 (20/30/40/50)" entry). An RHI copy of 310.8.0 is replaced by Update, while it still holds RHI's bytes.
+- Bink names: `binkw64.dll` / `bink2w64.dll` are offered; the game's own Bink DLL is kept as `<stem>Hooked.dll` (where
+  RTX Encore loads it) and put back on removal. Linux deviation: a `…Hooked.dll` RHI did not record is never adopted,
+  so the install is refused with the file named instead of being treated as already set up.
+- `.asi`: the separate ASI build (`alternative-proxies/rtx-encore.asi`; the DLL when a release has none, as upstream)
+  replaces the renamed DLL; an .asi install from an older build is corrected by Update. Linux deviation: the `.asi`
+  stays beside the game's executable next to its Neural Rendering file, where RHI Linux has always put it (Ultimate ASI
+  Loader reads that folder), so upstream's move to `plugins/` is not needed.
+- Recommended DLL name: the manifest's `rtxEncoreDllNames` (Euro Truck Simulator 2: `winmm.dll`) is read into the game
+  and, when it is one of RTX Encore's DLL names, listed first and used as the default; the user's own choice wins; the
+  ⚙ names it.
+- Extras summary (upstream 2.9.4 fix): on Linux the RTX Encore row is in Managed components, whose collapsed summary
+  already lists it.
+- Linux deviation: installs from before get the XeSS files, 310.9.16 and the ASI build through Update / Update All (the
+  check plans it), not at start-up. A failed XeSS download does not stop an install (upstream); the message says so.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane library-folders)
+
+These notes finish #293. They supersede the "deferred" bullet and the "components stay installed" deviation of the
+library-updates lane's #293 section above.
+
+### #293 — Custom game folders (2.9.0)
+
+- **Settings → Custom game folders** (ported; upstream Settings › Tools & Maintenance › Custom game folders): a Settings
+  tab beside Removed games until phase 2 restyles Settings. It lists the folders with Remove, then Add folder, Scan now,
+  Review N new games (while games wait) and Forget ignored games (N), with upstream's texts. The folders and the ignored
+  list live in the library file (`game-library.json` `CustomGameFolders`, `IgnoredCustomGameFolders`, absent while empty;
+  upstream: settings.json).
+- **Scan** (ported): at start, after Refresh and with Scan now, off the UI thread. Each direct subfolder of a custom folder
+  is a game, or the folder itself when it is one game (store or engine markers, or its own exe and at most one game-like
+  subfolder). A folder already in the library (any source, by path in either direction), ignored, or named like a listed
+  or removed game, or without an exe, is not offered. The exe ranking, the folder-name cleaner and the "Check the exe"
+  margin (top two within 15 points) are upstream's code, pinned by upstream's test fixtures: installers, redistributables,
+  anti-cheat and crash reporters are skipped, launchers and helper-like names rank lower, Unreal shipping exes, Binaries
+  folders, Unity players, graphics imports and a name like the folder's rank higher. Found games are never added on their
+  own: the status line shows "N new games found in your custom folders · Review"; Not now hides it until the next scan
+  finds something. Scan now opens the review straight away, as upstream.
+- **Review** (ported): one row per game with the name to fix, the exe to choose and "Check the exe: more than one looks
+  like the game.". Add selected, Ignore selected and Not now as upstream. Added games are manual games (Add game's checks,
+  one save and one refresh for all of them) with the chosen exe as their executable. Ignore selected, and removing a game
+  added from a custom folder, keep its folder from being offered again; Forget ignored games undoes both.
+- **Linux additions**: each row also has Add game's Wine/Proton prefix (with Browse; a prefix makes the runner "Manual
+  Wine", none "Manual Windows") and optional launch command, so a custom-folder game launches like any manual game. An
+  exe named `.EXE` counts (Linux filesystems are case sensitive). Paths compare as the library does (symlinks resolved,
+  case sensitive), and a symlinked game folder inside a custom folder is a candidate (upstream skips junctions).
+- **Linux deviations**: the canonical name comes from PCGamingWiki's page titles only (upstream also matches the RenoDX
+  wiki's mod names first). Folders refused as custom folders are the Linux ones: the filesystem root, system folders and
+  whole drives, the home folder itself, a whole Wine prefix or its `drive_c` (`drive_c/Games` is fine), and any path
+  through `steamapps` (upstream: Windows, WindowsApps, Program Files, the user profile, steamapps). The engine shown in the
+  review is read from the folder's layout (Unreal, Unity, RE Engine) rather than upstream's engine detector.
+
+### #293 — Remove from RHI offers to uninstall (2.9.0)
+
+- Ported: Remove from RHI asks first ("Remove <game> from RHI?", how to undo it) and, when RHI installed components in the
+  game, lists them with "Also uninstall all RHI-managed components from game folder" (off by default). Ticked, every
+  component goes through its own journaled removal, layers and add-ons before what they sit on, and a component refused
+  because another depends on it is tried again once the rest is gone. As upstream, the game is removed either way.
+- Linux deviation: upstream only logs a component that could not be uninstalled; here the status line names it with the
+  reason ("Still installed (they come back with the game on Restore): …"). DLSS/Streamline swaps are not components and
+  stay, as upstream.
+
+### #293 — Install folder migration (2.9.2) and Reset install folder (2.9.2/2.9.3)
+
+- **Change install folder** is Edit game's patch target on Linux. Saving a new binaries folder while RHI has installs in
+  the old one asks "Move the game's mods?" (what is installed, the old and the new folder). Yes moves them and saves the
+  new target in the same commit; No changes nothing. Linux deviation: upstream changes the folder and leaves the mods
+  behind on No; here records left in a folder the game no longer uses would block its components, so the folder stays.
+  A change that keeps the folder (another exe or root only) still asks to remove the components first.
+- **Reset install folder** is Restore automatic detection. The detected folder is only known once the game is analysed
+  without its edit, so the reset is saved, the game analysed, and the move offered; declined (or a move that cannot run)
+  the edit is put back and the game keeps the chosen folder and its installs. Upstream's "Reset goes back to an earlier
+  pick" bug has no counterpart (one override per game).
+- **Automatic move** (ported): when the manifest moved the game's folder (`installPathOverrides`, or the new
+  `installPathMigrations`, which wins over it, pinned with upstream's Phantom Blade Zero entry) and the user picked none,
+  installs RHI made in another folder of the game move there on their own after the game's analysis (at start, on
+  Refresh or on selection), with "Moved <game>'s mods to <folder>". A `splitGames` child is left alone (it shares
+  its store's record key and root with its siblings, whose installs are not its own). Never while the game runs: the status line says the
+  mods stay until the game is closed, and the next analysis tries again.
+- **What moves** (Linux): what the deployment records list, not an inventory rebuilt per component. Every record whose
+  binary directory is the old folder moves with its files under it, its folders RHI created and the ReShade presets its
+  record lists. Settings files the component owns move as they are, the user's changes included. A file RHI did not place
+  (it was there before the install and has no `.original` copy beside it: a game or user file RHI edited in place, such
+  as Control's `renderer.ini`) stays where it is; so do files outside the old folder (AddonPath folders, the prefix).
+- **How it moves**: each file is copied to the new folder, verified against its hash, and only then removed. A game file
+  of the same name in the new folder is kept as `.original` (as an install would), and the game's own file RHI kept as
+  `.original` in the old folder is put back. Every step is journaled (start-up recovery undoes a crash) and any failure
+  rolls back the whole move. The re-pointed records (re-keyed when the game's key changed: a folder-keyed game whose root
+  changed) and the game's per-game settings are written in one staged commit, which is the move's commit point. Folders
+  RHI had created in the old folder go once empty.
+- **Never** (refused, nothing changed): while the game runs; when a file RHI owns changed since the install or is
+  missing; when the new folder already has a file and its `.original` copy, or another installed component already uses a
+  target name there (upstream's "new folder wins" is not ported: a user file is never overwritten); when a component's
+  Wine override names another executable (Linux: remove and reinstall it); when NR Cost Scaler sits over a component
+  (Linux: remove it first).
+- Not ported: the RTX Encore `native:` rewrite, the DLSS search-root widening for migrated games and the DLSS skip-list
+  reset (Linux's DLSS search has no skip list and already covers the game root), and upstream's per-component inventory
+  (the records already list every file RHI placed).
 
 ## Parity notes (upstream 2.8.9–2.9.4, lane optiscaler-2)
 

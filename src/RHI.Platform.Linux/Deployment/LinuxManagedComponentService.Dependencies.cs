@@ -248,7 +248,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.RenoDXUpgrade => "RenoDX Upgrade",
         ManagedComponentKind.ReLimiter => "ReLimiter",
         ManagedComponentKind.DisplayCommander => "Display Commander",
-        ManagedComponentKind.MfgAdaUnlock => "MFG Ada Unlock",
+        ManagedComponentKind.MfgAdaUnlock => "MFG Unlock",
         ManagedComponentKind.Dlss5Feeder => "DLSS5 Feeder",
         ManagedComponentKind.Dlss5Dx11Bridge => "DLSS5 DX11 Bridge",
         ManagedComponentKind.ShortFuse => "ShortFuse",
@@ -258,7 +258,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.UltimateAsiLoader => "Ultimate ASI Loader",
         ManagedComponentKind.Dlssg2030Unlock => "RTX 20 FG Unlock",
         ManagedComponentKind.DlssEnablerStandalone => "DLSS Enabler (Standalone)",
-        ManagedComponentKind.Rtx40MfgStandalone => "Universal MFG",
+        ManagedComponentKind.Rtx40MfgStandalone => Rtx40MfgStandaloneDeploymentService.DisplayName, // #278
         ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)
         ManagedComponentKind.RtxEncore => RtxEncoreDeploymentService.DisplayName, // w4/encore (#158)
         ManagedComponentKind.ReShadeAddonManager => ReShadeAddonManagerService.DisplayName, // #194
@@ -269,6 +269,8 @@ public sealed partial class LinuxManagedComponentService
         // w7/dxvk-hdr rows
         ManagedComponentKind.DxvkHdr => DxvkHdrDeploymentService.DisplayName,
         ManagedComponentKind.Hsf => HsfDeploymentService.DisplayName, // w14/extras-addons (#277)
+
+        ManagedComponentKind.GitcUplift => GitcUpliftDeploymentService.DisplayName, // w14/nr (#274)
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows

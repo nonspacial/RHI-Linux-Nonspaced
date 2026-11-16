@@ -22,6 +22,13 @@ internal interface ILibraryEditHost : IPanelHost
     void RaiseNotice(string message);
     void ShowAllGames();
     void Select(DetectedGame game);
+    // #293 install folder migration
+    IReadOnlyList<LinuxDeploymentRecord> InstallsIn(DetectedGame game, string? folder);
+    Task<bool> AskFolderMoveAsync(DetectedGame game, string oldDir, string newDir);
+    Task<InstallFolderMoveResult> MoveInstallFolderAsync(DetectedGame oldGame, DetectedGame newGame, string oldDir, string newDir,
+        Func<RHI.Platform.Linux.Persistence.StagedFileWrite?>? alongside);
+    RHI.Platform.Linux.Persistence.StagedFileWrite StageLibrary(LinuxGameLibraryState state);
+    bool FolderChangeRunning { get; set; }
 }
 
 /// <summary>
@@ -108,13 +115,28 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             return (false, T("Vm.BinariesPatchesDirectoryMustInsideSelected"));
 
         var managedRecords = Host.DeploymentRecords.FindAll(SelectedGame);
+        FolderMove? move = null;
         if (managedRecords.Count > 0)
         {
             var targetChanged = !PathEquals(SelectedGame.ExecutablePath, executable)
                                 || !PathEquals(SelectedGame.InstallPath, root)
                                 || !PathEquals(SelectedGame.BinaryDirectory, binaries);
             if (targetChanged)
-                return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
+            {
+                // #293 (upstream 2.9.2 Change install folder): RHI offers to move the game's installs to the new folder;
+                // declined, nothing changes (Linux: records left in a folder the game no longer uses would block it). A
+                // change that keeps the folder (another exe or root only) still needs the components removed first.
+                var oldDir = SelectedGame.BinaryDirectory;
+                if (oldDir is null || PathEquals(oldDir, binaries) || Host.InstallsIn(SelectedGame, oldDir).Count == 0)
+                    return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
+                if (!await Host.AskFolderMoveAsync(SelectedGame, oldDir, binaries))
+                    return (false, TF("FolderMove.NotChanged", SelectedGame.Name, oldDir));
+                var newGame = SelectedGame.ShallowClone();
+                newGame.InstallPath = root;
+                newGame.ExecutablePath = executable;
+                newGame.BinaryDirectory = binaries;
+                move = new FolderMove(SelectedGame.ShallowClone(), newGame, oldDir, binaries);
+            }
         }
 
         return await SaveSelectedGameEditAsync(new LinuxGameEditOverride
@@ -122,12 +144,15 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             PatchExecutablePath = executable,
             GameRootPath = root,
             BinaryDirectory = binaries
-        }, launchProvider, userCommand, names, saved);
+        }, launchProvider, userCommand, names, saved, move);
     }
 
     /// <param name="target">The patch target to save; null keeps the one already saved for the game (if any).</param>
+    /// <summary>#293: the installs that move with an Edit game target change (old and new game, folders).</summary>
+    private sealed record FolderMove(DetectedGame OldGame, DetectedGame NewGame, string OldDir, string NewDir);
+
     private async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
-        LinuxGameEditOverride? target, string? launchProvider, string? userCommand, GameNameEdit names, Action? saved)
+        LinuxGameEditOverride? target, string? launchProvider, string? userCommand, GameNameEdit names, Action? saved, FolderMove? move = null)
     {
         var targetFieldsBlank = target is null;
         var game = SelectedGame!;
@@ -153,7 +178,15 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         }.Normalize();
         if (edit.IsEmpty()) state.GameEdits.Remove(key);
         else state.GameEdits[key] = edit;
-        if (Host.SaveLibraryCopy(state) is { } notSaved) return (false, notSaved);
+        string? moved = null;
+        if (move is not null)
+        {
+            // The new target is written in the move's own commit: the installs and the folder change land together or not at all.
+            var result = await Host.MoveInstallFolderAsync(move.OldGame, move.NewGame, move.OldDir, move.NewDir, () => Host.StageLibrary(state));
+            if (!result.Success) return (false, UiLocalizationService.Present(result.Message));
+            moved = TF("FolderMove.Done", game.Name, move.NewDir);
+        }
+        else if (Host.SaveLibraryCopy(state) is { } notSaved) return (false, notSaved);
         Host.AdoptLibraryCopy(state);
         saved?.Invoke();
 
@@ -167,6 +200,7 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
                 ? userCommand is null ? TF("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", name) : TF("Vm.EditSavedTargetKeptPlayUsesYourCommand", name)
             : userCommand is null ? TF("Vm.EditSavedPlayUsesDetectedCommand", name)
             : TF("Vm.EditSavedPlayUsesYourCommand", name);
+        if (moved is not null) message = moved + " " + message;
         // Raised as a notice: the refresh re-analyses the game and its "Ready" line would replace a plain status line
         // within milliseconds; the notice rides on that line instead (as Repair after move does; Refs #151).
         Host.RaiseNotice(message);
@@ -179,7 +213,12 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
     {
         if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
         if (Host.DeploymentRecords.FindAll(SelectedGame).Count > 0)
-            return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
+        {
+            var oldDir = SelectedGame.BinaryDirectory;
+            if (oldDir is null || Host.InstallsIn(SelectedGame, oldDir).Count == 0)
+                return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
+            return await ResetMovingInstallsAsync(oldDir, saved);
+        }
         var state = Host.WorkingLibraryCopy();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
         var removed = state.GameEdits.Remove(key);
@@ -197,6 +236,66 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         return (true, message);
     }
 
+    /// <summary>
+    /// #293 (upstream 2.9.2 Reset install folder): the detected folder is only known once the game is analysed without its
+    /// edit, so the reset is saved first; RHI then offers to move the installs there. Declined (or a move that cannot run),
+    /// the edit is put back and the game keeps the folder the user chose, with its installs.
+    /// </summary>
+    private async Task<(bool Reset, string Message)> ResetMovingInstallsAsync(string oldDir, Action? saved)
+    {
+        var game = SelectedGame!;
+        var oldGame = game.ShallowClone();
+        var key = LinuxGameLibraryStore.GameKey(game);
+        var state = Host.WorkingLibraryCopy();
+        if (!state.GameEdits.TryGetValue(key, out var previous)) return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
+        state.GameEdits.Remove(key);
+        Host.FolderChangeRunning = true;
+        try
+        {
+            if (Host.SaveLibraryCopy(state) is { } notSaved) return (false, notSaved);
+            Host.AdoptLibraryCopy(state);
+            saved?.Invoke();
+            Host.Session.Invalidate(game);
+            if (!await Host.RefreshWhenIdleAsync(MainWindowViewModel.NoDetectors)) return (true, StatusText = TF("Vm.ChangesSavedButLibraryWasNot", game.Name));
+            var reset = Host.AllGames.FirstOrDefault(candidate => string.Equals(LinuxGameLibraryStore.GameKey(candidate), key, StringComparison.OrdinalIgnoreCase));
+            if (reset is null) return (true, StatusText = TF("Vm.ChangesSavedButLibraryWasNot", game.Name));
+            Host.Select(reset);
+            await Host.ReprobeGameAsync(reset);
+            var newDir = reset.BinaryDirectory;
+            if (newDir is null || PathEquals(newDir, oldDir))
+                return (true, StatusText = TF("Vm.ManualOverridesRemovedAutomaticDetectionWas", game.Name));
+            string reason;
+            if (!await Host.AskFolderMoveAsync(oldGame, oldDir, newDir))
+                reason = TF("FolderMove.NotChanged", game.Name, oldDir);
+            else
+            {
+                var result = await Host.MoveInstallFolderAsync(oldGame, reset, oldDir, newDir, null);
+                if (result.Success)
+                {
+                    await Host.ReprobeGameAsync(reset);
+                    var done = TF("FolderMove.Done", game.Name, newDir) + " " + TF("Vm.ManualOverridesRemovedAutomaticDetectionWas", game.Name);
+                    Host.RaiseNotice(done);
+                    return (true, done);
+                }
+                reason = UiLocalizationService.Present(result.Message);
+            }
+            // Put the user's folder back: the installs stay where they are and keep working.
+            var back = Host.WorkingLibraryCopy();
+            back.GameEdits[key] = previous;
+            if (Host.SaveLibraryCopy(back) is { } notRestored) return (false, StatusText = notRestored);
+            Host.AdoptLibraryCopy(back);
+            Host.Session.Invalidate(reset); // its analysis is the reset folder's: the edit's folder is analysed again
+            await Host.RefreshWhenIdleAsync(MainWindowViewModel.NoDetectors);
+            var undone = TF("FolderMove.ResetUndone", game.Name, reason);
+            Host.RaiseNotice(undone);
+            return (false, undone);
+        }
+        finally
+        {
+            Host.FolderChangeRunning = false;
+        }
+    }
+
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
         => (await TryAddManualGameAsync(entry)).Message;
 
@@ -211,26 +310,13 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         // The Add game button and drag-and-drop are not busy-gated: a save between the repair's commit and its
         // reload would write the pre-repair library over the repaired file.
         if (Host.LibraryRepairRunning) return (false, T("Vm.WaitForRepairAfterMove"));
-        if (string.IsNullOrWhiteSpace(entry.Name)) return (false, T("Vm.EnterNameGame"));
-        if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath))
-            return (false, T("Vm.GameDirectoryDoesNotExist"));
-        if (MainWindowViewModel.GameRootRefusal(entry.InstallPath) is { } rootRefusal) return (false, rootRefusal);
-        if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath))
-            return (false, T("Vm.SelectedExecutableDoesNotExist"));
-        if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
-            return (false, T("Vm.SelectedWineProtonPrefixDoesNot"));
-
-        // Duplicates are judged by the library's own identity (PathIdentity: symlinks resolved, ordinal), so a
-        // symlink spelling of a listed folder is refused here instead of being saved and merged away by the scan.
+        if (EntryRefusal(entry) is { } refused) return (false, refused);
         var identity = PathIdentity.Canonicalize(entry.InstallPath);
         bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
-        if (Host.AllGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath)))
-            return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
         // Mutate a copy; the live state changes only once the save succeeded.
         var state = Host.WorkingLibraryCopy();
-        if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath)))
-            return (false, T("Vm.ManualGameAlreadySaved"));
+        if (DuplicateRefusal(entry, state) is { } duplicate) return (false, duplicate);
 
         state.ManualGames.Add(entry);
         state.FilterMode = "All Games";
@@ -252,6 +338,59 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         return (true, message);
     }
 
+    // Add game's checks on one entry before the library copy is read (name, folders, executable, prefix).
+    private static string? EntryRefusal(LinuxManualGameEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.Name)) return T("Vm.EnterNameGame");
+        if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath)) return T("Vm.GameDirectoryDoesNotExist");
+        if (MainWindowViewModel.GameRootRefusal(entry.InstallPath) is { } rootRefusal) return rootRefusal;
+        if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath)) return T("Vm.SelectedExecutableDoesNotExist");
+        if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath)) return T("Vm.SelectedWineProtonPrefixDoesNot");
+        return null;
+    }
+
+    // Duplicates are judged by the library's own identity (PathIdentity: symlinks resolved, ordinal), so a symlink
+    // spelling of a listed folder is refused here instead of being saved and merged away by the scan.
+    private string? DuplicateRefusal(LinuxManualGameEntry entry, LinuxGameLibraryState state)
+    {
+        var identity = PathIdentity.Canonicalize(entry.InstallPath);
+        bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
+        if (Host.AllGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath))) return T("Vm.GameDirectoryAlreadyLibrary");
+        if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath))) return T("Vm.ManualGameAlreadySaved");
+        return null;
+    }
+
+    /// <summary>
+    /// #293 (custom game folders' review): Add game for several entries at once, with Add game's checks on each; the ones
+    /// that pass are saved together and the library is refreshed once. <c>Refused</c> pairs each refused entry with its
+    /// localised reason (all of them when the library could not be saved); <c>Refreshed</c> is false when the refresh failed.
+    /// </summary>
+    internal async Task<(IReadOnlyList<LinuxManualGameEntry> Added, IReadOnlyList<(LinuxManualGameEntry Entry, string Reason)> Refused, bool Refreshed)>
+        TryAddManualGamesAsync(IReadOnlyList<LinuxManualGameEntry> entries)
+    {
+        if (Host.LibraryRepairRunning) return ([], entries.Select(entry => (entry, T("Vm.WaitForRepairAfterMove"))).ToArray(), true);
+        var state = Host.WorkingLibraryCopy();
+        var added = new List<LinuxManualGameEntry>();
+        var refused = new List<(LinuxManualGameEntry, string)>();
+        foreach (var entry in entries)
+        {
+            // Each accepted entry joins the copy first, so two entries for one folder cannot both be saved.
+            if ((EntryRefusal(entry) ?? DuplicateRefusal(entry, state)) is { } reason) refused.Add((entry, reason));
+            else
+            {
+                state.ManualGames.Add(entry);
+                added.Add(entry);
+            }
+        }
+        if (added.Count == 0) return ([], refused, true);
+        state.FilterMode = "All Games";
+        if (Host.SaveLibraryCopy(state) is { } notSaved) return ([], entries.Select(entry => (entry, notSaved)).ToArray(), true);
+        Host.AdoptLibraryCopy(state);
+        Host.ShowAllGames();
+        var refreshed = await Host.RefreshWhenIdleAsync(MainWindowViewModel.ManualOnly);
+        return (added, refused, refreshed);
+    }
+
     [RelayCommand(CanExecute = nameof(CanRemoveManualGame))]
     private async Task RemoveManualGameAsync()
     {
@@ -264,6 +403,8 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             StatusText = TF("Vm.SavedManualEntryWasNotFound", selected.Name);
             return;
         }
+        // #293 (upstream 2.9.0): a game added from a custom game folder is not offered again by the next scan.
+        state.IgnoreCustomFolderGame(selected.LibraryIdentityPath ?? selected.InstallPath);
         if (Host.SaveLibraryCopy(state) is not null) return;
         Host.AdoptLibraryCopy(state);
         StatusText = await Host.RefreshWhenIdleAsync(MainWindowViewModel.ManualOnly)

@@ -398,8 +398,8 @@ internal sealed class ViewModelFixture : IDisposable
             ManagedComponentKind.DisplayCommander, "Display Commander", "https://api.github.com/repos/pmnoxx/display-commander/releases/tags/latest",
             "zzz_display_commander.addon64", "zzz_display_commander.addon32", 500 * 1024, ManagedComponentKind.ReLimiter));
         var mfgAdaUnlock = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, new UpstreamRhiAddonDeploymentOptions(
-            ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases?per_page=1",
-            128 * 1024, ExactAssetName64: "renodx-mfgunlock.addon64", DeployFileName64: "renodx-mfgunlock.addon64", X64Only: true));
+            ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Unlock", "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases?per_page=1",
+            128 * 1024, ExactAssetName64: "renodx-mfgunlock.addon64", DeployFileName64: "renodx-mfgunlock.addon64", X64Only: true, KeepDisplayName: true));
         var prefs = Path.Combine(Path.GetDirectoryName(settingsStore.SettingsPath)!, "prefs");
         var dlssg2030 = new Dlssg2030UnlockDeploymentService(http, records, wineOverrides, new Dlssg2030PreferenceStore(Path.Combine(prefs, "dlssg2030.json")));
         var dlssEnabler = new StandaloneDlssEnablerDeploymentService(http, records, wineOverrides, new StandaloneDlssEnablerPreferenceStore(Path.Combine(prefs, "dlss-enabler.json")));
@@ -510,6 +510,9 @@ internal sealed class ViewModelFixture : IDisposable
             );
         managed.ShaderSets = shaderSets; // w7/shader-sets (#179): after construction, as the app's composition does
         managed.Hsf = new HsfDeploymentService(http, records, null, new ImmerseLaunchpadStep(http, Path.Combine(cacheDir, "launchpad")), Path.Combine(cacheDir, "hsf")); // w14/extras-addons (#277)
+
+        // w14/nr (#274): GITC Uplift with iMMERSE Launchpad, set after construction as the app's composition does.
+        managed.GitcUplift = new GitcUpliftDeploymentService(http, records, dlss, new ImmerseLaunchpadService(http), Path.Combine(cacheDir, "gitc-uplift"));
         built(managed);
         return new MainWindowViewModel(scanner, launcher ?? new LinuxGameLauncher(), probe ?? new NoProbe(), dlss, managed,
             new GraphicsApiOverrideStore(Path.Combine(prefs, "api.json")), new OptiScalerVariantPreferenceStore(Path.Combine(prefs, "opti.json")),

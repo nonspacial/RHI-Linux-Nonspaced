@@ -526,6 +526,14 @@
                                     SelectedItem="{Binding SelectedShortFuseVersion, Mode=TwoWay}"
                                     IsEnabled="{Binding CanConfigureShortFuseVersionPin}"/>
                         </Grid>
+                        <!-- w14/nr (#274): GITC Uplift's version (upstream "Uplift Version"; Latest follows updates). -->
+                        <Grid ColumnDefinitions="100,220" ColumnSpacing="8" IsVisible="{Binding ShowGitcUplift}">
+                          <TextBlock Text="{DynamicResource Ui.UpliftVersion}" Classes="muted" VerticalAlignment="Center"/>
+                          <ComboBox x:Name="GitcUpliftVersion" Grid.Column="1" ItemsSource="{Binding GitcUpliftVersionOptions}"
+                                    SelectedItem="{Binding SelectedGitcUpliftVersion, Mode=TwoWay}"
+                                    IsEnabled="{Binding CanConfigureUpliftVersionPin}"
+                                    ToolTip.Tip="{DynamicResource Ui.UpliftVersionTip}" ToolTip.ShowDelay="2000"/>
+                        </Grid>
                       </WrapPanel>
                       <Grid ColumnDefinitions="120,220,*" ColumnSpacing="8">
                         <TextBlock Text="NR DLL" Classes="muted" VerticalAlignment="Center"/>
@@ -536,6 +544,14 @@
                         <TextBlock Grid.Column="2" Text="{DynamicResource Ui.NrDllVersionNote}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
                       </Grid>
                       <views:NrCostScalerRow/> <!-- w3/parity hook (#96) -->
+                      <!-- w14/nr (#274): GITC Uplift's iMMERSE Launchpad toggle (motion vectors) and its link, upstream's NR section. -->
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="6" IsVisible="{Binding ShowGitcUplift}">
+                        <CheckBox x:Name="GitcUpliftLaunchpad" Content="{DynamicResource Ui.UpliftLaunchpad}" IsChecked="{Binding UpliftLaunchpad, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureUpliftLaunchpad}"
+                                  ToolTip.Tip="{DynamicResource Ui.UpliftLaunchpadTip}" ToolTip.ShowDelay="2000"/>
+                        <Button x:Name="GitcUpliftLink" Content="{DynamicResource Ui.UpliftLink}" Command="{Binding OpenGitcUpliftLinkCommand}" Padding="12,4"
+                                ToolTip.Tip="{DynamicResource Ui.UpliftLinkTip}" ToolTip.ShowDelay="2000"/>
+                      </WrapPanel>
                     </StackPanel>
                   </Border>
 
@@ -602,6 +618,8 @@
                                     Click="Rtx40MfgSettings_Click" ToolTip.Tip="{DynamicResource Ui.Rtx40MfgSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtxEncoreSettings}"
                                     Click="RtxEncoreSettings_Click" ToolTip.Tip="{DynamicResource Ui.RtxEncoreSettingsTip}" Padding="10,6"/>
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasMfgUnlockSettings}"
+                                    Click="MfgUnlockSettings_Click" ToolTip.Tip="{DynamicResource Mfgu.SettingsTip}" Padding="10,6"/><!-- w14/extras-fg (#279) -->
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasReFrameworkSettings}"
                                     Click="ReFrameworkSettings_Click" ToolTip.Tip="{Binding ReFrameworkSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasIniSettings}"
@@ -740,11 +758,15 @@
     <Border x:Name="StatusBarBackdrop" Classes="libraryBackdrop" Grid.Row="2" IsVisible="False" ZIndex="1"
             PointerPressed="LibraryBackdrop_PointerPressed"/>
     <Border x:Name="StatusBar" Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-        <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+        <!-- #293: games found in the custom game folders; a link, never a modal (upstream 2.9.0's status-bar notice). -->
+        <Button x:Name="CustomGamesNotice" Content="{Binding CustomGamesNoticeText}" IsVisible="{Binding ShowCustomGamesNotice}"
+                ToolTip.Tip="{Binding CustomGamesNoticeTip}" Click="CustomGamesNotice_Click" Background="Transparent" BorderThickness="0"
+                Padding="0" FontSize="10" Foreground="#4DA3FF" Cursor="Hand" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
         <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
-        <TextBlock x:Name="ProductVersionText" Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"
+        <TextBlock x:Name="ProductVersionText" Grid.Column="2" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"
                    Cursor="Hand" Tapped="ProductVersion_Tapped"/>
       </Grid>
     </Border>

@@ -79,6 +79,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
         OnPropertyChanged(nameof(CanConfigureShortFuseVersionPin));
         OnPropertyChanged(nameof(CanConfigureNeuralRenderingDllVersion));
         OnPropertyChanged(nameof(CanLoadNeuralVersionHistory));
+        NotifyUplift(); // w14/nr (#274)
     }
 
     /// <summary>The DLSS manifest's NR DLL versions, “Latest” first; the selected pin stays an option.</summary>
@@ -119,6 +120,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             ReplaceLatestLabel(Dlss5BridgeVersionOptions, bridgePin ?? LatestDisplay());
             ReplaceLatestLabel(ShortFuseVersionOptions, shortFusePin ?? LatestDisplay());
             ReplaceLatestLabel(NeuralRenderingDllVersionOptions, nrDllPin ?? LatestDisplay());
+            RefreshUpliftLocalized(); // w14/nr (#274)
             SelectedDlss5FeederVersion = feederPin ?? LatestDisplay();
             SelectedDlss5BridgeVersion = bridgePin ?? LatestDisplay();
             SelectedShortFuseVersion = shortFusePin ?? LatestDisplay();
@@ -495,6 +497,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
         SelectedDlss5BridgeVersion = LatestDisplay();
         SelectedShortFuseVersion = LatestDisplay();
         SelectedNeuralRenderingDllVersion = LatestDisplay();
+        ResetUplift(); // w14/nr (#274)
     }
 
     private void LoadNeuralVersionPins(DetectedGame game)
@@ -512,6 +515,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
         SelectedDlss5BridgeVersion = bridge;
         SelectedShortFuseVersion = shortFuse;
         SelectedNeuralRenderingDllVersion = nrDll;
+        LoadUplift(game); // w14/nr (#274)
     }
 
     private void SaveNeuralVersionPin(ManagedComponentKind kind, string value)
@@ -548,7 +552,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             LoadNeuralVersionPins(game);
             return;
         }
-        if (_dlssPanel.OrchestratedDlssStackManaged)
+        if (_dlssPanel.OrchestratedDlssStackManaged || _managedComponents.GitcUplift?.GetRecord(game) is not null) // w14/nr (#274): Uplift's own DLL too
             UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind: null, previous), "SwapNeuralVersionInPlaceAsync");
     }
 
@@ -656,6 +660,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             SelectedDlss5FeederVersion = feederSelected ?? LatestDisplay();
             SelectedDlss5BridgeVersion = bridgeSelected ?? LatestDisplay();
             SelectedShortFuseVersion = shortFuseSelected ?? LatestDisplay();
+            ApplyUpliftVersions(lists.GitcUplift); // w14/nr (#274)
         }
         finally { _rebuildingOptionLists = false; }
     }

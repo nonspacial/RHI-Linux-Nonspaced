@@ -86,6 +86,26 @@ public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
 
     private const string DllSuffix = "|NeuralRenderingDll";
 
+    // w14/nr (#274): the game's iMMERSE Launchpad choice for GITC Uplift ("on"/"off"); null = the default (on without DLSS).
+    private const string LaunchpadSuffix = "|GitcUpliftLaunchpad";
+
+    public bool? GetUpliftLaunchpad(DetectedGame game)
+    {
+        lock (_gate)
+            return GameRecordIdentity.TryGet(LoadUnsafe(), game, out var value, LaunchpadSuffix) ? value switch { "on" => true, "off" => false, _ => null } : null;
+    }
+
+    public void SetUpliftLaunchpad(DetectedGame game, bool? on)
+    {
+        lock (_gate)
+        {
+            var entries = LoadUnsafe();
+            if (on is null) GameRecordIdentity.Remove(entries, game, LaunchpadSuffix);
+            else GameRecordIdentity.Set(entries, game, on.Value ? "on" : "off", LaunchpadSuffix);
+            SaveUnsafe(entries);
+        }
+    }
+
     // Manifest labels carry spaces and brackets, e.g. "310.8.2 (20/30/40/50)"; only control characters are refused.
     private static bool IsSafeDllVersion(string value)
         => value.Length is > 0 and <= 128 && !value.Any(char.IsControl);
@@ -95,7 +115,8 @@ public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
     private static void EnsureSupported(ManagedComponentKind kind)
     {
         // OptiScaler: the Nightly build pin (#156), stored under its own "|OptiScaler" suffix.
-        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.OptiScaler))
+        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.OptiScaler
+            or ManagedComponentKind.GitcUplift)) // w14/nr (#274): Uplift Version
             throw new ArgumentOutOfRangeException(nameof(kind), kind, "Version pins are supported only for Neural Rendering add-ons.");
     }
 

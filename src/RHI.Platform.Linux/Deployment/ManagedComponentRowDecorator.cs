@@ -122,7 +122,7 @@ internal sealed class ManagedComponentRowDecorator
                 ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or
                 ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or
                 ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework or
-                ManagedComponentKind.RtxEncore)
+                ManagedComponentKind.RtxEncore or ManagedComponentKind.GitcUplift) // w14/nr (#274)
             {
                 if (component.Kind == ManagedComponentKind.REFramework && record is not null &&
                     component.Availability == ComponentAvailability.Available &&
@@ -170,7 +170,9 @@ internal sealed class ManagedComponentRowDecorator
 
                 // #236/#237/#238: RHI's record alone makes the row Installed, so Remove is offered after the user deleted
                 // the file (an update never puts it back, and Install refuses or would re-create it behind the record).
-                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock && record is not null &&
+                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock
+                        or ManagedComponentKind.GitcUplift && record is not null && // w14/nr (#274): its record alone makes it Installed
+
                     component.Availability == ComponentAvailability.Available)
                 {
                     component.Availability = ComponentAvailability.Installed;
@@ -194,10 +196,11 @@ internal sealed class ManagedComponentRowDecorator
                         : managedRenoDxUpgrade is not null ? "RenoDX Upgrade"
                         : managedReLimiter is not null ? "ReLimiter"
                         : managedDisplayCommander is not null ? "Display Commander"
-                        : managedMfgAdaUnlock is not null ? "MFG Ada Unlock"
+                        : managedMfgAdaUnlock is not null ? "MFG Unlock"
                         : managedDlss5Feeder is not null ? "DLSS5 Feeder"
                         : managedDlss5Bridge is not null ? "DLSS5 DX11 Bridge"
                         : managedShortFuse is not null ? "ShortFuse"
+                        : Find(ManagedComponentKind.GitcUplift) is not null ? GitcUpliftDeploymentService.DisplayName // w14/nr (#274)
                         : managedDofFix is not null ? "Universal UE DOF Fix"
                         : managedLumaFramework is not null ? "Luma Framework"
                         : null;
@@ -464,6 +467,22 @@ internal sealed class ManagedComponentRowDecorator
                     }
                 }
 
+                // w14/nr (#274): GITC Uplift before install — where it cannot go, why; else what it is and that it replaces another method.
+                if (component.Kind == ManagedComponentKind.GitcUplift && component.Availability == ComponentAvailability.Available)
+                {
+                    if (GitcUpliftDeploymentService.IneligibleReason(game) is { } upliftRefusal)
+                    {
+                        component.ActionAllowed = false;
+                        component.Note = upliftRefusal;
+                    }
+                    else
+                    {
+                        component.Note = GitcUpliftDeploymentService.AvailableNote
+                            + (managedShortFuse is not null || managedDlss5Feeder is not null || managedDlss5Bridge is not null
+                                ? GitcUpliftDeploymentService.SwitchMethodNote : "");
+                    }
+                }
+
                 if (component.Kind is ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge)
                 {
                     if (component.Availability == ComponentAvailability.Available && !reShadePresent &&
@@ -477,22 +496,22 @@ internal sealed class ManagedComponentRowDecorator
                         if (managedDlssg2030 is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Ada Unlock; os métodos de desbloqueio de Frame Generation são mutuamente exclusivos no RHI-Linux.";
+                            component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Unlock; os métodos de desbloqueio de Frame Generation são mutuamente exclusivos no RHI-Linux.";
                         }
                         else if (managedRtx40Mfg is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar MFG Ada Unlock; mantenha uma única autoridade de Frame Generation.";
+                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar MFG Unlock; mantenha uma única autoridade de Frame Generation.";
                         }
                         else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || GameArchitecture.Of(game) != PeArchitecture.X64)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock is a 64-bit ReShade add-on.";
+                            component.Note = "MFG Unlock is a 64-bit ReShade add-on.";
                         }
                         else if (!components.Any(c => c.Kind == ManagedComponentKind.Streamline && c.Availability == ComponentAvailability.Installed))
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock requires a game with Streamline/DLSS frame generation. Streamline was not detected.";
+                            component.Note = "MFG Unlock requires a game with Streamline/DLSS frame generation. Streamline was not detected.";
                         }
                         else
                         {
@@ -558,7 +577,7 @@ internal sealed class ManagedComponentRowDecorator
                                 ? "Troca de método: instalar o Feeder Full removerá transacionalmente primeiro o método ShortFuse/DX11 Bridge atualmente gerenciado pelo RHI."
                                 : feederArchitecture == PeArchitecture.X86
                                     ? "DLSS5 Feeder 32-bit: selecione RenoDX DLSS5 para usar addon32 + host64. Deep Fried Chicken permanece restrito ao layout 64-bit comprovado."
-                                    : "DLSS5 Feeder Full: Feeder + Deep Fried Chicken ou RenoDX DLSS5 com runtimes SR/NR e pilha de shaders isolada.";
+                                    : Dlss5FeederFullDeploymentService.AvailableNote; // w14/nr (#275): Feeder 2.0's motion vectors and Alt+C menu
                         }
                     }
                 }
@@ -581,7 +600,7 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedMfgAdaUnlock is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock já está ativo. Remova-o antes de instalar RTX 20 FG Unlock legado.";
+                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar RTX 20 FG Unlock legado.";
                         }
                         else if (managedShortFuse is not null)
                         {
@@ -639,7 +658,7 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedMfgAdaUnlock is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock já está ativo. Remova-o antes de instalar Universal MFG.";
+                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar Universal MFG.";
                         }
                         else if (managedDlssg2030 is not null)
                         {
@@ -783,6 +802,8 @@ internal sealed class ManagedComponentRowDecorator
                                 ? $" {consumerVersion}"
                                 : "";
                             consumer = $" · {consumerName}{consumerVersionText}";
+                            // w14/nr (#275): Feeder 2.0's built-in motion vectors or LumeniteFX, as the preset has it now.
+                            if (Dlss5FeederFullDeploymentService.MotionVectorsLabel(record) is { } motion) consumer += $" · {motion}";
                         }
                         component.Note = $"Managed by RHI Linux{channel}{consumer}{(string.IsNullOrWhiteSpace(record.Version) ? "" : $" · {record.Version}")}.";
                     }

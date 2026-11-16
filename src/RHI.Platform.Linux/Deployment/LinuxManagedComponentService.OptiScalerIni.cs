@@ -101,7 +101,7 @@ public sealed partial class LinuxManagedComponentService
     /// <summary>The user removed OptiScaler: its applied edits and saved-INI choice are forgotten (upstream).</summary>
     private async Task<ComponentOperationResult> RemoveOptiScalerForgettingIniChoicesAsync(DetectedGame game, CancellationToken cancellationToken)
     {
-        var result = await _optiscaler.RemoveAsync(game, cancellationToken).ConfigureAwait(false);
+        var result = await RemoveOptiScalerMovingUniversalMfgAsync(game, cancellationToken).ConfigureAwait(false); // w14/extras-fg (#278)
         if (result.Success)
         {
             try { OptiScalerIniChoices.Clear(game); }
@@ -116,6 +116,6 @@ public sealed partial class LinuxManagedComponentService
         var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler);
         return guard is not null
             ? Task.FromResult(guard)
-            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Remove, () => _optiscaler.RemoveAsync(game, cancellationToken));
+            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Remove, () => RemoveOptiScalerMovingUniversalMfgAsync(game, cancellationToken));
     }
 }

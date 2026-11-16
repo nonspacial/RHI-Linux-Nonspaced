@@ -1,0 +1,10 @@
+Addons/GITC-Uplift/Put nvngx_dlssnr.dll here.txt
+Addons/gitc-uplift-helper64.exe
+Addons/gitc-uplift.addon32
+Addons/gitc-uplift.addon64
+LICENSE
+README.md
+SHA256SUMS.txt
+Shaders/Uplift.fx
+Shaders/UpliftMask.fx
+THIRD_PARTY_NOTICES.md

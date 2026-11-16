@@ -74,6 +74,9 @@ public sealed class LinuxAppSettings
     /// as <c>0x2D</c>, or <c>auto</c>/<c>-1</c>); empty keeps each template's own key (the default: nothing is rewritten).
     /// </summary>
     public string OptiScalerMenuKey { get; set; } = "";
+    // w14/nr rows
+    /// <summary>#274: GITC Uplift's NR on/off key (<c>[Uplift] EnableKey</c>, a Windows virtual-key code); 0 = none (each game keeps its own).</summary>
+    public int UpliftEnableKey { get; set; }
     // w5/reshade-core rows
     // w7/smalls rows
     // w7/reshade rows
@@ -152,6 +155,7 @@ public sealed class LinuxAppSettings
         PeakNitsPresets = (PeakNitsPresets ?? [1, 2, 3]).Where(n => n is >= 1 and <= 3).Distinct().Order().ToList(); // #182
         // w5/shell-launch rows
         OptiScalerMenuKey = NormalizeOptiScalerMenuKey(OptiScalerMenuKey);
+        if (UpliftEnableKey is < 0 or > 255) UpliftEnableKey = 0; // w14/nr (#274)
         // w5/reshade-core rows
         // w7/smalls rows
         // w7/reshade rows

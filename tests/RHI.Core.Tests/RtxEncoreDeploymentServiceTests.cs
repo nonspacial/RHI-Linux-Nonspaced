@@ -12,14 +12,14 @@ namespace RHI.Core.Tests;
 
 /// <summary>
 /// #158 RTX Encore as a managed component: name from the #120 store, foreign file kept as .original and put back, Wine
-/// override per .dll name, journaled install/update/removal, NVIDIA's exact 310.8.0 Neural Rendering file under the
+/// override per .dll name, journaled install/update/removal, NVIDIA's exact 310.9.16 Neural Rendering file under the
 /// one-owner rule (#157), fail-closed download (GitHub digest + SHA256SUMS + RTX Encore's own version resource).
 /// </summary>
 public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
 {
     private const string Rc3 = "1.0.0-rc.3";
     private const string Rc4 = "1.0.0-rc.4";
-    private static readonly string NrAcceptedUrl = "https://github.com/rhi-tests/rhi-repo/releases/download/dlssnr-310.8.0/nvngx_dlssnr_310.8.0.zip";
+    private static readonly string NrAcceptedUrl = "https://github.com/rhi-tests/rhi-repo/releases/download/dlssnr-310.9.16/nvngx_dlssnr_310.9.16.zip";
     private static readonly string NrOtherUrl = "https://github.com/rhi-tests/rhi-repo/releases/download/dlssnr-310.8.3/nvngx_dlssnr_310.8.3.zip";
     private static readonly byte[] NrAccepted = Pe(0x31);
     private static readonly byte[] NrOther = Pe(0x32);
@@ -139,7 +139,7 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void OfferedNames_FollowTheGamesApi_SkipBink_AndOtherComponentsNames_AndAsiNeedsTheLoader()
+    public void OfferedNames_FollowTheGamesApi_OfferBink_SkipOtherComponentsNames_AndAsiNeedsTheLoader()
     {
         var service = Service(new EncoreHandler());
 
@@ -149,7 +149,7 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
         Assert.Contains("d3d12.dll", dx12);
         Assert.DoesNotContain("d3d9.dll", dx12);
         Assert.DoesNotContain("d3d11.dll", dx12);
-        Assert.DoesNotContain("binkw64.dll", dx12);
+        Assert.Contains("binkw64.dll", dx12); // #280: offered; the game's Bink DLL is kept as binkw64Hooked.dll
         Assert.DoesNotContain(RtxEncoreNames.AsiName, dx12);
 
         _game.GraphicsApi = GraphicsApi.Vulkan;
@@ -269,7 +269,7 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task WithNeuralRendering_TheExact310_8_0File_IsPlaced_AndRtxEncoreOwnsTheRuntime()
+    public async Task WithNeuralRendering_TheExact310_9_16File_IsPlaced_AndRtxEncoreOwnsTheRuntime()
     {
         File.WriteAllText(Path.Combine(_bin, "nvngx_dlssnr.dll"), "the game's own runtime");
         var service = Service(new EncoreHandler());
@@ -330,9 +330,9 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
     }
 
     [Theory]
-    [InlineData("310.8.0", true)]
-    [InlineData("310.8.0 (50xx)", true)]
-    [InlineData("310.8.01", false)]
+    [InlineData("310.9.16", true)]
+    [InlineData("310.9.16 (50xx)", true)]
+    [InlineData("310.9.160", false)]
     [InlineData("310.8.3 (50xx)", false)]
     public void RequiredNeuralRenderingVersion_IsExact(string version, bool accepted)
         => Assert.Equal(accepted, RtxEncoreDeploymentService.IsRequiredNeuralRenderingVersion(version));
@@ -688,7 +688,11 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
         public byte[] Payload(string version) => PayloadOverride ?? _payloads[version];
         private static string ZipUrl(string version) => $"https://github.com/rhi-tests/rtx-encore/releases/download/v{version}/RTX-Encore-v{version}.zip";
         private static string SumsUrl(string version) => $"https://github.com/rhi-tests/rtx-encore/releases/download/v{version}/SHA256SUMS";
-        private byte[] ZipFor(string version) => Zip(("rtx-encore.dll", Payload(version)), ("alternative-proxies/version.dll", Payload(version)));
+        /// <summary>#280: the release's separate ASI build (alternative-proxies/rtx-encore.asi), or null for a release without one.</summary>
+        public byte[]? AsiBuild { get; set; }
+        private byte[] ZipFor(string version) => AsiBuild is { } asi
+            ? Zip(("rtx-encore.dll", Payload(version)), ("alternative-proxies/version.dll", Payload(version)), ("alternative-proxies/rtx-encore.asi", asi))
+            : Zip(("rtx-encore.dll", Payload(version)), ("alternative-proxies/version.dll", Payload(version)));
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -712,7 +716,7 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
                                                + "  RTX-Encore-v" + Latest + ".zip\n");
             else if (url == DlssManagerService.ManifestUrl)
             {
-                var accepted = OfferAccepted ? $$""",{"version":"310.8.0 (50xx)","url":"{{NrAcceptedUrl}}"}""" : "";
+                var accepted = OfferAccepted ? $$""",{"version":"310.9.16 (50xx)","url":"{{NrAcceptedUrl}}"}""" : "";
                 body = Encoding.UTF8.GetBytes($$"""{"dlss":[],"dlssd":[],"dlssg":[],"streamline":[],"dlssnr":[{"version":"310.8.3 (50xx)","url":"{{NrOtherUrl}}"}{{accepted}}]}""");
             }
             else if (url == NrAcceptedUrl) body = Zip(("nvngx_dlssnr.dll", NrAccepted));

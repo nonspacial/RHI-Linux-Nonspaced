@@ -15,7 +15,10 @@ public sealed record UpstreamRhiAddonDeploymentOptions(
     string? AssetNamePattern32 = null,
     string? DeployFileName64 = null,
     string? DeployFileName32 = null,
-    bool X64Only = false);
+    bool X64Only = false,
+    // w14/extras-fg (#279): show DisplayName, not the manifest's packageName (upstream keeps "MFG Ada Unlock" there and
+    // shows "MFG Unlock" in its interface).
+    bool KeepDisplayName = false);
 
 /// <summary>
 /// Binds one Linux-managed ReShade add-on to the addonPacks entry from the upstream RHI manifest.
@@ -88,7 +91,7 @@ public sealed class UpstreamRhiAddonDeploymentService
         if (string.IsNullOrWhiteSpace(releaseApiUrl))
             return ComponentOperationResult.Fail($"{pack.PackageName} não possui URL da API de releases do GitHub no manifesto do RHI.");
 
-        var service = BuildService(pack.PackageName, releaseApiUrl);
+        var service = BuildService(_options.KeepDisplayName ? _options.DisplayName : pack.PackageName, releaseApiUrl);
         return await service.InstallAsync(game, releaseTag, cancellationToken).ConfigureAwait(false);
     }
 
@@ -176,7 +179,7 @@ public sealed class UpstreamRhiAddonDeploymentService
         {
             if (pack.Disabled)
                 throw new InvalidOperationException($"{pack.PackageName} is disabled by the upstream RHI manifest.");
-            if (!string.IsNullOrWhiteSpace(pack.PackageName)) displayName = pack.PackageName;
+            if (!string.IsNullOrWhiteSpace(pack.PackageName) && !_options.KeepDisplayName) displayName = pack.PackageName;
             if (!string.IsNullOrWhiteSpace(pack.ReleaseApiUrl)) releaseApiUrl = pack.ReleaseApiUrl!;
         }
         if (string.IsNullOrWhiteSpace(releaseApiUrl))

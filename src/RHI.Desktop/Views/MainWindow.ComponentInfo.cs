@@ -20,6 +20,11 @@ public partial class MainWindow
     private void ComponentInfo_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasInfo) return;
+        if (row.GitHubInfoUrl is { } gitHub) // #285: the FG unlocks' and closed-source mods' ⓘ opens their GitHub page
+        {
+            OpenProjectLink(gitHub);
+            return;
+        }
         if (DataContext is not MainWindowViewModel vm || vm.Parity?.ComponentInfo is not { } info) return;
         await info.OpenAsync(vm.SelectedGame, row.Kind, row.Name, row.InstalledVersion);
     });

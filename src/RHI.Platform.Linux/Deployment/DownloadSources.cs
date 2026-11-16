@@ -190,6 +190,20 @@ public static class DownloadSources
     /// </summary>
     public static readonly TrustedDownloadPolicy DxvkHdr = new(
         "DXVK HDR", "GitHub", GitHubReleaseHosts, maxBytes: 128L * 1024 * 1024);
+    // w14/nr rows
+    /// <summary>#274: GITC Uplift (ghostinthecamera/GITC-Uplift) GitHub releases: the zip is checked against GitHub's digest and the release's SHA256SUMS.txt.</summary>
+    public static readonly TrustedDownloadPolicy GitcUplift = new(
+        "GITC Uplift", "GitHub", GitHubReleaseHosts, maxBytes: 64L * 1024 * 1024);
+    /// <summary>#274/#277: iMMERSE Launchpad, from the martymcmodding/iMMERSE branch archive (codeload.github.com; no digest is published).</summary>
+    public static readonly TrustedDownloadPolicy ImmerseLaunchpad = new(
+        "iMMERSE Launchpad", "GitHub", [.. GitHubReleaseHosts, "codeload.github.com"], maxBytes: 64L * 1024 * 1024);
+    // w14/extras-fg rows
+    /// <summary>
+    /// Intel's XeSS SDK files for the frame-generation mods (Universal MFG Unlocker, MFG Unlock, RTX Encore; upstream's
+    /// source): intel/xess at a pinned tag on raw.githubusercontent.com, each file checked against its pinned SHA-256.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy IntelXess = new(
+        "Intel XeSS", "raw.githubusercontent.com", ["raw.githubusercontent.com"], maxBytes: 128L * 1024 * 1024);
     // w14/optiscaler-2 rows
     /// <summary>
     /// #271 custom OptiScaler builds added from a link: the user's own choice of host (shown with a trust warning). HTTPS on
@@ -240,6 +254,11 @@ public static class DownloadSources
         DxvkHdr,
         // w14/extras-addons rows
         Hsf,
+
+        // w14/nr rows
+        GitcUplift, ImmerseLaunchpad,
+        // w14/extras-fg rows
+        IntelXess,
         // w14/optiscaler-2 rows
         OptiScalerCustomBuild, AnrFg,
     ];

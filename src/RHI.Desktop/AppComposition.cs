@@ -108,6 +108,8 @@ internal sealed class AppComposition
     // w14/optiscaler rows
     /// <summary>#269: the recommended OptiScaler presets (upstream's optiscaler_presets.json).</summary>
     public OptiScalerRecommendedPresets? OptiScalerRecommendedPresets { get; init; }
+    /// <summary>#293: PCGamingWiki's data, whose page titles name the games found in custom game folders.</summary>
+    public PcgwCentralDataService? PcgwData { get; init; }
     // w14/optiscaler-2 rows
     /// <summary>#271: the app's download client, for custom OptiScaler builds added from a link.</summary>
     public HttpClient? Http { get; init; }
@@ -125,6 +127,7 @@ internal sealed class AppComposition
             vm.OptiScalerPresets.RecommendedSource = presets;
             RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => presets.RefreshAsync()), "optiscaler-presets");
         }
+        if (PcgwData is { } pcgw) vm.CustomFolderTitleLookup = name => pcgw.Current?.TryLookup(name, null)?.PageTitle; // #293
         vm.OptiScalerCustomBuilds.Http = Http; // w14/optiscaler-2 hook (#271): custom builds added from a link
         // w14/optiscaler-2 hook (#271): the manifest's OptiScaler forks replace the built-in four once it is read.
         RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => UpstreamManifest.RefreshOsForksAsync()), "optiscaler-forks");
@@ -220,18 +223,20 @@ internal sealed class AppComposition
         var mfgAdaUnlock = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.MfgAdaUnlock,
             "mfgunlock",
-            "MFG Ada Unlock",
+            "MFG Unlock",
             "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases?per_page=1",
             128 * 1024,
             ExactAssetName64: "renodx-mfgunlock.addon64",
             DeployFileName64: "renodx-mfgunlock.addon64",
-            X64Only: true));
+            X64Only: true,
+            KeepDisplayName: true)); // #279: shown as MFG Unlock
         var dlssg2030Preferences = new Dlssg2030PreferenceStore();
         var dlssg2030 = new Dlssg2030UnlockDeploymentService(http, records, wineOverrides, dlssg2030Preferences, journal: journal);
         var dlssEnablerPreferences = new StandaloneDlssEnablerPreferenceStore();
         var dlssEnablerStandalone = new StandaloneDlssEnablerDeploymentService(http, records, wineOverrides, dlssEnablerPreferences, journal: journal);
         var rtx40MfgPreferences = new Rtx40MfgPreferenceStore();
-        var rtx40Mfg = new Rtx40MfgStandaloneDeploymentService(http, records, wineOverrides, rtx40MfgPreferences, journal: journal);
+        var intelXess = new IntelXessFiles(http); // w14/extras-fg: Intel's XeSS files for Universal MFG Unlocker, MFG Unlock and RTX Encore
+        var rtx40Mfg = new Rtx40MfgStandaloneDeploymentService(http, records, wineOverrides, rtx40MfgPreferences, journal: journal) { Xess = intelXess }; // #278
         var dlss5Bridge = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.Dlss5Dx11Bridge,
             "dlss5-dx11-bridge",
@@ -329,7 +334,7 @@ internal sealed class AppComposition
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
             updateLog, nrCostScaler: nrCostScaler, // w3/parity hook (#96): named argument
-            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) // w4/encore (#158)
+            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) { Xess = intelXess } // w4/encore (#158); #280: Intel XeSS files
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
             , updateInclusion: updateInclusion
@@ -372,6 +377,14 @@ internal sealed class AppComposition
         // w14/optiscaler rows
         // #270 Remove old Nightly builds (off by default): after a Nightly download, keep the newest and the builds games use.
         optiPackages.NightlyCleanupKeep = () => settingsStore.Load().OptiScalerRemoveOldNightlyBuilds ? managedComponents.OptiScalerNightlyBuildsInUse() : null;
+
+        // w14 lane rows: services set on LinuxManagedComponentService after construction (one statement each)
+        // w14/nr rows
+        // #274: GITC Uplift (a Neural Rendering method) with iMMERSE Launchpad, a service the HSF lane (#277) shares; the NR
+        // on/off key comes from Settings at install time.
+        managedComponents.GitcUplift = new GitcUpliftDeploymentService(http, records, dlss, new ImmerseLaunchpadService(http), journal: journal);
+        managedComponents.GitcUpliftEnableKey = () => settingsStore.Load().UpliftEnableKey;
+        managedComponents.MfgUnlockFiles = new MfgUnlockFiles(intelXess, records, journal); // w14/extras-fg (#279)
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows
@@ -411,6 +424,7 @@ internal sealed class AppComposition
         // w5/ini-presets rows
         managedComponents.UserIni = new UserIniService(userIniTemplates, records, managedComponents.IniWriteRefusal, journal); // #181: deploys journaled
         managedComponents.ReShadePresets = new ReShadePresetService(records, journal, managedComponents.IniWriteRefusal); // #180
+        managedComponents.FolderMoveJournal = journal; // #293 install folder moves are journaled
         managedComponents.LumaSettings = new LumaSettingsService(records, journal, managedComponents.IniWriteRefusal); // #189
         managedComponents.DisplayCommanderSettings = new DisplayCommanderSettingsService(records, journal, managedComponents.IniWriteRefusal); // #282
         managedComponents.Hsf = new HsfDeploymentService(http, records, journal, new ImmerseLaunchpadStep(http)); // #277
@@ -530,6 +544,7 @@ internal sealed class AppComposition
             // w12/pins rows
             // w12/hdr-wsi rows
             HdrSupport = hdrSupport,
+            PcgwData = pcgwData, // #293
         };
     }
 }

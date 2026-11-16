@@ -194,6 +194,7 @@ public sealed class SelectedGameSessionTests
             nameof(DetectedGame.WikiStatusOverride), nameof(DetectedGame.AuthorOverride), nameof(DetectedGame.ManifestGameNote),
             nameof(DetectedGame.ManifestGameNoteUrl), nameof(DetectedGame.ManifestGameNoteUrlLabel), nameof(DetectedGame.ManifestInstallWarnings),
             nameof(DetectedGame.EngineIniFileOverride),
+            nameof(DetectedGame.RtxEncoreRecommendedDllName), // w14/extras-fg (#280): manifest policy
             // w3/sync rows
             nameof(DetectedGame.DlssPathOverride), nameof(DetectedGame.StreamlinePathOverride),
             // w3/journal rows

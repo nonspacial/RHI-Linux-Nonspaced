@@ -10,7 +10,7 @@ using RHI.Platform.Linux.Deployment;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>The component dialogs that share one layout: a proxy DLL (and GPU generation) choice, then check / update.</summary>
-public enum ProxyComponentDialogKind { Dlssg2030, DlssEnabler, UniversalMfg, RtxEncore }
+public enum ProxyComponentDialogKind { Dlssg2030, DlssEnabler, UniversalMfg, RtxEncore, MfgUnlock }
 
 /// <summary>
 /// #284: one row of an extra's DLL-name dropdown: a name used by another component is shown with it and cannot be picked;
@@ -56,28 +56,26 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
         {
             case ProxyComponentDialogKind.Dlssg2030:
             {
+                // #281 (upstream 2.8.9): no GPU generation; the mod's main settings in dlssg_sm86.ini, Open ini, Open log.
                 var preferences = shell.GetDlssg2030Preferences();
                 var record = shell.GetDlssg2030Record();
                 Title = T("Ui.Dlssg2030Title");
                 Intro = T("Ui.Dlssg2030Intro");
                 RouteNote = T("Ui.Dlssg2030RouteNote");
-                GpuLabel = T("Ui.Dlssg2030Gpu");
-                GpuOptions = Dlssg2030UnlockDeploymentService.GpuGenerations;
-                SelectedGpu = preferences.GpuGeneration;
-                GpuMinWidth = 260;
                 ProxyLabel = T("Ui.Dlssg2030Proxy");
                 ProxyOptions = Dlssg2030UnlockDeploymentService.ProxyNames;
                 SelectedProxy = preferences.ProxyName;
                 ProxyMinWidth = 220;
                 IsInstalled = record is not null;
-                InstalledText = record is null ? null : TF("Win.InstalledChangeGenerationProxyRemoveReinstall",
-                    record.Metadata.GetValueOrDefault("FG2030.GpuGeneration") ?? preferences.GpuGeneration,
+                InstalledText = record is null ? null : TF("Ui.UmfgInstalledAs", record.Version ?? "?",
                     record.Metadata.GetValueOrDefault("FG2030.ProxyName") ?? preferences.ProxyName);
+                var content = FgSettingsBuilder.Dlssg2030(shell.GetDlssg2030IniLines(), record?.BinaryDirectory, shell.SetDlssg2030IniSetting, ShowMessage);
+                (Sections, Lines, FileButtons) = (content.Sections, content.Lines, content.Files);
                 CheckLabel = T("Ui.Dlssg2030Check");
                 UpdateLabel = T("Ui.Dlssg2030Update");
                 FooterNote = T("Ui.Dlssg2030CompatibilityNote");
                 FooterIsWarning = false;
-                (Width, Height, MinWidth, MinHeight) = (690, 560, 560, 420);
+                (Width, Height, MinWidth, MinHeight) = (720, 640, 560, 420);
                 break;
             }
             case ProxyComponentDialogKind.DlssEnabler:
@@ -100,6 +98,25 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 (Width, Height, MinWidth, MinHeight) = (660, 470, 540, 380);
                 break;
             }
+            case ProxyComponentDialogKind.MfgUnlock: // w14/extras-fg (#279): settings only, no proxy name
+            {
+                var record = shell.GetMfgUnlockRecord();
+                Title = "MFG Unlock"; // a product name, the same in every language
+                Intro = T("Mfgu.Intro");
+                ProxyLabel = "";
+                ProxyOptions = [];
+                HasProxy = false;
+                IsInstalled = record is not null;
+                ShowsCheck = false;
+                var content = FgSettingsBuilder.MfgUnlock(shell.SelectedGame!, record?.BinaryDirectory ?? shell.SelectedGame?.BinaryDirectory,
+                    record is null ? [] : shell.ManagedForFgSettings.MfgUnlockXessState(record.BinaryDirectory), record is not null, ShowMessage);
+                (Sections, Lines, FileButtons) = (content.Sections, content.Lines, content.Files);
+                CheckLabel = "";
+                UpdateLabel = "";
+                FooterNote = "";
+                (Width, Height, MinWidth, MinHeight) = (700, 560, 560, 420);
+                break;
+            }
             case ProxyComponentDialogKind.RtxEncore: // w4/encore (#158)
             {
                 var record = shell.GetRtxEncoreRecord();
@@ -119,32 +136,36 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 NeuralRenderingChosen = shell.RtxEncoreNeuralRenderingChosen();
                 IsInstalled = record is not null;
                 InstalledText = record is null ? null : TF("Win.RtxEncoreInstalled", record.Version ?? "?", chosen);
+                // #280: RTX Encore's settings in rtx-encore.jsonc, its XeSS files and the manifest's recommended name.
+                var configPath = shell.RtxEncoreConfigPath();
+                Sections = FgSettingsBuilder.RtxEncore(configPath);
+                Lines = FgSettingsBuilder.RtxEncoreLines(record is not null, configPath is not null && File.Exists(configPath),
+                    shell.RtxEncoreXessStatus(), shell.SelectedGame is { } encoreGame ? RtxEncoreDeploymentService.RecommendedName(encoreGame) : null);
+                FileButtons = configPath is null ? [] : [new ComponentFileButton(TF("Fg.OpenFile", RtxEncoreConfig.FileName), configPath, ShowMessage)];
                 CheckLabel = T("Ui.RtxEncoreCheck");
                 UpdateLabel = T("Vm.Update");
                 FooterNote = T("Ui.RtxEncoreFooter");
                 FooterIsWarning = true;
-                (Width, Height, MinWidth, MinHeight) = (660, 500, 540, 400);
+                (Width, Height, MinWidth, MinHeight) = (720, 760, 560, 420);
                 break;
             }
             default:
             {
+                // #278 (upstream 2.8.9): no GPU generation; the mod's modes, its XeMFG files and its OptiScaler-plugin placement.
                 var preferences = shell.GetRtx40MfgPreferences();
                 var record = shell.GetRtx40MfgRecord();
+                var status = shell.GetUniversalMfgStatus();
                 Title = T("Ui.Rtx40MfgTitle");
                 Intro = T("Ui.Rtx40MfgIntro");
-                GpuLabel = T("Ui.Rtx40MfgGpuGeneration");
-                GpuOptions = Rtx40MfgStandaloneDeploymentService.GpuGenerations;
-                SelectedGpu = preferences.GpuGeneration;
-                GpuMinWidth = 240;
                 ProxyLabel = T("Ui.Rtx40MfgProxy");
                 ProxyOptions = Rtx40MfgStandaloneDeploymentService.SelectableProxyNames;
                 SelectedProxy = preferences.ProxyName;
                 ProxyMinWidth = 240;
+                HasProxy = status is not { AsPlugin: true };
                 CompatibilityText = T("Ui.Rtx40MfgCompatibility");
                 IsInstalled = record is not null;
-                InstalledText = record is null ? null : TF("Win.InstalledChangeGPUProxyRemoveReinstall", record.Version ?? "?",
-                    record.Metadata.GetValueOrDefault("UniversalMFG.GpuGeneration") ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40,
-                    record.Metadata.GetValueOrDefault("UniversalMFG.ProxyName") ?? record.Metadata.GetValueOrDefault("RTX40MFG.ProxyName") ?? preferences.ProxyName);
+                InstalledText = record is null ? null : TF("Ui.UmfgInstalledAs", record.Version ?? "?", status?.InstalledAs ?? preferences.ProxyName);
+                Lines = UniversalMfgLines(status, IsInstalled);
                 CheckLabel = T("Ui.Rtx40MfgCheck");
                 UpdateLabel = T("Ui.Rtx40MfgUpdate");
                 FooterNote = T("Ui.Rtx40MfgCompatibilityNote");
@@ -165,8 +186,62 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
         ProxyNameOptions = rows.Length > 0 ? rows : ProxyOptions.Select(name => new ProxyNameItem(name, name, true, null)).ToArray();
         selectedProxyItem = FindProxyItem(SelectedProxy);
         WindowTitle = $"{Title} — {game}";
+        foreach (var row in Sections.SelectMany(section => section.Rows))
+        {
+            row.Changed = ShowMessage;
+            row.Refresh();
+        }
         _loading = false;
         _shell.Operations.PropertyChanged += OnOperationsChanged;
+    }
+
+    /// <summary>
+    /// w14/extras-fg: the dialog's extra lines under the choices (headings, notes, warnings): Universal MFG Unlocker's
+    /// plugin and XeMFG sections (#278), and the status lines of the other FG unlocks.
+    /// </summary>
+    public IReadOnlyList<ComponentDialogLine> Lines { get; } = [];
+    public bool HasLines => Lines.Count > 0;
+
+    /// <summary>The proxy-name row shows (hidden while Universal MFG Unlocker is, or would be, an OptiScaler plugin).</summary>
+    public bool HasProxy { get; } = true;
+
+    /// <summary>w14/extras-fg: the mod's own settings (#279 MFG Unlock, #281 20/30 FG Unlock, #280 RTX Encore), by section.</summary>
+    public IReadOnlyList<ComponentSettingSection> Sections { get; } = [];
+    public bool HasSections => Sections.Count > 0;
+
+    /// <summary>w14/extras-fg: the "Open &lt;file&gt;" buttons (the mod's ini, log or jsonc).</summary>
+    public IReadOnlyList<ComponentFileButton> FileButtons { get; } = [];
+    public bool HasFileButtons => FileButtons.Count > 0;
+
+    /// <summary>Check / Update show (installed, and the dialog has them: MFG Unlock updates through its row and Update All).</summary>
+    public bool ShowsCheck { get => _showsCheck ?? IsInstalled; private init => _showsCheck = value; }
+    private readonly bool? _showsCheck;
+
+    /// <summary>A setting's or a file button's line; every row's enabled state and every button follow it.</summary>
+    private void ShowMessage(string message)
+    {
+        Message = message;
+        foreach (var row in Sections.SelectMany(section => section.Rows)) row.Refresh();
+        foreach (var button in FileButtons) button.Refresh();
+    }
+
+    /// <summary>#278: Universal MFG Unlocker's ⚙ sections, in upstream's order.</summary>
+    internal static IReadOnlyList<ComponentDialogLine> UniversalMfgLines(UniversalMfgStatus? status, bool installed)
+    {
+        var lines = new List<ComponentDialogLine>();
+        if (status is { AsPlugin: true })
+        {
+            lines.Add(ComponentDialogLine.Heading(T("Ui.UmfgPluginHeading")));
+            lines.Add(ComponentDialogLine.Plain(installed ? T("Ui.UmfgPluginText") : T("Ui.UmfgPluginBeforeInstall")));
+            lines.Add(ComponentDialogLine.Plain(T("Ui.UmfgPluginNote")));
+        }
+        lines.Add(ComponentDialogLine.Heading(T("Ui.UmfgXessHeading")));
+        lines.Add(ComponentDialogLine.Plain(T(status is { AsPlugin: true } ? "Ui.UmfgXessPlugin" : "Ui.UmfgXessStandalone")));
+        if (status?.XessInstalled is { } xess)
+            lines.Add(xess ? ComponentDialogLine.Plain(T("Ui.UmfgXessInstalled")) : ComponentDialogLine.Warning(T("Ui.UmfgXessMissing")));
+        if (status is { ReShadeAsDxgi: true })
+            lines.Add(ComponentDialogLine.Warning(T("Ui.UmfgReShadeDxgi")));
+        return lines;
     }
 
     public string WindowTitle { get; }
@@ -375,4 +450,13 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
     }
 
     public void Dispose() => _shell.Operations.PropertyChanged -= OnOperationsChanged;
+}
+
+/// <summary>One extra line of a component dialog (w14/extras-fg): a heading, a note or a (gold) warning.</summary>
+public sealed record ComponentDialogLine(string Text, bool IsHeading, bool IsWarning)
+{
+    public bool IsPlain => !IsHeading && !IsWarning;
+    public static ComponentDialogLine Heading(string text) => new(text, true, false);
+    public static ComponentDialogLine Plain(string text) => new(text, false, false);
+    public static ComponentDialogLine Warning(string text) => new(text, false, true);
 }

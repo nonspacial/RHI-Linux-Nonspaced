@@ -154,7 +154,8 @@ public sealed class LatestVersionCache<TKey> where TKey : notnull
 public sealed record NeuralVersionLists(
     IReadOnlyList<GitHubReleaseVersion> Dlss5Feeder,
     IReadOnlyList<GitHubReleaseVersion> Dlss5Bridge,
-    IReadOnlyList<GitHubReleaseVersion> ShortFuse);
+    IReadOnlyList<GitHubReleaseVersion> ShortFuse,
+    IReadOnlyList<GitHubReleaseVersion>? GitcUplift = null); // w14/nr (#274): Uplift Version (empty when its list could not be read)
 
 public enum NeuralCatalogOutcome
 {
@@ -222,7 +223,18 @@ public sealed class NeuralVersionCatalog(
         var feeder = list(ManagedComponentKind.Dlss5Feeder, cancellationToken);
         var bridge = list(ManagedComponentKind.Dlss5Dx11Bridge, cancellationToken);
         var shortFuse = list(ManagedComponentKind.ShortFuse, cancellationToken);
-        await Task.WhenAll(feeder, bridge, shortFuse);
-        apply(new NeuralVersionLists(feeder.Result, bridge.Result, shortFuse.Result));
+        var uplift = UpliftListAsync(cancellationToken); // w14/nr (#274): never fails the other lists
+        await Task.WhenAll(feeder, bridge, shortFuse, uplift);
+        apply(new NeuralVersionLists(feeder.Result, bridge.Result, shortFuse.Result, uplift.Result));
+    }
+
+    private async Task<IReadOnlyList<GitHubReleaseVersion>> UpliftListAsync(CancellationToken cancellationToken)
+    {
+        try { return await list(ManagedComponentKind.GitcUplift, cancellationToken); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RHI.Core.Services.AppLog.Warn("nr-versions", "The GITC Uplift version list could not be read", ex);
+            return [];
+        }
     }
 }

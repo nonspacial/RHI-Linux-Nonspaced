@@ -205,6 +205,9 @@ public sealed class LinuxUpdateAllService
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        // w14 lane rows: Update All families (each row ends with a comma)
+        // w14/nr rows
+        ManagedComponentKind.GitcUplift, // #274: Latest follows new releases (add-on, helper and effects together); a pin stays
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);
@@ -385,6 +388,7 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.MfgAdaUnlock => 15, // #237: after the other add-ons
         ManagedComponentKind.Dlssg2030Unlock => 16, // #238
         ManagedComponentKind.UltimateAsiLoader => 17, // #238
+        ManagedComponentKind.GitcUplift => 18, // w14/nr (#274): after the other Neural Rendering methods
         _ => 99
     };
 }

@@ -110,6 +110,83 @@ Not on `main` yet:
 - OptiScaler ⚙: FG Nvngx Override lists custom frame generation providers found in OptiScaler's custom folder by name
   (#272, upstream 2.9.3).
 
+Not on `main` yet:
+
+- Wave 14 — nr
+  - DLSS5 Feeder 2.0 (#275): new installs use the motion vectors built into Feeder 2.0, so LumeniteFX is no longer
+    downloaded for it; games that already use LumeniteFX keep it. Feeder is added to the game's own ReShade preset
+    instead of replacing it, so your other effects and their settings stay, and removing Feeder takes out only what it
+    added (a preset that was there before is never deleted). The Feeder row shows "Built-in motion vectors" or
+    "LumeniteFX motion vectors" and mentions the Feeder menu (Alt+C).
+  - GITC Uplift (#274): a new Neural Rendering method by ghostinthecamera for almost any game on an RTX card (DirectX
+    9–12, Vulkan, OpenGL; 32 and 64-bit). Install it from its row in Managed components; in the game open ReShade
+    (Home), go to the GITC Uplift tab and tick Enable. Uplift Version (under NR versions) follows the latest release
+    or stays on one; the add-on and its helper always update together. It brings iMMERSE Launchpad for motion vectors
+    (on by default in games without DLSS, with a check box per game) and keeps it at the top of the game's ReShade
+    effects. Settings › DLSS/Streamline has a GITC Uplift card with the NR on/off key and "Write key to all Uplift
+    games". OpenGL games are set up so Uplift works with anti-aliasing on. It is the recommended method for 64-bit
+    DX11, DX12 and Vulkan games without DLSS.
+
+Wave 14 — extras-fg
+
+- **Closed-source notice** (upstream 2.9.3): installing RTX Encore or 20/30 FG Unlock first says the mod is
+  closed source (its author publishes only the DLL, not the code), with Install, Cancel and **Don't show this
+  again**. The tick is remembered per mod, also when you press Cancel. The ⓘ on the RTX Encore, 20/30 FG Unlock,
+  Universal MFG Unlocker and MFG Unlock rows opens the mod's GitHub page.
+- **Universal MFG Unlocker** (formerly Universal MFG / RTX 40 MFG, upstream 2.8.9): the row has the mod's name and links
+  to its new GitHub page. The GPU generation choice is gone: RTX 30 is supported (RTX 20 experimental) and XeSS frame
+  generation (XeMFG) runs on any GPU, in DirectX 12 and (experimentally) Vulkan games.
+  - Installing it also puts Intel's `libxess_fg.dll` and `libxell.dll` in an `RTXMFG-XeSS` folder beside it, which
+    the mod's "XeMFG standalone" mode needs. Files you put there yourself are left alone. **Existing installs get them
+    with Update or Update All.**
+  - With RHI's OptiScaler Nightly, F5 DLSSNR or DLSS NR in the same game it installs as an OptiScaler plugin
+    (`OptiScaler/plugins/MFGUnlocker.asi`), as its author recommends; installing such an OptiScaler moves an existing
+    install in, and removing OptiScaler moves it back beside the game first. Choose DLSSG or XeFG with FG Output in
+    OptiScaler's ⚙.
+  - Installing it where ReShade is warns that XeMFG standalone does not start while ReShade is loaded, with **Don't
+    show this again**. The ⚙ explains XeMFG, says whether its files are there and warns about ReShade as `dxgi.dll`.
+- **MFG Unlock** (formerly MFG Ada Unlock, upstream 2.8.9/2.9.2): the row and its messages use the mod's new name;
+  your installs carry over. Its new ⚙ has the **Frame generation method** (NVIDIA DLSS-G, Intel XeMFG (CUDA), XeMFG via
+  DLSS-G (XMX)) and **DLSS-SR input (experimental)** for XeMFG (CUDA), saved in the game's `MFGAdaUnlock.ini`, and an
+  Open MFGAdaUnlock.ini button.
+  - Installing it also installs Intel's XeSS files its XeMFG modes need in the game folder. A game's own older copies
+    (Of Ash and Steel) are kept as `<file>.mfgada-original` and put back when you remove the mod. **Existing installs
+    get them with Update or Update All**, and the ⚙ says whether the right files are there.
+  - The ⚙ warns when the game can't use it: DirectX 11 and older don't work, Vulkan is experimental.
+- **20/30 FG Unlock ⚙** (upstream 2.8.9): the mod's main settings as dropdowns — Frame Generation, Engine (DLSS or
+  XeSS), Max Frames (2X to 6X), Preset (A, B, C: FG Lite), Speed Tier and Super Resolution (preset M or L) — saved in
+  the game's `dlssg_sm86.ini`, so you can't enter a value that would switch frame generation off. XeSS goes up to 4X.
+  Your settings are kept when the mod updates. Open dlssg_sm86.ini and Open log buttons. The GPU generation setting is
+  gone: the mod detects RTX 20 and 30 cards by itself.
+- **RTX Encore** is no longer labelled Beta (upstream 2.8.9–2.9.3).
+  - Its ⚙ has RTX Encore's settings — frame generation, the XeFG engine, generated frame quality, HUD and UI,
+    upscaling, Neural Rendering and compatibility — written straight into the game's `rtx-encore.jsonc`, keeping the
+    file's comments, and an Open rtx-encore.jsonc button.
+  - Installing it also installs Intel's XeSS files the way RTX Encore Hub does: the game's own copies are replaced where
+    they are and put back when you remove RTX Encore; the rest, and Intel's licence, go in RTX Encore's own folder.
+  - The Neural Rendering file RHI installs for it is now 310.9.16.
+  - **Existing installs get the XeSS files and the 310.9.16 file with Update or Update All.**
+  - The Bink names (`binkw64.dll`, `bink2w64.dll`) are offered: the game's own Bink file is kept beside it as
+    `binkw64Hooked.dll` / `bink2w64Hooked.dll` and put back on removal.
+  - `rtx-encore.asi` installs the separate ASI build from RTX Encore's release. An `.asi` install from an older build is
+    corrected by Update.
+  - The DLL name list puts the name the RHI manifest recommends for a game first and uses it by default (Euro Truck
+    Simulator 2: `winmm.dll`); the ⚙ names it.
+
+Wave 14 — library-folders
+
+- **Custom game folders** (upstream 2.9.0): Settings → Custom game folders lists folders where you keep DRM-free or
+  other non-store games. RHI checks them at start, on Refresh and with Scan now, and never adds a game on its own: the
+  status line says "N new games found in your custom folders · Review". In the review you fix the name, choose the exe
+  (RHI picks the likely one and says "Check the exe" when two look alike) and, as in Add game, the Wine/Proton prefix
+  and launch command. Ignore selected, or removing a game you added this way, stops it being offered; Forget ignored
+  games undoes that.
+- **Remove from RHI asks first and can uninstall the game's components** at the same time (upstream 2.9.0). A component
+  that cannot be removed is named, and comes back with the game on Restore.
+- **Changing or resetting a game's install folder moves its mods, settings and presets** (upstream 2.9.2): Edit game and
+  Restore automatic detection ask, and when RHI corrects a folder itself (the online manifest) the mods move on their
+  own. Nothing moves while the game is running, a file you changed is never overwritten, and a failed move is undone.
+
 ### Wave 14 — optiscaler-2
 
 - **Custom OptiScaler builds** (#271, upstream 2.9.2): Settings › DLSS/Streamline › Custom OptiScaler builds. Add any

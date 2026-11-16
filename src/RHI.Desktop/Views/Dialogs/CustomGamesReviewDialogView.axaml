@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.CustomGamesReviewDialogView"
+             x:DataType="vm:CustomGamesReviewViewModel">
+  <!-- #293: the games found in the custom game folders (upstream 2.9.0's review), plus Add game's prefix and command. -->
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16" RowSpacing="10">
+    <TextBlock Text="{Binding Intro}" TextWrapping="Wrap" FontSize="12" Opacity="0.75"/>
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <ItemsControl ItemsSource="{Binding Rows}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="8"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:CustomGameReviewRow">
+            <Border Padding="10,8" CornerRadius="6" BorderThickness="1" BorderBrush="#2A3038" Margin="0,0,12,0">
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                  <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" ToolTip.Tip="{l:T CustomFolders.IncludeTip}"/>
+                  <TextBox Grid.Column="1" Text="{Binding Name}" PlaceholderText="{l:T Win.GameName}" ToolTip.Tip="{l:T CustomFolders.NameTip}"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="32,0,0,0">
+                  <TextBlock Text="{l:T CustomFolders.Exe}" VerticalAlignment="Center" FontSize="12" Opacity="0.75"/>
+                  <ComboBox Grid.Column="1" ItemsSource="{Binding ExeItems}" SelectedIndex="{Binding ExeIndex}" HorizontalAlignment="Stretch"
+                            ToolTip.Tip="{l:T CustomFolders.ExeTip}"/>
+                </Grid>
+                <TextBlock Text="{Binding CheckTheExeText}" IsVisible="{Binding CheckTheExe}" Foreground="#E0A040" FontSize="11"
+                           TextWrapping="Wrap" Margin="32,0,0,0"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="32,0,0,0">
+                  <TextBox Text="{Binding Prefix}" PlaceholderText="{l:T Win.OptionalWineProtonPrefixEG}" ToolTip.Tip="{l:T Win.WineProtonPrefixOptional}"/>
+                  <Button Grid.Column="1" Content="{l:T Win.BrowsePrefix}" Padding="10,5" Command="{Binding BrowsePrefixCommand}"/>
+                </Grid>
+                <TextBox Text="{Binding LaunchCommand}" PlaceholderText="{l:T Win.OptionalLaunchCommand}" Margin="32,0,0,0"
+                         ToolTip.Tip="{l:T Win.LeaveCommandEmptyIfRHIShould}"/>
+                <SelectableTextBlock Text="{Binding Details}" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="32,0,0,0"/>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+    <TextBlock Grid.Row="2" Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.85" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+    <WrapPanel Grid.Row="3" HorizontalAlignment="Right" ItemSpacing="8" LineSpacing="8">
+      <Button Content="{l:T CustomFolders.NotNow}" Padding="14,7" Command="{Binding NotNowCommand}" IsEnabled="{Binding CanAct}"/>
+      <Button Content="{l:T CustomFolders.IgnoreSelected}" Padding="14,7" Command="{Binding IgnoreSelectedCommand}" IsEnabled="{Binding CanAct}"/>
+      <Button Classes="rhi" Content="{l:T CustomFolders.AddSelected}" Padding="14,7" Command="{Binding AddSelectedCommand}" IsEnabled="{Binding CanAct}"/>
+    </WrapPanel>
+  </Grid>
+</UserControl>

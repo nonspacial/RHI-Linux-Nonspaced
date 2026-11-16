@@ -136,9 +136,10 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         Assert.Equal(Path.Combine(f.Bin, "dxgi.dll"), Assert.Single(fresh.Find(f.Game, ManagedComponentKind.ReShade)!.Files).Path);
     }
 
-    // #213: ReShade.ini linked to the user's shared file. The Feeder's search-path write follows the link; its preset edit
-    // refuses a link, so the install fails — and its rollback must keep the link a link and put the shared file back byte
-    // for byte (it used to track the link: the rollback replaced it with a plain copy and left RHI's lines in the shared file).
+    // #213: ReShade.ini linked to the user's shared file. The Feeder's search-path write follows the link; when the install
+    // then fails (w14/nr #275: Feeder 2.0 no longer edits PresetPath, which refused a link, so the record save fails here),
+    // its rollback must keep the link a link and put the shared file back byte for byte (it used to track the link: the
+    // rollback replaced it with a plain copy and left RHI's lines in the shared file).
     [Trait("Category", "CommitPoint")]
     [Theory]
     [InlineData(false)]
@@ -152,10 +153,13 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         {
             var before = System.Text.Encoding.UTF8.GetBytes(ReShadeLinkedIniJournalTests.SharedBefore);
 
-            var result = await f.Install(Dlss5FeederConsumer.RenoDxDlss5);
+            ComponentOperationResult result;
+            using (LedgerWriteBlocker.Block(f.Records, f.RecordsPath))
+                result = await f.Install(Dlss5FeederConsumer.RenoDxDlss5);
 
             Assert.False(result.Success, result.Message);
             ReShadeLinkedIniJournalTests.AssertLinked(f.Bin, shared, before);
+            Assert.False(File.Exists(Path.Combine(f.Bin, ReShadePresetFile.DefaultName))); // the preset it created is gone again
             Assert.Null(f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder));
             Assert.Empty(Directory.GetFiles(f.JournalDirectory, "*.json"));
             if (dx9)

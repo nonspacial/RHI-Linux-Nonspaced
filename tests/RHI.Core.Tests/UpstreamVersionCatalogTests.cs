@@ -71,13 +71,13 @@ public sealed class UpstreamVersionCatalogTests
 
         Assert.Equal(NeuralCatalogOutcome.Loaded, await catalog.NeuralVersions.EnsureAsync());
         Assert.Equal(NeuralCatalogOutcome.NotNeeded, await catalog.NeuralVersions.EnsureAsync());
-        Assert.All(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.ShortFuse },
-            kind => Assert.Equal(1, fetches[kind]));
+        Assert.All(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.ShortFuse, ManagedComponentKind.GitcUplift },
+            kind => Assert.Equal(1, fetches[kind])); // w14/nr (#274): GITC Uplift's list too
         Assert.Equal("5.0", catalog.UalLatest.TryGetFresh(PeArchitecture.X64));
 
         Assert.Equal(NeuralCatalogOutcome.Loaded, await catalog.FullRefreshAsync());
 
-        Assert.Equal(3, fetches.Count);
+        Assert.Equal(4, fetches.Count);
         Assert.All(fetches.Values, count => Assert.Equal(2, count));
         Assert.Equal("v2", applied!.ShortFuse.Single().Tag);
         Assert.Null(catalog.UalLatest.TryGetFresh(PeArchitecture.X64));
@@ -120,7 +120,7 @@ public sealed class UpstreamVersionCatalogTests
         Assert.Equal(NeuralCatalogOutcome.Loaded, await starter.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.True(catalog.IsLoaded);
         Assert.Equal(1, applied);
-        Assert.Equal(3, lists.Calls);
+        Assert.Equal(4, lists.Calls); // Feeder, DX11 Bridge, ShortFuse and (w14/nr #274) GITC Uplift
     }
 
     [Fact]
@@ -135,8 +135,8 @@ public sealed class UpstreamVersionCatalogTests
 
         starterCancel.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starter);
-        for (var i = 0; i < 200 && lists.Calls < 6; i++) await Task.Delay(10);
-        Assert.Equal(6, lists.Calls); // the forced joiner started its own load
+        for (var i = 0; i < 200 && lists.Calls < 8; i++) await Task.Delay(10);
+        Assert.Equal(8, lists.Calls); // the forced joiner started its own load (four lists each, w14/nr #274)
         lists.Release("v2");
 
         Assert.Equal(NeuralCatalogOutcome.Loaded, await forced.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -255,5 +255,25 @@ public sealed class NeuralVersionRefreshViewModelTests
 
         Assert.True(added, message);
         Assert.Equal(afterStart, new Dictionary<string, int>(fetches));
+    }
+}
+
+/// <summary>w14/nr (#274): a GITC Uplift list that cannot be read never fails the other Neural Rendering lists.</summary>
+public sealed class UpliftVersionListTests
+{
+    [Fact]
+    public async Task AnUnreadableUpliftList_LeavesItEmpty_AndTheOthersLoad()
+    {
+        NeuralVersionLists? applied = null;
+        Task<IReadOnlyList<GitHubReleaseVersion>> List(ManagedComponentKind kind)
+            => kind == ManagedComponentKind.GitcUplift
+                ? Task.FromException<IReadOnlyList<GitHubReleaseVersion>>(new HttpRequestException("offline"))
+                : Task.FromResult<IReadOnlyList<GitHubReleaseVersion>>([new GitHubReleaseVersion("v1", "1", false)]);
+        var catalog = new NeuralVersionCatalog(List, value => applied = value);
+
+        Assert.Equal(NeuralCatalogOutcome.Loaded, await catalog.EnsureAsync());
+
+        Assert.Equal("v1", applied!.Dlss5Feeder.Single().Tag);
+        Assert.Empty(applied.GitcUplift!);
     }
 }

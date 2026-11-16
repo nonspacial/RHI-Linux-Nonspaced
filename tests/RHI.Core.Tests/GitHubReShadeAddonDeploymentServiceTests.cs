@@ -83,7 +83,7 @@ public sealed partial class GitHubReShadeAddonDeploymentServiceTests : IDisposab
         Assert.Null(store.Find(game, ManagedComponentKind.ReLimiter));
     }
 
-    // #255 (upstream 2.8.8 54ec8f2, MFG Ada Unlock / ReLimiter / Display Commander): AddonPath set after the install moves
+    // #255 (upstream 2.8.8 54ec8f2, MFG Unlock / ReLimiter / Display Commander): AddonPath set after the install moves
     // RHI's copy out of the game folder on the next update (record follows); the user's own copy there is left and named.
     [Fact]
     public async Task Update_AfterAddonPathIsSet_MovesRhisCopy_AndLeavesAUsersCopyNamed()
