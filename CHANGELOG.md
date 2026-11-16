@@ -18,24 +18,26 @@ Not on `main` yet: nothing at the moment.
 Wave 14 — library-updates
 
 - **The RHI-Linux update check no longer says "You have the newest version" after GitHub's hourly request limit was
-  reached** (upstream 2.9.4). It says the limit is reached and that a GitHub token raises it, or that it could not check.
+  reached** (upstream 2.9.4). It says the limit is reached and that a GitHub token raises it, or that it could not
+  check.
 - **Hidden games are left alone by everything that runs over the whole library** (upstream 2.8.9): Update All, automatic
-  component updates, Follow newest DLSS / Streamline and Settings' "Apply to all games" buttons. To update a hidden game,
-  show it again or use its own buttons.
+  component updates, Follow newest DLSS / Streamline and Settings' "Apply to all games" buttons. To update a hidden
+  game, show it again or use its own buttons.
 - **Automatic updates run every 4 hours, every hour with a GitHub token, and count across restarts** (upstream
   2.8.9/2.9.2): a start runs them at once only when the last run is 4 hours (1 hour) ago or more, and saving Settings no
   longer starts an extra run.
 - **The Ultra+ and ultrawide fix lists are checked every 4 hours** instead of once a day, also while RHI stays open.
 - **Update History lists DLSS and Streamline swaps and restores** made from the DLSS section, the DLSS batch and the
   DLSS defaults (upstream 2.9.3), with the version before and after.
-- **Settings no longer saves an add-on watch folder that does not exist**: it says so and saves the rest (upstream 2.8.9).
-- **An invalid ReLimiter custom FPS is no longer saved as "no cap" without a word**: the saved cap stays and RHI says the
-  value must be a whole number from 20 to 1000 (upstream 2.8.9).
+- **Settings no longer saves an add-on watch folder that does not exist**: it says so and saves the rest (upstream
+  2.8.9).
+- **An invalid ReLimiter custom FPS is no longer saved as "no cap" without a word**: the saved cap stays and RHI says
+  the value must be a whole number from 20 to 1000 (upstream 2.8.9).
 - **Games that ship FFmpeg, Qt, SDL or a web view no longer read as DirectX 12** when nothing else says which API they
   use (OpenMW, for example; upstream 2.9.2).
-- **Block Steam updates** (upstream 2.9.4): a new action beside Favourite and Hide for Steam games makes the game's Steam
-  app manifest read-only, so Steam can't update the game and your mods keep working until they're updated. Allow Steam
-  updates turns it off. Refused while Steam is in the middle of updating the game.
+- **Block Steam updates** (upstream 2.9.4): a new action beside Favourite and Hide for Steam games makes the game's
+  Steam app manifest read-only, so Steam can't update the game and your mods keep working until they're updated. Allow
+  Steam updates turns it off. Refused while Steam is in the middle of updating the game.
 - **Remove from RHI** (upstream 2.9.0): takes a game out of every list, Hidden included, and scans don't bring it back.
   **Settings → Removed games** lists them with Restore. Components RHI installed in the game stay installed.
 
