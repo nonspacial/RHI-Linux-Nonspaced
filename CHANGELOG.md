@@ -30,6 +30,9 @@ Not on `main` yet.
   install or update: it is renamed so ReShade does not load it twice (the file is kept), and a dropped one installs
   under the add-on's own name. Games that RHI's data lists as Unreal Engine 4 or 5 get the generic Unreal mod even when
   the folder scan did not recognise the engine (#287).
+- Vulkan ReShade: checked against upstream's three Vulkan fixes. Each Vulkan game here has its own ReShade layer, so
+  updates show and Update All applies them, and Stable, Nightly and Legacy each switch that game's layer; new tests
+  keep it that way (#288).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

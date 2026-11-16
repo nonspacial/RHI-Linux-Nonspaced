@@ -1558,3 +1558,19 @@ patreon.com as a trusted host is an owner decision.
   the hint (RenoDX's Engine.ini line, the UE-Extended switch) stay off until a manifest or scan hint says Unreal.
 - **Unreal warnings in Info** (2.8.9): not applicable; the Linux Info dialog never showed upstream's "Common Unreal
   Engine mod warnings" block.
+
+### #288 — Vulkan ReShade follows the chosen channel and version; update badge and Legacy for Vulkan games
+
+Upstream 2.9.3 `badb2d9`. Upstream installs one Vulkan layer for the whole PC (`VulkanLayerService`); its three bugs
+came from that shared copy: a Vulkan game kept the build the layer had (6.7.3 after 6.8.0), showed no ReShade update,
+switched Nightly/Stable unreliably (it compared the layer DLL by size), and ignored a Legacy choice. Upstream now brings
+the shared layer to the game's channel on install, resolves one channel for all Vulkan games (an explicit Stable never
+hides another game's Nightly or Legacy) and asks to apply a Legacy version to all Vulkan games.
+
+RHI Linux has never shared the layer: since #92 each Vulkan game has its own layer in the prefix, installed from the
+channel and version that game chose, recorded on its ReShade record and checked by the same update check as the DLL
+ReShade. So nothing was broken here; the three upstream cases are pinned as tests
+(`ReShadeChannelTests.VulkanChannel.cs`): a layer on an older Stable shows the update and the update installs the newer
+build; Nightly and Stable swap the layer DLL even when both builds are the same size (compared by content); a Legacy
+version installs into the layer and stays pinned. Linux deviation: no "apply to all Vulkan games" question, because a
+channel or version choice is that game's own and changes no other game's layer.
