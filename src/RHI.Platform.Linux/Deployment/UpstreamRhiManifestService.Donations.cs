@@ -5,8 +5,20 @@ namespace RHI.Platform.Linux.Deployment;
 /// <summary>A mod author listed in the Donate dialog: display name, what they make (may be empty) and an https donation page.</summary>
 public sealed record UpstreamDonationAuthor(string Name, string Role, Uri DonationUrl)
 {
-    /// <summary>Button label: "Ko-fi" for ko-fi.com links, otherwise the link's host without "www.".</summary>
+    /// <summary>Button label: "Ko-fi" for ko-fi.com links, "Patreon" for patreon.com, otherwise the link's host without "www.".</summary>
     public string LinkLabel => UpstreamRhiManifestService.DonationLinkLabel(DonationUrl);
+
+    /// <summary>#309 (upstream 2.9.2): the author's Patreon page from the manifest's <c>patreonUrls</c>, beside the donation link.</summary>
+    public Uri? PatreonUrl { get; init; }
+
+    /// <summary>
+    /// The dialog's buttons, as upstream: the donation link (Ko-fi; an older entry may hold a Patreon link), then the
+    /// Patreon page unless the donation link is a Patreon already.
+    /// </summary>
+    public IReadOnlyList<(string Label, Uri Url)> Links
+        => PatreonUrl is { } patreon && LinkLabel != UpstreamRhiManifestService.PatreonLabel
+            ? [(LinkLabel, DonationUrl), (UpstreamRhiManifestService.PatreonLabel, patreon)]
+            : [(LinkLabel, DonationUrl)];
 }
 
 /// <summary>
@@ -23,6 +35,10 @@ internal sealed partial class UpstreamManifestDocument
     // Upstream 2.8.2+: what each author is known for, keyed by the same display name as donationUrls.
     [JsonPropertyName("authorRoles")]
     public Dictionary<string, string>? AuthorRoles { get; set; }
+
+    // #309 (upstream 2.9.2 RemoteManifest.PatreonUrls): Patreon pages, keyed by the same display name as donationUrls.
+    [JsonPropertyName("patreonUrls")]
+    public Dictionary<string, string>? PatreonUrls { get; set; }
 }
 
 public sealed partial class UpstreamRhiManifestService
@@ -65,13 +81,16 @@ public sealed partial class UpstreamRhiManifestService
             return new UpstreamDonationList(BuiltInDonationAuthors, ex.Message);
         }
         return new UpstreamDonationList(
-            BuildDonationAuthors(BuiltInDonationUrls, manifest.DonationUrls, manifest.AuthorRoles), null);
+            BuildDonationAuthors(BuiltInDonationUrls, manifest.DonationUrls, manifest.AuthorRoles, manifest.PatreonUrls), null);
     }
 
+    /// <param name="patreonUrls">#309 (upstream 2.9.2): Patreon pages by author; an author with only a Patreon is listed with it.
+    /// A Patreon link that fails the https filter is left out (the author keeps the donation link).</param>
     internal static IReadOnlyList<UpstreamDonationAuthor> BuildDonationAuthors(
         IEnumerable<KeyValuePair<string, string>> builtIn,
         IEnumerable<KeyValuePair<string, string>>? donationUrls,
-        IEnumerable<KeyValuePair<string, string>>? authorRoles)
+        IEnumerable<KeyValuePair<string, string>>? authorRoles,
+        IEnumerable<KeyValuePair<string, string>>? patreonUrls = null)
     {
         var roles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, role) in authorRoles ?? [])
@@ -89,22 +108,45 @@ public sealed partial class UpstreamRhiManifestService
             links[name] = (links.TryGetValue(name, out var existing) ? existing.Name : name, rawUrl);
         }
 
+        // #309: Patreon pages by author (the later spelling's link wins, as for donation links).
+        var patreons = new Dictionary<string, (string Name, Uri Url)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (rawName, rawUrl) in patreonUrls ?? [])
+        {
+            var name = rawName?.Trim();
+            if (string.IsNullOrEmpty(name) || TryParseHttpsLink(rawUrl) is not { } patreon) continue;
+            patreons[name] = (patreons.TryGetValue(name, out var existing) ? existing.Name : name, patreon);
+        }
+
         // The filter runs on the merged link: a manifest entry with a bad link drops that author
         // rather than silently reviving the older built-in link.
-        return links.Values
+        var authors = links.Values
             .Select(entry => TryParseHttpsLink(entry.Url) is { } url
                 ? new UpstreamDonationAuthor(entry.Name, roles.GetValueOrDefault(entry.Name, ""), url)
+                {
+                    PatreonUrl = patreons.TryGetValue(entry.Name, out var patreon) ? patreon.Url : null
+                }
                 : null)
             .OfType<UpstreamDonationAuthor>()
+            .ToList();
+        // An author with a Patreon and no donation link gets the Patreon as theirs (upstream lists both keys).
+        foreach (var (name, url) in patreons.Values)
+            if (!links.ContainsKey(name))
+                authors.Add(new UpstreamDonationAuthor(name, roles.GetValueOrDefault(name, ""), url));
+        return authors
             .OrderBy(author => author.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
-    /// <summary>"Ko-fi" for ko-fi.com (and its subdomains), otherwise the host without a leading "www.".</summary>
+    /// <summary>The Patreon button's label (upstream's).</summary>
+    public const string PatreonLabel = "Patreon";
+
+    /// <summary>"Ko-fi" for ko-fi.com, "Patreon" for patreon.com (and their subdomains), otherwise the host without a
+    /// leading "www.".</summary>
     public static string DonationLinkLabel(Uri url)
     {
         var host = url.IdnHost.TrimEnd('.').ToLowerInvariant();
         if (host == "ko-fi.com" || host.EndsWith(".ko-fi.com", StringComparison.Ordinal)) return "Ko-fi";
+        if (host == "patreon.com" || host.EndsWith(".patreon.com", StringComparison.Ordinal)) return PatreonLabel; // #309
         return host.StartsWith("www.", StringComparison.Ordinal) ? host[4..] : host;
     }
 
