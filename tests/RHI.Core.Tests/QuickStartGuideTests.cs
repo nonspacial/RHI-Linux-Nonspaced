@@ -43,8 +43,10 @@ public sealed class QuickStartGuideTests
         var guide = Guide(language);
         foreach (var label in new[]
                  {
-                     "Ui.LibraryToggle", "Ui.ExecutionGame", "Ui.DlssStreamline", "Ui.ReShadeProfile", "Ui.ManagedComponents", "Ui.Extras",
-                     "Ui.AvailableMods", "Ui.ShadersAddons", "Ui.BatchDlss", "Ui.UpdateAll", "Ui.UpdateHistory", "Ui.AddGame", "Ui.Refresh",
+                     // w14/layouts-a (#303/#304): upstream's sections, top bar and Management names
+                     "Ui.LibraryToggle", "Sec.Components", "Sec.GameOverrides", "Sec.NeuralRendering", "Sec.Dlss", "Sec.Driver", "Sec.Management", "Sec.Extras",
+                     "Ui.AvailableMods", "Ui.ShadersAddons", "Top.GlobalShaders", "Top.GlobalAddons", "Ui.UpdateAll", "Help.UpdateLog", "Ui.AddGame", "Ui.Refresh",
+                     "Mgmt.ChangeFolder", "Removed.Remove", "Lib.Filters",
                      "Ui.Edit", "Ui.OpenFolder", "Ui.OpenPrefix", "Ui.Play", "Ui.RepairMove", "Ui.CopyLaunchProfile", "Ui.NrVersions",
                      "Shell.CopyReport", "Shell.ResToggle", "Nv.SettingsButton", "Shell.CopyLogs", "Nrc.Button"
                  })

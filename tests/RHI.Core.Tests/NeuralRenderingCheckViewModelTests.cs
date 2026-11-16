@@ -360,8 +360,8 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         Assert.Equal(pt ? "Colocada por DLSS5 Feeder" : "Put in by DLSS5 Feeder", dll[1].Text);
         Assert.Contains(dll, line => line.Text == (pt ? "Feita para esta placa: 310.8.2 (20/30/40/50)" : "Made for this card: 310.8.2 (20/30/40/50)"));
         Assert.Contains(dll, line => line.Text == (pt
-            ? "Como resolver: escolha 310.8.2 (20/30/40/50) na lista NR DLL em Versões NR, na seção Perfil do ReShade; a troca substitui só essa DLL."
-            : "Fix: choose 310.8.2 (20/30/40/50) in the NR DLL list under NR versions in the ReShade profile section; it swaps only that DLL."));
+            ? "Como resolver: escolha 310.8.2 (20/30/40/50) na lista NR DLL em Versões NR, na seção Renderização Neural; a troca substitui só essa DLL."
+            : "Fix: choose 310.8.2 (20/30/40/50) in the NR DLL list under NR versions in the Neural Rendering section; it swaps only that DLL."));
 
         var method = page.Sections[2].Lines;
         Assert.Equal("DLSS5 Feeder", method[0].Text); // no native DLSS in the fixture game: the Feeder is recommended
@@ -381,8 +381,8 @@ public sealed class NeuralRenderingCheckViewModelTests : IDisposable
         // A Wine game with its own prefix: the D3DCompiler 47 line shows Winetricks (not Protontricks) — the hint names that one.
         Assert.True(fx.Vm.ReShadeProfile.CanInstallD3DCompilerWithWinetricks);
         Assert.False(fx.Vm.ReShadeProfile.CanInstallD3DCompilerWithProtontricks);
-        Assert.Equal(pt ? "Como resolver: na linha D3DCompiler 47 da seção Perfil do ReShade, use o botão do Winetricks. Procurar só escolhe a DLL da Microsoft para a próxima vez que o RHI configurar o ReShade ou o DLSS5 Feeder."
-                        : "Fix: on the D3DCompiler 47 line of the ReShade profile section, use the Winetricks button. Browse only chooses Microsoft's DLL for the next time RHI sets up ReShade or the DLSS5 Feeder.", logs[2].Text);
+        Assert.Equal(pt ? "Como resolver: na linha D3DCompiler 47 do cartão ReShade em Substituições do jogo, use o botão do Winetricks. Procurar só escolhe a DLL da Microsoft para a próxima vez que o RHI configurar o ReShade ou o DLSS5 Feeder."
+                        : "Fix: on the D3DCompiler 47 line of the ReShade card in Game Overrides, use the Winetricks button. Browse only chooses Microsoft's DLL for the next time RHI sets up ReShade or the DLSS5 Feeder.", logs[2].Text);
         Assert.Equal(pt ? "dlss5-feed.log, linha 88: recurso não suportado (0xBAD00001)" : "dlss5-feed.log, line 88: feature not supported (0xBAD00001)", logs[3].Text);
         Assert.StartsWith(pt ? "Como resolver: escolha 310.8.2" : "Fix: choose 310.8.2", logs[4].Text);
         Assert.Equal(pt ? "Somente leitura: o RHI não alterou nenhum arquivo." : "Read only: RHI changed no files.", page.Footer);

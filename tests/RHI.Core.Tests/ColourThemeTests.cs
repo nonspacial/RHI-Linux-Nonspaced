@@ -82,6 +82,77 @@ public sealed class ColourThemeTests : IDisposable
         Assert.Empty(used.Except(keys));
     }
 
+    /// <summary>
+    /// w14/layouts-a: code-built views follow the theme too. No <c>Color.Parse</c> / <c>Color.From…</c>, no named
+    /// <c>Colors.X</c> / <c>Brushes.X</c> (Transparent excepted) and no hex colour literal anywhere in RHI.Desktop's C#,
+    /// except the theme palette definitions themselves.
+    /// </summary>
+    [Fact]
+    public void NoCodeBuiltView_HoldsALiteralColour()
+    {
+        var desktop = Path.Combine(RepoRoot(), "src", "RHI.Desktop");
+        var allowed = new[] { Path.Combine("Theming", "ThemeResources.cs") };
+        var literal = new Regex(@"""#[0-9A-Fa-f]{3,8}""|\bColor\.(Parse|TryParse|FromRgb|FromArgb|FromUInt32|FromHsl|FromHsv)\s*\(|\bColors\.[A-Z]\w*|\bBrushes\.(?!Transparent\b)[A-Z]\w*");
+        var found = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(desktop, "*.cs", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(desktop, file);
+            if (relative.StartsWith("obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+                relative.StartsWith("bin" + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+                allowed.Contains(relative)) continue;
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var code = lines[i];
+                var comment = code.IndexOf("//", StringComparison.Ordinal);
+                if (comment >= 0 && !code[..comment].Contains('"')) code = code[..comment];
+                if (literal.Match(code) is { Success: true } m) found.Add($"{relative}:{i + 1}: {m.Value}");
+            }
+        }
+        Assert.True(found.Count == 0, "literal colours in code-built views (use ThemeResources.Bind or an App.axaml class):\n" + string.Join("\n", found));
+    }
+
+    /// <summary>w14/layouts-a (#301 owner decision): each Custom colour has a real colour picker showing the colour.</summary>
+    [Fact]
+    public void CustomColours_EachHaveAColourPicker_ShowingTheirColour()
+    {
+        var (theme, _, _) = NewPresenter(new LinuxAppSettings { ColourTheme = "Forest" });
+        theme.SelectedThemeIndex = theme.ThemeNames.Count - 1; // Custom
+        var rows = new RHI.Desktop.Views.ThemeSettingsRows(theme, _ => Task.FromResult(false));
+        var pickers = Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(rows.Control).OfType<ColorPicker>().ToList();
+        Assert.Equal(theme.CustomColours.Count, pickers.Count);
+        var accent = pickers.Single(p => p.Name == "ThemeColourPicker-Accent");
+        Assert.Equal("#7FD6C2", RHI.Desktop.Views.ThemeSettingsRows.PickedHex(accent.Color));
+        Assert.False(accent.IsAlphaEnabled);
+
+        theme.SetColour("Accent", "#FF9A4D");
+        Assert.Equal("#FF9A4D", RHI.Desktop.Views.ThemeSettingsRows.PickedHex(accent.Color));
+        Assert.Equal("#0A0B0C", RHI.Desktop.Views.ThemeSettingsRows.PickedHex(Color.FromArgb(0x80, 0x0A, 0x0B, 0x0C)));
+    }
+
+    /// <summary>
+    /// w14/layouts-a: the favourite amber has its own key and maps like upstream's FavLook brushes: it stays #F0C35A in
+    /// every theme whose Warning colour is the default amber, and follows Warning where a theme changes it.
+    /// </summary>
+    [Fact]
+    public void FavouriteAmber_StaysAmber_ExceptWhereTheThemeChangesWarning()
+    {
+        var defaultWarning = ThemePalette.Default.Warning;
+        foreach (var preset in ThemePresets.All)
+        {
+            var resources = new ResourceDictionary();
+            ThemeResources.Apply(resources, preset.Palette);
+            var favourite = Brush(resources, "RhiFavouriteBrush");
+            if (preset.Palette.Warning == defaultWarning)
+                Assert.True(Close(favourite, Color.Parse("#F0C35A")), $"{preset.Id}: favourite should stay amber, got {favourite}");
+            else
+                Assert.False(Close(favourite, Color.Parse("#F0C35A")), $"{preset.Id}: favourite should follow the theme's Warning");
+        }
+        ThemeResources.Apply(new ResourceDictionary(), ThemePalette.Default);
+
+        static bool Close(Color a, Color b) => Math.Abs(a.R - b.R) <= 2 && Math.Abs(a.G - b.G) <= 2 && Math.Abs(a.B - b.B) <= 2;
+    }
+
     // ---- Settings › Colour theme --------------------------------------------------------------------------------
 
     private (ThemeSettingsPresenter Presenter, LinuxSettingsStore Store, List<ThemePalette> Applied) NewPresenter(LinuxAppSettings? start = null)

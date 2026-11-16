@@ -277,7 +277,7 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
 
     // Declared before FixControls (static fields initialise in order).
     private static readonly string[] NrDllListMarkers =
-        ["x:Name=\"ReShadeProfileSection\"", "Text=\"{DynamicResource Ui.NrVersions}\"", "ItemsSource=\"{Binding NeuralRenderingDllVersionOptions}\""];
+        ["x:Name=\"NeuralRenderingSection\"", "Text=\"{DynamicResource Ui.NrVersions}\"", "ItemsSource=\"{Binding NeuralRenderingDllVersionOptions}\""];
     private static readonly string[] ComponentRowMarkers = ["x:Name=\"ManagedComponentsSection\"", "ItemsSource=\"{Binding Components}\""];
 
     /// <summary>
@@ -287,11 +287,11 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
     /// </summary>
     internal static readonly IReadOnlyDictionary<string, string[]> FixControls = new Dictionary<string, string[]>
     {
-        // The NR DLL list under NR versions (ReShade profile section): swaps only ShortFuse's / the Feeder Full's NR DLL.
+        // The NR DLL list under NR versions (Neural Rendering section; w14/layouts-a): swaps only ShortFuse's / the Feeder Full's NR DLL.
         ["nr-dll-list"] = NrDllListMarkers,
         // The DLSS / Streamline section's Neural rendering line: its version list and Apply.
         ["dlss-nr-line"] = ["x:Name=\"DlssStreamlineSection\"", "ItemsSource=\"{Binding DlssNrVersions}\"", "Command=\"{Binding SwapDlssComponentCommand}\" CommandParameter=\"NR\""],
-        // The D3DCompiler 47 line of the ReShade profile section: Protontricks, Winetricks (each only where shown) and Browse.
+        // The D3DCompiler 47 line of Game Overrides' ReShade card (w14/layouts-a): Protontricks, Winetricks (each only where shown) and Browse.
         ["d3dcompiler"] = ["Text=\"D3DCompiler 47\"", "InstallD3DCompilerWithProtontricksCommand", "InstallD3DCompilerWithWinetricksCommand", "Click=\"BrowseD3DCompiler47_Click\""],
         // A Managed components row's action button (Remove while installed).
         ["component-remove"] = ComponentRowMarkers,

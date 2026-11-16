@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
 using Avalonia.Threading;
+using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Desktop.Theming;
 
@@ -13,7 +14,7 @@ public sealed partial class MainWindow
 {
     // Upstream 2.7.6 collapsed-section summaries. DlssStreamline already shows its summary line in
     // the header at all times; ReShadeProfile has no upstream counterpart.
-    private static readonly string[] SummarySectionKeys = ["Runtime", "ManagedComponents", "Extras"];
+    private static readonly string[] SummarySectionKeys = ["Runtime", "ManagedComponents", "Extras", "NeuralRendering", "DriverSettings"];
 
     private MainWindowViewModel? _summaryViewModel;
     private bool _summaryRefreshQueued;
@@ -88,6 +89,7 @@ public sealed partial class MainWindow
             ToolTip.SetTip(block, items.Count == 0 ? null : DetailSectionSummaryPresenter.Text(items));
             block.IsVisible = items.Count > 0;
         }
+        if (vm is { Layout.ShowsOverview: true }) RebuildGlance(vm); // w14/layouts-a (#304): At a glance follows the same facts
     }
 
     private static IReadOnlyList<SectionSummaryItem> SummaryItems(string key, MainWindowViewModel vm) => key switch
@@ -95,6 +97,9 @@ public sealed partial class MainWindow
         "Runtime" => DetailSectionSummaryPresenter.Runtime(vm.SelectedGame),
         "ManagedComponents" => DetailSectionSummaryPresenter.ManagedComponents(vm.Components),
         "Extras" => DetailSectionSummaryPresenter.Extras(vm.Extras.UalInstalled, vm.Extras.ShortFuseInstalled, vm.Extras.ShortFuseInstalledVersion),
+        // w14/layouts-a (#304): the new sections' one-line summaries (upstream's collapsed headers and At a glance).
+        "NeuralRendering" or "DriverSettings" when vm.GlanceText(key) is { } text && text != UiLocalizationService.Text("Glance.Empty")
+            => [new SectionSummaryItem(text, null)],
         _ => []
     };
 }

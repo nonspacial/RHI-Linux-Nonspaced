@@ -189,6 +189,12 @@ public sealed partial class ExtrasViewModel : PanelViewModel
         ? ""
         : Facts?.UalRecord?.Version ?? "";
 
+    /// <summary>w14/layouts-a: the name ASI Loader's ⚙ is titled with (upstream "ASI Loader Settings").</summary>
+    public const string UalCogName = "ASI Loader";
+
+    /// <summary>w14/layouts-a: ASI Loader's ⚙ tooltip, its ⚙ title (upstream "ASI Loader settings").</summary>
+    public string UalSettingsTip => RHI.Desktop.Views.CogDialog.TitleFor(UalCogName);
+
     public string UalStatusText => SelectedGame switch
     {
         null => T("Vm.NoGameSelected"),

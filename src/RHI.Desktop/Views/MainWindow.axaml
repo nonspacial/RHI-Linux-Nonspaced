@@ -17,14 +17,18 @@
     </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
-    <!-- Toolbar: deliberately mirrors the upstream RHI layout. Always one row (ToolbarPanel): the brand subtitle hides
-         first, then buttons move from the right end into the '…' menu; Settings stays pinned at the far right. -->
-    <Border Grid.Row="0" Padding="16,10" Background="{DynamicResource RhiToolbarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,0,1">
-      <views:ToolbarPanel x:Name="ToolbarRow" Spacing="8" LeadingSpacing="10" MinGap="16">
+    <!-- w14/layouts-a (#303): upstream 2.9.0's top bar, used by every layout. Left: the brand, then Available Mods (with a
+         green New tag) and Shaders & Addons; right: when RHI last checked, Refresh, Update All with its count, the layout
+         switch (Classic+ | Tabs | Spotlight), Help and Settings. One row (ToolbarPanel): the brand subtitle hides first,
+         then the right group moves into the '…' menu from its right end; Settings stays pinned at the far right. The bar's
+         own size (#306) scales it on top of the interface size; its bottom edge drags. -->
+    <Border x:Name="TopBar" Grid.Row="0" Padding="16,10" Background="{DynamicResource RhiToolbarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,0,1">
+      <LayoutTransformControl x:Name="TopBarScaleBox">
+      <views:ToolbarPanel x:Name="ToolbarRow" Spacing="8" LeadingSpacing="6" MinGap="16">
         <!-- Below 900 px the library column becomes a slide-out overlay opened from here. -->
         <Button x:Name="LibraryToggleButton" views:ToolbarPanel.Slot="Leading" Classes="rhi" Content="{DynamicResource Ui.LibraryToggle}"
                 Click="LibraryToggle_Click" ToolTip.Tip="{DynamicResource Ui.LibraryToggleTip}" IsVisible="False"/>
-        <StackPanel views:ToolbarPanel.Slot="Leading" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <StackPanel x:Name="TopBarBrand" views:ToolbarPanel.Slot="Leading" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="0,0,14,0">
           <Border Width="36" Height="36" CornerRadius="8" Background="{DynamicResource RhiAccentTintBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1">
             <TextBlock Text="R" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource RhiAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
@@ -33,70 +37,103 @@
             <TextBlock views:ToolbarPanel.Collapsible="True" Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="{DynamicResource RhiTaglineBrush}"/>
           </StackPanel>
         </StackPanel>
+        <Button x:Name="NavAvailableMods" views:ToolbarPanel.Slot="Leading" Classes="topNav" Click="NavAvailableMods_Click"
+                ToolTip.Tip="{Binding NavAvailableModsTip}" AutomationProperties.Name="{DynamicResource Ui.AvailableMods}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{DynamicResource Ui.AvailableMods}" VerticalAlignment="Center"/>
+            <!-- #185: the green New tag while new RenoDX, Luma or Ultra+ mods have arrived since you last looked. -->
+            <Border x:Name="NavNewTag" Classes="newTag" IsVisible="{Binding !NewMods.IsHidden, FallbackValue=False}" VerticalAlignment="Center">
+              <TextBlock Text="{DynamicResource Top.New}"/>
+            </Border>
+          </StackPanel>
+        </Button>
+        <Button x:Name="NavShadersAddons" views:ToolbarPanel.Slot="Leading" Classes="topNav" Content="{DynamicResource Ui.ShadersAddons}"
+                ToolTip.Tip="{DynamicResource Top.ShadersAddonsTip}" AutomationProperties.Name="{DynamicResource Ui.ShadersAddons}">
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+              <MenuItem x:Name="GlobalShadersItem" Header="{DynamicResource Top.GlobalShaders}" Click="GlobalShaders_Click"/>
+              <MenuItem x:Name="GlobalAddonsItem" Header="{DynamicResource Top.GlobalAddons}" Click="GlobalAddons_Click"/>
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
 
-        <Button x:Name="NewModsButton" Classes="rhi" Content="{Binding NewMods.ButtonText}" Click="NewMods_Click" ToolTip.Tip="{Binding NewMods.ButtonTip}"
-                views:ToolbarPanel.IsAbsent="{Binding NewMods.IsHidden, FallbackValue=True}"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.AvailableMods}" Click="AvailableMods_Click" ToolTip.Tip="{DynamicResource Ui.AvailableModsTip}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.Refresh}" Command="{Binding RefreshCommand}"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.ShadersAddons}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding Updates.UpdateAllCommand}" IsEnabled="{Binding Updates.CanUpdateAll}"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.BatchDlss}" Click="BatchDlss_Click" IsEnabled="{Binding CanOpenDlssBatch}"
-                ToolTip.Tip="{DynamicResource Ui.BatchDlssTip}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.Links}" Click="Links_Click"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.Motd}" Click="Motd_Click" ToolTip.Tip="{DynamicResource Ui.MotdTip}"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateHistory}" Click="UpdateHistory_Click" ToolTip.Tip="{DynamicResource Ui.UpdateHistoryTip}"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.Donate}" Click="Donate_Click" ToolTip.Tip="{DynamicResource Ui.DonateTip}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
-        <Button Classes="rhi" Content="{Binding ViewToggleText}" Click="ViewMode_Click" ToolTip.Tip="{DynamicResource Ui.ViewModeTip}"/>
+        <TextBlock x:Name="TopBarCheckedText" Text="{Binding TopBar.CheckedText}" Classes="topChecked" VerticalAlignment="Center"
+                   ToolTip.Tip="{DynamicResource Top.CheckedTip}"/>
+        <Button x:Name="TopBarRefresh" Classes="rhi topIcon" Content="⟳" Command="{Binding RefreshCommand}"
+                ToolTip.Tip="{DynamicResource Top.RefreshTip}" AutomationProperties.Name="{DynamicResource Ui.Refresh}"/>
+        <!-- Update All: purple with the number of games RHI has seen updates for (TopBarPresenter). -->
+        <Button x:Name="TopBarUpdateAll" Classes="rhi updateAll" Classes.hasUpdates="{Binding TopBar.HasUpdateCount}"
+                Command="{Binding Updates.UpdateAllCommand}" IsEnabled="{Binding Updates.CanUpdateAll}"
+                ToolTip.Tip="{Binding TopBar.UpdateAllTip}" ToolTip.ShowOnDisabled="True" AutomationProperties.Name="{DynamicResource Ui.UpdateAll}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{DynamicResource Ui.UpdateAll}" VerticalAlignment="Center"/>
+            <Border Classes="countTag" IsVisible="{Binding TopBar.HasUpdateCount}" VerticalAlignment="Center">
+              <TextBlock Text="{Binding TopBar.UpdateCountText}"/>
+            </Border>
+          </StackPanel>
+        </Button>
+        <!-- Classic+ | Tabs | Spotlight (Spotlight a disabled placeholder until the layouts-b lane, #305). -->
+        <views:SegmentedSwitch x:Name="LayoutSwitch" VerticalAlignment="Center"/>
+        <Button x:Name="TopBarHelp" Classes="rhi" Click="TopBarHelp_Click" AutomationProperties.Name="{DynamicResource Shell.HelpTitle}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="{DynamicResource Shell.HelpTitle}" VerticalAlignment="Center"/>
+            <TextBlock Text="▾" FontSize="10" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
         <Button x:Name="ToolbarOverflowButton" views:ToolbarPanel.Slot="Overflow" Classes="rhi" Content="…"
                 ToolTip.Tip="{DynamicResource Ui.MoreActions}" AutomationProperties.Name="{DynamicResource Ui.MoreActions}">
           <Button.Flyout>
             <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="ToolbarOverflowMenu_Opening" FlyoutPresenterClasses="toolbarOverflow"/>
           </Button.Flyout>
         </Button>
-        <Button views:ToolbarPanel.Slot="Trailing" Classes="rhi" Content="{DynamicResource Ui.Settings}" Click="Settings_Click"/>
+        <!-- Settings as an icon, lit while Settings is open (upstream). -->
+        <Button x:Name="TopBarSettings" views:ToolbarPanel.Slot="Trailing" Classes="rhi topIcon" Content="⚙" Click="Settings_Click"
+                ToolTip.Tip="{DynamicResource Top.SettingsTip}" AutomationProperties.Name="{DynamicResource Ui.Settings}"/>
       </views:ToolbarPanel>
+      </LayoutTransformControl>
     </Border>
 
     <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnDefinitions="300,*">
       <!-- Below 900 px the column is removed and the same sidebar opens over this dimmed backdrop (MainWindow.Responsive.cs). -->
       <Border x:Name="LibraryBackdrop" Classes="libraryBackdrop" Grid.ColumnSpan="2" IsVisible="False" ZIndex="10"
               PointerPressed="LibraryBackdrop_PointerPressed"/>
-      <!-- Sidebar -->
+      <!-- Sidebar (#303, upstream's game list in Classic+ and Tabs): search and the green + (add a game), the All | Installed |
+           Favourites | Hidden switch, your collections, then the Filters button by the counts; the engine and mod filters
+           show behind Filters. Its own size (#306) scales it; its right edge drags. -->
       <Border x:Name="LibrarySidebar" Grid.Column="0" Background="{DynamicResource RhiSidebarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,1,0" ClipToBounds="True">
+        <LayoutTransformControl x:Name="GameListScaleBox">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
-          <Border Grid.Row="0" Padding="10,8,10,4" Background="{DynamicResource RhiFilterBarBrush}">
-            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     PlaceholderText="{DynamicResource Ui.SearchGames}" Background="{DynamicResource RhiControlBrush}" Foreground="{DynamicResource RhiSecondaryTextBrush}"
-                     BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
-          </Border>
-          <Border x:Name="LibraryFilterBar" Grid.Row="1" Padding="10,8" Background="{DynamicResource RhiFilterBarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,0,1">
-            <StackPanel>
-            <WrapPanel Orientation="Horizontal">
-              <Button Classes="chip" Content="{DynamicResource Ui.All}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="All Games"/>
-              <Button Classes="chip" Content="{DynamicResource Ui.Favourites}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Favourites"/>
-              <Button Classes="chip" Content="{DynamicResource Ui.Installed}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Installed"/>
-              <Button Classes="chip" Content="Unreal" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unreal"/>
-              <Button Classes="chip" Content="Unity" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unity"/>
-              <Button Classes="chip" Content="{DynamicResource Ui.Other}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Other"/>
-              <Button Classes="chip" Content="RenoDX" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="RenoDX"/>
-              <Button Classes="chip" Content="Luma" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Luma"/>
-              <Button Classes="chip" Content="{DynamicResource Ui.Hidden}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Hidden"/>
-            </WrapPanel>
-            <!-- #300 game collections: one chip per collection, then "+ Collection" (upstream 2.9.2, under the filter switch). -->
-            <views:CollectionsRow x:Name="CollectionsRow"/>
-            <!-- #193 saved custom filters: "Save as filter" and one chip per saved filter (hidden while there is neither). -->
-            <views:CustomFilterRow/>
+          <Border Grid.Row="0" Padding="10,10,10,6" Background="{DynamicResource RhiFilterBarBrush}">
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         PlaceholderText="{DynamicResource Ui.SearchGames}" Background="{DynamicResource RhiControlBrush}" Foreground="{DynamicResource RhiSecondaryTextBrush}"
+                         BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
+                <Button x:Name="SidebarAddGame" Grid.Column="1" Classes="rhi addGame" Content="+" Click="AddGame_Click"
+                        ToolTip.Tip="{DynamicResource Top.AddGameTip}" AutomationProperties.Name="{DynamicResource Ui.AddGame}"/>
+              </Grid>
+              <views:SegmentedSwitch x:Name="LibraryMainFilter" Stretch="True"/>
+              <!-- #300 game collections: one chip per collection, then "+ Collection" (upstream 2.9.2, under the filter switch). -->
+              <views:CollectionsRow x:Name="CollectionsRow"/>
+              <!-- #193 saved custom filters: "Save as filter" and one chip per saved filter (hidden while there is neither). -->
+              <views:CustomFilterRow/>
             </StackPanel>
           </Border>
-          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="12,8">
-            <TextBlock Text="{DynamicResource Ui.Library}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10"/>
+          <!-- Behind Filters: the engine and mod filters (upstream 2.9.0). -->
+          <Border x:Name="LibraryFilterBar" Grid.Row="1" Padding="10,4,10,8" Background="{DynamicResource RhiFilterBarBrush}" IsVisible="False">
+            <WrapPanel Orientation="Horizontal">
+              <Button Classes="chip" Classes.active="{Binding LibraryFilterIsUnreal}" Content="Unreal" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unreal"/>
+              <Button Classes="chip" Classes.active="{Binding LibraryFilterIsUnity}" Content="Unity" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unity"/>
+              <Button Classes="chip" Classes.active="{Binding LibraryFilterIsOther}" Content="{DynamicResource Ui.Other}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Other"/>
+              <Button Classes="chip" Classes.active="{Binding LibraryFilterIsRenoDx}" Content="RenoDX" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="RenoDX"/>
+              <Button Classes="chip" Classes.active="{Binding LibraryFilterIsLuma}" Content="Luma" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Luma"/>
+            </WrapPanel>
+          </Border>
+          <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="10,6,12,8" Background="Transparent">
+            <ToggleButton x:Name="LibraryFiltersButton" Classes="filters" Content="{Binding LibraryFiltersText}" ToolTip.Tip="{Binding LibraryFiltersTip}"
+                          IsCheckedChanged="LibraryFilters_Changed"/>
+            <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10"
+                       VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
           </Grid>
           <ListBox x:Name="GameLibraryList" Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGameRow}"
                    SelectionChanged="GameLibrary_SelectionChanged" Tapped="GameLibrary_Tapped" ClipToBounds="True"
@@ -126,13 +163,14 @@
                      FontSize="12" Foreground="{DynamicResource RhiMutedTextBrush}" IsHitTestVisible="False"
                      Text="{Binding Collections.EmptyText}" IsVisible="{Binding Collections.HasEmptyText}"/>
         </Grid>
+        </LayoutTransformControl>
       </Border>
 
       <!-- Detail panel -->
       <ScrollViewer x:Name="DetailScroller" Grid.Column="1" Background="{DynamicResource RhiBackgroundBrush}">
-        <Grid x:Name="DetailRoot" Margin="24" RowDefinitions="Auto,Auto" RowSpacing="14">
+        <Grid x:Name="DetailRoot" Margin="24" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="14">
           <!-- Responsive header: steps typography down, then moves the actions below the title, then trims (DetailHeaderPanel). -->
-          <views:DetailHeaderPanel Grid.Row="0" RowSpacing="8">
+          <views:DetailHeaderPanel x:Name="ClassicHeader" Grid.Row="0" RowSpacing="8">
             <DockPanel HorizontalAlignment="Left" VerticalAlignment="Center">
               <!-- Identity badges: first = library source, second = launcher/platform. Never shrunk by trimming. -->
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" Margin="10,0,0,0" VerticalAlignment="Center">
@@ -154,7 +192,7 @@
                 </Border>
               </StackPanel>
               <StackPanel VerticalAlignment="Center">
-                <!-- Upstream 2.9.4 Game settings: a ⚙ beside the title (Block Steam updates; Remove from RHI until Management is ported). -->
+                <!-- Upstream 2.9.4 Game settings: a ⚙ beside the title (Block Steam updates; Remove from RHI is in Management). -->
                 <DockPanel>
                   <Button x:Name="GameSettingsButton" DockPanel.Dock="Right" Classes="rhi" Content="⚙" Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Center"
                           IsVisible="{Binding ShowGameSettings}" ToolTip.Tip="{Binding GameSettingsTitle}" Click="GameSettings_Click"/>
@@ -173,10 +211,7 @@
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
                       ToolTip.Tip="{DynamicResource Ui.EditTip}"/>
-              <!-- Only manually added games can be removed; hide the button for everything else. -->
-              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.RemoveManual}" Command="{Binding ManualGames.RemoveManualGameCommand}" IsEnabled="{Binding ManualGames.CanRemoveManualGame}"
-                      IsVisible="{Binding SelectedGame.IsManuallyAdded, FallbackValue=False, TargetNullValue=False}"
-                      ToolTip.Tip="{DynamicResource Ui.RemoveManualTip}"/>
+              <!-- w14/layouts-a (#304): a game added by hand is removed with Management › Remove from RHI, as upstream. -->
               <!-- Only shown when RHI's records still point to the folder the game was moved from. -->
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.RepairMove}" Command="{Binding RepairAfterMoveCommand}"
                       IsVisible="{Binding ShowRepairAfterMove}"
@@ -190,8 +225,81 @@
             </WrapPanel>
           </views:DetailHeaderPanel>
 
+          <!-- w14/layouts-a (#304, upstream 2.9.0 Tabs header): the name in large type with the favourite star, Hide and the Game
+               settings ⚙; quiet tags (store, runner, graphics API, engine); the install path with Open folder and Open prefix (the
+               Linux stand-in for Config folder); the game's links; a large Launch button with its menu; HDR on launch, the
+               resolution switch and the display mode switch (#311). Shown in Tabs instead of the Classic+ header; every control calls what the Classic+ one does. -->
+          <StackPanel x:Name="TabsHeader" Grid.Row="0" Spacing="10" IsVisible="False">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button x:Name="TabsFavourite" Classes="tabsStar" Classes.on="{Binding SelectedGameIsFavourite}" Content="★"
+                        Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}" ToolTip.Tip="{Binding FavouriteActionTip}"/>
+                <Button x:Name="TabsHide" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+                <Button x:Name="TabsGameSettings" Classes="rhi" Content="⚙" Padding="10,4" IsVisible="{Binding ShowGameSettings}"
+                        ToolTip.Tip="{Binding GameSettingsTitle}" Click="GameSettings_Click"/>
+              </StackPanel>
+              <TextBlock x:Name="TabsTitle" Text="{Binding SelectedTitle}" FontSize="28" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"
+                         TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}" VerticalAlignment="Center"/>
+            </DockPanel>
+            <ItemsControl x:Name="TabsTags" ItemsSource="{Binding HeaderTags}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6"/></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <Border Classes="tabsTag"><TextBlock Text="{Binding}"/></Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <views:MiddleEllipsisText FullText="{Binding SelectedInstallPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+              <Button Grid.Column="2" Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+            </Grid>
+            <ItemsControl x:Name="TabsLinks" ItemsSource="{Binding HeaderLinks}" IsVisible="{Binding HasHeaderLinks}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="14" LineSpacing="4"/></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:CardMenuItem">
+                  <Button Classes="tabsLink" Content="{Binding Label}" Command="{Binding Command}" ToolTip.Tip="{Binding Tip}"/>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="8">
+              <StackPanel Orientation="Horizontal" Spacing="0">
+                <Button x:Name="TabsLaunch" Classes="tabsLaunch" Content="{DynamicResource Tabs.Launch}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
+                        ToolTip.Tip="{Binding LaunchToolTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                <Button x:Name="TabsLaunchMenu" Classes="tabsLaunch menu" Content="▾" IsEnabled="{Binding HasSelectedGame}" Click="TabsLaunchMenu_Click"
+                        ToolTip.Tip="{DynamicResource Tabs.LaunchMenuTip}"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrRow}"
+                          VerticalAlignment="Center">
+                <TextBlock Text="{DynamicResource Tabs.HdrOnLaunch}" Classes="muted" VerticalAlignment="Center"/>
+                <ComboBox x:Name="TabsHdrMode" MinWidth="170" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}"
+                          IsEnabled="{Binding CanEditHdrProfile}" ToolTip.Tip="{Binding HdrModeTip}" ToolTip.ShowDelay="2000">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <views:ResolutionToggleRow x:Name="TabsResolution" DataContext="{Binding Runtime}" IsVisible="{Binding ShowResolutionRow}" VerticalAlignment="Center"/>
+              <!-- w14/display-modes (#311, upstream 2.9.3/2.9.4: beside the HDR and resolution buttons in every layout): the same
+                   reusable switch as Classic+'s Game Overrides row, attached in MainWindow.DisplayModes.cs. -->
+              <StackPanel x:Name="TabsDisplayModes" Orientation="Horizontal" Spacing="8" IsVisible="{Binding DisplayModes.ShowSwitch}" VerticalAlignment="Center">
+                <TextBlock Text="{l:T Dm.Label}" Classes="muted" VerticalAlignment="Center"/>
+                <views:DisplayModeSwitchView x:Name="TabsDisplayModeSwitch" VerticalAlignment="Center"/>
+              </StackPanel>
+            </WrapPanel>
+          </StackPanel>
+
+          <!-- w14/layouts-a (#304): the Tabs layout's tab strip, upstream's fixed order (MainWindow.GameLayout.cs fills it). -->
+          <Border x:Name="GameTabStripHost" Grid.Row="1" Classes="tabStrip" IsVisible="False">
+            <WrapPanel x:Name="GameTabStrip" Orientation="Horizontal" ItemSpacing="24"/>
+          </Border>
+
           <!-- Detail sections are collapsible and drag-reorderable; Linux stores state in XDG_CONFIG_HOME. -->
-          <StackPanel x:Name="DetailSectionsPanel" Grid.Row="1" Spacing="14">
+          <StackPanel x:Name="DetailSectionsPanel" Grid.Row="2" Spacing="14">
             <Border x:Name="RuntimeSection" Tag="Runtime" Classes="card"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel>
@@ -200,8 +308,8 @@
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.ExecutionGame}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
-                    <TextBlock Text="{DynamicResource Ui.ExecutionGameNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <TextBlock Text="{DynamicResource Sec.GameOverrides}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
+                    <TextBlock Text="{DynamicResource Sec.GameOverridesNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="RuntimeSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
@@ -209,7 +317,8 @@
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
                 <!-- Label/value form; labels move above their values below ~760 px of detail width. -->
-                <views:LabelValuePanel x:Name="RuntimeSectionBody" Margin="0,10,0,0" ColumnSpacing="18" RowSpacing="8" StackBelow="678">
+                <StackPanel x:Name="RuntimeSectionBody" Margin="0,10,0,0" Spacing="14">
+                <views:LabelValuePanel x:Name="RuntimeFactsPanel" ColumnSpacing="18" RowSpacing="8" StackBelow="678">
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource Ui.Launcher}" Classes="muted"/>
                   <views:MiddleEllipsisText Grid.Row="0" Grid.Column="1" FullText="{Binding SelectedLaunchExecutable}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
 
@@ -284,28 +393,112 @@
                              IsVisible="{Binding Runtime.ShowResolutionRow}"/>
                   <views:ResolutionToggleRow Grid.Row="10" Grid.Column="1" DataContext="{Binding Runtime}"/>
 
-                  <!-- w14/display-modes (#311): the display mode switch beside the HDR / resolution rows (a reusable view other
-                       page layouts host too); shown while Settings › Display & HDR › Display modes is on. -->
+                  <!-- w14/display-modes (#311): the display mode switch beside the HDR / resolution rows (Classic+'s Game Overrides; Tabs
+                       hosts the same reusable view in its game header); shown while Settings › Display & HDR › Display modes is on. -->
                   <TextBlock Grid.Row="11" Grid.Column="0" Text="{l:T Dm.Label}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"
                              IsVisible="{Binding DisplayModes.ShowSwitch}"/>
                   <views:DisplayModeSwitchView x:Name="DisplayModeSwitch" Grid.Row="11" Grid.Column="1"/>
 
-                  <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
-                  <!-- w11/nr-check (#234, owner pick A'): "Check…" right after the recommendation text, wrapping under it when the
-                       line is too narrow; hidden where the page would have nothing to show. -->
-                  <WrapPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" ItemSpacing="12" LineSpacing="6">
-                    <TextBlock DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="{DynamicResource RhiButtonTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                    <Button x:Name="NeuralRenderingCheckButton" Classes="rhi" Padding="12,4" VerticalAlignment="Center"
-                            Content="{Binding NrCheck.ButtonText}" Command="{Binding NrCheck.OpenCommand}" IsVisible="{Binding NrCheck.IsAvailable}"
-                            ToolTip.Tip="{Binding NrCheck.ButtonTip}" ToolTip.ShowDelay="2000"/>
-                  </WrapPanel>
+                  <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
+                  <TextBlock Grid.Row="12" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
 
-                  <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
-                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
-
-                  <TextBlock Grid.Row="14" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
-                  <TextBlock Grid.Row="14" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="{DynamicResource RhiMutedTextBrush}" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
+                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="{DynamicResource RhiMutedTextBrush}" TextWrapping="Wrap"/>
                 </views:LabelValuePanel>
+                  <!-- w14/layouts-a (#304): upstream Game Overrides' ReShade card (was the ReShade profile section). -->
+                  <Border x:Name="GameOverridesReShadeCard" Classes="subCard">
+                    <StackPanel Spacing="10">
+                      <TextBlock Text="{DynamicResource Sec.ReShadeCard}" Classes="subCardTitle"/>
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="{DynamicResource Ui.ManagedProfileControls}" Classes="muted" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                          <Button Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}" Command="{Binding ReShadeProfile.CheckReShadeUpdateCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+                          <Button Content="{DynamicResource Ui.ApplyUpdate}" Command="{Binding ReShadeProfile.ApplyReShadeProfileCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"
+                                  Background="{DynamicResource RhiButtonBrush}" Foreground="{DynamicResource RhiButtonTextBrush}" BorderBrush="{DynamicResource RhiButtonBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,7"/>
+                        </StackPanel>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="120,220,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                        <TextBlock Grid.Row="0" Text="{DynamicResource Ui.Channel}" Classes="muted" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding ReShadeProfile.ReShadeChannels}" SelectedItem="{Binding ReShadeProfile.SelectedReShadeChannel}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ReShadeProfile.ReShadeUpdateText}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+
+                        <TextBlock Grid.Row="1" Text="{DynamicResource Ui.LegacyVersion}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"/>
+                        <!-- w5/reshade-core (#186): the RHI manifest's legacy versions (ReShadeLegacyPresenter). -->
+                        <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding ReShadeLegacy.Versions}"
+                                  SelectedItem="{Binding ReShadeProfile.ReShadeLegacyVersion, Mode=TwoWay}" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"
+                                  ToolTip.Tip="{Binding ReShadeLegacy.VersionTip}" ToolTip.ShowDelay="2000"/>
+                        <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource Ui.LegacyVersionNote}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"/>
+
+                        <TextBlock Grid.Row="2" Text="{DynamicResource Ui.CustomDll}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding ReShadeProfile.IsReShadeCustom}"/>
+                        <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding ReShadeProfile.IsReShadeCustom}">
+                          <TextBox Text="{Binding ReShadeProfile.ReShadeCustomDllPath}" PlaceholderText="{DynamicResource Ui.CustomDllPlaceholder}"/>
+                          <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseReShadeCustomDll_Click" Padding="12,6"/>
+                          <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearReShadeCustomDll_Click" Padding="12,6"/>
+                        </Grid>
+                      </Grid>
+
+                      <!-- w5/reshade-core (#186): the RHI manifest's ReShade note for this game (reshadeGameInfo). -->
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding ReShadeLegacy.HasNote}">
+                        <TextBlock Text="{Binding ReShadeLegacy.Note}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="{Binding ReShadeLegacy.NoteLinkLabel}" Command="{Binding ReShadeLegacy.OpenNoteLinkCommand}"
+                                IsVisible="{Binding ReShadeLegacy.HasNoteLink}" Padding="12,6" VerticalAlignment="Top"
+                                ToolTip.Tip="{Binding ReShadeLegacy.NoteUrl}" ToolTip.ShowDelay="2000"/>
+                      </Grid>
+
+                      <!-- w3/dllnames (#120): ReShade's proxy DLL name; DllNamePickerViewModel. w7/reshade (#196): Reset DLL names
+                           beside it, wrapping below at narrow widths. -->
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="6" IsVisible="{Binding DllNamePicker.IsAvailable}">
+                        <Grid ColumnDefinitions="120,220" ColumnSpacing="10">
+                          <TextBlock Text="{Binding DllNamePicker.Label}" Classes="muted" VerticalAlignment="Center"/>
+                          <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding DllNamePicker.Options}"
+                                    SelectedItem="{Binding DllNamePicker.SelectedOption, Mode=TwoWay}" IsEnabled="{Binding DllNamePicker.CanChoose}"
+                                    ToolTip.Tip="{Binding DllNamePicker.Hint}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                        </Grid>
+                        <Button x:Name="ResetDllNamesButton" Content="{Binding DllNamePicker.ResetLabel}" Command="{Binding DllNamePicker.ResetCommand}"
+                                IsVisible="{Binding DllNamePicker.CanReset}" IsEnabled="{Binding !IsBusy}" Padding="12,6" VerticalAlignment="Center"
+                                ToolTip.Tip="{Binding DllNamePicker.ResetTip}" ToolTip.ShowDelay="2000"/>
+                      </WrapPanel>
+
+                      <Grid ColumnDefinitions="120,*" ColumnSpacing="8">
+                        <TextBlock Text="D3DCompiler 47" Classes="muted" VerticalAlignment="Top" Margin="0,7,0,0"/>
+                        <StackPanel Grid.Column="1" Spacing="7">
+                          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <TextBox Text="{Binding ReShadeProfile.ReShadeD3DCompiler47Path}"
+                                     PlaceholderText="{DynamicResource Ui.D3DCompilerPlaceholder}"/>
+                            <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseD3DCompiler47_Click" Padding="12,6"/>
+                            <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearD3DCompiler47_Click" Padding="12,6"/>
+                          </Grid>
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="{DynamicResource Ui.InstallProtontricks}"
+                                    Command="{Binding ReShadeProfile.InstallD3DCompilerWithProtontricksCommand}"
+                                    IsVisible="{Binding ReShadeProfile.CanInstallD3DCompilerWithProtontricks}"
+                                    Padding="12,6"/>
+                            <Button Content="{Binding ReShadeProfile.D3DCompilerWinetricksButtonText}"
+                                    Command="{Binding ReShadeProfile.InstallD3DCompilerWithWinetricksCommand}"
+                                    IsVisible="{Binding ReShadeProfile.CanInstallD3DCompilerWithWinetricks}"
+                                    Padding="12,6"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </Grid>
+                      <TextBlock Text="{Binding ReShadeProfile.D3DCompilerToolHint}" Classes="muted" TextWrapping="Wrap"/>
+                      <TextBlock Text="{DynamicResource Ui.D3DCompilerNote}"
+                                 Classes="muted" TextWrapping="Wrap"/>
+
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="14" LineSpacing="4">
+                        <CheckBox Content="{DynamicResource Ui.ManageReShadeIni}" IsChecked="{Binding ReShadeProfile.ReShadeManageIni}"/>
+                        <TextBlock Text="{DynamicResource Ui.QuickPackages}" Classes="muted" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                        <CheckBox Content="{DynamicResource Ui.Official}" IsChecked="{Binding ReShadeProfile.ShaderCrosireMaster}" ToolTip.Tip="crosire reshade-shaders master"/>
+                        <CheckBox Content="{DynamicResource Ui.OfficialLegacy}" IsChecked="{Binding ReShadeProfile.ShaderCrosireLegacy}"/>
+                        <CheckBox Content="clshortfuse HDR" IsChecked="{Binding ReShadeProfile.ShaderClshortfuse}"/>
+                        <CheckBox Content="MaxG2D HDR" IsChecked="{Binding ReShadeProfile.ShaderMaxG2D}"/>
+                        <Button Classes="rhi" Content="{DynamicResource Ui.FullShaderManager}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}" Padding="12,6"/>
+                      </WrapPanel>
+                      <TextBlock Text="{DynamicResource Ui.XdgSettingsNote}"
+                                 Classes="muted" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
               </StackPanel>
             </Border>
 
@@ -318,7 +511,7 @@
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.DlssStreamline}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
+                    <TextBlock Text="{DynamicResource Sec.Dlss}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{Binding DlssStatusSummary}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                   </StackPanel>
                   <Border Grid.Column="2" Background="{DynamicResource RhiAccentTintBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,5" MaxHeight="40">
@@ -402,6 +595,29 @@
                             ToolTip.Tip="{Binding Nvidia.ButtonTip}" ToolTip.ShowDelay="2000"/>
                   </views:ResponsiveRow>
 
+                  <TextBlock Text="{DynamicResource Ui.DlssNote}" Classes="muted" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border x:Name="DriverSettingsSection" Tag="DriverSettings" Classes="card"
+                    DataContext="{Binding Dlss}" x:DataType="vm:DlssPanelViewModel"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0" Text="≡" Tag="DriverSettings" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
+                             VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
+                             PointerPressed="SectionDragHandle_PointerPressed"/>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{DynamicResource Sec.Driver}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
+                    <TextBlock Text="{DynamicResource Sec.DriverNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="DriverSettingsSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
+                               TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+                  <Button x:Name="DriverSettingsSectionToggle" Grid.Column="2" Tag="DriverSettings" Classes="rhi" Content="▼"
+                          Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
+                </Grid>
+                <StackPanel x:Name="DriverSettingsSectionBody" Spacing="10">
                   <!-- w14/ui-logic (#310): the game's FPS Limit (upstream Driver Settings › FPS Limit), set through DXVK /
                        VKD3D-Proton launch variables; shown for Wine/Proton games whose launcher takes them. -->
                   <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding FrameRateLimit.IsShown}">
@@ -413,105 +629,100 @@
                     <Button Classes="rhi" Content="{l:T Fps.Set}" Command="{Binding FrameRateLimit.ApplyCustomCommand}"
                             IsVisible="{Binding FrameRateLimit.IsCustomEntry}"/>
                   </StackPanel>
-
-                  <TextBlock Text="{DynamicResource Ui.DlssNote}" Classes="muted" TextWrapping="Wrap"/>
+                  <TextBlock Text="{DynamicResource Sec.DriverNothing}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !FrameRateLimit.IsShown}"/>
                 </StackPanel>
               </StackPanel>
             </Border>
 
-            <Border x:Name="ReShadeProfileSection" Tag="ReShadeProfile" Classes="card" BorderBrush="{DynamicResource RhiButtonBorderBrush}"
+            <Border x:Name="ManagementSection" Tag="Management" Classes="card"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                  <TextBlock Grid.Column="0" Text="≡" Tag="ReShadeProfile" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
+                  <TextBlock Grid.Column="0" Text="≡" Tag="Management" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.ReShadeProfile}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
-                    <TextBlock Text="{DynamicResource Ui.ReShadeProfileNote}"
-                               Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <TextBlock Text="{DynamicResource Sec.Management}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
+                    <TextBlock Text="{DynamicResource Sec.ManagementNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ManagementSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
+                               TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
-                  <Button x:Name="ReShadeProfileSectionToggle" Grid.Column="2" Tag="ReShadeProfile" Classes="rhi" Content="▼"
+                  <Button x:Name="ManagementSectionToggle" Grid.Column="2" Tag="Management" Classes="rhi" Content="▼"
+                          Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
+                </Grid>
+                <!-- w14/layouts-a (#304, upstream Management): Classic+ lays the actions out in one row in upstream's order; Tabs shows
+                     them as tiles with a line under each (Change install folder, Reset Overrides, Copy Report, Reset install folder,
+                     Remove from RHI). -->
+                <StackPanel x:Name="ManagementSectionBody" Spacing="8">
+                  <views:AutoFitPanel x:Name="ManagementActions" MinColumnWidth="150" Spacing="8">
+                    <Button x:Name="ManagementChangeFolder" Classes="rhi managementTile" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
+                            ToolTip.Tip="{DynamicResource Mgmt.ChangeFolderTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{DynamicResource Mgmt.ChangeFolder}" Classes="tileTitle"/>
+                        <TextBlock Text="{DynamicResource Mgmt.ChangeFolderDesc}" Classes="tileDesc"/>
+                      </StackPanel>
+                    </Button>
+                    <Button x:Name="ManagementResetFolder" Classes="rhi managementTile" Click="ResetInstallFolder_Click" IsEnabled="{Binding CanResetInstallFolder}"
+                            IsVisible="{Binding ShowResetInstallFolder}" ToolTip.Tip="{Binding ResetInstallFolderTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{DynamicResource Mgmt.ResetFolder}" Classes="tileTitle"/>
+                        <TextBlock Text="{DynamicResource Mgmt.ResetFolderDesc}" Classes="tileDesc"/>
+                      </StackPanel>
+                    </Button>
+                    <Button x:Name="ManagementRemove" Classes="rhi managementTile" Classes.remove="True" Command="{Binding RemoveFromRhiAnyCommand}" IsEnabled="{Binding CanRemoveFromRhiAny}"
+                            ToolTip.Tip="{Binding RemoveFromRhiAnyTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{DynamicResource Removed.Remove}" Classes="tileTitle"/>
+                        <TextBlock Text="{Binding RemoveFromRhiDesc}" Classes="tileDesc"/>
+                      </StackPanel>
+                    </Button>
+                    <Button x:Name="ManagementResetOverrides" Classes="rhi managementTile" Classes.remove="True" Command="{Binding ResetOverridesCommand}" IsEnabled="{Binding CanResetOverrides}"
+                            ToolTip.Tip="{DynamicResource Mgmt.ResetOverridesTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{DynamicResource Mgmt.ResetOverrides}" Classes="tileTitle"/>
+                        <TextBlock Text="{DynamicResource Mgmt.ResetOverridesDesc}" Classes="tileDesc"/>
+                      </StackPanel>
+                    </Button>
+                    <Button x:Name="ManagementCopyReport" Classes="rhi managementTile" Command="{Binding CopyReportCommand}" IsEnabled="{Binding HasSelectedGame}"
+                            ToolTip.Tip="{DynamicResource Mgmt.CopyReportTip}" ToolTip.ShowDelay="2000">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{DynamicResource Mgmt.CopyReport}" Classes="tileTitle"/>
+                        <TextBlock Text="{DynamicResource Mgmt.CopyReportDesc}" Classes="tileDesc"/>
+                      </StackPanel>
+                    </Button>
+                  </views:AutoFitPanel>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border x:Name="NeuralRenderingSection" Tag="NeuralRendering" Classes="card" BorderBrush="{DynamicResource RhiButtonBorderBrush}"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0" Text="≡" Tag="NeuralRendering" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
+                             VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
+                             PointerPressed="SectionDragHandle_PointerPressed"/>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{DynamicResource Sec.NeuralRendering}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
+                    <TextBlock Text="{DynamicResource Sec.NeuralRenderingNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="NeuralRenderingSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
+                               TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+                  <Button x:Name="NeuralRenderingSectionToggle" Grid.Column="2" Tag="NeuralRendering" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
 
-                <StackPanel x:Name="ReShadeProfileSectionBody" Spacing="10">
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Text="{DynamicResource Ui.ManagedProfileControls}" Classes="muted" VerticalAlignment="Center"/>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                      <Button Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}" Command="{Binding ReShadeProfile.CheckReShadeUpdateCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
-                      <Button Content="{DynamicResource Ui.ApplyUpdate}" Command="{Binding ReShadeProfile.ApplyReShadeProfileCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"
-                              Background="{DynamicResource RhiButtonBrush}" Foreground="{DynamicResource RhiButtonTextBrush}" BorderBrush="{DynamicResource RhiButtonBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,7"/>
-                    </StackPanel>
-                  </Grid>
-
-                  <Grid ColumnDefinitions="120,220,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
-                    <TextBlock Grid.Row="0" Text="{DynamicResource Ui.Channel}" Classes="muted" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding ReShadeProfile.ReShadeChannels}" SelectedItem="{Binding ReShadeProfile.SelectedReShadeChannel}"/>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ReShadeProfile.ReShadeUpdateText}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
-
-                    <TextBlock Grid.Row="1" Text="{DynamicResource Ui.LegacyVersion}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"/>
-                    <!-- w5/reshade-core (#186): the RHI manifest's legacy versions (ReShadeLegacyPresenter). -->
-                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding ReShadeLegacy.Versions}"
-                              SelectedItem="{Binding ReShadeProfile.ReShadeLegacyVersion, Mode=TwoWay}" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"
-                              ToolTip.Tip="{Binding ReShadeLegacy.VersionTip}" ToolTip.ShowDelay="2000"/>
-                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource Ui.LegacyVersionNote}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"/>
-
-                    <TextBlock Grid.Row="2" Text="{DynamicResource Ui.CustomDll}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding ReShadeProfile.IsReShadeCustom}"/>
-                    <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding ReShadeProfile.IsReShadeCustom}">
-                      <TextBox Text="{Binding ReShadeProfile.ReShadeCustomDllPath}" PlaceholderText="{DynamicResource Ui.CustomDllPlaceholder}"/>
-                      <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseReShadeCustomDll_Click" Padding="12,6"/>
-                      <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearReShadeCustomDll_Click" Padding="12,6"/>
-                    </Grid>
-                  </Grid>
-
-                  <!-- w5/reshade-core (#186): the RHI manifest's ReShade note for this game (reshadeGameInfo). -->
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding ReShadeLegacy.HasNote}">
-                    <TextBlock Text="{Binding ReShadeLegacy.Note}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                    <Button Grid.Column="1" Content="{Binding ReShadeLegacy.NoteLinkLabel}" Command="{Binding ReShadeLegacy.OpenNoteLinkCommand}"
-                            IsVisible="{Binding ReShadeLegacy.HasNoteLink}" Padding="12,6" VerticalAlignment="Top"
-                            ToolTip.Tip="{Binding ReShadeLegacy.NoteUrl}" ToolTip.ShowDelay="2000"/>
-                  </Grid>
-
-                  <!-- w3/dllnames (#120): ReShade's proxy DLL name; DllNamePickerViewModel. w7/reshade (#196): Reset DLL names
-                       beside it, wrapping below at narrow widths. -->
-                  <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="6" IsVisible="{Binding DllNamePicker.IsAvailable}">
-                    <Grid ColumnDefinitions="120,220" ColumnSpacing="10">
-                      <TextBlock Text="{Binding DllNamePicker.Label}" Classes="muted" VerticalAlignment="Center"/>
-                      <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding DllNamePicker.Options}"
-                                SelectedItem="{Binding DllNamePicker.SelectedOption, Mode=TwoWay}" IsEnabled="{Binding DllNamePicker.CanChoose}"
-                                ToolTip.Tip="{Binding DllNamePicker.Hint}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
-                    </Grid>
-                    <Button x:Name="ResetDllNamesButton" Content="{Binding DllNamePicker.ResetLabel}" Command="{Binding DllNamePicker.ResetCommand}"
-                            IsVisible="{Binding DllNamePicker.CanReset}" IsEnabled="{Binding !IsBusy}" Padding="12,6" VerticalAlignment="Center"
-                            ToolTip.Tip="{Binding DllNamePicker.ResetTip}" ToolTip.ShowDelay="2000"/>
-                  </WrapPanel>
-
+                <StackPanel x:Name="NeuralRenderingSectionBody" Spacing="10">
+                  <!-- w14/layouts-a (#304): the recommended method and Check… (were the Neural rendering line of Launch / Game). -->
                   <Grid ColumnDefinitions="120,*" ColumnSpacing="8">
-                    <TextBlock Text="D3DCompiler 47" Classes="muted" VerticalAlignment="Top" Margin="0,7,0,0"/>
-                    <StackPanel Grid.Column="1" Spacing="7">
-                      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                        <TextBox Text="{Binding ReShadeProfile.ReShadeD3DCompiler47Path}"
-                                 PlaceholderText="{DynamicResource Ui.D3DCompilerPlaceholder}"/>
-                        <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseD3DCompiler47_Click" Padding="12,6"/>
-                        <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearD3DCompiler47_Click" Padding="12,6"/>
-                      </Grid>
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="{DynamicResource Ui.InstallProtontricks}"
-                                Command="{Binding ReShadeProfile.InstallD3DCompilerWithProtontricksCommand}"
-                                IsVisible="{Binding ReShadeProfile.CanInstallD3DCompilerWithProtontricks}"
-                                Padding="12,6"/>
-                        <Button Content="{Binding ReShadeProfile.D3DCompilerWinetricksButtonText}"
-                                Command="{Binding ReShadeProfile.InstallD3DCompilerWithWinetricksCommand}"
-                                IsVisible="{Binding ReShadeProfile.CanInstallD3DCompilerWithWinetricks}"
-                                Padding="12,6"/>
-                      </StackPanel>
-                    </StackPanel>
+                    <TextBlock VerticalAlignment="Center" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
+                    <WrapPanel Grid.Column="1" Orientation="Horizontal" ItemSpacing="12" LineSpacing="6">
+                      <TextBlock DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="{DynamicResource RhiButtonTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <Button x:Name="NeuralRenderingCheckButton" Classes="rhi" Padding="12,4" VerticalAlignment="Center"
+                              Content="{Binding NrCheck.ButtonText}" Command="{Binding NrCheck.OpenCommand}" IsVisible="{Binding NrCheck.IsAvailable}"
+                              ToolTip.Tip="{Binding NrCheck.ButtonTip}" ToolTip.ShowDelay="2000"/>
+                    </WrapPanel>
                   </Grid>
-                  <TextBlock Text="{Binding ReShadeProfile.D3DCompilerToolHint}" Classes="muted" TextWrapping="Wrap"/>
-                  <TextBlock Text="{DynamicResource Ui.D3DCompilerNote}"
-                             Classes="muted" TextWrapping="Wrap"/>
-
                   <Grid ColumnDefinitions="120,*" ColumnSpacing="8">
                     <TextBlock Text="{DynamicResource Ui.FeederConsumer}" Classes="muted" VerticalAlignment="Top" Margin="0,7,0,0"/>
                     <StackPanel Grid.Column="1" Spacing="7">
@@ -604,18 +815,6 @@
                       </WrapPanel>
                     </StackPanel>
                   </Border>
-
-                  <WrapPanel Orientation="Horizontal" ItemSpacing="14" LineSpacing="4">
-                    <CheckBox Content="{DynamicResource Ui.ManageReShadeIni}" IsChecked="{Binding ReShadeProfile.ReShadeManageIni}"/>
-                    <TextBlock Text="{DynamicResource Ui.QuickPackages}" Classes="muted" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                    <CheckBox Content="{DynamicResource Ui.Official}" IsChecked="{Binding ReShadeProfile.ShaderCrosireMaster}" ToolTip.Tip="crosire reshade-shaders master"/>
-                    <CheckBox Content="{DynamicResource Ui.OfficialLegacy}" IsChecked="{Binding ReShadeProfile.ShaderCrosireLegacy}"/>
-                    <CheckBox Content="clshortfuse HDR" IsChecked="{Binding ReShadeProfile.ShaderClshortfuse}"/>
-                    <CheckBox Content="MaxG2D HDR" IsChecked="{Binding ReShadeProfile.ShaderMaxG2D}"/>
-                    <Button Classes="rhi" Content="{DynamicResource Ui.FullShaderManager}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}" Padding="12,6"/>
-                  </WrapPanel>
-                  <TextBlock Text="{DynamicResource Ui.XdgSettingsNote}"
-                             Classes="muted" TextWrapping="Wrap"/>
                 </StackPanel>
               </StackPanel>
             </Border>
@@ -628,7 +827,7 @@
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.ManagedComponents}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
+                    <TextBlock Text="{DynamicResource Sec.Components}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{DynamicResource Ui.ManagedComponentsNote}"
                                Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ManagedComponentsSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
@@ -718,7 +917,7 @@
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.Extras}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
+                    <TextBlock Text="{DynamicResource Sec.Extras}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{DynamicResource Ui.ExtrasNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ExtrasSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
@@ -727,7 +926,7 @@
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
                 <StackPanel x:Name="ExtrasSectionBody" Spacing="10">
-                  <views:ResponsiveRow Columns="150,150,190,Auto,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
+                  <views:ResponsiveRow x:Name="UalRow" Columns="150,150,190,Auto,Auto,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                       <TextBlock Text="Ultimate ASI Loader" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold"/>
                       <TextBlock Text="{DynamicResource Ui.WineProtonProxy}" Classes="muted" FontSize="10"/>
@@ -752,7 +951,11 @@
                             IsEnabled="{Binding CanInstallOrUpdateUal}"
                             Padding="12,6"/>
 
-                    <Button Grid.Column="5" Classes="rhi remove" Content="{DynamicResource Ui.Remove}"
+                    <!-- w14/layouts-a (#297 owner decision): ASI Loader's ⚙ with nothing to set, between Install and Remove (upstream 2.9.0). -->
+                    <Button x:Name="UalSettingsButton" Grid.Column="5" Classes="rhi" Content="⚙" Click="AsiLoaderSettings_Click"
+                            ToolTip.Tip="{Binding UalSettingsTip}" ToolTip.ShowDelay="2000" Padding="10,6"/>
+
+                    <Button Grid.Column="6" Classes="rhi remove" Content="{DynamicResource Ui.Remove}"
                             Command="{Binding RemoveUalCommand}"
                             IsEnabled="{Binding CanRemoveUal}"
                             Padding="12,6"/>
@@ -791,6 +994,12 @@
                 </StackPanel>
               </StackPanel>
             </Border>
+          </StackPanel>
+
+          <!-- w14/layouts-a (#304, upstream Overview): At a glance, a tile per other section with its summary; a click opens its tab. -->
+          <StackPanel x:Name="GlancePanel" Grid.Row="3" Spacing="10" IsVisible="False">
+            <TextBlock Text="{DynamicResource Glance.Title}" Classes="glanceHeading"/>
+            <views:AutoFitPanel x:Name="GlanceTiles" MinColumnWidth="220" Spacing="12"/>
           </StackPanel>
         </Grid>
       </ScrollViewer>

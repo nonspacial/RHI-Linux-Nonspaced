@@ -131,6 +131,16 @@ public sealed class LinuxAppSettings
     public bool WhatsNewNavHidden { get; set; }
     public double WhatsNewFontSize { get; set; } = WhatsNewDefaultFontSize;
     public const double WhatsNewMinFontSize = 10, WhatsNewMaxFontSize = 20, WhatsNewDefaultFontSize = 12;
+    // w14/layouts-a rows
+    /// <summary>#303 (upstream 2.9.0 MainLayout): the game page layout, "Classic" (Classic+), "Tabs" or "Spotlight".</summary>
+    public string MainLayout { get; set; } = "Classic";
+    /// <summary>#304 (upstream DetailSelectedTab): the Tabs layout's tab, remembered ("" = Overview).</summary>
+    public string DetailSelectedTab { get; set; } = "";
+    /// <summary>#306 (upstream 2.9.0 UiScale): the interface size in percent, 50–200 (100 = normal).</summary>
+    public int UiScale { get; set; } = 100;
+    /// <summary>#306 (upstream 2.9.3 TopBarScale / GameListScale): the top bar's and game list's own sizes, 50–200 %.</summary>
+    public int TopBarScale { get; set; } = 100;
+    public int GameListScale { get; set; } = 100;
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -216,6 +226,17 @@ public sealed class LinuxAppSettings
         GlobalFpsLimit = RHI.Platform.Linux.Hdr.FrameRateLimit.Valid(GlobalFpsLimit) ?? 0; // #310
         // w14/ui-settings (small) rows
         WhatsNewFontSize = double.IsFinite(WhatsNewFontSize) ? Math.Clamp(Math.Round(WhatsNewFontSize), WhatsNewMinFontSize, WhatsNewMaxFontSize) : WhatsNewDefaultFontSize; // #309
+        // w14/layouts-a rows
+        MainLayout = MainLayout?.Trim() switch // #303: unknown values open Classic+
+        {
+            { } l when l.Equals("Tabs", StringComparison.OrdinalIgnoreCase) => "Tabs",
+            { } l when l.Equals("Spotlight", StringComparison.OrdinalIgnoreCase) => "Spotlight",
+            _ => "Classic"
+        };
+        DetailSelectedTab = DetailSelectedTab?.Trim() ?? ""; // #304
+        UiScale = Math.Clamp(UiScale is 0 ? 100 : UiScale, 50, 200); // #306
+        TopBarScale = Math.Clamp(TopBarScale is 0 ? 100 : TopBarScale, 50, 200);
+        GameListScale = Math.Clamp(GameListScale is 0 ? 100 : GameListScale, 50, 200);
         return this;
     }
 

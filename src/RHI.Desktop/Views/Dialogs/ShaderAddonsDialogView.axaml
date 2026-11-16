@@ -9,7 +9,7 @@
        the list, which can be ticked only for Choose; in the global dialog the line says what the list is. The choice
        stays put while the list scrolls under it. -->
   <Grid RowDefinitions="*,Auto" Margin="8">
-    <TabControl>
+    <TabControl SelectedIndex="{Binding SelectedTabIndex}"><!-- w14/layouts-a (#303): Global Shaders / Global Addons open their tab -->
       <TabItem Header="{l:T Win.ShaderPacks}">
         <Grid RowDefinitions="Auto,*">
           <StackPanel Margin="12,8,12,0" Spacing="6" IsVisible="{Binding ShowShaderHint}">

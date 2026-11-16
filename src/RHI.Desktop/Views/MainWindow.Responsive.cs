@@ -22,6 +22,8 @@ public sealed partial class MainWindow
     private const double LibraryOverlayMaxWidth = 340;
     private const double VersionTextHiddenBelow = 700;
     private const double DialogSideMargin = 32;
+    /// <summary>#306: the game page keeps at least this much room when the game list is made wide (upstream).</summary>
+    private const double GamePageMinWidth = 360;
     private const string OverflowMenuClass = "toolbarOverflow";
 
     // Live source of the '…' menu: assigned before the first open so the presenter binds to it. It holds the
@@ -66,14 +68,17 @@ public sealed partial class MainWindow
         }, RoutingStrategies.Tunnel);
     }
 
-    private double LayoutWidth => ClientSize.Width > 0 ? ClientSize.Width : Width;
+    // #306: the window's content is laid out at its size ÷ the interface size, so every width rule reads layout units.
+    private double LayoutWidth => (ClientSize.Width > 0 ? ClientSize.Width : Width) / _uiScale;
 
     /// <summary>Applies the library column/overlay arrangement for the current width and view mode.</summary>
     private void ApplyLibraryLayout()
     {
         var width = LayoutWidth;
         if (double.IsNaN(width) || width <= 0) return;
-        var compact = DataContext is MainWindowViewModel { IsCompactView: true };
+        // #306 (upstream ChromeSizes): the game list's width follows its size (300 px at 100%); the page keeps 360 px.
+        var listScale = DataContext is MainWindowViewModel layoutVm ? layoutVm.GameListScale : InterfaceSize.Normal;
+        var listWidth = Math.Floor(Math.Clamp(InterfaceSize.GameListWidth(listScale), 150, Math.Max(150, width - GamePageMinWidth)));
         var narrow = width < LibraryOverlayBelow;
         if (!narrow) _libraryOverlayOpen = false;
         IsLibraryNarrow = narrow;
@@ -86,8 +91,8 @@ public sealed partial class MainWindow
         if (version is not null && version.IsVisible != width >= VersionTextHiddenBelow) version.IsVisible = width >= VersionTextHiddenBelow;
         if (main is null || sidebar is null) return;
 
-        var overlayWidth = Math.Min(LibraryOverlayMaxWidth, Math.Floor(width * 0.85));
-        var key = narrow ? $"narrow:{_libraryOverlayOpen}:{overlayWidth}" : $"wide:{compact}";
+        var overlayWidth = Math.Min(LibraryOverlayMaxWidth * listScale / 100.0, Math.Floor(width * 0.85));
+        var key = narrow ? $"narrow:{_libraryOverlayOpen}:{overlayWidth}" : $"wide:{listWidth}";
         if (key == _libraryLayoutKey) return;
         _libraryLayoutKey = key;
 
@@ -111,7 +116,7 @@ public sealed partial class MainWindow
         }
         else
         {
-            main.ColumnDefinitions = new ColumnDefinitions(compact ? "235,*" : "300,*");
+            main.ColumnDefinitions = new ColumnDefinitions($"{listWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)},*");
             Grid.SetColumnSpan(sidebar, 1);
             sidebar.HorizontalAlignment = HorizontalAlignment.Stretch;
             sidebar.Width = double.NaN;
@@ -224,7 +229,10 @@ public sealed partial class MainWindow
         item.Classes.Add(OverflowMenuClass);
         IDisposable[] bindings =
         [
-            item.Bind(MenuItem.HeaderProperty, button.GetObservable(ContentControl.ContentProperty)),
+            // w14/layouts-a (#303): an icon or composite button (⟳, Update All with its count) is listed by its name.
+            string.IsNullOrEmpty(Avalonia.Automation.AutomationProperties.GetName(button))
+                ? item.Bind(MenuItem.HeaderProperty, button.GetObservable(ContentControl.ContentProperty))
+                : item.Bind(MenuItem.HeaderProperty, button.GetObservable(Avalonia.Automation.AutomationProperties.NameProperty)),
             item.Bind(IsEnabledProperty, button.GetObservable(IsEffectivelyEnabledProperty)),
             item.Bind(ToolTip.TipProperty, button.GetObservable(ToolTip.TipProperty))
         ];
@@ -307,6 +315,7 @@ public sealed partial class MainWindow
 
     private Task ShowFittedDialogAsync(Window dialog)
     {
+        if (TryShowCogInline(dialog, out var inline)) return inline; // w14/layouts-a (#304): Tabs shows a ⚙ on the page
         FitDialogToOwner(dialog);
         return dialog.ShowDialog(this);
     }

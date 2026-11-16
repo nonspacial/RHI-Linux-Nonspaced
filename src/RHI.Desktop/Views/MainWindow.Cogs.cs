@@ -11,4 +11,10 @@ public sealed partial class MainWindow
         => sender is Button { DataContext: ComponentRowViewModel { HasEmptySettings: true } row } && DataContext is MainWindowViewModel vm
             ? ShowFittedDialogAsync(new CogDialog(row.Name, vm.SelectedGame?.Name).Build(height: 260))
             : Task.CompletedTask);
+
+    /// <summary>w14/layouts-a (#297 owner decision): ASI Loader's ⚙ has nothing to set (upstream 2.9.0 BuildUalRow).</summary>
+    private void AsiLoaderSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(()
+        => DataContext is MainWindowViewModel vm
+            ? ShowFittedDialogAsync(new CogDialog(ExtrasViewModel.UalCogName, vm.SelectedGame?.Name).Build(height: 260))
+            : Task.CompletedTask);
 }

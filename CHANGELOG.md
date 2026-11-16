@@ -327,15 +327,46 @@ Wave 14 — extras-fg-2
   Super Resolution / Ray Reconstruction presets and render scales, the ReShade preset, the ReShade overlay and
   screenshot keys, controller navigation in ReShade, the ReLimiter OSD key, the HDR mode the game launches with and the
   resolution switch. Anything a mode does not set keeps the game's normal value (#311).
-- The mode switch sits beside the HDR and resolution rows on the game page, with a ⚙ for the game's display mode
-  settings; the game menu has a Display mode submenu, and the game's own ⚙ a Display modes row. Click the game's
-  active mode again (or pick Off) to turn its mode off: it goes back to your global settings (and what it had before
-  modes for settings without a global value). Switch all games switches every game, or turns every game's mode off;
-  hidden and running games are left out. In a game's ⚙ you can make a Custom mode just for that game (#311).
+- The mode switch sits beside HDR and resolution in both layouts (in Classic+ under the resolution row in Game
+  Overrides, in Tabs in the game header beside HDR on launch and the resolution switch), with a ⚙ for the game's
+  display mode settings; the game menu has a Display mode submenu, and the game's own ⚙ a Display modes row. Click
+  the game's active mode again (or pick Off) to turn its mode off: it goes back to your global settings (and what it
+  had before modes for settings without a global value). Switch all games switches every game, or turns every game's
+  mode off; hidden and running games are left out. In a game's ⚙ you can make a Custom mode just for that game (#311).
 - While a game is in a mode, ReShade, RenoDX, ReLimiter and Display Commander installs and updates, and the Settings
   "write to all games" buttons, keep that game's mode values (#311).
 - Not on Linux: RTX HDR peak brightness and the choice of display for HDR (no Wine/Proton equivalent). Launch
   arguments per mode wait for an owner decision (#311).
+
+### Wave 14 — layouts-a
+
+- **Three layouts, switched from the top bar: Classic+ | Tabs | Spotlight** (upstream 2.9.0). Classic+ is the page you
+  know, now with upstream's seven sections in its order: Components, Game Overrides, Neural Rendering, DLSS /
+  Streamline, Driver Settings, Management and Extras. Tabs shows a large game header, then one tab at a time: Overview
+  (each component as a card, and an At a glance tile for every other tab), Game Overrides, Extras, DLSS / Streamline,
+  Driver Settings, Neural Rendering and Management. RHI remembers the layout and the tab. Spotlight comes in a later
+  update; its switch is there, greyed (#303, #304).
+- **New top bar, the same in every layout** (upstream 2.9.0): Available Mods (with a green New tag when new mods have
+  arrived) and Shaders & Addons (Global Shaders, Global Addons) on the left; when RHI last checked, Refresh, Update All
+  with how many games have updates, the layout switch, a Help menu (Quick Start, Guide, Discord, the RenoDX and Luma
+  wikis, the GitHub pages, Patch notes, Message of the day, Update log, About, Donate) and Settings, lit while Settings
+  is open. Quick start, Links, MOTD, Updates and Donate moved into Help; Batch DLSS is in Settings › DLSS / Streamline;
+  Add game is the green + beside the search box; the Compact view button is gone (#303).
+- **The game list matches upstream's**: dark navy, All | Installed | Favourites | Hidden under the search box, your
+  collections under that, and a Filters button beside the counts for the Unreal, Unity, Other, RenoDX and Luma filters
+  (#303).
+- **Management** (upstream 2.9.0): Change install folder, Reset install folder, Remove from RHI (moved out of the
+  Game settings ⚙; Block Steam updates stays there), Reset Overrides and Copy Report, in one row in Classic+ and as
+  tiles in Tabs. Reset Overrides puts the forced API, Luma mode, DLL names, Update All inclusion and NVIDIA settings
+  back to the defaults (#304).
+- **In Tabs, a component's ⚙ opens on the page, right under it**; click the same ⚙ again, or ✕, to close it (#304).
+- **Interface size** from 50% to 200% in 5% steps (Settings › General › Windows, or hold Ctrl and turn the mouse wheel;
+  the status bar says the new size), and **Top bar size** and **Game list size** of their own: pick them in Settings or
+  drag the top bar's bottom edge and the game list's right edge; double-click an edge to reset it (#306).
+- Tooltips, menus and pop-ups use upstream's dark navy look (#303).
+- Custom colour themes have a real colour picker beside each colour's hex box, and the favourite star keeps its amber
+  in every theme that keeps upstream's warning colour (#301).
+- ASI Loader has a ⚙, between Install and Remove, that says it has nothing to set, as upstream (#297).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

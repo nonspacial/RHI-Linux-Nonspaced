@@ -137,9 +137,10 @@ internal static class SettingsUiStrings
         ("Tip.FilterRenoDx", "Jogos que têm um mod HDR do RenoDX.", "Games that have a RenoDX HDR mod."),
         ("Tip.FilterLuma", "Jogos que têm um mod do Luma Framework.", "Games that have a Luma Framework mod."),
         ("Tip.FilterHidden", "Jogos que você ocultou. Mostrar um jogo o traz de volta à lista.", "Games you hid. Showing a game brings it back to the list."),
-        ("Tip.SectionRuntime", "Como o jogo inicia: executável, prefixo Wine/Proton, API gráfica e HDR.", "How the game starts: executable, Wine/Proton prefix, graphics API and HDR."),
+        ("Tip.SectionRuntime", "O que o RHI detectou e o que você escolheu para este jogo: executável, prefixo Wine/Proton, API gráfica, HDR e o ReShade do jogo.", "What RHI detected and what you chose for this game: executable, Wine/Proton prefix, graphics API, HDR and the game's ReShade."),
         ("Tip.SectionDlss", "As DLLs de DLSS e Streamline do jogo: versões, trocas e presets.", "The game's DLSS and Streamline DLLs: versions, swaps and presets."),
-        ("Tip.SectionReShade", "Os shaders e add-ons do ReShade deste jogo.", "This game's ReShade shaders and addons."),
+        ("Tip.SectionNeural", "O método de Renderização Neural recomendado, as versões de cada ferramenta e da DLL do NR.", "The recommended Neural Rendering method, and the versions of each tool and of the NR DLL."), // w14/layouts-a
+        ("Tip.SectionDriver", "As opções do driver deste jogo; no Linux, o limite de FPS pelo DXVK / VKD3D-Proton.", "This game's driver options; on Linux, the FPS limit through DXVK / VKD3D-Proton."), // w14/layouts-a
         ("Tip.SectionComponents", "Os componentes que o RHI instala, atualiza e remove neste jogo.", "The components RHI installs, updates and removes in this game."),
         ("Tip.SectionExtras", "Desbloqueios de geração de quadros, ASI Loader e outros extras.", "Frame generation unlocks, ASI Loader and other extras."),
         ("Tip.SectionSummary", "O que a seção recolhida contém. API = API gráfica forçada; os números são as versões instaladas.", "What the collapsed section holds. API = forced graphics API; the numbers are the installed versions."),

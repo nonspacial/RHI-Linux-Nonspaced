@@ -321,7 +321,7 @@ public static class CogWindow
     public static Window Create(string title, string? gameName, Control body, Control? footer = null, Func<Task<bool>>? apply = null,
         double height = DefaultHeight, double width = DefaultWidth)
     {
-        var window = new Window
+        var window = new CogHostWindow
         {
             Title = string.IsNullOrWhiteSpace(gameName) ? title : $"{title} — {gameName}",
             Width = width,
@@ -330,7 +330,11 @@ public static class CogWindow
             MinHeight = 300,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
-        window.Content = Frame(title, body, footer, apply, close => window.Close(close));
+        window.Content = Frame(title, body, footer, apply, close =>
+        {
+            if (window.InlineClose is { } inline) inline(close); // w14/layouts-a (#304): shown on the page in Tabs
+            else window.Close(close);
+        });
         return window;
     }
 
@@ -379,4 +383,24 @@ public static class CogWindow
         grid.Children.Add(bar);
         return grid;
     }
+}
+
+/// <summary>
+/// w14/layouts-a (#304, upstream CogDialog.EmbeddedShow): a ⚙ window the Tabs layout can show on the page instead, right
+/// under its component. The page takes its content; <see cref="InlineClose"/> then closes it there, and the window raises
+/// its Opened / Closed events as if it had been shown, so what the ⚙'s code hooks on them (loading versions, disposing
+/// its model) runs the same either way.
+/// </summary>
+public sealed class CogHostWindow : Window
+{
+    /// <summary>Set while the content is shown on the page: the ⚙'s Close / Apply close it there.</summary>
+    public Action<bool>? InlineClose { get; set; }
+
+    protected override Type StyleKeyOverride => typeof(Window);
+
+    /// <summary>The content went onto the page.</summary>
+    public void RaiseOpenedInline() => OnOpened(EventArgs.Empty);
+
+    /// <summary>The content left the page.</summary>
+    public void RaiseClosedInline() => OnClosed(EventArgs.Empty);
 }

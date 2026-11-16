@@ -63,6 +63,8 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         AvaloniaXamlLoader.Load(this);
+        InitializeTopBar(); // w14/layouts-a (#303/#306): top bar, game list switch, sizes
+        InitializeInlineCogs(); // w14/layouts-a (#304): a ⚙ opens under its component in Tabs
         _detailLayoutStore = new DetailSectionLayoutStore();
         _detailLayout = _detailLayoutStore.Load();
         ApplyDetailSectionLayout();
@@ -209,7 +211,9 @@ public sealed partial class MainWindow : Window
             Content = model
         };
         dialog.Closing += (_, _) => model.Closing(null); // a pending change is saved; Settings reopens on this section
-        await ShowFittedDialogAsync(dialog);
+        SetSettingsLit(true); // w14/layouts-a (#303): the top bar's ⚙ is lit while Settings is open
+        try { await ShowFittedDialogAsync(dialog); }
+        finally { SetSettingsLit(false); }
     });
 
     private async Task<string?> PickFolderAsync(string title)
@@ -491,37 +495,19 @@ public sealed partial class MainWindow : Window
             toggle.Content = isCollapsed ? "▶" : "▼";
         }
         UpdateSectionSummaries();
+        ApplyGameLayout(); // w14/layouts-a (#304): Tabs shows one section at a time, never collapsed
     }
 
-    private Control? FindSectionContainer(string key) => key switch
-    {
-        "Runtime" => this.FindControl<Border>("RuntimeSection"),
-        "DlssStreamline" => this.FindControl<Border>("DlssStreamlineSection"),
-        "ReShadeProfile" => this.FindControl<Border>("ReShadeProfileSection"),
-        "ManagedComponents" => this.FindControl<Border>("ManagedComponentsSection"),
-        "Extras" => this.FindControl<Border>("ExtrasSection"),
-        _ => null
-    };
+    // w14/layouts-a (#303/#304): every section is "<Key>Section" with "<Key>SectionBody" and "<Key>SectionToggle" (upstream's
+    // seven: Components, Game Overrides, Neural Rendering, DLSS / Streamline, Driver Settings, Management, Extras).
+    private Control? FindSectionContainer(string key)
+        => DetailSectionLayoutStore.DefaultSectionOrder.Contains(key) ? this.FindControl<Border>(key + "Section") : null;
 
-    private Control? FindSectionBody(string key) => key switch
-    {
-        "Runtime" => this.FindControl<LabelValuePanel>("RuntimeSectionBody"),
-        "DlssStreamline" => this.FindControl<StackPanel>("DlssStreamlineSectionBody"),
-        "ReShadeProfile" => this.FindControl<StackPanel>("ReShadeProfileSectionBody"),
-        "ManagedComponents" => this.FindControl<ItemsControl>("ManagedComponentsSectionBody"),
-        "Extras" => this.FindControl<StackPanel>("ExtrasSectionBody"),
-        _ => null
-    };
+    private Control? FindSectionBody(string key)
+        => DetailSectionLayoutStore.DefaultSectionOrder.Contains(key) ? this.FindControl<Control>(key + "SectionBody") : null;
 
-    private Button? FindSectionToggle(string key) => key switch
-    {
-        "Runtime" => this.FindControl<Button>("RuntimeSectionToggle"),
-        "DlssStreamline" => this.FindControl<Button>("DlssStreamlineSectionToggle"),
-        "ReShadeProfile" => this.FindControl<Button>("ReShadeProfileSectionToggle"),
-        "ManagedComponents" => this.FindControl<Button>("ManagedComponentsSectionToggle"),
-        "Extras" => this.FindControl<Button>("ExtrasSectionToggle"),
-        _ => null
-    };
+    private Button? FindSectionToggle(string key)
+        => DetailSectionLayoutStore.DefaultSectionOrder.Contains(key) ? this.FindControl<Button>(key + "SectionToggle") : null;
 
     private void SaveDetailSectionLayout()
     {

@@ -27,7 +27,7 @@ public sealed class ThemeSettingsRows
     private readonly StackPanel _custom;
     private readonly TextBlock _contrast;
     private readonly TextBlock _status;
-    private readonly Dictionary<string, (Border Swatch, TextBox Hex)> _rows = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (Border Swatch, TextBox Hex, ColorPicker Picker)> _rows = new(StringComparer.Ordinal);
     private readonly StackPanel _import;
     private readonly TextBox _importBox;
     private readonly TextBlock _importNote;
@@ -127,7 +127,8 @@ public sealed class ThemeSettingsRows
     {
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         // A plain brush on purpose: the swatch shows the picked colour itself, not a themed version (upstream).
-        var swatch = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), BorderBrush = Brushes.Gray };
+        var swatch = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1) };
+        Theming.ThemeResources.Bind(swatch, Border.BorderBrushProperty, "RhiSwatchBorderBrush");
         var hex = new TextBox { Width = 96, FontFamily = new FontFamily("monospace"), Name = "ThemeColour-" + row.Key, MaxLength = 7 };
         ToolTip.SetTip(hex, UiLocalizationService.Format("Theme.ColourTip", row.Label));
         ToolTip.SetShowDelay(hex, MiddleEllipsisText.TooltipDelay);
@@ -142,12 +143,40 @@ public sealed class ThemeSettingsRows
             e.Handled = true;
             Commit();
         };
+        // w14/layouts-a (#301 owner decision): a real colour picker beside the hex field (upstream has one). A drag sends
+        // many colours; the last one is applied and saved once the picker has been still for a moment.
+        var picker = new ColorPicker
+        {
+            Name = "ThemeColourPicker-" + row.Key, IsAlphaEnabled = false, IsAlphaVisible = false,
+            IsAccentColorsVisible = false, VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(picker, UiLocalizationService.Format("Theme.PickerTip", row.Label));
+        ToolTip.SetShowDelay(picker, MiddleEllipsisText.TooltipDelay);
+        var settle = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        settle.Tick += (_, _) =>
+        {
+            settle.Stop();
+            var picked = PickedHex(picker.Color);
+            if (!string.Equals(picked, row.Hex, StringComparison.OrdinalIgnoreCase)) _presenter.SetColour(row.Key, picked);
+        };
+        picker.ColorChanged += (_, _) =>
+        {
+            if (_syncing) return;
+            settle.Stop();
+            settle.Start();
+        };
         line.Children.Add(swatch);
         line.Children.Add(hex);
+        line.Children.Add(picker);
         line.Children.Add(new TextBlock { Text = row.Label, VerticalAlignment = VerticalAlignment.Center, MinWidth = 120 });
-        _rows[row.Key] = (swatch, hex);
+        _rows[row.Key] = (swatch, hex, picker);
         return line;
     }
+
+    private bool _syncing;
+
+    /// <summary>The #RRGGBB the picker shows (alpha ignored: theme colours are opaque).</summary>
+    public static string PickedHex(Color colour) => $"#{colour.R:X2}{colour.G:X2}{colour.B:X2}";
 
     private static Button Button(string textKey, string tipKey)
     {
@@ -208,9 +237,12 @@ public sealed class ThemeSettingsRows
     {
         if (!_rows.TryGetValue(row.Key, out var controls)) return;
         controls.Hex.Text = row.Hex;
-        controls.Swatch.Background = ThemePalette.TryHex(row.Hex, out var colour)
-            ? new SolidColorBrush(Theming.ThemeResources.ToAvalonia(colour))
-            : Brushes.Transparent;
+        var known = ThemePalette.TryHex(row.Hex, out var colour);
+        controls.Swatch.Background = known ? new SolidColorBrush(Theming.ThemeResources.ToAvalonia(colour)) : Brushes.Transparent;
+        if (!known || string.Equals(PickedHex(controls.Picker.Color), row.Hex, StringComparison.OrdinalIgnoreCase)) return;
+        _syncing = true;
+        try { controls.Picker.Color = Theming.ThemeResources.ToAvalonia(colour); }
+        finally { _syncing = false; }
     }
 
     /// <summary>The Settings dialog was reset or reopened: the saved choice again.</summary>

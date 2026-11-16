@@ -228,6 +228,8 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
     public string WindowTitle { get; }
     /// <summary>#179: the global set and add-ons rather than a game's.</summary>
     public bool IsGlobal { get; }
+    /// <summary>w14/layouts-a (#303): the tab shown (0 shader packs, 1 add-ons): the top bar's Global Shaders / Global Addons.</summary>
+    public int SelectedTabIndex { get; set; }
     /// <summary>The Apply button's label (a game, or Save for the global set).</summary>
     public string ApplyText { get; }
     public ShaderAddonManagerUiSnapshot Snapshot { get; }

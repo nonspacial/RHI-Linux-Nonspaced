@@ -210,10 +210,13 @@
 
   <Application.Styles>
     <FluentTheme />
+    <!-- w14/layouts-a (#301 owner decision): Custom theme colours have a real colour picker. -->
+    <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"/>
 
-    <!-- Every generated/configuration window inherits the same RHI-Linux surface. -->
+    <!-- Every generated/configuration window inherits the same RHI-Linux surface: w14/layouts-a (#303, upstream 2.9.0) the
+         dark navy page every pop-up uses (the main window keeps its own background). -->
     <Style Selector="Window">
-      <Setter Property="Background" Value="{DynamicResource RhiBackgroundBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
       <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
       <Setter Property="FontFamily" Value="Inter"/>
     </Style>
@@ -292,6 +295,10 @@
     <Style Selector=":is(TextBlock).warningStatusText">
       <Setter Property="Foreground" Value="{DynamicResource RhiWarningBrush}"/>
     </Style>
+    <!-- w14/layouts-a: error lines in code-built Settings rows (were Brushes.IndianRed). -->
+    <Style Selector=":is(TextBlock).errorText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiErrorTextBrush}"/>
+    </Style>
     <Style Selector=":is(TextBlock).alertText">
       <Setter Property="Foreground" Value="{DynamicResource RhiAlertBrush}"/>
     </Style>
@@ -361,10 +368,12 @@
       <Setter Property="Background" Value="{DynamicResource RhiSelectedTabBrush}"/>
     </Style>
 
+    <!-- w14/layouts-a (#303, upstream 2.9.0): tooltips everywhere use the dark navy look. -->
     <Style Selector="ToolTip">
-      <Setter Property="Background" Value="{DynamicResource RhiSidebarBrush}"/>
-      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+      <Setter Property="CornerRadius" Value="8"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Padding" Value="10,7"/>
     </Style>
@@ -372,14 +381,181 @@
     <!-- The toolbar '…' overflow menu and the library card menu use the tooltip surface and the button text colour
          (scoped: other menus, e.g. text-box context menus, keep the theme defaults). -->
     <Style Selector="MenuFlyoutPresenter.toolbarOverflow">
-      <Setter Property="Background" Value="{DynamicResource RhiSidebarBrush}"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="8"/>
     </Style>
     <Style Selector="MenuItem.toolbarOverflow">
       <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
       <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <!-- w14/layouts-a (#303): menus opened from the top bar (Help, Shaders & Addons) and the game menus, navy. -->
+    <Style Selector="MenuFlyoutPresenter.navy, ContextMenu.navy">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style Selector="MenuFlyoutPresenter.navy MenuItem, ContextMenu.navy MenuItem">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyControlTextBrush}"/>
+      <Setter Property="FontSize" Value="13"/>
+    </Style>
+
+    <!-- w14/layouts-a (#303): the top bar (mockup A tokens: 38 px controls, radius 8). -->
+    <Style Selector="Border#TopBar">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPanelBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.topNav">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style Selector="Button.topNav:pointerover">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyNavHoverBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="Button.topNav TextBlock">
+      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}"/>
+    </Style>
+    <Style Selector="Border.newTag">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyNewTagBrush}"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="7,1"/>
+    </Style>
+    <Style Selector="Border.newTag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyValueBrush}"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style Selector="TextBlock.topChecked">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyMutedTextBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="Border#TopBar Button.rhi">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyIconButtonBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyControlTextBrush}"/>
+      <Setter Property="MinHeight" Value="38"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border#TopBar Button.rhi:pointerover">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyNavHoverBrush}"/>
+    </Style>
+    <Style Selector="Button.topIcon">
+      <Setter Property="MinWidth" Value="38"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="FontSize" Value="16"/>
+    </Style>
+    <Style Selector="Border#TopBar Button.rhi.topIcon.on">
+      <Setter Property="Background" Value="{DynamicResource RhiNavySegmentOnBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="Border#TopBar Button.rhi.updateAll.hasUpdates">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPurpleButtonBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyPurpleButtonBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyPurpleButtonTextBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Border#TopBar Button.rhi.updateAll.hasUpdates:pointerover">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPurpleButtonHoverBrush}"/>
+    </Style>
+    <Style Selector="Border#TopBar Button.rhi TextBlock">
+      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}"/>
+    </Style>
+    <Style Selector="Border.countTag">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPurpleButtonBorderBrush}"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="8,1"/>
+    </Style>
+    <Style Selector="Border.countTag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyCountTagTextBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <!-- w14/layouts-a (#303): the segmented switches (layout switch; All / Installed / Favourites / Hidden). -->
+    <Style Selector="Border.segmentTrack">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="9"/>
+      <Setter Property="Padding" Value="3"/>
+    </Style>
+    <Style Selector="Button.segment">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="MinHeight" Value="30"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="views|SegmentedSwitch#LibraryMainFilter Button.segment">
+      <Setter Property="Padding" Value="2,4"/>
+    </Style>
+    <Style Selector="Button.segment:pointerover">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyNavHoverBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="Button.segment.on">
+      <Setter Property="Background" Value="{DynamicResource RhiNavySegmentOnBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.segment:disabled">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyMutedTextBrush}"/>
+      <Setter Property="Opacity" Value="0.55"/>
+    </Style>
+
+    <!-- w14/layouts-a (#303): the game list in the navy look (every layout). -->
+    <Style Selector="Border#LibrarySidebar">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPanelBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+    </Style>
+    <Style Selector="Border#LibrarySidebar Border#LibraryFilterBar, Border#LibrarySidebar > LayoutTransformControl > Grid > Border">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPanelBrush}"/>
+    </Style>
+    <Style Selector="Button.addGame">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyGreenPillBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyGreenPillBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyValueBrush}"/>
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="MinWidth" Value="34"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="ToggleButton.filters">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyIconButtonBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyControlTextBrush}"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Padding" Value="10,3"/>
+      <Setter Property="MinHeight" Value="30"/>
+    </Style>
+    <Style Selector="ToggleButton.filters:checked /template/ ContentPresenter, ToggleButton.filters:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RhiNavySegmentOnBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="ListBox#GameLibraryList ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowSelectedBrush}"/>
+    </Style>
+    <Style Selector="ListBox#GameLibraryList ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowHoverBrush}"/>
     </Style>
 
     <Style Selector="Border.card">
@@ -389,6 +565,187 @@
       <Setter Property="CornerRadius" Value="10"/>
       <Setter Property="Padding" Value="16"/>
     </Style>
+
+    <!-- w14/layouts-a (#304): the Tabs layout (mockup A tokens: page #0B0F17, cards #121824 / #1F2737, radius 12, padding 16). -->
+    <Style Selector="ScrollViewer#DetailScroller.tabsPage">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
+    </Style>
+    <Style Selector="Border.card.tabsCard">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="16"/>
+    </Style>
+    <Style Selector="Border#ManagedComponentsSection.tabsCard">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="ItemsControl.cards ContentPresenter > Border">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="16"/>
+      <Setter Property="Margin" Value="0"/>
+      <Setter Property="MinHeight" Value="172"/>
+    </Style>
+    <Style Selector="Border.tabStrip">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    </Style>
+    <Style Selector="Button.tabButton">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0,0,0,2"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="0"/>
+      <Setter Property="Padding" Value="0,10"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="Button.tabButton:pointerover">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="Button.tabButton.on">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.tabsStar">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyIconButtonBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyMutedTextBrush}"/>
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="MinWidth" Value="36"/>
+      <Setter Property="MinHeight" Value="36"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <!-- The favourite star: amber, its own theme key (RhiFavouriteBrush; upstream FavLook). -->
+    <Style Selector="Button.tabsStar.on">
+      <Setter Property="Background" Value="{DynamicResource RhiFavouriteTintBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiFavouriteBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiFavouriteBrush}"/>
+    </Style>
+    <Style Selector="Border.tabsTag">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="8,2"/>
+    </Style>
+    <Style Selector="Border.tabsTag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="Button.tabsLink">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyLinkBrush}"/>
+      <Setter Property="FontSize" Value="13"/>
+    </Style>
+    <Style Selector="Button.tabsLink:pointerover">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="Button.tabsLaunch">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyBlueButtonBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyBlueButtonBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyBlueButtonTextBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="MinHeight" Value="42"/>
+      <Setter Property="Padding" Value="22,0"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="CornerRadius" Value="8,0,0,8"/>
+    </Style>
+    <Style Selector="Button.tabsLaunch:pointerover">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyBlueButtonHoverBrush}"/>
+    </Style>
+    <Style Selector="Button.tabsLaunch.menu">
+      <Setter Property="CornerRadius" Value="0,8,8,0"/>
+      <Setter Property="Padding" Value="12,0"/>
+      <Setter Property="BorderThickness" Value="0,1,1,1"/>
+    </Style>
+    <Style Selector="TextBlock.glanceHeading">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyMutedTextBrush}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="LetterSpacing" Value="1"/>
+    </Style>
+    <Style Selector="Button.glanceTile">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="16,14"/>
+    </Style>
+    <Style Selector="Button.glanceTile:pointerover">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.glanceTitle">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.glanceSummary">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyValueBrush}"/>
+      <Setter Property="FontSize" Value="13"/>
+    </Style>
+    <!-- Game Overrides' ReShade card (Classic+ and Tabs). -->
+    <Style Selector="Border.subCard">
+      <Setter Property="Background" Value="{DynamicResource RhiPanelInsetBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiPanelInsetBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12"/>
+    </Style>
+    <Style Selector="TextBlock.subCardTitle">
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <!-- Management: one row of buttons in Classic+, tiles with a line each in Tabs (upstream). -->
+    <Style Selector="Button.managementTile">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="Padding" Value="10,7"/>
+    </Style>
+    <Style Selector="TextBlock.tileTitle">
+      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+    <Style Selector="TextBlock.tileDesc">
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
+    <Style Selector="views|AutoFitPanel.tiles Button.managementTile">
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Padding" Value="16,14"/>
+      <Setter Property="CornerRadius" Value="12"/>
+    </Style>
+    <Style Selector="views|AutoFitPanel.tiles TextBlock.tileTitle">
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="views|AutoFitPanel.tiles TextBlock.tileDesc">
+      <Setter Property="IsVisible" Value="True"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <!-- The ⚙ on the page (Tabs). -->
+    <Style Selector="Border.inlineCog">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Margin" Value="0,12,0,0"/>
+    </Style>
+
     <Style Selector="TextBlock.muted">
       <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
       <Setter Property="FontSize" Value="11"/>
@@ -523,7 +880,7 @@
       <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
     </Style>
     <Style Selector="Button.rhi.favourite.on">
-      <Setter Property="Foreground" Value="{DynamicResource RhiWarningBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiFavouriteBrush}"/>
     </Style>
     <!-- #309 (upstream 2.8.9): a greyed library name means ReShade isn't installed for that game. -->
     <Style Selector="TextBlock.libraryName">

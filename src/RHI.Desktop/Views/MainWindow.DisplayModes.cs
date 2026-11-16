@@ -5,9 +5,9 @@ using RHI.Desktop.ViewModels;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// w14/display-modes (#311): the window's side of display modes — the switch on the game page (beside the HDR and
-/// resolution rows), and the game's display mode settings (the ⚙ beside the switch, and the game menu's "Display mode
-/// settings…"). Other page layouts host <see cref="DisplayModeSwitchView"/> the same way (<see cref="AttachDisplayModeSwitch"/>).
+/// w14/display-modes (#311): the window's side of display modes — the switch beside the HDR and resolution controls
+/// (Classic+'s Game Overrides and the Tabs header), and the game's display mode settings (the ⚙ beside the switch, and
+/// the game menu's "Display mode settings…"). Other page layouts host <see cref="DisplayModeSwitchView"/> the same way (<see cref="AttachDisplayModeSwitch"/>).
 /// </summary>
 public partial class MainWindow
 {
@@ -16,8 +16,14 @@ public partial class MainWindow
         {
             if (DataContext is not MainWindowViewModel vm) return;
             vm.DisplayModes.OpenGameSettings = ShowDisplayModeGameSettingsAsync;
-            if (this.FindControl<DisplayModeSwitchView>("DisplayModeSwitch") is { } view) AttachDisplayModeSwitch(view, vm);
+            // Classic+ (Game Overrides, under the resolution row) and Tabs (the game header, beside HDR on launch and the
+            // resolution switch); Spotlight (#305) attaches its own the same way.
+            foreach (var name in SwitchHosts)
+                if (this.FindControl<DisplayModeSwitchView>(name) is { } view) AttachDisplayModeSwitch(view, vm);
         };
+
+    /// <summary>The switches this window's layouts host, beside the HDR and resolution controls (upstream 2.9.3/2.9.4).</summary>
+    internal static readonly string[] SwitchHosts = ["DisplayModeSwitch", "TabsDisplayModeSwitch"];
 
     /// <summary>Connects a display mode switch (this page's, or one a page layout builds) to the selected game.</summary>
     internal void AttachDisplayModeSwitch(DisplayModeSwitchView view, MainWindowViewModel vm)
