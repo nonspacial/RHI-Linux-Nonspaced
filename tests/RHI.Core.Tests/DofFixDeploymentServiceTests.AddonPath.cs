@@ -142,4 +142,29 @@ public sealed partial class DofFixDeploymentServiceTests
         Assert.True(File.Exists(expected));
         Assert.Equal(expected, records.Find(game, ManagedComponentKind.DofFix)!.Files.Single().Path);
     }
+
+    // w13 final review m1: AddonPath set after the install is a pending move even when no newer release exists, so
+    // Update All carries the add-on to where ReShade loads it instead of reporting "current" forever.
+    [Fact]
+    public async Task Check_AddonPathSetAfterInstall_SameVersion_ReportsTheMove_AndUpdateMovesIt()
+    {
+        var (service, records, game, http) = CancelFixture("addonpath-check-move");
+        using var _ = http;
+        Assert.True((await service.InstallAsync(game)).Success);
+        Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
+        SetAddonPath(game, ".\\addons");
+
+        var check = await service.CheckUpdateAsync(game);
+
+        Assert.True(check.UpdateAvailable, check.Message);
+        Assert.Equal(("1.0.2", "1.0.2"), (check.InstalledVersion, check.LatestVersion));
+        Assert.Equal(DofFixDeploymentService.DisplayName + AddonPathFolder.MoveDueSuffix, check.Message);
+
+        var update = await service.UpdateAsync(game);
+        var moved = Path.Combine(game.BinaryDirectory!, "addons", DofFixDeploymentService.AddonFileName);
+        Assert.True(update.Success, update.Message);
+        Assert.True(File.Exists(moved));
+        Assert.Equal(moved, records.Find(game, ManagedComponentKind.DofFix)!.Files.Single().Path);
+        Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
+    }
 }

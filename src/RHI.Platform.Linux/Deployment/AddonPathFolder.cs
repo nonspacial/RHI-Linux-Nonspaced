@@ -21,6 +21,14 @@ public static class AddonPathFolder
         "ReShade's AddonPath names a Windows drive RHI cannot find in this game's Wine prefix, so nothing was changed. Set AddonPath to a folder inside the prefix (C:\\…, Z:\\…) or to a relative folder: ";
 
     /// <summary>
+    /// w13 final review m1: the update check's text (after the component's name) when RHI's add-on is recorded somewhere
+    /// other than ReShade's add-on folder (AddonPath set or changed after the install) and no newer release exists: the
+    /// move is the update (PT-BR presentation pair).
+    /// </summary>
+    public const string MoveDueSuffix =
+        " is not in reshade.ini's AddonPath folder, where ReShade loads add-ons; Update moves it there.";
+
+    /// <summary>
     /// ReShade's add-on folder for a game whose binaries are in <paramref name="binaryDirectory"/> and whose Wine prefix is
     /// <paramref name="prefixPath"/>: <c>[ADDON] AddonPath</c> in its reshade.ini (the first of a <c>;</c> list), else the
     /// binary folder. ReShade runs in Wine, so an absolute AddonPath is a Windows path: a drive path (<c>C:\…</c>,

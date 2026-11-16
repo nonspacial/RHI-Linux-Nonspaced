@@ -20,6 +20,7 @@ public sealed record DofFixReleaseInfo(
 public sealed class DofFixDeploymentService
 {
     public const string AddonFileName = "renodx-universal_ue-dof-fix.addon64";
+    public const string DisplayName = "DOF Fix";
     public const string TagPrefix = "ue-dof-fix-";
     public const string GitHubApiUrl = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100";
     public const string DefaultDownloadBaseUrl = "https://github.com/RankFTW/rhi-repo/releases/download";
@@ -57,6 +58,9 @@ public sealed class DofFixDeploymentService
             var latest = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
             var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase)
                          || !string.Equals(record.SourceUrl, latest.AssetUrl, StringComparison.OrdinalIgnoreCase);
+            // w13 final review m1: AddonPath set or changed after the install: the move is the update, same version or not.
+            if (!update && AddonMoveDue(game, record))
+                return new ManagedUpdateCheck(true, true, DisplayName + AddonPathFolder.MoveDueSuffix, record.Version, latest.Version);
             return new ManagedUpdateCheck(true, update,
                 update ? $"DOF Fix update available: {record.Version ?? "unknown"} → {latest.Version}." : $"DOF Fix {record.Version ?? latest.Version} is current.",
                 record.Version, latest.Version);
@@ -65,6 +69,21 @@ public sealed class DofFixDeploymentService
         {
             return new ManagedUpdateCheck(true, false, $"DOF Fix update check failed: {ex.Message}", record.Version, CouldNotCheck: true);
         }
+    }
+
+    /// <summary>
+    /// w13 final review m1: RHI's add-on is recorded outside ReShade's add-on folder (reshade.ini's AddonPath, mapped
+    /// through the prefix), so the next Update moves it. False when that folder cannot be resolved (Update refuses then).
+    /// </summary>
+    internal static bool AddonMoveDue(DetectedGame game, LinuxDeploymentRecord record)
+    {
+        var gameDir = ResolveDeployDirectory(game);
+        if (string.IsNullOrWhiteSpace(gameDir)) return false;
+        var folder = AddonPathFolder.Resolve(gameDir, game.PrefixPath);
+        if (folder.Refusal is not null) return false;
+        var target = Path.GetFullPath(Path.Combine(folder.Folder, AddonFileName));
+        return record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path)
+                                        && !Path.GetFullPath(file.Path).Equals(target, StringComparison.Ordinal));
     }
 
     public Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)

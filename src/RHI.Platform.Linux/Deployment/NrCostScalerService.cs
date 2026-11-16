@@ -281,6 +281,9 @@ public sealed class NrCostScalerService
             return new ManagedUpdateCheck(true, false, CouldNotCheckPrefix + ex.Message, record.Version, CouldNotCheck: true);
         }
         var update = !string.Equals(latest.Version, record.Version, StringComparison.Ordinal);
+        // w13 final review m1: AddonPath set or changed after the install: the move is the update, same version or not.
+        if (!update && CompanionMoveDue(game, record))
+            return new ManagedUpdateCheck(true, true, DisplayName + AddonPathFolder.MoveDueSuffix, record.Version, latest.Version);
         return new ManagedUpdateCheck(true, update, (update ? UpdateAvailablePrefix + latest.Version : UpToDatePrefix + record.Version),
             record.Version, latest.Version);
     }
@@ -388,6 +391,18 @@ public sealed class NrCostScalerService
         // Nothing after the commit point rolls back.
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(UpdatedPrefix + staged.Version + "." + (iniIsRhis ? "" : IniKeptNote), updated.Files.Select(f => f.Path).ToArray());
+    }
+
+    /// <summary>
+    /// w13 final review m1: RHI's companion add-on is recorded outside ReShade's add-on folder, so the next Update moves
+    /// it. False without a recorded add-on or when that folder cannot be resolved (Update refuses then).
+    /// </summary>
+    internal static bool CompanionMoveDue(DetectedGame game, LinuxDeploymentRecord record)
+    {
+        var addon = record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals(CompanionAddonName, StringComparison.OrdinalIgnoreCase));
+        if (addon is null) return false;
+        var (path, refusal) = CompanionAddonPath(record.BinaryDirectory, game.PrefixPath);
+        return refusal is null && !string.Equals(addon.Path, path, StringComparison.Ordinal);
     }
 
     /// <summary>

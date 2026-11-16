@@ -278,6 +278,27 @@ public sealed class NrCostScalerUpdateTests : IDisposable
         Assert.False(File.Exists(moved));
     }
 
+    // w13 final review m1: AddonPath set after the install is a pending move even with no newer release.
+    [Fact]
+    public async Task Check_AddonPathSetAfterInstall_SameVersion_ReportsTheMove_AndUpdateMovesIt()
+    {
+        var service = await InstalledAsync();
+        File.WriteAllText(Path.Combine(Bin, "ReShade.ini"), "[ADDON]\nAddonPath=addons\n");
+
+        var check = await service.CheckUpdateAsync(_game);
+
+        Assert.True(check.UpdateAvailable, check.Message);
+        Assert.Equal(("v1.0.6", "v1.0.6"), (check.InstalledVersion, check.LatestVersion));
+        Assert.Equal(NrCostScalerService.DisplayName + AddonPathFolder.MoveDueSuffix, check.Message);
+
+        var update = await service.UpdateAsync(_game);
+        var moved = Path.Combine(Bin, "addons", NrCostScalerService.CompanionAddonName);
+        Assert.True(update.Success, update.Message);
+        Assert.True(File.Exists(moved));
+        Assert.False(File.Exists(Addon));
+        Assert.False((await service.CheckUpdateAsync(_game)).UpdateAvailable);
+    }
+
     private sealed class NeverRunning : IGameRunningProbe
     {
         public bool IsRunning(DetectedGame game) => false;
