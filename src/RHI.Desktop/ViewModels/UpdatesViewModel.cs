@@ -142,6 +142,17 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     {
         await RunBackgroundComponentPassAsync(cancellationToken);
         await FollowNewestAsync(cancellationToken);
+        await KeepLaunchpadFirstAsync(cancellationToken); // w14/nr (#274)
+    }
+
+    // w14/nr (#274, upstream 71af41e): at start and with each background pass, iMMERSE Launchpad goes back to the top of each
+    // GITC Uplift game's preset when ReShade or HSF put it lower (games not running only; nothing else in the preset changes).
+    private async Task KeepLaunchpadFirstAsync(CancellationToken cancellationToken)
+    {
+        using var op = Host.Operations.TryBegin("uplift-launchpad-order", linkedToken: cancellationToken);
+        if (op is null) return;
+        try { await Shell.GitcUplift.KeepLaunchpadFirstAsync(op.Token); }
+        catch (OperationCanceledException) when (op.CancelRequested) { }
     }
 
     private async Task RunBackgroundComponentPassAsync(CancellationToken cancellationToken)

@@ -39,6 +39,10 @@ public enum ManagedComponentKind
     // w7/dxvk-hdr rows
     // #200: DXVK HDR (EndlesslyFlowering's DXVK HDR build) as d3d9.dll + dxvk.conf beside a DirectX 9 game, opt-in per game.
     DxvkHdr = 23,
+    // w14 lane rows: new component kinds (next free value 25; each row ends with a comma)
+    // w14/nr rows
+    // #274: GITC Uplift, a Neural Rendering method (ReShade add-on + helper, its NR DLL in a GITC-Uplift subfolder).
+    GitcUplift = 24,
 }
 
 public enum ComponentAvailability

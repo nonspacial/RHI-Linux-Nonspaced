@@ -522,6 +522,14 @@
                                     SelectedItem="{Binding SelectedShortFuseVersion, Mode=TwoWay}"
                                     IsEnabled="{Binding CanConfigureShortFuseVersionPin}"/>
                         </Grid>
+                        <!-- w14/nr (#274): GITC Uplift's version (upstream "Uplift Version"; Latest follows updates). -->
+                        <Grid ColumnDefinitions="100,220" ColumnSpacing="8" IsVisible="{Binding ShowGitcUplift}">
+                          <TextBlock Text="{DynamicResource Ui.UpliftVersion}" Classes="muted" VerticalAlignment="Center"/>
+                          <ComboBox x:Name="GitcUpliftVersion" Grid.Column="1" ItemsSource="{Binding GitcUpliftVersionOptions}"
+                                    SelectedItem="{Binding SelectedGitcUpliftVersion, Mode=TwoWay}"
+                                    IsEnabled="{Binding CanConfigureUpliftVersionPin}"
+                                    ToolTip.Tip="{DynamicResource Ui.UpliftVersionTip}" ToolTip.ShowDelay="2000"/>
+                        </Grid>
                       </WrapPanel>
                       <Grid ColumnDefinitions="120,220,*" ColumnSpacing="8">
                         <TextBlock Text="NR DLL" Classes="muted" VerticalAlignment="Center"/>
@@ -532,6 +540,14 @@
                         <TextBlock Grid.Column="2" Text="{DynamicResource Ui.NrDllVersionNote}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
                       </Grid>
                       <views:NrCostScalerRow/> <!-- w3/parity hook (#96) -->
+                      <!-- w14/nr (#274): GITC Uplift's iMMERSE Launchpad toggle (motion vectors) and its link, upstream's NR section. -->
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="6" IsVisible="{Binding ShowGitcUplift}">
+                        <CheckBox x:Name="GitcUpliftLaunchpad" Content="{DynamicResource Ui.UpliftLaunchpad}" IsChecked="{Binding UpliftLaunchpad, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureUpliftLaunchpad}"
+                                  ToolTip.Tip="{DynamicResource Ui.UpliftLaunchpadTip}" ToolTip.ShowDelay="2000"/>
+                        <Button x:Name="GitcUpliftLink" Content="{DynamicResource Ui.UpliftLink}" Command="{Binding OpenGitcUpliftLinkCommand}" Padding="12,4"
+                                ToolTip.Tip="{DynamicResource Ui.UpliftLinkTip}" ToolTip.ShowDelay="2000"/>
+                      </WrapPanel>
                     </StackPanel>
                   </Border>
 

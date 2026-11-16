@@ -21,7 +21,8 @@ internal static class LinuxComponentDependencyPolicy
         ManagedComponentKind.Dlss5Dx11Bridge,
         ManagedComponentKind.ShortFuse,
         ManagedComponentKind.DofFix,
-        ManagedComponentKind.LumaFramework
+        ManagedComponentKind.LumaFramework,
+        ManagedComponentKind.GitcUplift // w14/nr (#274): a ReShade add-on
     };
 
     internal static IReadOnlyList<ManagedComponentKind> ManagedDependenciesFor(

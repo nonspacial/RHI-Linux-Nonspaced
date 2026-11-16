@@ -197,6 +197,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w12/nr-logs rows
     // w12/pins rows
     // w12/hdr-wsi rows
+    // w14/nr rows
+    public GitcUpliftPresenter GitcUplift => GitcUpliftPresenter.For(this, _managedComponents); // #274 Settings card, Launchpad, Uplift Version
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;

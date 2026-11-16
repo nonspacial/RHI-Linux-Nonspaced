@@ -46,6 +46,8 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | Upstream Engine.ini templates (`engineIniFiles`, RenoDX installs) | `EngineIniTemplates` | raw.githubusercontent.com, 256 KiB | none (text template, parsed before use; last-known-good cache when unreachable) | fail-open |
 | Universal UE DOF Fix | core `GitHub` | GitHub release hosts, raw.githubusercontent.com | GitHub asset `digest`; a manifest `ueDofFix` override names another file, so the digest does not apply | fail-open |
 | RenoDX add-ons | core `RenoDxAddons` | GitHub, `<author>.github.io`, renodx.com | none (snapshots are rebuilt in place) | fail-open; ETag/Last-Modified/size stamp for update checks |
+| GITC Uplift (#274) | `GitcUplift` | GitHub release hosts, 64 MiB | GitHub asset `digest` and the release's `SHA256SUMS.txt` (the zip, and each file taken out of it against its own line); releases with neither are not offered; the add-ons and helper must be PEs of their bitness | **fail-closed** (release left out) |
+| iMMERSE Launchpad (#274, shared with HSF #277) | `ImmerseLaunchpad` | GitHub release hosts, codeload.github.com, 64 MiB | none (the martymcmodding/iMMERSE `main` branch archive; only Launchpad, its `MartysMods` includes and its texture are taken; record part `Launchpad`) | fail-open, SHA-256 recorded; fetched per install |
 | ReShade Addon Manager | core `ReShadeAddons` | GitHub, `<author>.github.io`, raw.githubusercontent.com (Addons.ini) | none checked | fail-open |
 
 **Stalled downloads (#233).** Every body `TrustedDownload` reads (payloads and metadata) gives up when no byte arrives

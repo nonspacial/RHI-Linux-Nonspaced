@@ -436,7 +436,8 @@ public sealed partial class LinuxManagedComponentService
     private List<(ManagedComponentKind Kind, string Name)> NeuralRenderingMethodsInUseByKind(DetectedGame game)
     {
         var inUse = new List<(ManagedComponentKind, string)>();
-        foreach (var kind in new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge })
+        foreach (var kind in new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge,
+                     ManagedComponentKind.GitcUplift }) // w14/nr (#274)
             if (_records.Find(game, kind) is not null) inUse.Add((kind, DisplayNeuralRenderingMethod(kind)));
         if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } optiScaler) inUse.Add((ManagedComponentKind.OptiScaler, optiScaler));
         if (NeuralRenderingRuntimeOwnership.RtxEncoreOwner(_records, game) is { } encore) inUse.Add((ManagedComponentKind.RtxEncore, encore));

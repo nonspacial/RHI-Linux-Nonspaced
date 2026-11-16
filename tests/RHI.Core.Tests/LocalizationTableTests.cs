@@ -15,7 +15,8 @@ public sealed class LocalizationTableTests
     private static readonly HashSet<string> SameInBothLanguages = new(StringComparer.Ordinal)
     {
         "Ui.ShadersAddons", "Ui.Links", "Ui.Motd", "Ui.DlssStreamline", "Ui.Extras", "Ui.UxTab", "Ui.Rtx40MfgTitle",
-        "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra"
+        "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra",
+        "Ui.UpliftVersion", "Ui.UpliftLaunchpad", "Ui.UpliftLink", "Uplift.CardTitle" // w14/nr (#274): product names
     };
 
     private static readonly Regex PortugueseLetters = new("[ãõçáâêôíúéóàÃÕÇÁÂÊÔÍÚÉÓÀ]");

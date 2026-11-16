@@ -55,6 +55,16 @@ public sealed class SettingsViewModel : PanelViewModel
         return null;
     }
     // w5/reshade-core rows
+    // w14/nr rows
+    /// <summary>#274: stores GITC Uplift's NR on/off key alone (Write key to all Uplift games); null when saved, else the refusal line.</summary>
+    internal string? SaveUpliftEnableKey(int vk)
+    {
+        var copy = GetLinuxSettingsSnapshot().Settings;
+        copy.UpliftEnableKey = vk;
+        if (TryPersist(() => _settingsStore.Save(copy), "Ui.WhatSettings", sessionOnly: false) is { } refused) return refused;
+        _shell.AdoptSettings(_settingsStore.Load(), restartLoop: false, runImmediate: false);
+        return null;
+    }
     // w7/smalls rows
     // w7/reshade rows
     // w7/shader-sets rows
@@ -157,6 +167,9 @@ public sealed class SettingsViewModel : PanelViewModel
             // w12/nr-logs rows
             // w12/pins rows
             // w12/hdr-wsi rows
+            // w14 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
+            // w14/nr rows
+            UpliftEnableKey = Host.Settings.UpliftEnableKey, // #274 GITC Uplift NR on/off key
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

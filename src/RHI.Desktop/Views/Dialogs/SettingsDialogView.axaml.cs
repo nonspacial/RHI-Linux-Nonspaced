@@ -130,6 +130,11 @@ public sealed partial class SettingsDialogView : UserControl
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        // w14 lane rows: Settings rows (build the row, Fill its slot, Host its values)
+        // w14/nr rows
+        var gitcUplift = new GitcUpliftSettingsCard(settings, vm.GitcUplift, vm.Settings, Show); // #274 NR on/off key
+        Fill("GitcUpliftSlot", gitcUplift.Control);
+        model.Host(new(current => current.UpliftEnableKey = gitcUplift.Key, gitcUplift.Reset));
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;

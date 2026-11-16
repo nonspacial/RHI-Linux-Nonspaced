@@ -1524,3 +1524,63 @@ folder, else `ReShadePreset.ini` there, any case).
 - Linux deviations: a `PresetPath` given as a Windows drive path (`C:\…`) refuses the install with a line saying so
   (upstream writes wherever it points); upstream also sets `PresetPath=.\ReShadePreset.ini` when it is missing, Linux
   relies on ReShade's own default for the same file.
+
+### #274 — GITC Uplift as a Neural Rendering method, to its 2.0 behaviour (2.9.2/2.9.3)
+
+Upstream 2.9.2 `93d0fcb`, `d5b2df4`, `18088a3`; 2.9.3 `5f409de`, `7748d10`, `71af41e` (`UpliftService`,
+`MainViewModel.Uplift`, `SettingsHandler.UpliftKey`); ported to the 2.9.4 end state. `GitcUpliftDeploymentService`
+(new component kind `GitcUplift`), `ImmerseLaunchpadService` (shared with HSF, #277), `LinuxManagedComponentService.GitcUplift`.
+
+- **Install** (the GITC Uplift row in Managed components; ReShade is installed first when missing, as for every ReShade
+  add-on): `gitc-uplift.addon64` (`.addon32` on 32-bit games) and `gitc-uplift-helper64.exe` in ReShade's add-on folder
+  (the binary folder, or reshade.ini's `AddonPath`), the NR DLL in its `GITC-Uplift` subfolder, `Uplift.fx` and
+  `UpliftMask.fx` in RHI's shader tree `reshade-shaders/RHI/GITC-Uplift` (added to ReShade.ini's search paths; upstream
+  copies them into `reshade-shaders\Shaders` through its shader sync). An `nvngx_dlssnr.dll` the user already put in
+  `GITC-Uplift` is kept and not owned (upstream). A manual Uplift already in the game is refused, never overwritten.
+  Everything is one journaled operation; the record is the commit point. Supports DX9–12, Vulkan and OpenGL, 32 and
+  64-bit, as upstream (Vulkan through RHI's Vulkan ReShade layer).
+- **Downloads**: the releases of `ghostinthecamera/GITC-Uplift` (full releases only, as upstream), the zip checked against
+  GitHub's digest and the release's `SHA256SUMS.txt`, and each file taken out of the zip against its own line there;
+  fail-closed (a release with neither is not offered; upstream continues without a check). Cached per version with a
+  download stamp. Pinned in the tests: the release listing (2026-11-16), the 2.0.0 zip's entry names and `SHA256SUMS.txt`.
+- **Uplift Version** (upstream's Neural Rendering "Uplift Version"): a list beside Feeder / DX11 Bridge / ShortFuse under
+  NR versions. Latest follows new releases through Update All and the background pass; a picked version stays. Changing it
+  while installed swaps the add-on, helper and effects together. A pin no longer published installs Latest and says so.
+- **Add-on and helper always together** (2.9.3 fix): every update or version change replaces the add-on, the helper and
+  the effects from one release in one journaled swap, all or nothing; a file changed outside RHI refuses the whole swap.
+  Linux equivalent of upstream's "file in use" probe: never while the game runs (Update All already skips running games;
+  a direct change says to close the game).
+- **NR on/off key**: Settings › DLSS/Streamline, a "GITC Uplift" card right after the OptiScaler key (upstream:
+  Settings › Components, after the ReLimiter and OptiScaler card): "NR on/off key" and "Write key to all Uplift games"
+  (hidden games skipped). Install writes `[Uplift] EnableKey` (decimal virtual-key code) into the game's ReShade.ini when a
+  key is set; None leaves each game's own key. Removal puts back the value it replaced while the key still holds RHI's.
+  Linux deviation: the key is picked from a list (F1–F12, Insert, Delete, Home, End, Page Up/Down, Pause, Scroll Lock,
+  Numpad 0–9) as the OptiScaler key here, instead of being pressed into a box. Upstream's removed "Start with NR on" is not
+  ported (2.9.4 end state).
+- **iMMERSE Launchpad** (motion vectors): placed from the `martymcmodding/iMMERSE` archive (only `MartysMods_LAUNCHPAD.fx`,
+  its `MartysMods/*.fxh` includes and `iMMERSE_bluenoise_opt.png`) into `reshade-shaders/RHI/iMMERSE-Launchpad`, switched
+  on in the preset right above the Uplift technique and moved to the top. On by default in games without DLSS; an
+  "iMMERSE Launchpad" check box under NR versions changes it per game (applied at once when Uplift is installed, saved for
+  the install otherwise). Off takes out only a technique RHI switched on. The Launchpad files are shared: a component that
+  finds them listed by another record lists them too, and removal deletes them only when no other record still does
+  (`ImmerseLaunchpadService`, for HSF).
+- **Kept first**: at start and with each background pass, Launchpad goes back to the top of each Uplift game's preset when
+  ReShade or HSF put it lower, only while the game is not running (Linux running-game probe), journaled on Uplift's record,
+  nothing else changed (upstream: launch, the 4-hour refresh and the toggle).
+- **OpenGL MSAA set-up**: on OpenGL games the `Uplift@Uplift.fx` technique is switched on first in the preset at install,
+  so NR runs on ReShade's resolved single-sampled copy (upstream `EnsureTechniqueFor`). A technique the user already had on
+  stays on after removal. Upstream also re-detects OpenGL games once that its older builds saw as DX12 because of the
+  helper; Linux never counted the helper.
+- **Default method**: the Neural Rendering recommendation names GITC Uplift only where DLSS5 Feeder was the default and
+  all of Uplift works — 64-bit DX11 / DX12 / Vulkan games without DLSS; 32-bit, OpenGL and DX9 keep Feeder; games with DLSS
+  keep the DX11 Bridge / ShortFuse. Linux has no automatic method choice: games keep whatever is installed. Installing
+  Uplift removes the other RHI Neural Rendering method first (and the others remove Uplift), as upstream's method switch.
+  OptiScaler DLSS NR / F5 keep refusing a second NR owner.
+- **Link**: a "GITC Uplift" button under NR versions opens the project page with its guide (upstream: the links at the
+  bottom of the Neural Rendering section).
+- **Elsewhere**: the NR DLL list swaps Uplift's own DLL in place; Check Neural Rendering lists Uplift among the methods in
+  use; Update All and the update history name it "GITC Uplift". The NR Cost Scaler stays off for Uplift (upstream hides it:
+  the DLL is not beside the executable).
+- Linux deviations, in short: RHI shader trees instead of the shared shader folder; fail-closed download checks; key list
+  instead of key capture; the card under DLSS/Streamline until the Settings restyle (C1, #296) brings the Components
+  section; no automatic method choice.

@@ -122,7 +122,7 @@ internal sealed class ManagedComponentRowDecorator
                 ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or
                 ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or
                 ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework or
-                ManagedComponentKind.RtxEncore)
+                ManagedComponentKind.RtxEncore or ManagedComponentKind.GitcUplift) // w14/nr (#274)
             {
                 if (component.Kind == ManagedComponentKind.REFramework && record is not null &&
                     component.Availability == ComponentAvailability.Available &&
@@ -170,7 +170,9 @@ internal sealed class ManagedComponentRowDecorator
 
                 // #236/#237/#238: RHI's record alone makes the row Installed, so Remove is offered after the user deleted
                 // the file (an update never puts it back, and Install refuses or would re-create it behind the record).
-                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock && record is not null &&
+                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock
+                        or ManagedComponentKind.GitcUplift && record is not null && // w14/nr (#274): its record alone makes it Installed
+
                     component.Availability == ComponentAvailability.Available)
                 {
                     component.Availability = ComponentAvailability.Installed;
@@ -198,6 +200,7 @@ internal sealed class ManagedComponentRowDecorator
                         : managedDlss5Feeder is not null ? "DLSS5 Feeder"
                         : managedDlss5Bridge is not null ? "DLSS5 DX11 Bridge"
                         : managedShortFuse is not null ? "ShortFuse"
+                        : Find(ManagedComponentKind.GitcUplift) is not null ? GitcUpliftDeploymentService.DisplayName // w14/nr (#274)
                         : managedDofFix is not null ? "Universal UE DOF Fix"
                         : managedLumaFramework is not null ? "Luma Framework"
                         : null;
@@ -461,6 +464,22 @@ internal sealed class ManagedComponentRowDecorator
                         component.Note = component.Kind == ManagedComponentKind.ReLimiter
                             ? "Latest official ReLimiter ReShade add-on from GitHub. RHI respects [ADDON] AddonPath, initializes relimiter.ini only when absent, and preserves user config on update/remove."
                             : "Latest official Display Commander ReShade add-on from GitHub. RHI respects [ADDON] AddonPath, initializes DisplayCommander.ini only when absent, and preserves user config on update/remove.";
+                    }
+                }
+
+                // w14/nr (#274): GITC Uplift before install — where it cannot go, why; else what it is and that it replaces another method.
+                if (component.Kind == ManagedComponentKind.GitcUplift && component.Availability == ComponentAvailability.Available)
+                {
+                    if (GitcUpliftDeploymentService.IneligibleReason(game) is { } upliftRefusal)
+                    {
+                        component.ActionAllowed = false;
+                        component.Note = upliftRefusal;
+                    }
+                    else
+                    {
+                        component.Note = GitcUpliftDeploymentService.AvailableNote
+                            + (managedShortFuse is not null || managedDlss5Feeder is not null || managedDlss5Bridge is not null
+                                ? GitcUpliftDeploymentService.SwitchMethodNote : "");
                     }
                 }
 

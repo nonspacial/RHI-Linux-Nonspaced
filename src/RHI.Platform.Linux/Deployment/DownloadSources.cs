@@ -186,6 +186,13 @@ public static class DownloadSources
     /// </summary>
     public static readonly TrustedDownloadPolicy DxvkHdr = new(
         "DXVK HDR", "GitHub", GitHubReleaseHosts, maxBytes: 128L * 1024 * 1024);
+    // w14/nr rows
+    /// <summary>#274: GITC Uplift (ghostinthecamera/GITC-Uplift) GitHub releases: the zip is checked against GitHub's digest and the release's SHA256SUMS.txt.</summary>
+    public static readonly TrustedDownloadPolicy GitcUplift = new(
+        "GITC Uplift", "GitHub", GitHubReleaseHosts, maxBytes: 64L * 1024 * 1024);
+    /// <summary>#274/#277: iMMERSE Launchpad, from the martymcmodding/iMMERSE branch archive (codeload.github.com; no digest is published).</summary>
+    public static readonly TrustedDownloadPolicy ImmerseLaunchpad = new(
+        "iMMERSE Launchpad", "GitHub", [.. GitHubReleaseHosts, "codeload.github.com"], maxBytes: 64L * 1024 * 1024);
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -217,5 +224,7 @@ public static class DownloadSources
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         DxvkHdr,
+        // w14/nr rows
+        GitcUplift, ImmerseLaunchpad,
     ];
 }
