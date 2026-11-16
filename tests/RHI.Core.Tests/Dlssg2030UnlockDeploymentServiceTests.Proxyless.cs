@@ -25,7 +25,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task RecordWithoutProxyName_Remove_DeletesProxyAndIni_RestoresTheOverride_DropsTheRecord_ThenInstallWorks()
     {
         using var fixture = CreateGame("proxyless", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7A), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7A), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
@@ -54,7 +54,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task RecordWithoutProxyName_Remove_LeavesAChangedIni_AndNamesIt_PathLast()
     {
         using var fixture = CreateGame("proxyless-changed", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7B), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7B), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
@@ -99,7 +99,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task RecordWithoutProxyName_HeldGame_TheUndoFinishesBeforeThePlan_TheUsersBytesStay()
     {
         using var fixture = CreateGame("proxyless-held", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7D), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7D), UpstreamIni()));
         var (service, records, journal, _, _, _) = JournaledService(fixture, http);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
         var proxy = Path.Combine(fixture.Bin, "winmm.dll");
@@ -122,7 +122,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task RecordWithoutProxyName_Remove_CrashBeforeTheRecordIsGone_NextStartPutsAllBack_ThenRemoveWorks()
     {
         using var fixture = CreateGame("proxyless-crash", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7C), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x7C), UpstreamIni()));
         var (service, records, journal, journalDir, ledger, overrides) = JournaledService(fixture, http);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
         var proxy = Path.Combine(fixture.Bin, "winmm.dll");

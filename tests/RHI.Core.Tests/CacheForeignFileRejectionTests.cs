@@ -65,9 +65,6 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
         Assert.True(File.Exists(CacheStamp.StampPath(c.Entry())), $"{consumer}: replacement must be stamped again");
     }
 
-    private static string GitBlob(byte[] content)
-        => Convert.ToHexString(SHA1.HashData([.. Encoding.ASCII.GetBytes($"blob {content.Length}\0"), .. content])).ToLowerInvariant();
-
     private sealed record Case(Func<Task> Fetch, Func<string> Entry, Func<int> Work, Action? BeforeRefetch = null);
 
     private Case Build(string consumer, string dir)
@@ -124,21 +121,17 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             }
             case "Dlssg2030":
             {
-                const string sha = "0123456789abcdef0123456789abcdef01234567";
-                var dllUrl = Dlssg2030UnlockDeploymentService.RawUrl(sha, Dlssg2030UnlockDeploymentService.DefaultProxyName);
-                var iniUrl = Dlssg2030UnlockDeploymentService.RawUrl(sha, Dlssg2030UnlockDeploymentService.IniFileName);
-                var dll = Pe(0x8664, 300 * 1024, 0x61);
-                var ini = Encoding.UTF8.GetBytes("; Native 1.2.3\n[Compatibility]\nRouter=SM86\n[FrameGeneration]\nMaxGeneratedFrames=3\n");
-                http.Serve(dllUrl, dll);
-                http.Serve(iniUrl, ini);
-                // The git blob ids GitHub reports for both files at that commit (#41).
-                http.Serve(Dlssg2030UnlockDeploymentService.ContentsApiUrl(sha, Dlssg2030UnlockDeploymentService.DefaultProxyName),
-                    Encoding.UTF8.GetBytes($"{{\"sha\":\"{GitBlob(dll)}\"}}"));
-                http.Serve(Dlssg2030UnlockDeploymentService.ContentsApiUrl(sha, Dlssg2030UnlockDeploymentService.IniFileName),
-                    Encoding.UTF8.GetBytes($"{{\"sha\":\"{GitBlob(ini)}\"}}"));
+                // #261: the release package zip (digest left unpublished here so only the stamp can vouch for the cache).
+                const string tag = "1.2.3";
+                var asset = $"dlssg-release-{tag}-x64.zip";
+                var url = $"https://github.com/rhi-tests/dlssg/releases/download/{tag}/{asset}";
+                var ini = Encoding.UTF8.GetBytes("[General]\nEnabled=1\n[FrameGeneration]\nMaxGeneratedFrames=3\n");
+                http.Serve(url, Zip(("version.dll", Pe(0x8664, 300 * 1024, 0x61)), (Dlssg2030UnlockDeploymentService.IniFileName, ini),
+                    ("dlssg_sm86/backend/sm86_backend.dll", [1]), ("dlssg_sm86/kernels/fg_kernels.dll", [2]), ("dlssg_sm86/runtime/nvngx_dlssg.dll", [3])));
                 var svc = new Dlssg2030UnlockDeploymentService(client, records, overrides, new Dlssg2030PreferenceStore(Path.Combine(dir, "fg2030.json")), cache);
-                return new(async () => entry = (await svc.EnsureCachedPayloadAsync(new Dlssg2030SnapshotInfo(sha, "1.2.3"), CancellationToken.None)).DllPath,
-                    () => entry!, () => http.Count(dllUrl));
+                return new(async () => entry = (await svc.EnsureCachedPackageAsync(new Dlssg2030ReleaseInfo(tag, tag, asset, url, null), CancellationToken.None)) is not null
+                        ? Path.Combine(cache, tag, asset) : null,
+                    () => entry!, () => http.Count(url));
             }
             case "ReShadeSetupExe":
             case "ReShadeSetupStagedDll":

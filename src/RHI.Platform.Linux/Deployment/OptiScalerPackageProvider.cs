@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using RHI.Core.Deployment;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -43,15 +44,15 @@ public interface IOptiScalerPackageProvider
         => Task.FromException<IReadOnlyList<string>>(new NotSupportedException("OptiScaler package provider does not list nightly builds."));
 }
 
-public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
+public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvider
 {
     public const string LatestReleaseApi = "https://api.github.com/repos/optiscaler/OptiScaler/releases/latest";
     public const string NightlyReleasesApi = "https://api.github.com/repos/optiscaler/OptiScaler-nightly/releases";
     public const string DlssNrReleasesApi = "https://api.github.com/repos/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass/releases";
-    /// <summary>F5 DLSSNR (#157): GitHub's "Latest" release, as upstream; its asset is <see cref="F5AssetPrefix"/>*.zip.</summary>
+    /// <summary>F5 DLSSNR (#157): GitHub's "Latest" release, as upstream; its package is chosen by <see cref="SelectF5AssetName"/>.</summary>
     public const string F5ReleasesApi = "https://api.github.com/repos/janblade/OptiScaler-F5-DLSSNR-Multipass/releases/latest";
-    /// <summary>The F5 release also carries an "Optional-Vendor-Neutral-DLSS5-Forwarder.zip" companion; only this prefix is the package (upstream 8dcf55c, 4f28876).</summary>
-    public const string F5AssetPrefix = "OptiScaler-DLSSNR-F5-";
+    /// <summary>#260: an F5 release with more than one package zip is refused instead of guessed; the asset names follow.</summary>
+    public const string F5AmbiguousAssetPrefix = "The OptiScaler F5 DLSSNR release publishes more than one package, so RHI did not choose one: ";
     public const string ArchivePathRefusedPrefix = "The OptiScaler archive holds a path RHI will not extract: ";
 
     /// <summary>#231: the F5 package's forwarder is not a Windows DLL (MZ + PE header); refused before any game file changes.</summary>
@@ -159,9 +160,13 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
                 if (string.IsNullOrWhiteSpace(name) || !name.EndsWith(requiredExtension, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!name.Contains("optiscaler", StringComparison.OrdinalIgnoreCase)) continue;
                 if (IsNonRuntimeAssetName(name)) continue;
-                if (variant == OptiScalerVariant.F5 && !name.StartsWith(F5AssetPrefix, StringComparison.OrdinalIgnoreCase)) continue;
                 candidates.Add(asset);
             }
+        }
+        if (variant == OptiScalerVariant.F5)
+        {
+            var f5 = SelectF5AssetName(candidates.Select(asset => asset.GetProperty("name").GetString()!).ToArray(), rawTag);
+            candidates = [candidates.First(asset => asset.GetProperty("name").GetString() == f5)];
         }
         if (candidates.Count == 0)
             throw new InvalidOperationException($"OptiScaler {variant} {rawTag} does not publish a runtime {requiredExtension} asset that RHI Linux can install.");
@@ -310,6 +315,36 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
             .OrderBy(path => Path.GetRelativePath(extractDirectory, path).Count(c => c == Path.DirectorySeparatorChar))
             .FirstOrDefault();
     }
+
+    /// <summary>
+    /// #260: the F5 release's package. Its name has changed (<c>OptiScaler-DLSSNR-F5-0.1.30.zip</c> up to v0.1.36,
+    /// <c>v0.1.37-Optiscaler-F5.zip</c> since; upstream 2.9.1 <c>1f8a32e</c> now takes any zip naming OptiScaler), so the
+    /// package is the one <c>.zip</c> whose name has "OptiScaler" and "F5" as a word of its own, does not start with
+    /// "Optional" and is no forwarder, debug, symbol or source build. Companions ("Optional-Vendor-Neutral-DLSS5-Forwarder.zip",
+    /// "Optional-F5Low-Update-….zip") are never taken; no package, or more than one, is refused (upstream takes the first).
+    /// </summary>
+    public static string SelectF5AssetName(IReadOnlyList<string> assetNames, string releaseTag)
+    {
+        var packages = assetNames
+            .Where(name => !string.IsNullOrWhiteSpace(name)
+                && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                && name.Contains("optiscaler", StringComparison.OrdinalIgnoreCase)
+                && F5Word().IsMatch(name)
+                && !name.StartsWith("Optional", StringComparison.OrdinalIgnoreCase)
+                && !name.Contains("forwarder", StringComparison.OrdinalIgnoreCase)
+                && !IsNonRuntimeAssetName(name))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return packages.Length switch
+        {
+            1 => packages[0],
+            0 => throw new InvalidOperationException($"OptiScaler F5 {releaseTag} does not publish a runtime .zip asset that RHI Linux can install."),
+            _ => throw new InvalidOperationException(F5AmbiguousAssetPrefix + string.Join(", ", packages))
+        };
+    }
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9])F5(?![A-Za-z0-9])", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex F5Word();
 
     private static bool IsNonRuntimeAssetName(string name)
         => new[] { "debug", "symbols", "symbol", "source", "src", "backup" }

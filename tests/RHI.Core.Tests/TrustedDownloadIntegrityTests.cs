@@ -145,7 +145,7 @@ public sealed class TrustedDownloadIntegrityTests : IDisposable
         yield return [DownloadSources.UltimateAsiLoader, "https://raw.githubusercontent.com/ThirteenAG/Ultimate-ASI-Loader/master/dinput8.dll"];
         yield return [DownloadSources.RhiRepository, "https://renodx.com/renodx-dlss.addon64"];
         yield return [DownloadSources.UniversalMfg, "https://raw.githubusercontent.com/dashdogy/RTX40MFG-Unlock/main/RTXMFG.dll"];
-        yield return [DownloadSources.Dlssg2030, "https://github.com/sdli1995/dlssg_for_sm86/raw/main/version.dll"];
+        yield return [DownloadSources.Dlssg2030, "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/main/version.dll"];
         yield return [DownloadSources.DgVoodoo, "https://dege.freeweb.hu/dgVoodoo2/bin/dgVoodoo2_87.zip"];
         yield return [DownloadSources.Dlss5Feeder, "https://gitlab.com/jlrouzies-fr/DLSS5-Feeder/-/archive/main.zip"];
         yield return [DownloadSources.ShaderPacks, "https://example.github.io/shaders.zip"];

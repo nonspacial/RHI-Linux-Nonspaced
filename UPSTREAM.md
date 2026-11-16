@@ -1417,3 +1417,62 @@ Nothing to port in code; each reaches Linux through the fetched manifest or does
   was "Optional"), why (almost every download comes from GitHub; 60 requests an hour without it, 5,000 with it) and how
   (github.com/settings/tokens → Generate new token (classic), any name and expiry, no scopes), as does the README.
 - `e97d1a5`, `7d9a715`, `edeafed`, `3689428` `pcgw_data.json` updates: fetched at runtime (#12), nothing to port.
+
+## Parity notes (fixes from upstream 2.8.9–2.9.3 sources)
+
+### #262 — HDR Gaming Database links read the README's HTML table (#183 follow-up)
+
+Upstream 2.9.3 `3d99906`. KoKlusz's README moved its games index from a Markdown list to an HTML `<table>` in November
+2026, so the list (#183) parsed no game and the HDR Gaming Database link was gone from every card menu and ⓘ dialog.
+`GameLinkCatalogue.ParseHdrDatabase` now reads each `<a href="…/HDR-Gaming-Database/discussions/N">Game</a>` and still
+the old `* [Game](…/discussions/N)` lines. Names are HTML-decoded (`Ratchet &amp; Clank`), as upstream, then matched by
+#183's rule (no ™/®/©, straight quotes, ignoring case); only https discussion threads of that repository are taken. A
+non-empty README in which no game is recognised already kept the last good cached copy (and a loaded copy through Full
+Refresh); tests now pin that for this list, so a further format change leaves the links as they were instead of removing
+them. The README as served on 2026-11-16 (138 games) is a test fixture.
+
+### #260 — OptiScaler F5 DLSSNR takes the renamed release zip (#157 follow-up)
+
+Upstream 2.9.1 `1f8a32e`. Since v0.1.37 janblade's F5 release names its package `v0.1.37-Optiscaler-F5.zip` instead of
+`OptiScaler-DLSSNR-F5-*.zip`, so the #157 rule above (that prefix only) found no package and every F5 install and update
+failed. Upstream now takes the first zip whose name contains "OptiScaler" and does not start with "Optional". RHI takes
+the one `.zip` whose name has "OptiScaler" and "F5" as a word of its own, does not start with "Optional" and is no
+forwarder, debug, symbol or source build (`OptiScalerPackageProvider.SelectF5AssetName`), so both name shapes install
+and the companions ("Optional-Vendor-Neutral-DLSS5-Forwarder.zip", "Optional-F5Low-Update-….zip", the troubleshooting
+`.md`) are never taken. Linux deviation: a release with two such packages (v0.1.28 published a test build beside the
+package) is refused and both names are shown; upstream takes whichever GitHub lists first. The asset list of v0.1.38
+(`/releases/latest` on 2026-11-16) is a test fixture; the lists of v0.1.37.2, v0.1.36, v0.1.30 and v0.1.28 are pinned in
+the tests.
+
+### #261 — DLSSG 20/30 FG Unlock installs the 0.4.x release package (#238 follow-up)
+
+Upstream 2.8.9 `68856af` (its ⚙ settings dialog is a separate item and not ported here). Since 0.4.0
+sdli1995/dlssg_for_sm86 ships as a release package (`dlssg-release-0.4.2-x64.zip`): one proxy DLL, `dlssg_sm86.ini` and
+the `dlssg_sm86/` folder (backend, kernel packs, bundled DLSS-G runtime, XeSS-FG, SR). RHI still deployed only
+`version.dll` from the repository tree (#238), so frame generation never started. `Dlssg2030UnlockDeploymentService` now
+takes GitHub's latest release: the version is the tag, the package is the one `dlssg-release-<tag>-x64.zip` asset (none
+or a second one refuses; upstream takes the first `dlssg-release-*-x64.zip`), downloaded under the GitHub release hosts,
+checked against the digest GitHub publishes, cached and stamped like every release payload, and extracted with the
+checked extractor (no `..`, no rooted or duplicate names; a package without `version.dll`, the INI or the backend,
+kernel and runtime DLLs is refused). Only what a game needs goes in: the proxy, the INI and `dlssg_sm86/` without its
+logs or Markdown; readmes, manuals, `docs/` and the manifest stay out.
+
+Each DLL name installs the mod's own build for that name (`version.dll` from the package root, the others from
+`alternatives/`), never a renamed copy, in the mod's order: version, winmm, dbghelp, dinput8, then dxgi or d3d12.
+`winhttp.dll` is no longer offered; an install on it is moved to `version.dll` by Update (old proxy and its Wine
+override out, `version.dll` and its override in; refused with a line saying what to do when `version.dll` is taken).
+Every package file is recorded with its hash. Remove deletes those that still hold RHI's bytes and the mod's own
+`dlssg_sm86/logs/*.log` (upstream deletes the whole folder), names any file changed outside RHI and leaves it, and
+prunes the empty folders after the commit point; folders an install creates are journaled, so a crash before the record
+is saved removes them again. The INI is written as the release ships it (no `Router=` any more: 0.4 picks the RTX 20 /
+30 kernels itself).
+
+Repair of old installs: a record from the single-DLL path (no release tag; commit, router and blob-hash keys) or under
+`winhttp.dll` reads as an update in the check and in Update All ("… (single DLL, before the release package) → 0.4.2"),
+and Update brings it to the package: the proxy's build, the whole folder, new files placed, files the release dropped
+deleted, the old metadata dropped. Linux deviations: an INI still holding RHI's bytes is replaced by the release's, one
+the user changed is kept as it is (upstream rewrites it, keeping six known keys); a package file changed outside RHI
+makes the check could-not-check and the update refuse, as for the proxy (#238). The repair runs through Update All and
+Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
+MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
+release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).

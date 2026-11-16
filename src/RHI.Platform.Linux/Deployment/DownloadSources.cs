@@ -61,9 +61,9 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy UniversalMfg = new(
         "Universal MFG", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
 
-    /// <summary>DLSSG 20/30 unlock: a file at a pinned commit, served by raw.githubusercontent.com.</summary>
+    /// <summary>DLSSG 20/30 unlock (#261): the release package of sdli1995/dlssg_for_sm86 (about 90 MB since 0.4.2).</summary>
     public static readonly TrustedDownloadPolicy Dlssg2030 = new(
-        "DLSSG 20/30 unlock", "GitHub", ["raw.githubusercontent.com"], maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
+        "DLSSG 20/30 unlock", "GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
 
     /// <summary>dgVoodoo2: GitHub releases of dege-diosg/dgVoodoo2.</summary>
     public static readonly TrustedDownloadPolicy DgVoodoo = new(
