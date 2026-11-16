@@ -26,6 +26,8 @@ Wave 14 — library-updates
   2.8.9/2.9.2): a start runs them at once only when the last run is 4 hours (1 hour) ago or more, and saving Settings no
   longer starts an extra run.
 - **The Ultra+ and ultrawide fix lists are checked every 4 hours** instead of once a day, also while RHI stays open.
+- **Update History lists DLSS and Streamline swaps and restores** made from the DLSS section, the DLSS batch and the
+  DLSS defaults (upstream 2.9.3), with the version before and after.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

@@ -1529,3 +1529,20 @@ dialog lists every game because the user ticks each one.
 - **Refresh rescans the selected game** (upstream 2.9.3 `5b0054b`): Refresh here was always the full refresh (every
   detector, every cached analysis dropped), so DLSS a game update added or removed already showed at once. Pinned by a
   test, no code change.
+
+### #289 — Update History records every component (2.9.3)
+
+Upstream 2.9.3 (`487b4fc`) added Update History entries for components its own update paths missed. Here every
+install, update and removal through the managed component path (Install, Update, Update All, the automatic pass,
+dependencies installed on the way) was already recorded by diffing the deployment ledger (#18/#112), today's
+list (Universal MFG, DLSS Enabler, NR Cost Scaler, Ultimate ASI Loader, RE Framework, UE DOF Fix, ReShade on either
+channel, the Addon Manager) and the NR DLL swap. DLSS5 Feeder and DX11 Bridge are listed under their own names
+(pinned). The gap was DLSS and Streamline files outside Follow newest: the DLSS batch, the DLSS defaults and the DLSS
+panel's swap and restore wrote nothing. They now record one entry per DLL family ("DLSS SR (nvngx_dlss.dll)",
+"Streamline (sl.*.dll)") with the version before and after (read from the DLL), and a failed swap with its reason.
+
+One generic hook, `ComponentHistory.Record(game, component, action, from, to, …)`, keyed by `ManagedComponentKind`,
+writes for any change made outside the managed path; an update is written only when the version changed (upstream
+`ShouldRecord`), a failure always. A new component recorded through the managed path needs nothing but its name in
+`LinuxManagedComponentService.DisplayDependencyName` (or `ComponentHistory.NameFor`). Not applicable: DXVK (the runner's,
+never RHI's here). Nexus Mods files reach RHI as dropped add-ons or Luma packages and are recorded on those paths.

@@ -677,7 +677,11 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         {
             var displayName = DlssComponentDisplayName(kind);
             StatusText = TF("Vm.DownloadingApplying", displayName, version);
+            var from = ComponentHistory.DllVersion(paths); // #289
             var result = await _dlss.SwapAsync(kind, paths, version, op.Token);
+            if ((!result.Success && !op.CancelRequested) || result.Results.Any(x => x.Changed))
+                _dlssDefaults.History?.Record(game, ManagedComponentKind.Dlss, ComponentUpdateAction.Update, from, version, result.Success, result.Error,
+                    ComponentHistory.DlssName(kind));
             if (result.Success)
             {
                 var changed = result.Results.Count(x => x.Changed);
@@ -728,7 +732,10 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         try
         {
             var displayName = DlssComponentDisplayName(kind);
+            var from = ComponentHistory.DllVersion(paths); // #289
             var result = await _dlss.RestoreAsync(kind, paths, op.Token);
+            if (!op.CancelRequested)
+                _dlssDefaults.RecordRestore(game, ManagedComponentKind.Dlss, ComponentHistory.DlssName(kind), from, ComponentHistory.DllVersion(paths), result.Success, result.Error);
             StatusText = result.Success
                 ? TF("Vm.OriginalDLLRestored", displayName)
                 : op.CancelRequested ? OperationCancelledText() : TF("Vm.RestoreUnavailable", displayName, UiLocalizationService.Present(result.Error));
@@ -772,7 +779,11 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         try
         {
             StatusText = TF("Vm.DownloadingApplyingStreamline", SelectedStreamlineVersion);
+            var from = ComponentHistory.StreamlineVersion(streamlineFolders); // #289
             var result = await _dlss.SwapStreamlineAsync(streamlineFolders, SelectedStreamlineVersion, op.Token);
+            if ((!result.Success && !op.CancelRequested) || result.Results.Any(x => x.Changed))
+                _dlssDefaults.History?.Record(game, ManagedComponentKind.Streamline, ComponentUpdateAction.Update, from, SelectedStreamlineVersion,
+                    result.Success, result.Error, ComponentHistory.StreamlineName);
             if (result.Success)
             {
                 var changed = result.Results.Count(x => x.Changed);
@@ -818,7 +829,11 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         if (op is null) return;
         try
         {
+            var from = ComponentHistory.StreamlineVersion(streamlineFolders); // #289
             var result = await _dlss.RestoreStreamlineAsync(streamlineFolders, op.Token);
+            if (!op.CancelRequested)
+                _dlssDefaults.RecordRestore(game, ManagedComponentKind.Streamline, ComponentHistory.StreamlineName, from,
+                    ComponentHistory.StreamlineVersion(streamlineFolders), result.Success, result.Error);
             StatusText = result.Success
                 ? TF("Vm.StreamlineOriginalDLLSRestored", result.Results.Count)
                 : op.CancelRequested ? OperationCancelledText() : TF("Vm.StreamlineRestoreUnavailable", UiLocalizationService.Present(result.Error));
