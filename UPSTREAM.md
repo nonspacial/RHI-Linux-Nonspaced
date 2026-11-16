@@ -1562,11 +1562,12 @@ never RHI's here). Nexus Mods files reach RHI as dropped add-ons or Luma package
   the operation result; a refused save puts the control back to the saved value and shows the reason.
 - **"Deploy dxvk.conf" reporting success after a failed copy** (not applicable): Linux has no separate dxvk.conf deploy
   button; DXVK HDR writes `dxvk.conf` journaled and its failure is the operation's failed result.
-- **Addon Manager switching an add-on back off silently after a failed download** (already so): the selection apply
-  returns the download failure as its result line.
+- **Addon Manager switching an add-on back off silently after a failed download** (not verified in this lane): the
+  Addon Manager's update path reports a failed download as could-not-check; the selection-apply path was not traced to
+  the end. Left open on #295.
 - **RE Framework "Delete _storage_" stuck on "Deleting…"** (already so): the button is restored in a `finally` and the
   result line is shown.
-- **ReShade hotkey "Applied!" with no reshade.ini** (already so): the INI batch counts only games whose ReShade.ini was
-  written and reports the others.
+- **ReShade hotkey "Applied!" with no reshade.ini** (not applicable): Linux has no per-game hotkey Apply button; keys
+  reach games through "Apply to all games", whose line counts only the ReShade.ini files it wrote.
 - **ReLimiter ⚙ with a separate add-on folder** (already so since #255): the ⚙ finds relimiter.ini in the AddonPath
   folder.
