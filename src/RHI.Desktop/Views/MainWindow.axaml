@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RHI.Desktop.ViewModels"
         xmlns:views="using:RHI.Desktop.Views"
+        xmlns:l="using:RHI.Desktop.Localization"
         x:Class="RHI.Desktop.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel" x:CompileBindings="True"
         Width="1450" Height="900" MinWidth="640" MinHeight="480"
@@ -385,6 +386,18 @@
                             IsVisible="{Binding Nvidia.IsShown}" Click="NvidiaSettings_Click"
                             ToolTip.Tip="{Binding Nvidia.ButtonTip}" ToolTip.ShowDelay="2000"/>
                   </views:ResponsiveRow>
+
+                  <!-- w14/ui-logic (#310): the game's FPS Limit (upstream Driver Settings › FPS Limit), set through DXVK /
+                       VKD3D-Proton launch variables; shown for Wine/Proton games whose launcher takes them. -->
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding FrameRateLimit.IsShown}">
+                    <TextBlock Text="{l:T Fps.Label}" VerticalAlignment="Center" Classes="muted"/>
+                    <ComboBox x:Name="FpsLimitCombo" ItemsSource="{Binding FrameRateLimit.Choices}" SelectedItem="{Binding FrameRateLimit.Selected}"
+                              MinWidth="220" MaxDropDownHeight="300" ToolTip.Tip="{Binding FrameRateLimit.Tip}" ToolTip.ShowDelay="2000"/>
+                    <TextBox x:Name="FpsLimitCustom" Text="{Binding FrameRateLimit.CustomText}" PlaceholderText="20–1000" Width="90"
+                             IsVisible="{Binding FrameRateLimit.IsCustomEntry}"/>
+                    <Button Classes="rhi" Content="{l:T Fps.Set}" Command="{Binding FrameRateLimit.ApplyCustomCommand}"
+                            IsVisible="{Binding FrameRateLimit.IsCustomEntry}"/>
+                  </StackPanel>
 
                   <TextBlock Text="{DynamicResource Ui.DlssNote}" Classes="muted" TextWrapping="Wrap"/>
                 </StackPanel>

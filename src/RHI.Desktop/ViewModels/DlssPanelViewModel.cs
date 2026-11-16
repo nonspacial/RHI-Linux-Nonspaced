@@ -28,6 +28,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
 
     /// <summary>#211: the per-game NVIDIA settings shown in this section (owned and saved by the runtime panel's launch profile).</summary>
     public NvidiaSettingsPresenter Nvidia => Shell.Runtime.Nvidia;
+    /// <summary>#310: the game's FPS Limit, beside NVIDIA settings… (phase 2 moves it into Driver Settings, as upstream).</summary>
+    public FrameRateLimitPresenter FrameRateLimit => Shell.FrameRateLimit;
 
     /// <summary>The selected game's DLSS detection (from its published analysis; empty while none).</summary>
     internal DlssDetectionResult Detection

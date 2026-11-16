@@ -173,6 +173,7 @@ public sealed class SettingsViewModel : PanelViewModel
             // w14/ui-logic rows
             ColourTheme = Host.Settings.ColourTheme, // #301 colour theme
             CustomThemeColours = Host.Settings.CustomThemeColours, // #301
+            GlobalFpsLimit = Host.Settings.GlobalFpsLimit, // #310 global FPS limit
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

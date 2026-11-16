@@ -172,6 +172,13 @@ public sealed class LinuxGameLibraryState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<LinuxGameCollection>? GameCollections { get; set; }
 
+    /// <summary>
+    /// #310 (upstream 2.8.9 per-game FPS limit): a game's own FPS Limit by library key — 0 = Off, 20–1000 = its cap; a game
+    /// without an entry follows the global limit (Global). Null when no game has one, so the file keeps its older shape.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, uint>? FpsLimits { get; set; }
+
     /// <summary>#300: the collection the game list shows (remembered across launches), or null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ActiveCollection { get; set; }
@@ -218,6 +225,10 @@ public sealed class LinuxGameLibraryState
         RemovedGames = removed.Count == 0 ? null : removed;
         GameCollections = LinuxGameCollections.Normalize(GameCollections); // #300
         ActiveCollection = LinuxGameCollections.NormalizeActive(GameCollections, ActiveCollection);
+        var fps = JsonStoreMaps.CaseInsensitive(FpsLimits ?? []); // #310: Off or a cap the layers take
+        foreach (var key in fps.Keys.ToArray())
+            if (fps[key] != RHI.Platform.Linux.Hdr.FrameRateLimit.Off && RHI.Platform.Linux.Hdr.FrameRateLimit.Valid(fps[key]) is null) fps.Remove(key);
+        FpsLimits = fps.Count == 0 ? null : fps;
         return this;
     }
 
@@ -268,6 +279,9 @@ public sealed class LinuxGameLibraryState
             changed |= Move(HdrProfiles, old, key);
         }
         changed |= LinuxGameCollections.ReplaceKeys(GameCollections, OlderKeys(game), key); // #300: collections follow the game
+        if (FpsLimits is not null)
+            foreach (var old in OlderKeys(game))
+                if (!string.Equals(old, key, StringComparison.OrdinalIgnoreCase)) changed |= Move(FpsLimits, old, key); // #310
         return changed;
     }
 
@@ -396,6 +410,7 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
             }
             changed |= move.MoveLibraryEntries(state.HdrProfiles);
             changed |= LinuxGameCollections.ReplaceKeys(state.GameCollections, move.OldLibraryKeys, move.NewLibraryKey); // #300
+            if (state.FpsLimits is not null) changed |= move.MoveLibraryEntries(state.FpsLimits); // #310
             return changed ? state.Normalize() : null;
         });
     }

@@ -193,6 +193,12 @@ Wave 14 — extras-fg
     to default are there too. RHI warns you if text would be hard to read.
   - **Share theme** copies your colours as one line of text (`RHI-THEME:…`) and **Import theme** takes a code someone
     shared. Codes from RHI on Windows work here and the other way round.
+- **Per-game FPS limit** (upstream 2.8.9): the DLSS section of each Wine/Proton game has an **FPS Limit**, so you can
+  cap one game without capping them all. Global follows the new FPS Limit in Settings › DLSS/Streamline, Off turns
+  the limit off for that game, and Custom… takes 20 to 1000; upstream's VRR caps (59 FPS for 60 Hz up to 416 FPS for
+  480 Hz) are in the list. On Linux RHI hands the cap to DXVK (`DXVK_FRAME_RATE`, Direct3D 8–11) and VKD3D-Proton
+  (`VKD3D_FRAME_RATE`, Direct3D 12) when it starts the game; for Steam, Heroic and Lutris it shows the launch options to
+  paste. As upstream, Global does not cap games with ReLimiter or Display Commander, so the two limiters don't fight.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

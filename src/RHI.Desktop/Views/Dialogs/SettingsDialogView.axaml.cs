@@ -66,6 +66,9 @@ public sealed partial class SettingsDialogView : UserControl
             current.ColourTheme = vm.Theme.ThemeId;
             current.CustomThemeColours = vm.Theme.SavedCustomColours;
         }, _ => { }));
+        var fpsRow = new FpsLimitSettingsRow(settings); // #310 global FPS limit (written on Save)
+        Fill("GlobalFpsLimitSlot", fpsRow.Control);
+        model.Host(new(current => current.GlobalFpsLimit = fpsRow.Value(settings.GlobalFpsLimit), defaults => fpsRow.Set(defaults.GlobalFpsLimit)));
 
         // w5 lane rows: Settings rows (build your row object here, put it in its slot, host its values)
         // w5/update-policy rows

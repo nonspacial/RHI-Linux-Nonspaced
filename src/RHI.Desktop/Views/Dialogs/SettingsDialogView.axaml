@@ -125,6 +125,8 @@
                 </ComboBox.ItemTemplate>
               </ComboBox>
             </StackPanel>
+            <!-- w14/ui-logic (#310): the global FPS limit (upstream Settings › FPS Limit). -->
+            <Panel x:Name="GlobalFpsLimitSlot"/>
             <Panel x:Name="OptiScalerTemplatesSlot" IsVisible="False"/>
             <Panel x:Name="FollowNewestSlot" IsVisible="False"/>
             <Panel x:Name="OptiScalerMenuKeySlot" IsVisible="False"/>

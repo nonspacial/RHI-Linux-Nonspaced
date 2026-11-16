@@ -342,7 +342,7 @@ public static class NvidiaLaunchText
     {
         var entry = string.IsNullOrWhiteSpace(game.ParentLauncherName) ? game.Name : XboxCardText.AppName(game.ParentLauncherName)!;
         // The variables the Copy line holds: HDR's only when its profile applies (a blocked one adds nothing to the line).
-        var environment = plan.Enabled && plan.CanApply ? plan.Environment : plan.Nvidia.Environment;
+        var environment = plan.Enabled && plan.CanApply ? plan.Environment : plan.LaunchVariables; // #310: with the FPS limit's
         // "; " between variables: a DXVK_NVAPI_DRS_SETTINGS value holds commas of its own.
         var variables = string.Join("; ", environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={pair.Value}"));
         return plan.Handoff switch

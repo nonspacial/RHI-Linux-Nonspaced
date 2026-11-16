@@ -82,7 +82,10 @@ public static class HdrLaunchText
     public static string? LaunchRefusal(LinuxHdrLaunchPlan plan, bool launcherAcceptsOptions)
     {
         // #211: NVIDIA settings with HDR Off are refused the same way when the launcher takes no options.
-        if (!plan.Enabled) return plan.AppliesAtLaunch && !launcherAcceptsOptions ? T("Nv.LauncherCannotApply") : null;
+        if (!plan.Enabled)
+            return plan.AppliesAtLaunch && !launcherAcceptsOptions
+                ? T(plan.Nvidia.HasVariables ? "Nv.LauncherCannotApply" : "Fps.LauncherCannotApply") // #310: FPS limit alone
+                : null;
         if (plan.Handoff != LaunchHandoff.None) return null;
         if (!plan.CanApply) return TF("Vm.HDRLaunchBlocked", Describe(plan));
         return launcherAcceptsOptions ? null : T("Vm.HDRLaunchProfileEnabledButLauncher");
@@ -97,7 +100,10 @@ public static class HdrLaunchText
     {
         if (plan.Handoff == LaunchHandoff.None) return null;
         // #211: HDR Off with NVIDIA settings chosen: where their launch options go.
-        if (!plan.Enabled) return plan.Nvidia.Shown && plan.Nvidia.HasVariables ? NvidiaLaunchText.ApplyInLauncher(plan, game) : null;
+        if (!plan.Enabled)
+            return plan.Nvidia.Shown && plan.Nvidia.HasVariables ? NvidiaLaunchText.ApplyInLauncher(plan, game)
+                : plan.FrameRate.HasVariables ? FrameRateLimitText.ApplyInLauncher(plan, game) // #310
+                : null;
         return plan.CanApply ? ApplyInLauncher(plan, game) : TF("Hdr.HandoffProfileBlocked", Describe(plan));
     }
 

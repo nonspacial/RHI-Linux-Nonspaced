@@ -111,6 +111,11 @@ public sealed class LinuxAppSettings
     public string ColourTheme { get; set; } = RHI.Core.Services.ThemePresets.DefaultId;
     /// <summary>#301 (upstream <c>CustomThemeColors</c>): Custom's colours, "Background=#RRGGBB;Panel=#RRGGBB;…"; null = none picked yet.</summary>
     public string? CustomThemeColours { get; set; }
+    /// <summary>
+    /// #310 (upstream 2.8.9 Settings FPS Limit): the FPS cap RHI gives every game it launches through DXVK_FRAME_RATE /
+    /// VKD3D_FRAME_RATE, unless the game has its own (or ReLimiter / Display Commander). 0 = Off, else 20–1000.
+    /// </summary>
+    public uint GlobalFpsLimit { get; set; }
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -191,6 +196,7 @@ public sealed class LinuxAppSettings
         // w14/ui-logic rows
         ColourTheme = NormalizeColourTheme(ColourTheme); // #301
         CustomThemeColours = string.IsNullOrWhiteSpace(CustomThemeColours) ? null : CustomThemeColours.Trim();
+        GlobalFpsLimit = RHI.Platform.Linux.Hdr.FrameRateLimit.Valid(GlobalFpsLimit) ?? 0; // #310
         return this;
     }
 

@@ -2335,3 +2335,26 @@ use another mapping.
   rather than a dialog. Fluent's own control templates (scroll bars, drop-down surfaces) keep Avalonia's dark colours,
   as upstream leaves WinUI's own resources alone. Upstream 2.9.5's theme polish is not ported: 2.9.5 is still in
   beta (latest release RHI-2.9.4 on 2026-11-16).
+
+### #310 — Per-game FPS limit (2.8.9; owner decision 2026-11-16 for the Linux equivalent)
+
+- Upstream sets the NVIDIA driver profile's FPS Limiter V3 (`0x10835002`) per game, with a global value on the base
+  profile. There is no driver profile under Wine/Proton, so RHI sets `DXVK_FRAME_RATE` (DXVK, Direct3D 8–11) and
+  `VKD3D_FRAME_RATE` (VKD3D-Proton, Direct3D 12) in the game's launch variables, both at once (each layer reads its own),
+  the way #211 hands the NVIDIA settings over: in the environment of a direct launch, or in the launch options shown
+  for Steam / Heroic / Lutris. Nothing is written to disk, the prefix or the game. Unlike the NVIDIA settings, it does
+  not need an NVIDIA GPU or a DLSS file; it is not offered for native Linux games or for store clients and the Xbox app,
+  which take no launch variables.
+- Choices as upstream: Global (named with the global value), Off, upstream's VRR presets, a game's own custom value just
+  above Custom…, and Custom… (20–1000; any other value is refused and nothing changes). Settings › DLSS/Streamline has
+  the global FPS Limit (Off, the presets, Custom…), written on Save.
+- Upstream's rule that a cap turns off the ReLimiter / Display Commander per-game limit: upstream writes the driver limit
+  Off into those games (on their install and whenever the global cap is set) and clears it on uninstall. Linux applies
+  the same outcome when the plan is built: a game on Global with ReLimiter or Display Commander installed by RHI gets no
+  cap; a value chosen for the game itself still applies, as upstream lets the user set one afterwards. Deviation: an
+  explicit per-game value is never overwritten by an install or a global change (upstream's writes would reset it to Off).
+- Storage: the per-game choice is in the library file (`FpsLimits`, by library key, following key changes and Repair
+  after move; Global = no entry), the global one in settings.json (`GlobalFpsLimit`, 0 = Off).
+- Placement: the FPS Limit row is in the DLSS section beside NVIDIA settings… for now; the phase-2 layouts move it into
+  Driver Settings with upstream's other driver rows. Launch and hand-off lines say "FPS limit" when it is the only thing
+  applied, and use the NVIDIA settings' wording (the pasted line then carries both) when NVIDIA settings are chosen too.
