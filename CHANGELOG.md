@@ -29,6 +29,9 @@ Mods list
   it down, e.g. "luma dead".
 - **Source engine games** that RenoDX's Source add-on supports (Half-Life 2, Portal, Left 4 Dead 2 and so on) are
   listed. Installing the Source add-on from RHI comes with a later upstream release.
+- **HDR Gaming Database links are back** in the game card menu and the ⓘ dialog: the database's README changed how it
+  lists games in November 2026 and RHI found none in it. If the list changes shape again, RHI keeps the last list it
+  could read instead of dropping the links.
 
 Components
 
@@ -37,7 +40,18 @@ Components
   install or update moves RHI's copy into the AddonPath folder (also for MFG Ada Unlock, ReLimiter, Display Commander
   and the Addon Manager's add-ons, which already installed there). A copy you changed is left alone and the update says
   so; a same-named file in the game folder that is not RHI's is left there and named. The component rows also find
-  add-ons in an AddonPath folder outside the game folder.
+  add-ons in an AddonPath folder outside the game folder. The move counts as an update, so Update and Update All make
+  it even when there is no new release. A Windows-style AddonPath (`C:\ReShade\Addons`, `Z:\home\…`) is found in the
+  game's Wine prefix; one RHI cannot find there is refused with a message instead of creating a stray folder.
+- **OptiScaler F5 DLSSNR installs and updates again.** Since v0.1.37 its release names the package differently
+  (`v0.1.37-Optiscaler-F5.zip`), and RHI found no package. Both names work now, the optional companion downloads are
+  never taken, and a release with two packages is refused with both names shown instead of RHI guessing.
+- **RTX 20 FG Unlock (DLSSG 20/30) installs the mod's 0.4 release package**: the proxy DLL, `dlssg_sm86.ini` and the
+  `dlssg_sm86` folder. RHI used to place only the DLL, so frame generation never started. The package detects the card
+  itself, so RHI no longer writes a `Router=` setting. The proxy can be version.dll, winmm.dll, dbghelp.dll,
+  dinput8.dll, dxgi.dll or d3d12.dll; winhttp.dll is no longer offered. **Existing installs are repaired by Update or
+  Update All**: an old single-DLL install gets the full package, and an install on winhttp.dll moves to version.dll
+  (refused if another file already has that name). Your own changes to `dlssg_sm86.ini` are kept.
 
 Settings
 
