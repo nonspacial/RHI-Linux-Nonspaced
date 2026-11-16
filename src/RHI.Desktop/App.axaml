@@ -210,6 +210,8 @@
 
   <Application.Styles>
     <FluentTheme />
+    <!-- w14/layouts-a (#301 owner decision): Custom theme colours have a real colour picker. -->
+    <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"/>
 
     <!-- Every generated/configuration window inherits the same RHI-Linux surface. -->
     <Style Selector="Window">
@@ -291,6 +293,10 @@
     </Style>
     <Style Selector=":is(TextBlock).warningStatusText">
       <Setter Property="Foreground" Value="{DynamicResource RhiWarningBrush}"/>
+    </Style>
+    <!-- w14/layouts-a: error lines in code-built Settings rows (were Brushes.IndianRed). -->
+    <Style Selector=":is(TextBlock).errorText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiErrorTextBrush}"/>
     </Style>
     <Style Selector=":is(TextBlock).alertText">
       <Setter Property="Foreground" Value="{DynamicResource RhiAlertBrush}"/>
@@ -523,7 +529,7 @@
       <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
     </Style>
     <Style Selector="Button.rhi.favourite.on">
-      <Setter Property="Foreground" Value="{DynamicResource RhiWarningBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiFavouriteBrush}"/>
     </Style>
     <!-- #309 (upstream 2.8.9): a greyed library name means ReShade isn't installed for that game. -->
     <Style Selector="TextBlock.libraryName">

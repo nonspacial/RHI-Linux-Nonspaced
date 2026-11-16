@@ -212,7 +212,7 @@ internal static class OptiScalerAllSettingsViews
             saveNote.Text = presenter.SaveNote;
             saveNote.IsVisible = presenter.SaveNote.Length > 0;
             message.Text = presenter.Message;
-            message.Foreground = presenter.MessageIsError ? Brushes.IndianRed : null;
+            message.Classes.Set("errorText", presenter.MessageIsError);
             message.IsVisible = presenter.Message.Length > 0;
         }
         NotifyCollectionChangedEventHandler changed = (_, _) => FillList();

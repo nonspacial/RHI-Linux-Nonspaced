@@ -2105,5 +2105,8 @@ internal static class UiStrings
         // Upstream 2.9.4 Game settings: the ⚙ beside the game's title.
         ("Gs.Title", "Configurações do jogo", "Game settings"),
         ("Gs.Intro", "Configurações que valem só para este jogo.", "Settings that apply to this game only."),
+        // w14/layouts-a: Custom theme colour picker (#301 owner decision).
+        ("Theme.PickerTip", "Escolher a cor de {0}.", "Pick the {0} colour."),
+        // w14/layouts-a: end of rows (layouts).
     ];
 }

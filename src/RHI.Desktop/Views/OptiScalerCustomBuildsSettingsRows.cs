@@ -30,7 +30,7 @@ internal sealed class OptiScalerCustomBuildsSettingsRows : IOptiScalerCustomBuil
         var body = new StackPanel { Spacing = 10, Margin = new Thickness(0, 12, 0, 0) };
         body.Children.Add(new TextBlock { Text = T("Osc.Title"), FontSize = 16, FontWeight = FontWeight.SemiBold });
         body.Children.Add(new TextBlock { Text = T("Osc.Description"), TextWrapping = TextWrapping.Wrap, Opacity = 0.8 });
-        body.Children.Add(new TextBlock { Text = T("Osc.TrustWarning"), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange, Name = "OptiScalerCustomBuildsTrust" });
+        body.Children.Add(new TextBlock { Text = T("Osc.TrustWarning"), TextWrapping = TextWrapping.Wrap, Classes = { "warningText" }, Name = "OptiScalerCustomBuildsTrust" });
         body.Children.Add(_list);
 
         var link = new TextBox { PlaceholderText = T("Osc.LinkPlaceholder"), Name = "OptiScalerCustomBuildLink" };
@@ -75,7 +75,7 @@ internal sealed class OptiScalerCustomBuildsSettingsRows : IOptiScalerCustomBuil
         {
             _status.Text = presenter.Status;
             _status.IsVisible = presenter.Status.Length > 0;
-            _status.Foreground = presenter.StatusIsError ? Brushes.IndianRed : null;
+            _status.Classes.Set("errorText", presenter.StatusIsError);
             if (link.Text != presenter.LinkText) link.Text = presenter.LinkText;
             addLink.IsEnabled = addFile.IsEnabled = addFolder.IsEnabled = !presenter.IsBusy;
         });

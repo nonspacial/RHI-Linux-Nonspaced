@@ -78,6 +78,13 @@ public static class ThemeResources
         ("RhiUpdateBrush", "#B898E8"),
         ("RhiWarningBrush", "#D4A856"),
         ("RhiWarningTextBrush", "#D7B65A"),
+        // w14/layouts-a: the favourite star's amber (upstream 2.9.4 FavLook). Mapped like upstream's: it follows the theme's
+        // Warning colour, so it stays #F0C35A in every theme whose Warning is the default amber.
+        ("RhiFavouriteBrush", "#F0C35A"),
+        ("RhiFavouriteTintBrush", "#221C10"),
+        ("RhiFavouriteBorderBrush", "#4F4123"),
+        // w14/layouts-a: the swatch outline in Settings › Colour theme (was Brushes.Gray).
+        ("RhiSwatchBorderBrush", "#808080"),
         ("RhiErrorTextBrush", "#F08A8A"),
         ("RhiAlertBrush", "#FF4500"),
         ("RhiRemoveBackgroundBrush", "#281818"),
