@@ -2501,3 +2501,191 @@ gap). No clash, so nothing is renumbered; 26–29 are free and nothing reads the
 ### #272 — ANR FG preset (2.9.3)
 
 - Upstream's recommended "ANR FG" preset (`installAnrFg`, `optiscaler_presets.json` `presetsV2`) is offered now. Applying it shows the closed-source notice first (#285, the extras-fg lane's `InstallNoticePresenter`, with ANR FG's GitHub page as its link and "Don't show this again"); declined, nothing is installed or applied. Then the game's OptiScaler DLL (RHI's install, under its DLL name) must contain OptiScaler's "Custom DLSSG" text, as upstream checks, so Nightly from 29 Oct 2026 and forks or custom builds based on it count; otherwise the line says to choose such a version. ANR FG's newest release (apex-compute/ANR `releases/latest`) gives its one `*-addon.zip`; the `Apex Neural Rendering FG` folder goes to `OptiScaler/custom/` (or `custom/` beside a flat build), where OptiScaler loads custom providers, and the preset's `FGInput=nvngxfg`, `FGNvngxReplacement=Apex Neural Rendering FG` are applied after it. A `nr_fg.ini` already there (ANR's own settings) is kept, as upstream. Linux deviations: the zip must be vouched for by GitHub's published digest or the release's `SHA256SUMS.txt` (upstream accepts a release without the checksum file) and the two must agree; every asset link must be under apex-compute/ANR's releases; the files are journaled and recorded on OptiScaler's record, so removing OptiScaler removes them and an update leaves them; a file in that folder RHI did not put there refuses the install (nothing changes); the user's `nr_fg.ini` is never recorded, so it is never removed; the zip's scripts (`install.cmd`, `install.sh`…) are not used. Upstream keeps one staged copy for all games and logs a "Frame Generation" history entry when it changes; RHI caches per tag in `~/.cache/rhi-linux/anr-fg/` and installs per game.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane ui-settings)
+
+### #296 — Settings: eight sections, section index, Find a setting, Tabs (2.8.9/2.9.3)
+
+- **Layout (upstream `SettingsHandler.Navigation`, MainWindow.xaml `Section:*`).** Settings is one page of upstream's eight sections in its order and with its titles: General, Accounts & Data, ReShade & RenoDX, Display & HDR, DLSS / Streamline, Driver Settings, Components, Tools & Maintenance. Each section is made of cards of one row layout (`SettingsLayout`: name on the left, control on the right, a short help line under, the full explanation as the tooltip). Booleans are Off / On dropdowns as upstream. The former tabs and every lane's row sit where upstream has them: General › Updates (RHI-Linux update check, Components to check, Automatic updates: Components, DLSS, Streamline), General › Windows (tray, language, view mode, MOTD), Accounts & Data (GitHub token, Nexus Mods), ReShade & RenoDX › Keys, screenshots and brightness and › Shaders and addons, Components › ReLimiter and OptiScaler, GITC Uplift and Custom OptiScaler builds, Tools & Maintenance › Custom game folders first, then Tools (Deploy to many games, Folders and logs) and Troubleshooting (Clear cache, Reset settings, Removed games).
+- **Section index, last section, Find, Tabs.** The index on the left follows the scroll; Settings reopens on the section left last (`SettingsLastSection`, saved when Settings closes). Find a setting searches names first, then help lines and tooltips, one result per setting with "Section › Card › Sub-heading", at most 60; a result centres the setting and outlines it and its card for 1.5 s. The Tabs button shows one section at a time with a tab strip (`SettingsTabbed`). A window narrower than the index plus 560 px puts the search on top and drops the index, as upstream.
+- **Save on change.** There is no Save button: a change is saved a moment after it is made (one save per gesture); an edit that changes no setting writes nothing. A typed folder is saved on Enter or when the box loses focus, so a half-typed path is never refused mid-word.
+- **Upstream's renamed labels**: Overlay key (ReShade, ReLimiter and OptiScaler), Target FPS, DLSS hooks, DLSS inputs, Components to check, HDR brightness (RenoDX) › Peak brightness, Write these to all games / Write peak brightness to all games / Write to all ReLimiter games / Write key to all OptiScaler games.
+- **Red destructive buttons** (Clear cache, Reset settings); each asks first, and the question's default (Enter and Esc) is Cancel.
+- Linux deviations: Settings is a window the size of the main window rather than a page that replaces the game list (the main window's layouts are the next lane's). Left out as Windows-only (#313): Start with Windows, Recent games in tray menu, Admin Mode and Drop Helper, Mod data source (Linux reads the RHI database only), the Display card's Windows HDR / desktop resolution switch, Output colour, Digital vibrance and DLDSR, the DLSS indicator and multi frame generation defaults, every NVIDIA driver profile default and the Profiles card. Driver Settings keeps its place with one card saying where the Linux equivalents are (each game's NVIDIA settings become launch variables). Linux additions are placed where a Windows user would look: tray icon and language in General › Windows, the default ReShade channel and ReShade.ini search paths in a "ReShade defaults (Linux)" card, Xbox / Game Pass folders beside Custom game folders, settings/cache/data paths in Folders and logs. The DLSS defaults are edited in place (upstream: "Configure defaults" opens a dialog); Batch deploy opens the DLSS batch.
+
+### #312 — Hide the HDR / Resolution buttons (2.9.3)
+
+- Display & HDR › Display › When a game starts: "HDR button on game pages" and "Resolution button on game pages", Show / Hide (upstream `ShowHdrLaunchButton` / `ShowResLaunchButton`). Linux: the "buttons" are the HDR row and the Resolution row of the game panel (#251/#191). Hiding only hides the row (`ShowHdrRow`, `ShowResolutionRow`): the launch logic still reads `ShowHdrSection`, so a game's own HDR and resolution choice still applies when it is launched from RHI.
+
+### #302 — Tooltips (2.8.9)
+
+- Library filters, each game-panel section's heading and collapsed summary, the DLSS defaults summary (SR / RR / FG / NR / SL spelled out), and the Graphics API and Engine / architecture labels explain themselves (EN and PT-BR); a control that already had a tooltip keeps it. Greyed settings say why: Close to tray without a tray icon, Write these to the selected game without a game, Batch deploy without DLSS games.
+- Not ported: the update-dot and Components-version tooltips of upstream's library rows — the Linux library rows carry no update dots or versions.
+
+### #297 — One layout for every component ⚙ (2.8.9 / 2.9.0, end state 2.9.4)
+
+- Every component ⚙ is built on one shared layout, as upstream's `CogDialog.cs`: `Views/Cog/CogDialog.cs` (the builder:
+  `AddIntro` / `AddWarning` / `AddNote` / `AddEmpty` / `AddSection` / `AddRow` / `AddCombo` / `CompactCombo` /
+  `AddCompactGrid` / `AddButtons` / `MakeOpenFileButton` / `SetStatus` / `SetSuccess` / `SetError` / `UseApplyButton`), its
+  pieces `CogCard`, `CogRow` (name in a 170 px column, option beside it, explanation under it and as the 2 s tooltip),
+  `CogCell` + `CogCompactGrid` (two per row, explanation as the tooltip), and `CogWindow` (the "<Component> Settings" heading,
+  the scrolling body, an optional pinned footer, and the button bar). The AXAML ⚙s (RenoDX, OptiScaler, and the shared
+  template of 20/30 FG Unlock, DLSS Enabler, Universal MFG Unlocker, RTX Encore and MFG Unlock) use the same pieces inside
+  `CogWindow`. Colours come from App.axaml brushes through style classes (`cogCard`, `cogLabel`, `cogHelp`, `cogStatus`, …);
+  new brush keys: `RhiCardBrush`, `RhiCardBorderBrush`, `RhiDialogBarBrush`, `RhiWarningTextBrush`, `RhiSuccessTextBrush`,
+  `RhiDisabledForegroundBrush`, `RhiDisabledBorderBrush`.
+- Two per row, as upstream: RenoDX's Compatibility card, OptiScaler's OptiScaler.ini groups (one card per group), Display
+  Commander's settings and RTX Encore's sections (upstream's `AddCompactGrid` there too, 2.9.1–2.9.4).
+- Results and errors show in the ⚙'s own status line (green / red / neutral in the code-built ⚙s; neutral in the AXAML ⚙s,
+  whose view models report a line without a tone). The main window's status line still gets them where it did before.
+- Save on change: every dropdown saves the moment it changes and goes back to the saved value when the save is refused or
+  fails (the message shows inside the ⚙). The DX9 HDR preset lost its Apply button (upstream's Lilium Preset "Changing it
+  rewrites dxvk.conf"); HSF's DirectX 12 mode and iMMERSE Launchpad (now an Off/On row, was a checkbox) report whether they
+  were saved and go back when not. The ⚙ window has Close only; `UseApplyButton` (Apply / Cancel) exists for slider dialogs
+  as upstream's RTX HDR / Auto HDR, which Linux does not have, so no ⚙ uses it today. Kept actions that are not settings:
+  "Deploy X.ini", "Restore backup", typed values with a Set button (Display Commander's custom FPS, RenoDX's maximum nits —
+  upstream's typed rows also have Set / Enter), OptiScaler's All Settings Apply (upstream 2.9.3 has it), and the OptiScaler
+  Nightly build row's Apply (it reinstalls a different build; see owner decision 3).
+- "Nothing to set": an empty ⚙ says "This component has no settings." (upstream `AddEmpty`). DOF Fix's row gets that ⚙
+  (column 4, as upstream's DOF Fix cog). Luma's ⚙ now shows on every game RHI installed Luma on; on a game that is not Unreal
+  Engine it says "Luma's settings are for Unreal Engine games. This game has nothing to set here." (upstream's text).
+- Open buttons, as upstream: Open ReShade.ini and Open ReShade.log (ReShade's Files card), Open relimiter.ini and Open
+  ReLimiter log (the newest `relimiter_*.log` beside the add-on; upstream takes the first one in the game folder), Open
+  DisplayCommander.ini, Open OptiScaler.ini (OptiScaler.ini card), Open HSF.ini and Open helper log
+  (`HSF_streamline/hsf_dlssg.log`), plus the existing Open dlssg_sm86.ini / log, MFGAdaUnlock.ini and rtx-encore.jsonc. A
+  missing file's button is disabled (its path is the tooltip); a failing desktop opener says so inside the ⚙.
+- GITC Uplift's NR on/off key has no ⚙ (upstream keeps it in Settings › Components); its save-on-press is the Settings
+  lane's (w14/ui-settings `0f6ebadb`), so nothing changed here.
+- #302 (tooltips, done with the ⚙ work): RTX Encore's ⚙ rows carry upstream's per-setting explanations (2.9.4
+  `DetailPanelBuilder.Extras.RtxEncoreSettings`; Smooth Motion's mention dropped from Engine's, as Linux leaves Smooth
+  Motion out; "Press Enter or click away" reads "Click away", the box saves on losing focus). A greyed ⚙ control says why
+  on the control itself (tooltip shown on disabled controls), the reason first, then the explanation: RTX Encore's
+  Multiplier (Fixed mode only), Dynamic target / up to 6x (Dynamic only), the XeFG engine rows (XeFG only), XeSS on Tensor
+  Cores (Upscaler XeSS only), Custom render scale (Custom only), every row before RTX Encore is installed; MFG Unlock's
+  DLSS-SR input (XeMFG CUDA only) and its rows before install; 20/30 FG Unlock's rows before install; the FG unlocks' /
+  DLSS Enabler's GPU generation and DLL name while installed ("Locked while installed: remove and reinstall to change it").
+  OptiScaler's channel, release and DLL name already said why in their tooltips.
+
+Linux deviations:
+
+- The ⚙ is a separate modal window (Avalonia), not a ContentDialog, and not embedded in Spotlight's side panel or under the
+  row in Tabs (upstream 2.9.x `EmbeddedShow`): the fork has no Spotlight / Tabs layouts.
+- OptiScaler's footer (Open OptiScaler.ini, Replace with a fresh copy…, Save ini / Load saved ini) is the last card of the
+  scrolling body, not pinned under it: the OptiScaler ⚙ is an AXAML view inside `CogWindow`'s scroll. "Replace with a fresh
+  copy…" asks inline (upstream: a flyout).
+- The status line of the AXAML ⚙s has no green / red tone (their view models' lines carry no success flag).
+- Sections follow the fork's content where it differs from upstream (content parity is other issues): ReShade's ⚙ has
+  Loading, Files and the fork's Presets (no Hotkeys / "Keep ReShade.ini Updated" card); ReLimiter's has Files only (its
+  frame-limiter rows are in Settings); RenoDX's first card is UE-Extended, maximum nits, the Engine.ini rows, then
+  Compatibility (no Presets export / import, no RTX HDR / Auto HDR cards); DLSS Enabler keeps its DLL name and Check /
+  Update (upstream: no settings); ASI Loader has no ⚙ (it is an Extras row here, its DLL name is in the row); the RenoDX
+  maximum-nits row has no "Auto" (Windows reads the monitor's peak luminance).
+- Section names are upstream's where they exist: Files, Loading, Frame Rate, Reflex, Other, Unreal Engine, Compatibility,
+  This game / DirectX 12 / Motion (HSF), DXVK (DX9 HDR's preset), Version (OptiScaler).
+
+### #298 — Status bar: background activity, last and next update check (2.9.2)
+
+Upstream's bottom-left status text shows, in order, a short-lived message, loading progress, the newest background
+activity ("Checking for updates...", "Updating DLSS to …", "Checking custom game folders..."), offline/error lines, and
+otherwise "Last checked: 18m ago · Next check in 2h 41m"; the Settings page has a countdown panel. Ported as
+`StatusBarPresenter` over the #292 cadence (`UpdatesViewModel.LastPass` / `NextPass`: 4 h without a GitHub token, 1 h
+with one, counted across restarts) with upstream's formatting (`StatusBarText`: "Just now", "18m ago", "1h 18m ago",
+"2d 3h ago", "Not yet"; "under a minute", "2h 41m"; Settings' "2h 41m 20s" / "Any moment" / "After startup"), EN and
+PT-BR. Activities (`BackgroundActivity`, newest still running wins): Refresh's library scan ("Scanning your games..."),
+the automatic update pass ("Checking for updates..."), Follow newest's manifest check and its swap ("Checking for newer
+DLSS and Streamline..." / "Updating DLSS and Streamline to the newest...") and the custom game folders scan.
+Linux deviations: RHI's status lines stay on the bar for 10 s (`MessageDuration`, upstream's messages last 2–30 s) and
+the last one stays readable in the bar's tooltip ("Last message: …"), because Linux status lines cannot be told apart
+into upstream's kept "offline"/"Error" kinds; an activity outranks the stale status line of a background pass holding
+the busy gate; the bar refreshes every second while the window is shown (upstream: every 15 s plus a refresh at each
+message's end); there is no "Minimal" background-check mode on Linux, so the idle line never says "Last full check";
+while automatic updates are off (no pass scheduled) the line has no "Next check in" part. Upstream's Settings countdown
+panel is Settings › General › Updates › "Next check in" / "Last checked" (ticking once a second while Settings is open),
+from the same clock and stamps (`StatusBarText.Countdown`, `StatusBarText.LastChecked`).
+
+### #309 — Small UI parity (2.8.9–2.9.2)
+
+- **Quick Start rewritten** (2.8.9): Help's Quick Start is upstream's guide in upstream's order and layout (a round
+  badge and title per step, the text, a tip box): welcome with the GitHub token first, select a game, ReShade, RenoDX
+  and Luma, shaders, DOF Fix and frame limiters, DLSS / Streamline, Neural Rendering (DLSS 5), OptiScaler, frame
+  generation unlocks and Extras, HDR and resolution on launch, adding games, updating, troubleshooting
+  (`QuickStartGuide.Steps`). Every step names this app's own buttons and sections (☰ Library, Launch / Game, ReShade
+  profile, Managed components, Batch DLSS, NVIDIA settings…, Copy launch profile, Repair after move, …); a test checks
+  each named label against the app's current text in both languages. Left out or said the Linux way: upstream's
+  Driver Settings / NVIDIA profile and Admin Mode (Linux sets driver options as launch options), Windows HDR (Linux:
+  the HDR mode, Gamescope or native Wayland), the global Vulkan layer in ProgramData (each Vulkan game has its own),
+  the system tray's jump list, VSync/ReBAR, dgVoodoo2 and DXVK (Proton's), and Settings tab names (the Settings window
+  is being rewritten by another lane, so the guide says "Settings").
+- **Message of the day links** (2.9.0): Markdown `[text](url)` links and bare web addresses in the message are
+  clickable, opened by the desktop opener (`MotdText`, `MotdView`). Only absolute http/https links without credentials
+  become links; any other target (file:, javascript:, relative) shows as its text only. Upstream renders the whole
+  message as Markdown; Linux keeps the message plain text (no emphasis, lists or headings) and only adds the links,
+  and keeps single line breaks as upstream does.
+- **What's New** (2.9.2): a version list down the left with a small search box above it, an arrow that hides both to
+  widen the notes, and + / − for the text size (10–20), both remembered (settings `WhatsNewNavHidden`,
+  `WhatsNewFontSize`). The search narrows the list to the versions that mention the text, shows each one's hit count
+  and every matching line under its `###` heading, capped at 400 lines (upstream's `MatchingLines`); Esc clears it,
+  Enter searches at once, otherwise 250 ms after typing stops. Linux: the notes are this project's CHANGELOG.md, one
+  entry per `##` section (a wave or release, the list shows the heading up to its dash or colon), and the text above
+  the first section is shown above the newest one, as upstream's preamble; no controller focus behaviour.
+- **Support the Mod Authors: Ko-fi and Patreon** (2.9.2): the manifest's `patreonUrls` is read (added to the manifest
+  document beside `donationUrls`); an author gets a Ko-fi button and a Patreon button, Ko-fi first, and one Patreon
+  button when the donation link is a Patreon already (RoseTheFlower). An author with only a Patreon is listed with it.
+  Links go through the same https-only filter as the donation links (a bad Patreon link is left out, the author keeps
+  Ko-fi). "Patreon" now labels patreon.com links (it was the host). Pinned with upstream 2.9.4's manifest entries
+  (Lazorr, SammiLucia, RoseTheFlower). The dialog keeps its one-column list (upstream: two cards across).
+- **Store badge opens the Steam Community page** (2.8.9): a left click on the game header's store badge opens
+  `steamcommunity.com/app/<id>` through the desktop opener, with the hand cursor and a tooltip line saying so. The id
+  is the manifest's `steamAppIdOverrides` first, then the Steam library's app id, as upstream; upstream's third source
+  (PCGamingWiki's central data) is not kept on Linux, so a non-Steam game the manifest doesn't map has no link.
+- **Greyed names mean no ReShade** (2.8.9): a library name is greyed when ReShade isn't installed for that game (an RHI
+  ReShade record, or a ReShade.ini beside the confirmed game: the Installed filter's ReShade) and the card's tooltip says
+  so. The fact is worked out off the UI thread with the other library facts (after a scan and after every operation);
+  until it is known the name is not greyed. Upstream's running-game green background is not ported here.
+- **Author badge "RenoDX: Marat"** (2.8.9): the RenoDX and Luma rows' credit reads "RenoDX: Marat" / "Luma: Pumbo"
+  instead of "by Marat" (another credited row would use its own name).
+- **A game added by hand opens straight away** (2.9.0): after Add game (or dropping its exe, which opens Add game), the
+  game is selected; the search box, the active saved filter and the filter tab are cleared only when they would hide it,
+  in that order. Before, Add game always reset the filter tab to All and saved that. The custom game folders' review
+  (several games at once) keeps its own behaviour.
+- **HDR / RES tooltips** (2.8.9): hovering the HDR mode list and the "Change resolution while playing" switch says
+  whether each is on for the game ("HDR on launch: On, Gamescope (set for this game)…"). Linux keeps both per game only
+  (there is no global HDR or resolution setting), so upstream's "following Settings › Display & HDR" never applies;
+  the resolution tooltip keeps the existing explanation (Gamescope included) in the middle.
+- **Quieter Favourite** (2.8.9): the header's Favourite button reads "★ Favourited" in amber once on, with the same
+  quiet border as the buttons beside it, and upstream's two tooltips. Colours are App.axaml brushes
+  (`RhiFavouriteBrush`, `RhiLibraryNameBrush`, `RhiLibraryNameDimBrush`) for the colour-theme lane.
+
+### Game settings ⚙ (2.9.4) — Block Steam updates (#290) and Remove from RHI (#293)
+
+Upstream 2.9.4 puts "Block Steam updates" in the Game settings cog beside a Steam game's title (its 2.9.4 source is
+not published at the tag; the cog's layout follows 2.9.3's `DetailLayoutHost.GameSettings`: a title, "Settings … that
+apply to this game only", one row each with a label, a one-line description and the control on the right). Ported as
+a ⚙ button beside the title in the game header, opening a panel (an Avalonia flyout) with the Block Steam updates
+switch (On/Off; a refused change, e.g. while Steam updates the game, springs back and the status line says why).
+The header actions "Block Steam updates" / "Allow Steam updates" beside Favourite / Hide are gone. The ⚙ shows when a
+row applies; a game added by hand has none (it keeps Remove manual game in the header).
+Remove from RHI: upstream's Classic+ keeps it in the **Management** section (`DetailPanelBuilder.Overrides.Dxvk.cs`
+`BuildManagementSection`, the non-Tabs branch, beside Change install folder, Reset install folder, Reset Overrides and
+Copy Report) — Management is not Tabs-only. Linux has no Management section yet, so until it is ported Remove from RHI
+is the second row of the ⚙ panel (a red "Remove from RHI…" button that closes the panel and asks with the existing
+confirmation and uninstall offer), rather than staying a header action beside Favourite / Hide, which upstream never
+had. Upstream 2.9.3's other cog rows (RHI overlay, Display modes) are not ported (no overlay or display modes here).
+
+### #317 follow-up — a DLSS5 Tool install brings the game's DLSS to the newest
+
+Upstream's DLSS5 Tool install (and DLSS5 Tool + DX11 Bridge) also deploys the newest DLSS SR/RR/FG (and NR) DLLs with
+`.original` sentinels and records them as DLSS5 Tool's shared files, restoring them on removal. Linux: after the add-on
+is in place, the install asks the DLSS / Streamline section's own swap service (`LinuxDlssDefaultsService
+.ApplyNewestDlssAsync`: Quick Apply with SR/RR/FG set to the section's "Latest"; the shell's instance, with its Update
+History), so DLSS5 Tool never owns those files: the swapped files keep `.original` backups that the DLSS section's
+Restore puts back, each swap is a DLSS Update History entry, the writes are the section's journaled transactional
+swaps, the ownership exclusions hold (OptiScaler, a Neural Rendering owner, ShortFuse / DLSS5 Feeder Full stacks), DLSS
+1.x is never replaced, and a running game is left for later. The install's message names the families changed ("SR,
+FG"). Deviations: only DLSS files the game already has are upgraded (the DLSS section never invents a target; upstream
+places missing ones); Streamline and the NR DLL are not part of this step (the NR DLL stays DLSS5 Tool's own rule);
+removing DLSS5 Tool leaves the upgraded DLSS files (restore them in the DLSS section), where upstream restores them;
+a game whose update inclusion leaves DLSS out (#178) keeps its DLSS files, as Follow newest does (taken as the
+"pinned choice" the DLSS section respects; "hidden" versions are respected by using the section's "Latest"); a failure
+of this step never fails the install. The DLSS5 Tool row's note now says the install does this, instead of "for the
+newest DLSS use the DLSS section".

@@ -239,6 +239,58 @@ Wave 14 — extras-fg-2
   can load it (Nightly from late October 2026, or a build based on it), then downloads the newest ANR FG release,
   checked against its published hashes, into OptiScaler's custom folder. Your `nr_fg.ini` is kept.
 
+### Wave 14 — ui-settings
+
+- **Settings looks like upstream's** (upstream 2.8.9/2.9.3): eight sections in upstream's order with an index on the
+  left, Find a setting (it scrolls to the setting and outlines it), a Tabs button for one section at a time, and
+  Settings reopens where you left it. Settings save as soon as you change them; there is no Save button. Clear cache and
+  Reset settings are red and ask first, with Cancel as the default (#296).
+- **Hide the HDR or Resolution row on game pages** (upstream 2.9.3): Settings › Display & HDR. The game's own choice
+  still applies when you launch it (#312).
+- **More tooltips** (upstream 2.8.9): the library filters, section headings and summaries, the DLSS defaults
+  abbreviations, and greyed settings say why they're greyed (#302).
+- Every component ⚙ now looks the same, as in RHI 2.9.0: cards, the setting's name on the left with its option beside
+  it,
+  a short explanation under each setting, and a scroll bar when there is a lot to show. RenoDX's and OptiScaler's
+  compatibility settings (and Display Commander's and RTX Encore's) stay two per row; hover a setting for its
+  explanation (#297).
+- Messages such as "Deployed ReShade.ini", a saved setting or an error now appear inside the ⚙ window, not only on the
+  game
+  page behind it (#297).
+- Settings in a ⚙ save as soon as you change them; one that can't be saved goes back to its saved value and the ⚙ says
+  why.
+  DX9 HDR's preset no longer needs Apply. The ⚙ window has a Close button (#297).
+- New buttons to open ReShade.ini, ReShade.log, relimiter.ini, the ReLimiter log, DisplayCommander.ini, OptiScaler.ini,
+  HSF.ini and HSF's helper log from their ⚙ (#297).
+- Components with nothing to set say so: DOF Fix has a ⚙ that says it has no settings, and Luma's ⚙ on a game that isn't
+  Unreal Engine says there is nothing to set there instead of having no ⚙ (#297).
+- RTX Encore's ⚙ explains every setting in its tooltip, and a greyed setting in a ⚙ says why it is greyed (for example,
+  Multiplier is only used when Mode is Fixed) (#302).
+- The status bar, bottom left, shows what RHI is doing in the background (scanning your games, checking for updates,
+  updating DLSS, checking custom game folders) and, when idle, when RHI last checked for updates and when the next
+  check is due ("Last checked: 18m ago · Next check in 2h 41m"). A status line shows there for 10 seconds; the last
+  one stays in the bar's tooltip (#298).
+- Help's Quick Start is rewritten for the current app: welcome and the GitHub token, picking a game, ReShade, RenoDX
+  and Luma, shaders, DOF Fix and frame limiters, DLSS / Streamline, Neural Rendering, OptiScaler, frame generation
+  unlocks, HDR and resolution on launch, adding games, updating and troubleshooting (#309).
+- Links in the message of the day can be clicked (web links only) (#309).
+- What's New has a version list with a search box, an arrow that hides them to widen the notes, and + / − for the text
+  size. RHI remembers both (#309).
+- Support the Mod Authors shows Ko-fi and Patreon buttons for authors who have both (#309).
+- Clicking the store badge on a game's page opens the game's Steam Community page, when RHI knows its Steam app id
+  (#309).
+- A greyed game name in the library means ReShade isn't installed for that game; its tooltip says so (#309).
+- The mod author credit says which mod it is for: "RenoDX: Marat", "Luma: Pumbo" (#309).
+- A game you add yourself opens straight away; a search or filter that would hide it is cleared (#309).
+- Hovering the HDR mode and "Change resolution while playing" says whether they are on for the game (#309).
+- The Favourite button is quieter: "★ Favourited" in amber once a game is a favourite (#309).
+- A ⚙ beside the game's name opens Game settings, with Block Steam updates as an On/Off switch (upstream 2.9.4) and
+  Remove from RHI; both left the row of buttons beside Favourite and Hide.
+- Installing DLSS5 Tool (or DLSS5 Tool + DX11 Bridge) also brings the game's DLSS Super Resolution, Ray Reconstruction
+  and Frame Generation files to the newest, through the DLSS / Streamline section: the originals are kept there and
+  Restore puts them back, and Updates lists the swaps. A game whose update inclusion leaves DLSS out keeps its files
+  (#317).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one
