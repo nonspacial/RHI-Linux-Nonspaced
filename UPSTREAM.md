@@ -2358,3 +2358,54 @@ use another mapping.
 - Placement: the FPS Limit row is in the DLSS section beside NVIDIA settings… for now; the phase-2 layouts move it into
   Driver Settings with upstream's other driver rows. Launch and hand-off lines say "FPS limit" when it is the only thing
   applied, and use the NVIDIA settings' wording (the pasted line then carries both) when NVIDIA settings are chosen too.
+
+### #313 — Not applicable: Windows-only changes in upstream 2.8.9–2.9.4
+
+These upstream changes have no Linux counterpart and are not ported. Each reason is why the feature cannot work, or has
+nothing to fix, under Linux + Wine/Proton.
+
+- **Remove NVIDIA App override limits** (2.8.9): patches the Windows NVIDIA App's files and restarts its Windows
+  services. There is no NVIDIA App on Linux; DLSS overrides go through #211's launch variables.
+- **Compile shaders now** (2.9.3): runs NVIDIA's Windows shader compiler (the NVIDIA App's Compile now). Linux shader
+  caches belong to the driver, DXVK/VKD3D-Proton and Steam's shader pre-caching; RHI does not manage them.
+- **ReBAR helper and Low Latency admin fixes** (2.8.9–2.9.3): NVIDIA driver profile settings written with admin rights
+  through NVAPI. Linux has no driver profile; resizable BAR is a firmware/kernel matter and low latency belongs to the
+  game, dxvk-nvapi (Reflex) and the compositor.
+- **Xbox / Game Pass achievements and Game Pass folders** (2.9.2/2.9.3): read from the Windows Xbox app and its
+  `XboxGames` / `WindowsApps` folders. Linux Game Pass titles come through the installer apps (#90), which keep neither.
+  Steam achievements from Steam's local files are #307 (phase 2).
+- **Windows App Runtime, installer and `%TEMP%` clean-up** (2.8.9/2.9.0): the Windows installer, the Windows App SDK
+  runtime it installs and the .NET single-file extraction folder. RHI Linux ships as .deb, .rpm and .tar.gz builds with
+  no runtime installer and nothing extracted to a temp folder.
+- **Antivirus deletion handling** (2.9.0): explains Windows Defender removing freshly downloaded DLLs. Linux has no
+  on-access antivirus in the default install; a missing download is already reported by the trusted-download checks.
+- **DXVK / Universal MFG Unlocker downloaded only when used** (2.9.0): upstream downloads DXVK itself for its DX9 path.
+  Here DXVK comes from the selected Wine/Proton runner (never downloaded by RHI), and Universal MFG Unlocker is
+  downloaded only by its install, so there was nothing downloaded up front to stop.
+- **Epic client launch fixes** (2.9.0/2.9.2): start the Windows Epic Games Launcher before a direct exe launch and pass
+  its `namespace:item:app` id. Linux Epic games launch through Heroic, Legendary or Lutris (and #262's prefix rules);
+  revisit `18088a3` only if RHI Linux ever launches Epic URIs itself.
+- **Sign in with GitHub removal** (2.9.0): the browser sign-in was never ported; RHI Linux has always used a GitHub
+  token file (`github_api.txt`, #100), the method upstream now recommends.
+- **Output colour / admin messages** (2.9.0): Windows' display colour-depth and digital vibrance settings through
+  NVAPI with admin rights. Linux display colour belongs to the compositor; HDR output is #251's launch section.
+- **Admin Mode cursor** (2.9.0): the busy cursor while Windows elevates RHI. RHI Linux never runs elevated.
+- **Windows animation hover flash** (2.8.9/2.9.3): a WinUI hover-animation glitch with Windows' "Animation effects" off.
+  Avalonia has no such animation path.
+- **Light-mode headings** (2.9.2): unreadable headings with Windows' light app mode. RHI Linux is always dark
+  (`RequestedThemeVariant="Dark"`); since #301 the colour themes are all dark too, as upstream's.
+- **Freeze diagnostics / auto-restart while a game runs** (2.9.2/2.9.3): upstream's UI-thread watchdog takes dumps and
+  restarts RHI when Windows pages it out for a memory-hungry game. RHI Linux has no watchdog, dump writer or
+  self-restart, so it has nothing to hold back while a game runs.
+- **RHI-Stats** (upstream's Windows usage statistics tool): not part of RHI Linux; RHI Linux sends no statistics.
+- **Upstream beta channel** (`RankFTW/rhi-beta`): Linux releases follow this fork's own release policy and its own
+  update check (#100), not upstream's beta feed.
+- **UE3 CPU/RAM after launch** (upstream 2.9.5 Beta 2, `539cf2f`, verified here): upstream watched a launched game by
+  searching for processes under the game's folders, and for Remember Me (UE3, no project folder) its Unreal rule made
+  that folder `steamapps\common`, so every Steam app counted as the game; its exit wait (`WaitForExitAsync` on
+  processes RHI could not wait on) then failed at once and spun, writing hundreds of crash reports a second. Neither can
+  happen here: RHI Linux waits only for the process it started itself (`LinuxGameLauncher.RunAndWatchAsync`, one
+  `WaitForExitAsync` on its own child), the display-mode recovery checks one recorded PID and its start time every
+  5 s (`DisplayModeSwitcher.RecoverAsync`), and Update All's running check matches the game's exact executable path in
+  `/proc` (`LinuxUpdateAllService.IsRunning`), never a folder; none of them searches a store library folder or loops
+  without a delay.
