@@ -232,6 +232,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return ComponentOperationResult.Fail($"Proxy não suportado pelo Universal MFG: {requested}.");
         if (IsBinkProxy(selectedProxy))
             return ComponentOperationResult.Fail("Proxy Bink requer preservar/renomear a DLL original para *Hooked.dll. O RHI-Linux ainda não automatiza esse chaining; escolha outro proxy.");
+        if (ExtraDllNames.HookedRefusal(_records, game, selectedProxy) is { } notHooked) return ComponentOperationResult.Fail(notHooked); // #284
 
         // The preference file is written last, after the download, the Wine override and the
         // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
@@ -854,7 +855,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
     {
         if (string.IsNullOrWhiteSpace(value)) return DefaultProxyName;
         var name = Path.GetFileName(value.Trim());
-        return ProxyNames.FirstOrDefault(candidate => candidate.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return HookedDllNames.Canonical(name, ProxyNames); // #284: XHooked.dll of an offered name too
     }
 
     private static bool IsBinkProxy(string value)

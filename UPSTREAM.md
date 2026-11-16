@@ -1503,3 +1503,25 @@ while another component decides ReShade's name (the OptiScaler chain's `ReShade6
 translation, DX9 HDR, the XNA GAC install). Without ReShade installed the ⚙ is not shown on Linux (the ⚙ is for an
 RHI-managed ReShade); the setting can still be saved through the service, and the DLL-name dropdown then shows the
 `.asi` name the install will use.
+
+### #284 — ASI Loader: Hooked names for extras, names in use greyed, renames followed (2.9.0)
+
+Upstream 2.9.0 `a54bb3e` (`HookedDllNames`, `MainViewModel.UalHooked`, `DetailPanelBuilder.Extras.DllNames`). With RHI's
+ASI Loader installed as X.dll, the DLL-name lists of 20/30 FG Unlock (RTX 20 FG Unlock on Linux), Universal MFG,
+RTX Encore and DLSS Enabler offer XHooked.dll right after X.dll, marked "loaded by ASI Loader": ASI Loader loads it as
+the real X.dll, so the extra runs alongside it. 20/30 FG Unlock copies its X.dll build under the Hooked name; RTX
+Encore offers no Hooked name for its Bink names (they already use Hooked for the game's own Bink file). Names another
+RHI component's file uses in the game folder are greyed with that component ("in use by …") and cannot be chosen; a
+Hooked name the game's own DLL already sits under is greyed as the game's. Installing ASI Loader under an extra's name
+moves the extra to XHooked.dll and its record (file and recorded name) follows, in the same journaled operation and
+ledger write as ASI Loader's install; the install says which extra moved. Removing ASI Loader moves it back to X.dll.
+An existing Hooked file stops the install, as before. Reinstalling ASI Loader never chains its own file (Linux: an
+installed ASI Loader is updated in place; Install refuses while it is installed).
+
+Linux adaptation: Wine overrides follow each rename. The extra's own `native,builtin` override for X.dll goes back first
+and ASI Loader sets its own; XHooked.dll needs none (Wine loads a DLL it does not ship from the game folder); on removal
+ASI Loader's override goes back and the extra gets X.dll's override again. A crash in between is rolled back by the
+journal (the extra back under X.dll with its override). Deviations: a Hooked name is refused at install unless ASI Loader
+is installed under the name it stands in for (upstream relies on the list only offering it then); RTX Encore's Hooked
+name is offered, but the component scan that finds a user-installed RTX Encore still looks under its documented names
+only. Upstream also moves RHI's `.original` sentinel with the file; Linux records own the files, so there is no sentinel.

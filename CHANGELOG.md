@@ -18,6 +18,10 @@ Not on `main` yet:
 - Wave 14 — extras-addons
   - ReShade's ⚙ has **Load ReShade as ASI** (upstream 2.8.9): ReShade becomes `ReShade64.asi` / `ReShade32.asi` for an
     ASI loader, installs and updates keep that name, Off goes back to its DLL name. Not for Vulkan games (#283).
+  - ASI Loader and the extras (upstream 2.9.0): with ASI Loader installed as `version.dll`, 20/30 FG Unlock, Universal
+    MFG, RTX Encore and DLSS Enabler offer `versionHooked.dll`, which ASI Loader loads. Names another component uses
+    are greyed with its name. Installing ASI Loader over an extra moves the extra to the Hooked name and RHI follows it;
+    removing ASI Loader moves it back, Wine overrides included (#284).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

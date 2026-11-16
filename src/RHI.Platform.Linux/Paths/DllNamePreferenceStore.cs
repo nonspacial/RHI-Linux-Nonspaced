@@ -116,7 +116,7 @@ public sealed class DllNamePreferenceStore : IGameStateStore
         {
             if (!GameRecordIdentity.TryGet(LoadUnsafe(), game, out var choices) || string.IsNullOrWhiteSpace(choices?.RtxEncore))
                 return null;
-            if (RtxEncoreNames.Canonical(choices.RtxEncore) is { } name) return name;
+            if (RtxEncoreNames.CanonicalOrHooked(choices.RtxEncore) is { } name) return name; // #284
             AppLog.Warn("dll-names", $"Ignored an RTX Encore name that RHI does not offer for {game.Name}: {choices.RtxEncore}");
             return null;
         }
@@ -141,7 +141,7 @@ public sealed class DllNamePreferenceStore : IGameStateStore
     {
         var canonical = string.IsNullOrWhiteSpace(name)
             ? null
-            : RtxEncoreNames.Canonical(name) ?? throw new ArgumentException($"Not a name RTX Encore uses: {name}", nameof(name));
+            : RtxEncoreNames.CanonicalOrHooked(name) ?? throw new ArgumentException($"Not a name RTX Encore uses: {name}", nameof(name));
         Update(game, choices => choices.RtxEncore = canonical);
     }
 

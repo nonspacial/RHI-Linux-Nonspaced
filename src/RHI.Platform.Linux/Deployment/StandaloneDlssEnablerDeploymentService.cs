@@ -84,7 +84,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
             return ComponentOperationResult.Fail("DLSS Enabler Standalone já está instalado. Remova e reinstale para trocar a DLL proxy.");
 
         var normalized = NormalizeProxyName(proxyName);
-        if (!ProxyNames.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        if (HookedDllNames.Canonical(normalized, ProxyNames) is null) // #284: a Hooked name of an offered name too
             return ComponentOperationResult.Fail($"DLL proxy não suportada pelo DLSS Enabler Standalone: {proxyName}.");
 
         try { _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = normalized }); }
@@ -95,8 +95,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
     public static string NormalizeProxyName(string? value)
     {
         var name = string.IsNullOrWhiteSpace(value) ? DefaultProxyName : Path.GetFileName(value.Trim());
-        return ProxyNames.FirstOrDefault(candidate => candidate.Equals(name, StringComparison.OrdinalIgnoreCase))
-               ?? DefaultProxyName;
+        return HookedDllNames.Canonical(name, ProxyNames) ?? DefaultProxyName; // #284: XHooked.dll kept
     }
 
     public static bool IsGameEligible(DetectedGame game)
@@ -136,8 +135,9 @@ public sealed class StandaloneDlssEnablerDeploymentService
             return ComponentOperationResult.Fail(wineRunning);
 
         var selectedProxy = NormalizeProxyName(proxyName ?? GetPreferences(game).ProxyName);
-        if (!ProxyNames.Contains(selectedProxy, StringComparer.OrdinalIgnoreCase))
+        if (HookedDllNames.Canonical(selectedProxy, ProxyNames) is null)
             return ComponentOperationResult.Fail($"Proxy não suportado: {selectedProxy}.");
+        if (ExtraDllNames.HookedRefusal(_records, game, selectedProxy) is { } notHooked) return ComponentOperationResult.Fail(notHooked); // #284
 
         // The preference file is written last, after the download, the Wine override and the
         // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).

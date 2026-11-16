@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
@@ -10,6 +11,24 @@ namespace RHI.Desktop.ViewModels;
 
 /// <summary>The component dialogs that share one layout: a proxy DLL (and GPU generation) choice, then check / update.</summary>
 public enum ProxyComponentDialogKind { Dlssg2030, DlssEnabler, UniversalMfg, RtxEncore }
+
+/// <summary>
+/// #284: one row of an extra's DLL-name dropdown: a name used by another component is shown with it and cannot be picked;
+/// ASI Loader's Hooked name says ASI Loader loads it.
+/// </summary>
+public sealed record ProxyNameItem(string Name, string Display, bool IsFree, string? Tip)
+{
+    internal static ProxyNameItem From(ExtraDllNameOption option)
+        => option.BlockedBy is { } owner
+            ? new(option.Name, UiLocalizationService.Format("Ui.ExtraDllInUseBy", option.Name, UiLocalizationService.Present(owner)), false,
+                UiLocalizationService.Format("Ui.ExtraDllInUseByTip", UiLocalizationService.Present(owner)))
+            : option.IsHooked
+                ? new(option.Name, UiLocalizationService.Format("Ui.ExtraDllHooked", option.Name), true,
+                    UiLocalizationService.Format("Ui.ExtraDllHookedTip", HookedDllNames.BaseOf(option.Name), option.Name))
+                : new(option.Name, option.Name, true, null);
+
+    public override string ToString() => Display;
+}
 
 /// <summary>
 /// The DLSS FG 20/30 unlock, standalone DLSS Enabler and Universal MFG settings dialogs (epic #89 unit 7): one view
@@ -134,6 +153,17 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 break;
             }
         }
+        // #284: the rows with Hooked names and names in use (the plain list stays for the installed-name text).
+        var extra = kind switch
+        {
+            ProxyComponentDialogKind.Dlssg2030 => ManagedComponentKind.Dlssg2030Unlock,
+            ProxyComponentDialogKind.DlssEnabler => ManagedComponentKind.DlssEnablerStandalone,
+            ProxyComponentDialogKind.RtxEncore => ManagedComponentKind.RtxEncore,
+            _ => ManagedComponentKind.Rtx40MfgStandalone
+        };
+        var rows = shell.ExtraDllNameOptions(extra, SelectedProxy).Select(ProxyNameItem.From).ToArray();
+        ProxyNameOptions = rows.Length > 0 ? rows : ProxyOptions.Select(name => new ProxyNameItem(name, name, true, null)).ToArray();
+        selectedProxyItem = FindProxyItem(SelectedProxy);
         WindowTitle = $"{Title} — {game}";
         _loading = false;
         _shell.Operations.PropertyChanged += OnOperationsChanged;
@@ -156,6 +186,24 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
     public string ProxyLabel { get; }
     public string? ProxyTip { get; }
     public IReadOnlyList<string> ProxyOptions { get; }
+    /// <summary>#284: the dropdown's rows (names in use greyed with their component, ASI Loader's Hooked name marked).</summary>
+    public IReadOnlyList<ProxyNameItem> ProxyNameOptions { get; }
+    [ObservableProperty] private ProxyNameItem? selectedProxyItem;
+
+    private ProxyNameItem? FindProxyItem(string? name)
+        => ProxyNameOptions.FirstOrDefault(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    // A row in use cannot be chosen (the item is disabled too): the selection goes back to the stored name.
+    partial void OnSelectedProxyItemChanged(ProxyNameItem? value)
+    {
+        if (value is null) return;
+        if (!value.IsFree)
+        {
+            SelectedProxyItem = FindProxyItem(SelectedProxy);
+            return;
+        }
+        SelectedProxy = value.Name;
+    }
     public double ProxyMinWidth { get; }
     public string? CompatibilityText { get; }
     public bool HasCompatibility => CompatibilityText is not null;
@@ -208,6 +256,7 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
 
     partial void OnSelectedProxyChanged(string? value)
     {
+        if (ProxyNameOptions is not null && !Equals(SelectedProxyItem?.Name, value)) SelectedProxyItem = FindProxyItem(value);
         if (!string.IsNullOrEmpty(value)) SavePreferences();
     }
 

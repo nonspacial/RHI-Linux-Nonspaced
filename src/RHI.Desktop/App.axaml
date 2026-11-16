@@ -37,8 +37,17 @@
         </Grid>
         <Grid ColumnDefinitions="220,*" ColumnSpacing="12">
           <TextBlock Text="{Binding ProxyLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-          <ComboBox Grid.Column="1" ItemsSource="{Binding ProxyOptions}" SelectedItem="{Binding SelectedProxy}" MinWidth="{Binding ProxyMinWidth}"
-                    IsEnabled="{Binding CanChoose}" IsVisible="{Binding !ShowsProxyAsText}" ToolTip.Tip="{Binding ProxyTip}"/>
+          <!-- #284: names in use are greyed with their component; ASI Loader's Hooked name is marked. -->
+          <ComboBox Grid.Column="1" ItemsSource="{Binding ProxyNameOptions}" SelectedItem="{Binding SelectedProxyItem}" MinWidth="{Binding ProxyMinWidth}"
+                    IsEnabled="{Binding CanChoose}" IsVisible="{Binding !ShowsProxyAsText}" ToolTip.Tip="{Binding ProxyTip}"
+                    DisplayMemberBinding="{Binding Display, DataType=vm:ProxyNameItem}">
+            <ComboBox.Styles>
+              <Style Selector="ComboBoxItem" x:DataType="vm:ProxyNameItem">
+                <Setter Property="IsEnabled" Value="{Binding IsFree}"/>
+                <Setter Property="ToolTip.Tip" Value="{Binding Tip}"/>
+              </Style>
+            </ComboBox.Styles>
+          </ComboBox>
           <!-- RTX Encore installed: its name cannot change, so it is plain text, not a dead dropdown (#158). -->
           <TextBlock Grid.Column="1" Text="{Binding SelectedProxy}" VerticalAlignment="Center" IsVisible="{Binding ShowsProxyAsText}"/>
         </Grid>

@@ -1451,6 +1451,14 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ProxyRename.FailedPrefix, "A renomeação da DLL falhou e foi revertida; a DLL mantém o nome: "),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameNotInPlacePrefix,
             "A DLL do ReShade não pode ser renomeada no lugar enquanto outro componente decide o nome dela (OptiScaler, ShortFuse ou a tradução DirectX 9); remova o ReShade e instale-o de novo para mudar: "),
+        // w14/extras-addons rows (#284)
+        (RHI.Platform.Linux.Deployment.ExtraDllNames.HookedNeedsUalPrefix,
+            "Este nome Hooked só funciona enquanto o ASI Loader estiver instalado neste jogo com o nome que ele substitui; instale primeiro o ASI Loader com esse nome ou escolha outro nome. Nomes: "),
+        (RHI.Platform.Linux.Deployment.ExtraDllNames.HookedTakenByGamePrefix, "o arquivo original do jogo "),
+        (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.FollowedExtraPrefix,
+            " Outro extra que o RHI instalou usava este nome, então ele foi movido para o nome Hooked, de onde o ASI Loader o carrega; o RHI acompanha a mudança e o move de volta quando o ASI Loader for removido. Extra: "),
+        (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.ReleasedExtraPrefix,
+            " Um extra voltou ao nome que o ASI Loader tinha, para continuar funcionando sozinho: "),
         // w14/extras-addons rows (#283)
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.AsiModeNotForVulkanMessage,
             "Carregar o ReShade como ASI não está disponível para jogos Vulkan: lá o ReShade roda como camada Vulkan, que não tem nome de arquivo."),

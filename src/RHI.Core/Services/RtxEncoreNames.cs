@@ -30,6 +30,13 @@ public static class RtxEncoreNames
         return All.FirstOrDefault(n => n.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// #284: <see cref="Canonical"/>, or the Hooked name (<see cref="HookedDllNames"/>) of one of RTX Encore's DLL names
+    /// other than the Bink ones (those already use Hooked for the game's own file) — for beside ASI Loader.
+    /// </summary>
+    public static string? CanonicalOrHooked(string? name)
+        => Canonical(name) ?? HookedDllNames.Canonical(name, All.Where(n => !IsBink(n) && !IsAsi(n)));
+
     /// <summary>Bink names need the game's own Bink DLL renamed <c>*Hooked.dll</c>: not automated on Linux (as Universal MFG).</summary>
     public static bool IsBink(string name)
         => name.Equals("binkw64.dll", StringComparison.OrdinalIgnoreCase) || name.Equals("bink2w64.dll", StringComparison.OrdinalIgnoreCase);
