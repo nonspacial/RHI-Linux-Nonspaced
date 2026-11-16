@@ -198,18 +198,47 @@ public sealed partial class MainWindow
         _inlineCog = new InlineCog(cog, host, source, done);
         close.Click += (_, _) => CloseInlineCog(false);
         cog.InlineClose = result => CloseInlineCog(result);
-        panel.Children.Add(host);
+        PlaceInlineCog(host, source, panel);
         cog.RaiseOpenedInline();
         Dispatcher.UIThread.Post(() => host.BringIntoView());
         shown = done.Task;
         return true;
     }
 
+    /// <summary>
+    /// w14/layouts-c (upstream 2.9.0 <c>ShowCogInPlace</c>: "right under the row (or the Overview cards) whose ⚙ was clicked"):
+    /// under the line of cards that holds the clicked card (the cards flow in an <see cref="AutoFitPanel"/>, so the ⚙ spans the
+    /// width under that line and the lines after it move down); else right after the row it was clicked in, when that row is
+    /// one of a vertical list's own children at least 400 px wide (upstream's rule); else at the end of the section.
+    /// </summary>
+    internal static void PlaceInlineCog(Border host, Control? source, Panel section)
+    {
+        if (source?.GetVisualAncestors().OfType<Control>().FirstOrDefault(c => c.GetVisualParent() is AutoFitPanel) is { } card
+            && card.GetVisualParent() is AutoFitPanel cards)
+        {
+            cards.ShowInset(host, card);
+            return;
+        }
+        var row = source?.GetVisualAncestors().OfType<Control>().FirstOrDefault(c =>
+            c.GetVisualParent() is StackPanel { Orientation: Orientation.Vertical } list && list.Children.Contains(c) && !IsItemsHost(list)
+            && c.Bounds.Width >= 400 && section.IsVisualAncestorOf(c));
+        if (row?.GetVisualParent() is StackPanel rows)
+        {
+            rows.Children.Insert(rows.Children.IndexOf(row) + 1, host);
+            return;
+        }
+        section.Children.Add(host);
+    }
+
+    // An ItemsControl's panel belongs to it: nothing else is put among its children.
+    private static bool IsItemsHost(Panel panel) => panel.GetVisualParent() is Avalonia.Controls.Presenters.ItemsPresenter;
+
     private void CloseInlineCog(bool result)
     {
         if (_inlineCog is not { } open) return;
         _inlineCog = null;
-        if (open.Host.Parent is Panel panel) panel.Children.Remove(open.Host);
+        if (open.Host.Parent is AutoFitPanel cards) cards.HideInset();
+        else if (open.Host.Parent is Panel panel) panel.Children.Remove(open.Host);
         open.Window.InlineClose = null;
         try { open.Window.RaiseClosedInline(); }
         finally { open.Done.TrySetResult(); }
