@@ -2340,19 +2340,20 @@ use another mapping.
 
 - Upstream sets the NVIDIA driver profile's FPS Limiter V3 (`0x10835002`) per game, with a global value on the base
   profile. There is no driver profile under Wine/Proton, so RHI sets `DXVK_FRAME_RATE` (DXVK, Direct3D 8–11) and
-  `VKD3D_FRAME_RATE` (VKD3D-Proton, Direct3D 12) in the game's launch variables, both at once (each layer reads its own),
-  the way #211 hands the NVIDIA settings over: in the environment of a direct launch, or in the launch options shown
-  for Steam / Heroic / Lutris. Nothing is written to disk, the prefix or the game. Unlike the NVIDIA settings, it does
+  `VKD3D_FRAME_RATE` (VKD3D-Proton, Direct3D 12) in the game's launch variables, both at once (each layer reads its
+  own), the way #211 hands the NVIDIA settings over: in the environment of a direct launch, or in the launch options
+  shown for Steam / Heroic / Lutris. Nothing is written to disk, the prefix or the game. Unlike the NVIDIA settings, it does
   not need an NVIDIA GPU or a DLSS file; it is not offered for native Linux games or for store clients and the Xbox app,
   which take no launch variables.
 - Choices as upstream: Global (named with the global value), Off, upstream's VRR presets, a game's own custom value just
   above Custom…, and Custom… (20–1000; any other value is refused and nothing changes). Settings › DLSS/Streamline has
   the global FPS Limit (Off, the presets, Custom…), written on Save.
-- Upstream's rule that a cap turns off the ReLimiter / Display Commander per-game limit: upstream writes the driver limit
-  Off into those games (on their install and whenever the global cap is set) and clears it on uninstall. Linux applies
-  the same outcome when the plan is built: a game on Global with ReLimiter or Display Commander installed by RHI gets no
+- Upstream's rule that a cap turns off the ReLimiter / Display Commander per-game limit: upstream writes the driver
+  limit Off into those games (on their install and whenever the global cap is set) and clears it on uninstall. Linux
+  applies the same outcome when the plan is built: a game on Global with ReLimiter or Display Commander installed by RHI gets no
   cap; a value chosen for the game itself still applies, as upstream lets the user set one afterwards. Deviation: an
-  explicit per-game value is never overwritten by an install or a global change (upstream's writes would reset it to Off).
+  explicit per-game value is never overwritten by an install or a global change (upstream's writes would reset it to
+  Off).
 - Storage: the per-game choice is in the library file (`FpsLimits`, by library key, following key changes and Repair
   after move; Global = no entry), the global one in settings.json (`GlobalFpsLimit`, 0 = Off).
 - Placement: the FPS Limit row is in the DLSS section beside NVIDIA settings… for now; the phase-2 layouts move it into
@@ -2383,7 +2384,8 @@ nothing to fix, under Linux + Wine/Proton.
   Here DXVK comes from the selected Wine/Proton runner (never downloaded by RHI), and Universal MFG Unlocker is
   downloaded only by its install, so there was nothing downloaded up front to stop.
 - **Epic client launch fixes** (2.9.0/2.9.2): start the Windows Epic Games Launcher before a direct exe launch and pass
-  its `namespace:item:app` id. Linux Epic games launch through Heroic, Legendary or Lutris; revisit `18088a3` only if RHI Linux ever launches Epic URIs itself.
+  its `namespace:item:app` id. Linux Epic games launch through Heroic, Legendary or Lutris;
+  revisit `18088a3` only if RHI Linux ever launches Epic URIs itself.
 - **Sign in with GitHub removal** (2.9.0): the browser sign-in was never ported; RHI Linux has always used a GitHub
   token file (`github_api.txt`), the method upstream now recommends.
 - **Output colour / admin messages** (2.9.0): Windows' display colour-depth and digital vibrance settings through
