@@ -574,7 +574,11 @@ public sealed class XboxGameDetectorTests : IDisposable
     {
         var dir = _tree.Dir("odd=dir");
         var record = _tree.Path_("record.txt");
-        var script = _tree.File($"#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > '{record}'\nenv | grep -E '^(-DASH|PLAIN)=' | sort >> '{record}'\n", "odd=dir", "run.sh");
+        // The record reads the environment the program was started with (/proc/$$/environ), not `env` run by the
+        // recording script: that script is itself /bin/sh, and dash (Debian, Ubuntu) would drop "-DASH" at that step.
+        var script = _tree.File(
+            $"#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > '{record}'\ntr '\\0' '\\n' < /proc/$$/environ | grep -E '^(-DASH|PLAIN)=' | sort >> '{record}'\n",
+            "odd=dir", "run.sh");
         File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var line = OwningAppLocator.Render([script, "--play", "9A B"], new Dictionary<string, string> { ["-DASH"] = "1", ["PLAIN"] = "x y" });
 
