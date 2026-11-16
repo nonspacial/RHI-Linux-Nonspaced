@@ -1702,6 +1702,11 @@ public static class UiLocalizationService
             "O nvngx.dll_dlssnr.dll do pacote OptiScaler F5 DLSSNR não é uma DLL do Windows, então nada foi instalado."),
         (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.F5BackendMissingMessage,
             "O pacote OptiScaler F5 DLSSNR não tem a pasta OptiScaler com os arquivos auxiliares, então nada foi instalado."),
+        // #260 / w13 final review m4: the F5 release's package choice (the asset names follow) and a release without one.
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.F5AmbiguousAssetPrefix,
+            "A versão do OptiScaler F5 DLSSNR publica mais de um pacote, então o RHI não escolheu nenhum: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.NoRuntimeAssetPrefix,
+            "Esta versão do OptiScaler não publica nenhum pacote que o RHI Linux possa instalar: "),
         ("Could not obtain the official OptiScaler F5 DLSSNR package: ", "Não foi possível obter o pacote oficial do OptiScaler F5 DLSSNR: "),
         // w11/nightly-switch rows
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlySwitchedPrefix, "O OptiScaler Nightly foi trocado no lugar; o OptiScaler.ini, o nome da DLL e o override do Wine foram mantidos. Build: "),

@@ -53,6 +53,11 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
     public const string F5ReleasesApi = "https://api.github.com/repos/janblade/OptiScaler-F5-DLSSNR-Multipass/releases/latest";
     /// <summary>#260: an F5 release with more than one package zip is refused instead of guessed; the asset names follow.</summary>
     public const string F5AmbiguousAssetPrefix = "The OptiScaler F5 DLSSNR release publishes more than one package, so RHI did not choose one: ";
+    /// <summary>
+    /// w13 final review m4: a release with no package RHI can install (fixed text first; "OptiScaler &lt;variant&gt;
+    /// &lt;tag&gt; (&lt;extension&gt;)" follows), so it has a PT-BR presentation pair.
+    /// </summary>
+    public const string NoRuntimeAssetPrefix = "This OptiScaler release publishes no package RHI Linux can install: ";
     public const string ArchivePathRefusedPrefix = "The OptiScaler archive holds a path RHI will not extract: ";
 
     /// <summary>#231: the F5 package's forwarder is not a Windows DLL (MZ + PE header); refused before any game file changes.</summary>
@@ -169,7 +174,7 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
             candidates = [candidates.First(asset => asset.GetProperty("name").GetString() == f5)];
         }
         if (candidates.Count == 0)
-            throw new InvalidOperationException($"OptiScaler {variant} {rawTag} does not publish a runtime {requiredExtension} asset that RHI Linux can install.");
+            throw new InvalidOperationException($"{NoRuntimeAssetPrefix}OptiScaler {variant} {rawTag} ({requiredExtension})");
 
         var selected = candidates
             .OrderByDescending(asset =>
@@ -338,7 +343,7 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
         return packages.Length switch
         {
             1 => packages[0],
-            0 => throw new InvalidOperationException($"OptiScaler F5 {releaseTag} does not publish a runtime .zip asset that RHI Linux can install."),
+            0 => throw new InvalidOperationException($"{NoRuntimeAssetPrefix}OptiScaler F5 {releaseTag} (.zip)"),
             _ => throw new InvalidOperationException(F5AmbiguousAssetPrefix + string.Join(", ", packages))
         };
     }

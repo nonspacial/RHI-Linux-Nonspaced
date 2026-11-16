@@ -54,7 +54,22 @@ public sealed partial class OptiScalerPackageProviderTests
     public void F5Asset_CompanionsAndOtherFiles_AreNeverThePackage(string companion)
     {
         var error = Assert.Throws<InvalidOperationException>(() => OptiScalerPackageProvider.SelectF5AssetName([companion, "OptiScaler-DLSSNR-Troubleshooting.md"], "v0.1.38"));
-        Assert.Contains("does not publish", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith(OptiScalerPackageProvider.NoRuntimeAssetPrefix, error.Message, StringComparison.Ordinal);
+        Assert.Contains("v0.1.38", error.Message, StringComparison.Ordinal);
+    }
+
+    // w13 final review m4: both #260 refusals read in PT-BR (fixed text first, the release's names last).
+    [Fact]
+    public void F5Asset_Refusals_HavePtBrText()
+    {
+        var ambiguous = Assert.Throws<InvalidOperationException>(() =>
+            OptiScalerPackageProvider.SelectF5AssetName(["OptiScaler-DLSSNR-F5-0.1.28.zip", "OptiScaler-DLSSNR-F5-test-0.1.28.zip"], "v0.1.28"));
+        var none = Assert.Throws<InvalidOperationException>(() => OptiScalerPackageProvider.SelectF5AssetName(["notes.md"], "v0.1.38"));
+
+        Assert.Equal("A versão do OptiScaler F5 DLSSNR publica mais de um pacote, então o RHI não escolheu nenhum: OptiScaler-DLSSNR-F5-0.1.28.zip, OptiScaler-DLSSNR-F5-test-0.1.28.zip",
+            RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", ambiguous.Message));
+        Assert.Equal("Esta versão do OptiScaler não publica nenhum pacote que o RHI Linux possa instalar: OptiScaler F5 v0.1.38 (.zip)",
+            RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", none.Message));
     }
 
     [Fact]
