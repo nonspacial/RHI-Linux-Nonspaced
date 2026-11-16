@@ -69,12 +69,12 @@ public sealed partial class OptiScalerDeploymentService
     /// <summary>The OptiPatcher build deployed with this install (#98); absent = none (older installs, or it was unavailable).</summary>
     internal const string OptiPatcherVersionMetadataKey = "OptiScaler.OptiPatcherVersion";
     internal const string OptiPatcherDownloadPart = "OptiPatcher";
-    /// <summary>Where OptiScaler loads ASI plugins from (relative to the game's binary folder), as upstream.</summary>
-    internal const string OptiPatcherRelativePath = "plugins/" + OptiPatcherProvider.FileName;
-    public const string OptiPatcherDeployedPrefix = " OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ";
+    public const string OptiPatcherDeployedPrefix = " OptiPatcher deployed to OptiScaler's plugins folder (OptiScaler LoadAsiPlugins on). Build: ";
     public const string OptiPatcherSkippedPrefix = " OptiPatcher was not deployed; OptiScaler works without it: ";
     public const string OptiPatcherUpdatePrefix = "OptiPatcher update available: ";
-    public const string OptiPatcherForeignMessage = "a plugins/OptiPatcher.asi RHI does not own is already there; it was left as it is.";
+    public const string OptiPatcherForeignMessage = "an OptiPatcher.asi RHI does not own is already in OptiScaler's plugins folder; it was left as it is.";
+    /// <summary>#273 (upstream 2.8.9): an older RHI put OptiPatcher in &lt;game&gt;/plugins, which OptiScaler 10 builds never read.</summary>
+    public const string OptiPatcherMoveMessage = "OptiPatcher is in the game's plugins folder, which this OptiScaler build does not read; Update moves it to OptiScaler/plugins.";
 
     /// <param name="optiPatcher">OptiPatcher source (#98); null = OptiScaler alone (tests, tools).</param>
     public OptiScalerDeploymentService(
@@ -131,6 +131,8 @@ public sealed partial class OptiScalerDeploymentService
                     update = true;
             }
             var label = VariantLabel(variant);
+            if (!update && MisplacedOptiPatcher(record) is not null)
+                return new ManagedUpdateCheck(true, true, OptiPatcherMoveMessage, record.Version, latest.Version);
             if (!update && record.Metadata.GetValueOrDefault(OptiPatcherVersionMetadataKey) is { Length: > 0 } patcher
                 && await TryResolveLatestOptiPatcherAsync(cancellationToken).ConfigureAwait(false) is { } latestPatcher
                 && !string.Equals(patcher, latestPatcher.Version, StringComparison.OrdinalIgnoreCase))
@@ -208,16 +210,28 @@ public sealed partial class OptiScalerDeploymentService
         var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
         var proxyTarget = Path.Combine(binaryDirectory, GetProxyName(record));
         var requested = new List<(string Source, string Target)>();
+        // #273: OptiPatcher goes where this package's build reads plugins; one an older RHI left in <game>/plugins moves
+        // there (its own bytes when no newer build can be had now). A file RHI does not own at the new place keeps it where it is.
+        var recordedPatcher = record.Files.FirstOrDefault(IsOptiPatcherFile);
+        var patcherTarget = OptiPatcherTarget(binaryDirectory, HasOptiScalerFolder(package.RootDirectory));
+        LinuxDeployedFile? movedPatcher = null;
+        if (recordedPatcher is not null && !Path.GetFullPath(recordedPatcher.Path).Equals(patcherTarget, StringComparison.Ordinal))
+        {
+            if (File.Exists(patcherTarget)) patcherTarget = Path.GetFullPath(recordedPatcher.Path);
+            else movedPatcher = recordedPatcher;
+        }
+        var patcherSource = optiPatcher?.Download.Path ?? movedPatcher?.Path;
         try
         {
             BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested);
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
-            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory)));
+            if (patcherSource is not null) requested.Add((patcherSource, patcherTarget));
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"OptiScaler update package layout is invalid: {ex.Message}"); }
 
         var byPath = record.Files.ToDictionary(file => Path.GetFullPath(file.Path), StringComparer.Ordinal);
         var createdDirs = new List<string>();
+        string? emptiedPatcherDir = null;
 
         // Journaled (#23, #31): every replaced file is tracked with a verified copy and every new one declared before it
         // is placed; the record (stamped with the operation id) is the commit point. A failure, or a crash before the
@@ -256,6 +270,11 @@ public sealed partial class OptiScalerDeploymentService
                 record.Files.Add(added);
                 byPath[target] = added;
             }
+            if (movedPatcher is not null)
+            {
+                await scope.DeleteAsync(Path.GetFullPath(movedPatcher.Path), cancellationToken).ConfigureAwait(false);
+                record.Files.Remove(movedPatcher);
+            }
 
             record.SourceUrl = package.SourceUrl;
             record.Version = package.Version;
@@ -274,6 +293,14 @@ public sealed partial class OptiScalerDeploymentService
             }
             foreach (var dir in createdDirs)
                 if (!record.DirectoriesCreatedByRhi.Contains(dir, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(dir);
+            // The old plugins folder RHI made for OptiPatcher goes once empty (after the commit point); a game's own stays.
+            emptiedPatcherDir = movedPatcher is null ? null : Path.GetDirectoryName(Path.GetFullPath(movedPatcher.Path));
+            if (emptiedPatcherDir is not null
+                && record.DirectoriesCreatedByRhi.Any(dir => Path.GetFullPath(dir).Equals(emptiedPatcherDir, StringComparison.Ordinal))
+                // Only the journal's rollback copy of the moved file is left until the commit point drops it.
+                && Directory.EnumerateFileSystemEntries(emptiedPatcherDir).All(entry => Path.GetFileName(entry).Contains(OwnedFileSet.SnapshotMarker, StringComparison.Ordinal)))
+                record.DirectoriesCreatedByRhi.RemoveAll(dir => Path.GetFullPath(dir).Equals(emptiedPatcherDir, StringComparison.Ordinal));
+            else emptiedPatcherDir = null;
             // #232: the switched build's pin, and the saved choice written tracked + declared BEFORE the commit point.
             if (nightly is not null) await nightly.BeforeCommitAsync(record, scope, cancellationToken).ConfigureAwait(false);
             _records.Upsert(scope.Stamp(record));
@@ -288,6 +315,7 @@ public sealed partial class OptiScalerDeploymentService
         }
         // The record carries the operation id: it is the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
+        if (emptiedPatcherDir is not null) CleanupDirectories([emptiedPatcherDir]);
         return ComponentOperationResult.Ok(nightly?.SuccessMessage(package)
             ?? $"OptiScaler {VariantLabel(variant)} updated to {package.Version}; OptiScaler.ini, ReShade coexistence and Wine override ownership were preserved.",
             requested.Select(item => item.Target).Where(path => !Path.GetFileName(path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)).ToArray());
@@ -419,7 +447,7 @@ public sealed partial class OptiScalerDeploymentService
             {
                 optiPatcherNote = OptiPatcherSkippedPrefix + ex.Message;
             }
-            if (optiPatcher is not null && File.Exists(OptiPatcherTarget(game.BinaryDirectory)))
+            if (optiPatcher is not null && File.Exists(OptiPatcherTarget(game.BinaryDirectory, HasOptiScalerFolder(package.RootDirectory))))
             {
                 optiPatcherNote = OptiPatcherSkippedPrefix + OptiPatcherForeignMessage;
                 optiPatcher = null;
@@ -479,7 +507,7 @@ public sealed partial class OptiScalerDeploymentService
                 if (at >= 0) requested[at] = (iniTemplate, requested[at].Target);
             }
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
-            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory)));
+            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory, HasOptiScalerFolder(package.RootDirectory))));
             foreach (var (_, target) in requested)
             {
                 existedBefore[target] = File.Exists(target);
@@ -604,8 +632,40 @@ public sealed partial class OptiScalerDeploymentService
         return null;
     }
 
-    private static string OptiPatcherTarget(string binaryDirectory)
-        => Path.GetFullPath(Path.Combine(binaryDirectory, "plugins", OptiPatcherProvider.FileName));
+    /// <summary>
+    /// Where OptiPatcher goes (#273, upstream 2.8.9 <c>GetPluginsDir</c>): OptiScaler 10 builds (Nightly, DLSS NR, F5 and
+    /// the forks) bring an <c>OptiScaler/</c> folder and read <c>OptiScaler/plugins</c>; the 0.9 stable build has none and
+    /// reads <c>&lt;game&gt;/plugins</c>.
+    /// </summary>
+    internal static string OptiPatcherTarget(string binaryDirectory, bool optiScalerFolder)
+        => Path.GetFullPath(optiScalerFolder
+            ? Path.Combine(binaryDirectory, OptiScalerFolderName, "plugins", OptiPatcherProvider.FileName)
+            : Path.Combine(binaryDirectory, "plugins", OptiPatcherProvider.FileName));
+
+    /// <summary>The OptiScaler 10 helper folder in a package (or, as <see cref="RecordHasOptiScalerFolder"/>, a game).</summary>
+    internal const string OptiScalerFolderName = "OptiScaler";
+
+    internal static bool HasOptiScalerFolder(string packageRoot)
+        => Directory.Exists(Path.Combine(packageRoot, OptiScalerFolderName));
+
+    /// <summary>The install carries OptiScaler 10's helper folder: a recorded file other than OptiPatcher lies in it.</summary>
+    internal static bool RecordHasOptiScalerFolder(LinuxDeploymentRecord record)
+    {
+        var folder = Path.GetFullPath(Path.Combine(record.BinaryDirectory, OptiScalerFolderName)) + Path.DirectorySeparatorChar;
+        return record.Files.Any(file => !IsOptiPatcherFile(file) && Path.GetFullPath(file.Path).StartsWith(folder, StringComparison.Ordinal));
+    }
+
+    private static bool IsOptiPatcherFile(LinuxDeployedFile file)
+        => Path.GetFileName(file.Path).Equals(OptiPatcherProvider.FileName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>RHI's OptiPatcher when it lies where the installed build does not read it (#273), else null.</summary>
+    internal static LinuxDeployedFile? MisplacedOptiPatcher(LinuxDeploymentRecord record)
+    {
+        var recorded = record.Files.FirstOrDefault(IsOptiPatcherFile);
+        if (recorded is null) return null;
+        var expected = OptiPatcherTarget(Path.GetFullPath(record.BinaryDirectory), RecordHasOptiScalerFolder(record));
+        return Path.GetFullPath(recorded.Path).Equals(expected, StringComparison.Ordinal) || File.Exists(expected) ? null : recorded;
+    }
 
     private static async Task<OptiPatcherBuild> FetchLatestOptiPatcherAsync(IOptiPatcherProvider provider, CancellationToken cancellationToken)
         => await provider.FetchAsync(await provider.ResolveLatestAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);

@@ -19,6 +19,9 @@ Not on `main` yet: nothing at the moment.
 
 - OptiPatcher shows its real build again and its cache is named by build: since November 2026 its release notes put a
   `^G` before the commit, which RHI did not read (#264, upstream 2.9.3).
+- OptiPatcher now loads with OptiScaler Nightly, DLSS NR, F5 and the forks: it goes to `OptiScaler/plugins`, where
+  those builds look, instead of the game's `plugins` folder, which only Stable reads. Games that already have it show
+  an update; Update moves it (#273, upstream 2.8.9).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

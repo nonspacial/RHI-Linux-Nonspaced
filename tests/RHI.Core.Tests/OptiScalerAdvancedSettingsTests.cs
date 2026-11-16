@@ -150,6 +150,40 @@ public sealed class OptiScalerAdvancedSettingsTests : IDisposable
         Assert.Contains("LoadReshade=true", text, StringComparison.OrdinalIgnoreCase);
     }
 
+    // #273 (upstream 2.9.3): FG Nvngx Override was greyed out and not saved while FG Input was "DLSSG via Nvngx", where
+    // OptiScaler uses it. Linux never greys a row; this pins that it is offered, written and read back with that input.
+    [Fact]
+    public void FgNvngxReplacement_WithDlssgViaNvngxInput_IsOfferedAndSaved()
+    {
+        var (game, store, ini) = CreateGame("nvngx-input", managed: true);
+        File.WriteAllText(ini, "[FrameGen]\nFGInput=nvngxfg\nFGNvngxReplacement=None\n");
+        var service = NewService(store);
+
+        Assert.Contains(service.GetAdvancedSettings(game).Settings, setting => setting.Id == "FGNvngxReplacement");
+        Assert.True(service.SetAdvancedSetting(game, "FGNvngxReplacement", "Arturs").Success);
+
+        var settings = service.GetAdvancedSettings(game).Settings;
+        Assert.Equal("nvngxfg", settings.Single(setting => setting.Id == "FGInput").CurrentValue);
+        Assert.Equal("Arturs", settings.Single(setting => setting.Id == "FGNvngxReplacement").CurrentValue);
+    }
+
+    // #273 (upstream 2.8.9): changing the Upscaler API also changed the game's upscaler. Linux has no API selector: each
+    // API has its own upscaler row, so a change to one never touches another.
+    [Fact]
+    public void UpscalerRows_ChangingOneApi_LeavesTheOthersAsTheyWere()
+    {
+        var (game, store, ini) = CreateGame("upscaler-api", managed: true);
+        File.WriteAllText(ini, "[Upscalers]\nDx11Upscaler=xess\nDx12Upscaler=dlss\nVulkanUpscaler=fsr22\n");
+        var service = NewService(store);
+
+        Assert.True(service.SetAdvancedSetting(game, "Dx11Upscaler", "fsr22").Success);
+
+        var settings = service.GetAdvancedSettings(game).Settings;
+        Assert.Equal("fsr22", settings.Single(setting => setting.Id == "Dx11Upscaler").CurrentValue);
+        Assert.Equal("dlss", settings.Single(setting => setting.Id == "Dx12Upscaler").CurrentValue);
+        Assert.Equal("fsr22", settings.Single(setting => setting.Id == "VulkanUpscaler").CurrentValue);
+    }
+
     [Fact]
     public void SetAdvancedSetting_InvalidChoiceIsRejectedWithoutChangingIni()
     {

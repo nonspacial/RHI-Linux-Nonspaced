@@ -46,12 +46,14 @@ public sealed partial class OptiScalerDeploymentServiceTests
         var (game, store) = CreateGame("optipatcher", GraphicsApi.DirectX12);
         var patcher = new FakeOptiPatcher(Path.Combine(_root, "optipatcher-cache"));
         var service = NewServiceWithOptiPatcher(store, new FakePackageProvider(CreatePackage("optipatcher-package")), patcher);
-        var asi = Path.Combine(game.BinaryDirectory!, "plugins", "OptiPatcher.asi");
+        // The package has OptiScaler 10's OptiScaler/ folder: OptiPatcher goes where that build reads plugins (#273).
+        var asi = NestedOptiPatcher(game);
 
         var installed = await service.InstallAsync(game);
 
         Assert.True(installed.Success, installed.Message);
         Assert.EndsWith(OptiScalerDeploymentService.OptiPatcherDeployedPrefix + "c3f758a", installed.Message);
+        Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "plugins")));
         Assert.True(File.Exists(asi));
         Assert.Contains("LoadAsiPlugins=true", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
         var record = store.Find(game, ManagedComponentKind.OptiScaler)!;
@@ -61,7 +63,7 @@ public sealed partial class OptiScalerDeploymentServiceTests
 
         Assert.True((await service.RemoveAsync(game)).Success);
         Assert.False(File.Exists(asi));
-        Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "plugins")));
+        Assert.False(Directory.Exists(Path.GetDirectoryName(asi)));
     }
 
     [Fact]
@@ -76,6 +78,7 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.True(installed.Success, installed.Message);
         Assert.Contains(OptiScalerDeploymentService.OptiPatcherSkippedPrefix + "GitHub is down (test)", installed.Message);
         Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "plugins")));
+        Assert.False(Directory.Exists(Path.GetDirectoryName(NestedOptiPatcher(game))));
         // LoadAsiPlugins is on at every install, as upstream (review nit 6).
         Assert.Contains("LoadAsiPlugins=true", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
         Assert.False(store.Find(game, ManagedComponentKind.OptiScaler)!.Metadata.ContainsKey(OptiScalerDeploymentService.OptiPatcherVersionMetadataKey));
@@ -101,7 +104,7 @@ public sealed partial class OptiScalerDeploymentServiceTests
     public async Task Install_AForeignOptiPatcherInPlugins_IsLeftAsItIs()
     {
         var (game, store) = CreateGame("optipatcher-foreign", GraphicsApi.DirectX12);
-        var asi = Path.Combine(game.BinaryDirectory!, "plugins", "OptiPatcher.asi");
+        var asi = NestedOptiPatcher(game);
         Directory.CreateDirectory(Path.GetDirectoryName(asi)!);
         File.WriteAllText(asi, "the user's own OptiPatcher");
         var service = NewServiceWithOptiPatcher(store, new FakePackageProvider(CreatePackage("optipatcher-foreign-package")),
@@ -126,7 +129,7 @@ public sealed partial class OptiScalerDeploymentServiceTests
         var patcher = new FakeOptiPatcher(Path.Combine(_root, "optipatcher-update-cache"));
         var service = NewServiceWithOptiPatcher(store, new FakePackageProvider(CreatePackage("optipatcher-update-package")), patcher);
         Assert.True((await service.InstallAsync(game)).Success);
-        var asi = Path.Combine(game.BinaryDirectory!, "plugins", "OptiPatcher.asi");
+        var asi = NestedOptiPatcher(game);
 
         var current = await service.CheckUpdateAsync(game);
         Assert.False(current.UpdateAvailable, current.Message);
@@ -195,6 +198,7 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
         Assert.True((await service.UpdateAsync(game)).Success);
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "plugins", "OptiPatcher.asi")));
+        Assert.False(File.Exists(NestedOptiPatcher(game)));
         Assert.Equal(0, patcher.Calls);
 
         var (pinnedGame, pinnedStore) = CreateGame("optipatcher-pinned", GraphicsApi.DirectX12);
@@ -206,5 +210,135 @@ public sealed partial class OptiScalerDeploymentServiceTests
         var check = await pinned.CheckUpdateAsync(pinnedGame);
         Assert.False(check.UpdateAvailable);
         Assert.Equal(1, pinnedPatcher.Calls);
+    }
+
+    private static string NestedOptiPatcher(DetectedGame game)
+        => Path.Combine(game.BinaryDirectory!, "OptiScaler", "plugins", OptiPatcherProvider.FileName);
+
+    private static string RootOptiPatcher(DetectedGame game)
+        => Path.Combine(game.BinaryDirectory!, "plugins", OptiPatcherProvider.FileName);
+
+    /// <summary>A package laid out as the 0.9 stable build: no OptiScaler/ folder (it reads &lt;game&gt;/plugins).</summary>
+    private OptiScalerPackage CreateFlatPackage(string name)
+    {
+        var package = CreatePackage(name);
+        Directory.Delete(Path.Combine(package.RootDirectory, "OptiScaler"), recursive: true);
+        return package;
+    }
+
+    // #273 (upstream 2.8.9 GetPluginsDir): the 0.9 stable build has no OptiScaler/ folder and reads <game>/plugins.
+    [Fact]
+    public async Task Install_AFlatStablePackage_PutsOptiPatcherInTheGamesPluginsFolder()
+    {
+        var (game, store) = CreateGame("optipatcher-flat", GraphicsApi.DirectX12);
+        var service = NewServiceWithOptiPatcher(store, new FakePackageProvider(CreateFlatPackage("optipatcher-flat-package")),
+            new FakeOptiPatcher(Path.Combine(_root, "optipatcher-flat-cache")));
+
+        var installed = await service.InstallAsync(game);
+
+        Assert.True(installed.Success, installed.Message);
+        Assert.True(File.Exists(RootOptiPatcher(game)));
+        Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "OptiScaler")));
+        var check = await service.CheckUpdateAsync(game);
+        Assert.False(check.UpdateAvailable, check.Message);
+    }
+
+    /// <summary>The state an older RHI left on an OptiScaler 10 build: OptiPatcher in &lt;game&gt;/plugins, recorded there.</summary>
+    private static void MoveOptiPatcherToTheOldFolder(DetectedGame game, LinuxDeploymentRecordStore store)
+    {
+        var record = store.Find(game, ManagedComponentKind.OptiScaler)!;
+        var nested = Path.GetFullPath(NestedOptiPatcher(game));
+        var old = Path.GetFullPath(RootOptiPatcher(game));
+        Directory.CreateDirectory(Path.GetDirectoryName(old)!);
+        File.Move(nested, old);
+        Directory.Delete(Path.GetDirectoryName(nested)!);
+        record.Files.Single(file => Path.GetFullPath(file.Path) == nested).Path = old;
+        record.DirectoriesCreatedByRhi.RemoveAll(dir => Path.GetFullPath(dir) == Path.GetDirectoryName(nested));
+        record.DirectoriesCreatedByRhi.Add(Path.GetDirectoryName(old)!);
+        store.Upsert(record);
+    }
+
+    // #273 (upstream 2.8.9): OptiPatcher an older RHI put in <game>/plugins, which OptiScaler 10 builds never read, is
+    // an update; the update moves it to OptiScaler/plugins (also when OptiPatcher cannot be downloaded now).
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Update_OptiPatcherInTheOldPluginsFolder_IsMovedWhereOptiScaler10ReadsIt(bool offline)
+    {
+        var (game, store) = CreateGame("optipatcher-move-" + offline, GraphicsApi.DirectX12);
+        var patcher = new FakeOptiPatcher(Path.Combine(_root, "optipatcher-move-cache-" + offline));
+        var service = NewServiceWithOptiPatcher(store, new FakePackageProvider(CreatePackage("optipatcher-move-package-" + offline)), patcher);
+        Assert.True((await service.InstallAsync(game)).Success);
+        MoveOptiPatcherToTheOldFolder(game, store);
+        var bytes = File.ReadAllBytes(RootOptiPatcher(game));
+        patcher.Fail = offline;
+
+        var check = await service.CheckUpdateAsync(game);
+        Assert.True(check.UpdateAvailable, check.Message);
+        Assert.Equal(OptiScalerDeploymentService.OptiPatcherMoveMessage, check.Message);
+
+        var updated = await service.UpdateAsync(game);
+
+        Assert.True(updated.Success, updated.Message);
+        Assert.Equal(bytes, File.ReadAllBytes(NestedOptiPatcher(game)));
+        Assert.False(File.Exists(RootOptiPatcher(game)));
+        Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "plugins")));
+        var record = store.Find(game, ManagedComponentKind.OptiScaler)!;
+        Assert.Single(record.Files, file => Path.GetFileName(file.Path) == OptiPatcherProvider.FileName);
+        Assert.Equal(FileHash.Sha256Hex(NestedOptiPatcher(game)), record.Files.Single(file => Path.GetFullPath(file.Path) == Path.GetFullPath(NestedOptiPatcher(game))).Sha256, ignoreCase: true);
+        Assert.DoesNotContain(record.DirectoriesCreatedByRhi, dir => Path.GetFullPath(dir) == Path.GetFullPath(Path.Combine(game.BinaryDirectory!, "plugins")));
+        Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
+
+        Assert.True((await service.RemoveAsync(game)).Success);
+        Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "OptiScaler")));
+    }
+
+    [Fact]
+    public async Task Update_MovingOptiPatcher_KeepsTheGamesOwnPluginsFolderAndItsFiles()
+    {
+        var (game, store) = CreateGame("optipatcher-move-keep", GraphicsApi.DirectX12);
+        var service = NewServiceWithOptiPatcher(store, new FakePackageProvider(CreatePackage("optipatcher-move-keep-package")),
+            new FakeOptiPatcher(Path.Combine(_root, "optipatcher-move-keep-cache")));
+        Assert.True((await service.InstallAsync(game)).Success);
+        MoveOptiPatcherToTheOldFolder(game, store);
+        var userPlugin = Path.Combine(game.BinaryDirectory!, "plugins", "RED4ext.dll");
+        File.WriteAllText(userPlugin, "the game's own plugin");
+
+        Assert.True((await service.UpdateAsync(game)).Success);
+
+        Assert.True(File.Exists(NestedOptiPatcher(game)));
+        Assert.False(File.Exists(RootOptiPatcher(game)));
+        Assert.Equal("the game's own plugin", File.ReadAllText(userPlugin));
+    }
+
+    // #273 (upstream 2.8.9/2.9.3 DeleteDirKeepingPlugins): an update never deletes the plugins folders (OptiPatcher, a
+    // user's or another component's DLLs) nor OptiScaler's custom upscaler / frame generation provider folder. RHI's
+    // update only replaces the files it owns, so this pins behaviour the fork already had.
+    [Fact]
+    public async Task Update_KeepsThePluginsAndCustomProviderFolders()
+    {
+        var (game, store) = CreateGame("optipatcher-keep-folders", GraphicsApi.DirectX12);
+        var provider = new SwitchingPackageProvider(CreatePackage("optipatcher-keep-folders-1"));
+        var service = NewServiceWithOptiPatcher(store, provider, new FakeOptiPatcher(Path.Combine(_root, "optipatcher-keep-folders-cache")));
+        Assert.True((await service.InstallAsync(game)).Success);
+        var kept = new[]
+        {
+            Path.Combine(game.BinaryDirectory!, "OptiScaler", "plugins", "d3d11.dll"),
+            Path.Combine(game.BinaryDirectory!, "OptiScaler", "custom", "nr_fg.dll"),
+            Path.Combine(game.BinaryDirectory!, "OptiScaler", "custom", "nr_fg.ini"),
+            Path.Combine(game.BinaryDirectory!, "plugins", "dxgi.dll"),
+        };
+        foreach (var file in kept)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, "kept " + Path.GetFileName(file));
+        }
+        provider.Package = CreatePackage("optiscaler-keep-folders-2") with { Version = "10.0.0" };
+
+        var updated = await service.UpdateAsync(game);
+
+        Assert.True(updated.Success, updated.Message);
+        foreach (var file in kept) Assert.Equal("kept " + Path.GetFileName(file), File.ReadAllText(file));
+        Assert.True(File.Exists(NestedOptiPatcher(game)));
     }
 }

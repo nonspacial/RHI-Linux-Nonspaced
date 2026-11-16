@@ -1494,3 +1494,36 @@ that is not hex or a line break, and the commit is 7–40 hex digits (`OptiPatch
 control character (BEL) before the commit is read too. A release that names no commit still falls back to the asset
 digest; upstream keeps the previous version string. The release as served on 2026-11-16 is a test fixture
 (`optipatcher-rolling-2026-11.json`), with upstream's `OptiPatcherVersionTests` cases.
+
+### #273 — OptiScaler fixes from 2.8.9–2.9.3
+
+Each upstream fix was checked against the fork. One was a real bug here; the others never existed on Linux and are
+pinned by tests.
+
+- **OptiPatcher where OptiScaler 10 builds read it (2.8.9), fixed.** RHI put `OptiPatcher.asi` in `<game>/plugins`,
+  which only the 0.9 stable build reads. Nightly, DLSS NR, F5 and the forks bring an `OptiScaler/` folder and read
+  `OptiScaler/plugins`, so OptiPatcher never loaded with them. As upstream's `GetPluginsDir`, OptiPatcher now goes to
+  `OptiScaler/plugins` when the package has that folder, else to `<game>/plugins`. Installs made before this are
+  repaired through the update check: an OptiPatcher RHI recorded in `<game>/plugins` beside an `OptiScaler/` folder
+  reads as an update ("OptiPatcher is in the game's plugins folder …"), and Update moves it, journaled, with the newest
+  build or, when that cannot be downloaded now, with its own bytes. The old `plugins` folder is removed only when RHI
+  created it and it is empty; a game's own plugins stay. Linux deviation: upstream moves the file for every game at
+  start-up; RHI does it through Update and Update All, like every other repair of a game folder. When a file RHI does
+  not own already sits at the new place, OptiPatcher stays where it is.
+- **Updates keep `plugins/` and the custom provider folder (2.8.9, 2.9.3), never existed.** Upstream's update emptied
+  the `OptiScaler/` folder except `plugins` and `custom`. RHI's update replaces only the files its record owns and never
+  deletes a folder, so `OptiScaler/plugins`, `OptiScaler/custom` (custom upscalers and FG providers such as ANR FG) and
+  `<game>/plugins` keep their files. Pinned by a test.
+- **FG Nvngx Override greyed with "DLSSG via Nvngx" (2.9.3), never existed.** The Linux ⚙ greys no row; the override
+  is offered, written and read back with that FG input. Pinned.
+- **Upscaler API changing the upscaler (2.8.9), not applicable.** The Linux ⚙ has no Upscaler API selector: DirectX
+  11, DirectX 12 and Vulkan each have their own upscaler row. A test pins that changing one leaves the others alone.
+  The ⚙ restyle to upstream's layout (phase 2) brings the selector; this test then covers it.
+- **F5 showing the Stable version (2.9.2), never existed.** The version shown is the record's, which is the F5 release
+  installed. Pinned in the F5 install test.
+- **Vulkan DLL-name reset to winmm.dll (2.8.9), not applicable.** RHI Linux does not install OptiScaler on Vulkan
+  games (only DirectX 11/12 are offered), so the name never resets there.
+- **A preset saved on F5 switching the game to F5 (2.8.9), Linux deviation kept.** Presets on Linux do not carry the
+  channel (#187): changing it reinstalls OptiScaler, which the ⚙ does not do while it is installed. Applying a preset
+  never changes the channel. Revisited with the presets panel (#269).
+- **Replace OptiScaler.ini using the NVIDIA template (2.8.9)** is part of "Replace with a fresh copy" (#269).

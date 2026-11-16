@@ -1308,10 +1308,13 @@ public static class UiLocalizationService
         // #98 OptiPatcher.
         (RHI.Platform.Linux.Deployment.DownloadSources.OptiPatcher.RefusalPrefix,
             "Download recusado: links do OptiPatcher devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
-        (" OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ", " OptiPatcher implantado em plugins/ (LoadAsiPlugins do OptiScaler ativado). Build: "),
+        (" OptiPatcher deployed to OptiScaler's plugins folder (OptiScaler LoadAsiPlugins on). Build: ", " OptiPatcher implantado na pasta plugins do OptiScaler (LoadAsiPlugins do OptiScaler ativado). Build: "),
         (" OptiPatcher was not deployed; OptiScaler works without it: ", " O OptiPatcher não foi implantado; o OptiScaler funciona sem ele: "),
         ("OptiPatcher update available: ", "Atualização do OptiPatcher disponível: "),
-        ("a plugins/OptiPatcher.asi RHI does not own is already there; it was left as it is.", "já existe um plugins/OptiPatcher.asi que não pertence ao RHI; ele foi deixado como está."),
+        ("an OptiPatcher.asi RHI does not own is already in OptiScaler's plugins folder; it was left as it is.", "já existe na pasta plugins do OptiScaler um OptiPatcher.asi que não pertence ao RHI; ele foi deixado como está."),
+        // #273
+        ("OptiPatcher is in the game's plugins folder, which this OptiScaler build does not read; Update moves it to OptiScaler/plugins.",
+            "O OptiPatcher está na pasta plugins do jogo, que esta versão do OptiScaler não lê; Atualizar o move para OptiScaler/plugins."),
         ("The OptiPatcher rolling release lists no OptiPatcher.asi download.", "A versão contínua do OptiPatcher não lista o download OptiPatcher.asi."),
         ("The downloaded OptiPatcher.asi is not a 64-bit Windows DLL.", "O OptiPatcher.asi baixado não é uma DLL Windows de 64 bits."),
         // #97 OptiScaler per-GPU INI templates.
