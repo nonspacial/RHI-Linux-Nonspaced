@@ -647,6 +647,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
                 ManagedComponentKind.ShortFuse => T("Vm.DLSSToolShortFuseRecommended64Bit"),
                 ManagedComponentKind.Dlss5Dx11Bridge => T("Vm.DLSS5ToolDX11BridgeRecommendedDX11"),
                 ManagedComponentKind.Dlss5Feeder => T("Vm.DLSS5FeederRecommendedWhenGameHas"),
+                ManagedComponentKind.GitcUplift => T("Vm.GITCUpliftRecommended"), // w14/nr (#274)
                 _ => T("Vm.NoNeuralRenderingRecommendation")
             };
         }

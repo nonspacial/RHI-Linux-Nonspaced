@@ -110,6 +110,23 @@ Not on `main` yet:
 - OptiScaler ⚙: FG Nvngx Override lists custom frame generation providers found in OptiScaler's custom folder by name
   (#272, upstream 2.9.3).
 
+Not on `main` yet:
+
+- Wave 14 — nr
+  - DLSS5 Feeder 2.0 (#275): new installs use the motion vectors built into Feeder 2.0, so LumeniteFX is no longer
+    downloaded for it; games that already use LumeniteFX keep it. Feeder is added to the game's own ReShade preset
+    instead of replacing it, so your other effects and their settings stay, and removing Feeder takes out only what it
+    added (a preset that was there before is never deleted). The Feeder row shows "Built-in motion vectors" or
+    "LumeniteFX motion vectors" and mentions the Feeder menu (Alt+C).
+  - GITC Uplift (#274): a new Neural Rendering method by ghostinthecamera for almost any game on an RTX card (DirectX
+    9–12, Vulkan, OpenGL; 32 and 64-bit). Install it from its row in Managed components; in the game open ReShade
+    (Home), go to the GITC Uplift tab and tick Enable. Uplift Version (under NR versions) follows the latest release
+    or stays on one; the add-on and its helper always update together. It brings iMMERSE Launchpad for motion vectors
+    (on by default in games without DLSS, with a check box per game) and keeps it at the top of the game's ReShade
+    effects. Settings › DLSS/Streamline has a GITC Uplift card with the NR on/off key and "Write key to all Uplift
+    games". OpenGL games are set up so Uplift works with anti-aliasing on. It is the recommended method for 64-bit
+    DX11, DX12 and Vulkan games without DLSS.
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

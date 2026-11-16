@@ -90,6 +90,8 @@ public sealed partial class LinuxManagedComponentService
             // w12/nr-logs rows
             // w12/pins rows
             // w12/hdr-wsi rows
+            // w14/nr rows
+            ManagedComponentKind.GitcUplift when GitcUplift is not null => await GitcUplift.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.GitcUplift), cancellationToken).ConfigureAwait(false), // #274
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -171,6 +173,8 @@ public sealed partial class LinuxManagedComponentService
             // w12/nr-logs rows
             // w12/pins rows
             // w12/hdr-wsi rows
+            // w14/nr rows
+            ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.UpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.GitcUplift), cancellationToken), // #274
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -244,6 +248,8 @@ public sealed partial class LinuxManagedComponentService
             // w12/nr-logs rows
             // w12/pins rows
             // w12/hdr-wsi rows
+            // w14/nr rows
+            ManagedComponentKind.GitcUplift => InstallGitcUpliftCoreAsync(game, cancellationToken), // #274
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -332,6 +338,8 @@ public sealed partial class LinuxManagedComponentService
             // w12/nr-logs rows
             // w12/pins rows
             // w12/hdr-wsi rows
+            // w14/nr rows
+            ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.RemoveAsync(game, cancellationToken), // #274
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

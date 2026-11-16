@@ -1611,5 +1611,18 @@ internal static class UiStrings
         ("Osv.DefaultVersionTip", "Usada quando o OptiScaler é instalado em um jogo para o qual você não escolheu uma versão no ⚙. Jogos que já têm o OptiScaler mantêm a versão que têm.", "Used when OptiScaler is installed in a game you haven't picked a version for in its ⚙. Games that already have OptiScaler keep the version they have."),
         ("Osv.RemoveOldNightlies", "Remover builds Nightly antigas", "Remove old Nightly builds"),
         ("Osv.RemoveOldNightliesTip", "Cada build Nightly que o RHI baixa ocupa 200–300 MB. Ative para apagar as antigas automaticamente. A build mais nova e as builds em que algum jogo está fixado são mantidas.", "Every Nightly build RHI downloads takes 200-300 MB. Turn this on to delete old ones automatically. The newest build and any build a game is pinned to are kept."),
+        // w14/nr rows
+        // #274 GITC Uplift: Settings card (upstream Settings › Components › GITC Uplift), Neural Rendering rows, results.
+        ("Uplift.CardTitle", "GITC Uplift", "GITC Uplift"),
+        ("Uplift.KeyLabel", "Tecla liga/desliga do NR", "NR on/off key"),
+        ("Uplift.KeyTip", "A tecla do GITC Uplift que liga e desliga o NR no jogo (Enable hotkey no painel do Uplift). Desde o Uplift 2.0, o NR começa desligado a cada vez que o jogo inicia. O RHI grava a tecla no ReShade.ini do jogo quando instala o Uplift. Nenhuma deixa a tecla que cada jogo já tem.", "GITC Uplift's key for turning NR on and off in game (Enable hotkey in Uplift's panel). From Uplift 2.0, NR starts off every time the game starts. RHI writes it into a game's ReShade.ini when it installs Uplift there. None leaves the key each game already has."),
+        ("Uplift.KeyNone", "Nenhuma", "None"),
+        ("Uplift.WriteAll", "Gravar a tecla em todos os jogos com Uplift", "Write key to all Uplift games"),
+        ("Uplift.WriteAllTip", "Salva esta tecla e a grava no ReShade.ini de cada jogo com o GITC Uplift instalado pelo RHI. Jogos ocultos ficam de fora.", "Saves this key and writes it into the ReShade.ini of every game with GITC Uplift installed by RHI. Skips hidden games."),
+        ("Uplift.KeyChooseFirst", "Escolha uma tecla primeiro. Nenhuma deixa a tecla do Uplift de cada jogo como está.", "Pick a key first. None leaves each game's own Uplift key alone."),
+        ("Uplift.KeyWritten", "Tecla do Uplift definida como {0} em {1} jogo(s).", "Uplift key set to {0} in {1} game(s)."),
+        ("Uplift.KeyFailed", " {0} ficaram como estavam; primeiro: {1} — {2}", " {0} were left as they were; first: {1} — {2}"),
+        ("Uplift.KeyCancelled", "Gravação da tecla do Uplift cancelada.", "Writing the Uplift key was cancelled."),
+        ("Vm.GITCUpliftRecommended", "GITC Uplift · recomendado para jogos DX11/DX12/Vulkan de 64 bits sem DLSS", "GITC Uplift · recommended for 64-bit DX11/DX12/Vulkan games without DLSS"),
     ];
 }

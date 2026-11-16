@@ -27,6 +27,8 @@ public sealed class CompiledBindingsTests
     [InlineData(typeof(DlssPanelViewModel), nameof(DlssPanelViewModel.DlssSrPath))]
     [InlineData(typeof(ExtrasViewModel), nameof(ExtrasViewModel.UalStatusText))]
     [InlineData(typeof(ExtrasViewModel), nameof(ExtrasViewModel.SelectedNeuralRenderingDllVersion))]
+    [InlineData(typeof(ExtrasViewModel), nameof(ExtrasViewModel.SelectedGitcUpliftVersion))] // w14/nr (#274)
+    [InlineData(typeof(ExtrasViewModel), nameof(ExtrasViewModel.UpliftLaunchpad))] // w14/nr (#274)
     [InlineData(typeof(RuntimePanelViewModel), nameof(RuntimePanelViewModel.HdrProfileHint))]
     [InlineData(typeof(RuntimePanelViewModel), nameof(RuntimePanelViewModel.ShowHdrLaunchProfile))]
     [InlineData(typeof(OptionItem), nameof(OptionItem.Display))]

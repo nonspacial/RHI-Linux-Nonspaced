@@ -510,6 +510,9 @@ internal sealed class ViewModelFixture : IDisposable
             );
         managed.ShaderSets = shaderSets; // w7/shader-sets (#179): after construction, as the app's composition does
         managed.Hsf = new HsfDeploymentService(http, records, null, new ImmerseLaunchpadStep(http, Path.Combine(cacheDir, "launchpad")), Path.Combine(cacheDir, "hsf")); // w14/extras-addons (#277)
+
+        // w14/nr (#274): GITC Uplift with iMMERSE Launchpad, set after construction as the app's composition does.
+        managed.GitcUplift = new GitcUpliftDeploymentService(http, records, dlss, new ImmerseLaunchpadService(http), Path.Combine(cacheDir, "gitc-uplift"));
         built(managed);
         return new MainWindowViewModel(scanner, launcher ?? new LinuxGameLauncher(), probe ?? new NoProbe(), dlss, managed,
             new GraphicsApiOverrideStore(Path.Combine(prefs, "api.json")), new OptiScalerVariantPreferenceStore(Path.Combine(prefs, "opti.json")),

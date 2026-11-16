@@ -19,7 +19,7 @@ public sealed class NeuralRenderingSwitchTests
     public void ShortFuseSwitch_CleansFeederAndBridgeOnly()
     {
         var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.ShortFuse);
-        Assert.Equal(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge }, conflicts.ToArray());
+        Assert.Equal(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift }, conflicts.ToArray());
         Assert.DoesNotContain(ManagedComponentKind.ReShade, conflicts);
     }
 
@@ -27,14 +27,22 @@ public sealed class NeuralRenderingSwitchTests
     public void FeederSwitch_CleansShortFuseAndBridgeOnly()
     {
         var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.Dlss5Feeder);
-        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge }, conflicts.ToArray());
+        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift }, conflicts.ToArray());
     }
 
     [Fact]
     public void BridgeSwitch_CleansShortFuseAndFeederOnly()
     {
         var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.Dlss5Dx11Bridge);
-        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder }, conflicts.ToArray());
+        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.GitcUplift }, conflicts.ToArray());
+    }
+
+    [Fact]
+    public void UpliftSwitch_CleansTheThreeOtherMethods()
+    {
+        // w14/nr (#274): one Neural Rendering method at a time; installing Uplift removes RHI's other method first (upstream).
+        var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.GitcUplift);
+        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge }, conflicts.ToArray());
     }
 
     [Fact]
@@ -57,10 +65,24 @@ public sealed class NeuralRenderingSwitchTests
         Assert.Equal(ManagedComponentKind.Dlss5Dx11Bridge, LinuxManagedComponentService.RecommendedNeuralRenderingMethod(game, hasNativeDlss: true));
     }
 
-    [Fact]
-    public void Recommendation_NoNativeDlssDefaultsToFeeder()
+    // w14/nr (#274, upstream 18088a3): GITC Uplift only where DLSS5 Feeder was the default and all of Uplift works.
+    [Theory]
+    [InlineData(GraphicsApi.DirectX11)]
+    [InlineData(GraphicsApi.DirectX12)]
+    [InlineData(GraphicsApi.Vulkan)]
+    public void Recommendation_NoNativeDlss64BitDx11Dx12Vulkan_IsGitcUplift(GraphicsApi api)
     {
-        var game = new DetectedGame { ForcedArchitecture = PeArchitecture.X64, GraphicsApi = GraphicsApi.DirectX12 };
+        var game = new DetectedGame { ForcedArchitecture = PeArchitecture.X64, GraphicsApi = api };
+        Assert.Equal(ManagedComponentKind.GitcUplift, LinuxManagedComponentService.RecommendedNeuralRenderingMethod(game, hasNativeDlss: false));
+    }
+
+    [Theory]
+    [InlineData(PeArchitecture.X64, GraphicsApi.OpenGL)]
+    [InlineData(PeArchitecture.X64, GraphicsApi.DirectX9)]
+    [InlineData(PeArchitecture.X86, GraphicsApi.DirectX11)]
+    public void Recommendation_NoNativeDlssElsewhere_StaysFeeder(PeArchitecture architecture, GraphicsApi api)
+    {
+        var game = new DetectedGame { ForcedArchitecture = architecture, GraphicsApi = api };
         Assert.Equal(ManagedComponentKind.Dlss5Feeder, LinuxManagedComponentService.RecommendedNeuralRenderingMethod(game, hasNativeDlss: false));
     }
 

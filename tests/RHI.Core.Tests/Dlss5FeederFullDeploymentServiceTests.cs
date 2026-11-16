@@ -99,15 +99,16 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void BuildPresetText_PutsMvProviderOnEffectSection()
+    public void NewPreset_PutsMvProviderOnEffectSection()
     {
-        var text = Dlss5FeederFullDeploymentService.BuildPresetText();
+        // w14/nr (#275): the provider is the [DLSS5_Feed.fx] definition (Feeder ignores ReShade.ini's global list).
+        var text = FeederPreset.Merge(null, FeederPreset.LumeniteProvider);
 
         Assert.Contains("[DLSS5_Feed.fx]", text);
         Assert.Contains("PreprocessorDefinitions=DLSS5_MV_PROVIDER=3", text);
         Assert.Contains("Lumenite_Kernel@lumenite_Kernel.fx", text);
         Assert.Contains("DLSS5_Feed@DLSS5_Feed.fx", text);
-        Assert.DoesNotContain("[GENERAL]\r\nPreprocessorDefinitions=DLSS5_MV_PROVIDER=3", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("[GENERAL]", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

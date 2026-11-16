@@ -269,6 +269,8 @@ public sealed partial class LinuxManagedComponentService
         // w7/dxvk-hdr rows
         ManagedComponentKind.DxvkHdr => DxvkHdrDeploymentService.DisplayName,
         ManagedComponentKind.Hsf => HsfDeploymentService.DisplayName, // w14/extras-addons (#277)
+
+        ManagedComponentKind.GitcUplift => GitcUpliftDeploymentService.DisplayName, // w14/nr (#274)
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows

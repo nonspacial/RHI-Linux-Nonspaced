@@ -51,6 +51,9 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | OptiScaler pinned releases (#270: Stable, DLSS NR, F5 by tag) | `OptiScaler` / `OptiScalerF5`, release list and tag lookup through `GitHubApi` | GitHub release hosts | GitHub asset `digest`; tags limited to letters, digits and `. _ + -` before RHI asks for them | fail-open, cached and stamped per tag |
 | OptiScaler recommended forks (#271: Venom, NR PreSR MFG, Feeder NR, OpenNR) | `OptiScaler`, release list and tag lookup through `GitHubApi` | GitHub release hosts; the asset link must be under `https://github.com/<fork repo>/releases/download/` | GitHub asset `digest` | fail-open, cached and stamped per tag |
 | Recommended OptiScaler presets (#269, upstream `optiscaler_presets.json`) | `ComponentNotes` | raw.githubusercontent.com, 64 KiB | none (settings data, parsed before use; nothing installed from it; last good copy cached, built-in copies otherwise) | n/a |
+
+| GITC Uplift (#274) | `GitcUplift` | GitHub release hosts, 64 MiB | GitHub asset `digest` and the release's `SHA256SUMS.txt` (the zip, and each file taken out of it against its own line); releases with neither are not offered; the add-ons and helper must be PEs of their bitness | **fail-closed** (release left out) |
+| iMMERSE Launchpad (#274, shared with HSF #277) | `ImmerseLaunchpad` | GitHub release hosts, codeload.github.com, 64 MiB | none (the martymcmodding/iMMERSE `main` branch archive; only Launchpad, its `MartysMods` includes and its texture are taken; record part `Launchpad`) | fail-open, SHA-256 recorded; fetched per install |
 | ReShade Addon Manager | core `ReShadeAddons` | GitHub, `<author>.github.io`, raw.githubusercontent.com (Addons.ini) | none checked | fail-open |
 
 **Stalled downloads (#233).** Every body `TrustedDownload` reads (payloads and metadata) gives up when no byte arrives

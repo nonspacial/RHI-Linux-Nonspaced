@@ -42,6 +42,11 @@ public enum ManagedComponentKind
     // w14/extras-addons (#277): HSF frame generation (a ReShade add-on with its Streamline folder). 30, not the next free
     // value, so another wave-14 lane's new kind cannot take the same number unnoticed; renumber at the merge if wanted.
     Hsf = 30,
+
+    // w14 lane rows: new component kinds (next free value 25; each row ends with a comma)
+    // w14/nr rows
+    // #274: GITC Uplift, a Neural Rendering method (ReShade add-on + helper, its NR DLL in a GITC-Uplift subfolder).
+    GitcUplift = 24,
 }
 
 public enum ComponentAvailability

@@ -10,8 +10,10 @@ public sealed class UpdateAllBackgroundTests
     [Fact]
     public void SupportedComponents_MirrorsLinuxNativeFamilies()
     {
-        Assert.Equal(21, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Equal(22, LinuxUpdateAllService.SupportedComponents.Count);
         Assert.Contains(ManagedComponentKind.Hsf, LinuxUpdateAllService.SupportedComponents); // w14/extras-addons (#277)
+
+        Assert.Contains(ManagedComponentKind.GitcUplift, LinuxUpdateAllService.SupportedComponents); // w14/nr (#274)
         Assert.Contains(ManagedComponentKind.MfgAdaUnlock, LinuxUpdateAllService.SupportedComponents); // w12/mfg (#237)
         Assert.Contains(ManagedComponentKind.Dlssg2030Unlock, LinuxUpdateAllService.SupportedComponents); // w12/mfg (#238)
         Assert.Contains(ManagedComponentKind.UltimateAsiLoader, LinuxUpdateAllService.SupportedComponents); // w12/mfg (#238)

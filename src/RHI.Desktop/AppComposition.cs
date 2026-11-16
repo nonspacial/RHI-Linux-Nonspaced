@@ -366,6 +366,13 @@ internal sealed class AppComposition
         // w14/optiscaler rows
         // #270 Remove old Nightly builds (off by default): after a Nightly download, keep the newest and the builds games use.
         optiPackages.NightlyCleanupKeep = () => settingsStore.Load().OptiScalerRemoveOldNightlyBuilds ? managedComponents.OptiScalerNightlyBuildsInUse() : null;
+
+        // w14 lane rows: services set on LinuxManagedComponentService after construction (one statement each)
+        // w14/nr rows
+        // #274: GITC Uplift (a Neural Rendering method) with iMMERSE Launchpad, a service the HSF lane (#277) shares; the NR
+        // on/off key comes from Settings at install time.
+        managedComponents.GitcUplift = new GitcUpliftDeploymentService(http, records, dlss, new ImmerseLaunchpadService(http), journal: journal);
+        managedComponents.GitcUpliftEnableKey = () => settingsStore.Load().UpliftEnableKey;
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows

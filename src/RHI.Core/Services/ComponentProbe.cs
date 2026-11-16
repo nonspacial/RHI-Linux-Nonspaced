@@ -122,6 +122,9 @@ public static class ComponentProbe
         var dxvkHdrRow = Make(ManagedComponentKind.DxvkHdr, DxvkHdrDisplayName, dxvkHdrInstalled);
         if (!dxvkHdrInstalled && !IsDxvkHdrCandidate(game)) dxvkHdrRow.Availability = ComponentAvailability.Unsupported;
         result = [.. result, dxvkHdrRow];
+        // w14/nr (#274): GITC Uplift (a Neural Rendering method), after the other rows so their order stays as it was.
+        result = [.. result, Make(ManagedComponentKind.GitcUplift, GitcUpliftDisplayName,
+            files.Contains("gitc-uplift.addon64") || files.Contains("gitc-uplift.addon32"))];
 
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {
@@ -153,6 +156,7 @@ public static class ComponentProbe
     public const string Dlss5FeederDisplayName = "DLSS5 Feeder";
     public const string Dlss5BridgeDisplayName = "DLSS5 DX11 Bridge";
     public const string ShortFuseDisplayName = "ShortFuse / DLSS Frame Generation";
+    public const string GitcUpliftDisplayName = "GITC Uplift"; // w14/nr (#274)
 
     /// <summary>
     /// The Managed components row a Neural Rendering method or runtime owner shows as (the Check Neural Rendering page's
@@ -165,6 +169,7 @@ public static class ComponentProbe
         ManagedComponentKind.Dlss5Dx11Bridge => Dlss5BridgeDisplayName,
         ManagedComponentKind.ShortFuse => ShortFuseDisplayName,
         ManagedComponentKind.RtxEncore => RtxEncoreDisplayName,
+        ManagedComponentKind.GitcUplift => GitcUpliftDisplayName, // w14/nr (#274)
         _ => null
     };
 

@@ -146,7 +146,7 @@ internal static class FeederLayoutPlanner
 
     internal sealed record FeederCompilerPlan(string UsablePath, string? DeploySourcePath, string Description);
 
-    /// <summary>Where an install puts everything, as <see cref="PlanInstall"/> decided it.</summary>
+    /// <summary>Where an install puts everything, as <see cref="PlanInstall"/> decided it (Preset: the game's own preset file, #275).</summary>
     internal sealed record FeederInstallTargets(
         string BinaryDirectory,
         string AddonDirectory,
@@ -179,6 +179,10 @@ internal static class FeederLayoutPlanner
             ? ReShadeDeploymentService.FindFileCaseInsensitive(binaryDir, DeepFriedConfigName)
             : null) ?? Path.Combine(binaryDir, DeepFriedConfigName);
         var integrationRoot = Path.Combine(binaryDir, "reshade-shaders", "RHI", IntegrationRootName);
+        // w14/nr (#275): Feeder 2.0 is added to the preset the game already uses (merged, never replaced); upstream 2.9.3.
+        var preset = ReShadePresetFile.Resolve(binaryDir);
+        if (preset is null)
+            return (null, PresetOutsideRefusal);
         var targets = new FeederInstallTargets(
             binaryDir, addonDir, layout,
             Path.Combine(binaryDir, DeepFriedAddonName),
@@ -188,11 +192,11 @@ internal static class FeederLayoutPlanner
             integrationRoot,
             Path.Combine(integrationRoot, "Shaders"),
             Path.Combine(integrationRoot, "Textures"),
-            Path.Combine(binaryDir, PresetName));
+            preset);
 
         var protectedTargets = consumer == Dlss5FeederConsumer.DeepFriedChicken
-            ? new[] { layout.FeederTarget, targets.DeepFriedAddon, targets.DeepFriedBridge, targets.DeepFriedConfig, layout.DlssTarget, layout.NrTarget, targets.Preset }
-            : new[] { layout.FeederTarget, layout.ConsumerTarget, layout.DlssTarget, layout.NrTarget, targets.Preset };
+            ? new[] { layout.FeederTarget, targets.DeepFriedAddon, targets.DeepFriedBridge, targets.DeepFriedConfig, layout.DlssTarget, layout.NrTarget }
+            : new[] { layout.FeederTarget, layout.ConsumerTarget, layout.DlssTarget, layout.NrTarget };
         foreach (var path in protectedTargets)
             if (IsBlockingPreexistingFullStackTarget(path) &&
                 ReShadeDeploymentService.FindFileCaseInsensitive(Path.GetDirectoryName(path)!, Path.GetFileName(path)) is { } existingTarget)
