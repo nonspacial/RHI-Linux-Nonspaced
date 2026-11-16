@@ -2851,10 +2851,11 @@ Ported from upstream's 2.9.4 end state (`0d9b39f`, `0002440`, `5f409de`, `0e7552
   spellings (`toneMapPeakNits` / `ToneMapPeakNits`) as upstream's Beta 3 fix. ReShade preset (`PresetPath`), overlay and
   screenshot keys and `GamepadNavigation`: ReShade.ini (keys into every `ReShade*.ini`). ReLimiter `target_fps` /
   `osd_toggle_key`: relimiter.ini beside the add-on and RE Framework's `_storage_` copy (0 removes `target_fps`, as
-  ReLimiter's Apply to all does). Display Commander `fps_limit`: DisplayCommander.ini. A missing ini is "no value", not 0.
-  The NVIDIA driver FPS limit maps to the per-game FPS limit (#310: `DXVK_FRAME_RATE` / `VKD3D_FRAME_RATE`; Follow global
-  = no limit of its own; the list is upstream's driver caps plus #310's VRR presets). DLSS frame generation (Off, 2x–6x,
-  Dynamic), the SR / RR presets and render scales: the game's NVIDIA settings (#211, dxvk-nvapi launch variables).
+  ReLimiter's Apply to all does). Display Commander `fps_limit`: DisplayCommander.ini. A missing ini is "no value",
+  not 0. The NVIDIA driver FPS limit maps to the per-game FPS limit (#310: `DXVK_FRAME_RATE` / `VKD3D_FRAME_RATE`;
+  Follow global = no limit of its own; the list is upstream's driver caps plus #310's VRR presets). DLSS frame
+  generation (Off, 2x–6x, Dynamic), the SR / RR presets and render scales: the game's NVIDIA settings (#211,
+  dxvk-nvapi launch variables).
   Windows HDR on launch: the game's HDR launch mode (Off / Gamescope / Native Wayland, #250/#251); resolution on launch:
   the resolution switch (#191; Off, On with the game's size, or a size).
 - **Linux deviations.** RTX HDR peak brightness is not offered: RTX HDR is a Windows driver feature with no Wine/Proton
@@ -2879,4 +2880,5 @@ Ported from upstream's 2.9.4 end state (`0d9b39f`, `0002440`, `5f409de`, `0e7552
   saved over): the on/off switch, the modes and each game's state by its library key. Upstream keeps them in
   settings.json. The ReShade.ini "keep updated" lock that upstream checks for global values has no Linux counterpart.
 - **For other page layouts.** The switch is a reusable view (`DisplayModeSwitchView`, attached with
-  `MainWindow.AttachDisplayModeSwitch`) over `DisplayModesPresenter`; the Tabs and Spotlight layouts host it the same way.
+  `MainWindow.AttachDisplayModeSwitch`) over `DisplayModesPresenter`; the Tabs and Spotlight layouts host it the same
+  way.
