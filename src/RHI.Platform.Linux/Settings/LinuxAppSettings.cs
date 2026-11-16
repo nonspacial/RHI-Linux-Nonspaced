@@ -106,6 +106,12 @@ public sealed class LinuxAppSettings
     // w12/nr-logs rows
     // w12/pins rows
     // w12/hdr-wsi rows
+    // w14/ui-settings (small) rows
+    /// <summary>#309 (upstream 2.9.2 PatchNotesNavHidden / PatchNotesFontSize): What's New remembers whether its version list
+    /// and search are hidden, and its text size (10–20, 12 by default).</summary>
+    public bool WhatsNewNavHidden { get; set; }
+    public double WhatsNewFontSize { get; set; } = WhatsNewDefaultFontSize;
+    public const double WhatsNewMinFontSize = 10, WhatsNewMaxFontSize = 20, WhatsNewDefaultFontSize = 12;
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -184,6 +190,8 @@ public sealed class LinuxAppSettings
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        // w14/ui-settings (small) rows
+        WhatsNewFontSize = double.IsFinite(WhatsNewFontSize) ? Math.Clamp(Math.Round(WhatsNewFontSize), WhatsNewMinFontSize, WhatsNewMaxFontSize) : WhatsNewDefaultFontSize; // #309
         return this;
     }
 

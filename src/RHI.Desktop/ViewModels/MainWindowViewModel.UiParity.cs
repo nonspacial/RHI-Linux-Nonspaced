@@ -65,6 +65,19 @@ public partial class MainWindowViewModel
         SelectedGame = game;
     }
 
+    // ---- What's New (upstream 2.9.2): the version list's hidden state and the text size are remembered ----------------
+
+    /// <summary>What's New over this project's CHANGELOG.md, with the remembered list state and text size.</summary>
+    internal WhatsNewPresenter CreateWhatsNew(string markdown)
+        => new(markdown, _settings.WhatsNewNavHidden, _settings.WhatsNewFontSize, SaveWhatsNewView);
+
+    private void SaveWhatsNewView(bool navHidden, double fontSize)
+    {
+        _settings.WhatsNewNavHidden = navHidden;
+        _settings.WhatsNewFontSize = fontSize;
+        TryPersist(() => _settingsStore.Save(_settings), "Ui.WhatSettings");
+    }
+
     private void NotifyUiParity()
     {
         OnPropertyChanged(nameof(SelectedGameIsFavourite));

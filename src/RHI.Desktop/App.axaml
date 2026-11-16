@@ -336,5 +336,20 @@
     <Style Selector="Button.motdLink:pointerover">
       <Setter Property="Background" Value="Transparent"/>
     </Style>
+    <!-- #309 (upstream 2.9.2): What's New's version list. -->
+    <Style Selector="Button.whatsNewItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Padding" Value="10,6"/>
+    </Style>
+    <Style Selector="Button.whatsNewItem.selected">
+      <Setter Property="Background" Value="{DynamicResource RhiControlHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
   </Application.Styles>
 </Application>

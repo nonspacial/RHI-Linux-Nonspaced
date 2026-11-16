@@ -1976,5 +1976,16 @@ internal static class UiStrings
         ("Launch.HdrOffTip", "HDR ao iniciar: desligado.\nEscolha um modo de HDR para iniciar este jogo com HDR quando Jogar o iniciar.", "HDR on launch: Off.\nPick an HDR mode to start this game with HDR when Play starts it."),
         ("Launch.ResOnTip", "Mudar a resolução: ligado (definido para este jogo).\n{0}\nDesmarque para desligar neste jogo.", "Change resolution: On (set for this game).\n{0}\nUntick to turn it off for this game."),
         ("Launch.ResOffTip", "Mudar a resolução: desligado.\n{0}\nMarque para ligar neste jogo.", "Change resolution: Off.\n{0}\nTick to turn it on for this game."),
+        // #309 (upstream 2.9.2): What's New — the version list, search, the arrow that hides them and the text size.
+        ("Wn.Intro", "As notas de cada versão. Escolha uma à esquerda, ou pesquise em todas.", "Notes for every version. Pick one on the left, or search them all."),
+        ("Wn.SearchPlaceholder", "Pesquisar notas", "Search notes"),
+        ("Wn.SearchTip", "Pesquisa as notas de todas as versões (por exemplo OptiScaler, Proton, Vulkan). Esc limpa a pesquisa.", "Search every version's notes (e.g. OptiScaler, Proton, Vulkan). Esc clears the search."),
+        ("Wn.HideNavTip", "Ocultar as versões e a pesquisa", "Hide the versions and search"),
+        ("Wn.ShowNavTip", "Mostrar as versões e a pesquisa", "Show the versions and search"),
+        ("Wn.BiggerTip", "Texto maior", "Bigger text"),
+        ("Wn.SmallerTip", "Texto menor", "Smaller text"),
+        ("Wn.NoNotes", "Não há notas disponíveis.", "No notes available."),
+        ("Wn.NoMatch", "Nada nas notas menciona \"{0}\".", "Nothing in the notes mentions \"{0}\"."),
+        ("Wn.Matches", "{0} linha(s) encontrada(s) em {1} versão(ões). Clique numa versão à esquerda para ler tudo dela.", "{0} matching line(s) in {1} version(s). Click a version on the left to read all of it."),
     ];
 }

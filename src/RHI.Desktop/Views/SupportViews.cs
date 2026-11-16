@@ -176,14 +176,16 @@ internal static class ChangelogText
     /// block keeps the theme's inherited foreground (w7 final re-review 1: a local <c>null</c> Foreground overrides the
     /// inherited brush and Avalonia paints the text with nothing, so body text was invisible).
     /// </summary>
-    public static SelectableTextBlock View(int level, string text)
+    /// <param name="textSize">#309: the body text size (What's New's + and −, 10–20); headings scale with it, as upstream's.</param>
+    public static SelectableTextBlock View(int level, string text, double textSize = 12)
     {
+        var scale = textSize / 12;
         var block = new SelectableTextBlock
         {
             Text = text,
             TextWrapping = TextWrapping.Wrap,
             FontWeight = level > 0 ? FontWeight.SemiBold : FontWeight.Normal,
-            FontSize = level switch { 1 => 20, 2 => 16, 3 => 14, _ => 12 },
+            FontSize = scale * level switch { 1 => 20, 2 => 16, 3 => 14, _ => 12 },
             Margin = new Thickness(0, level is 1 or 2 ? 10 : 0, 0, 0),
             Opacity = level > 0 ? 1 : 0.86
         };
@@ -319,20 +321,24 @@ public sealed partial class MainWindow
         await ShowFittedDialogAsync(dialog);
     }
 
-    /// <summary>What's new: the fork's own CHANGELOG.md (upstream shows its patch notes from the status-bar version).</summary>
+    /// <summary>
+    /// What's New: the fork's own CHANGELOG.md (upstream shows its patch notes from the status-bar version). #309 (upstream
+    /// 2.9.2): a version list down the left with a search box above it, an arrow that hides both to widen the notes, and +
+    /// and − for the text size; RHI remembers the last two.
+    /// </summary>
     internal async Task ShowChangelogAsync()
     {
-        var panel = new StackPanel { Spacing = 8, Margin = new Thickness(18) };
-        foreach (var (level, text) in ChangelogText.Blocks(ChangelogText.Load()))
-            panel.Children.Add(ChangelogText.View(level, text));
+        if (DataContext is not MainWindowViewModel vm) return;
+        var presenter = vm.CreateWhatsNew(ChangelogText.Load());
+        var view = WhatsNewView.Build(presenter);
         var close = new Button { Content = T("Win.Close"), Padding = new Thickness(14, 7), HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12) };
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
-        root.Children.Add(new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        root.Children.Add(view);
         root.Children.Add(close);
         Grid.SetRow(close, 1);
         var dialog = new Window
         {
-            Title = TF("Shell.ChangelogTitle", RhiProductInfo.Version), Width = 760, Height = 760, MinWidth = 420, MinHeight = 360,
+            Title = TF("Shell.ChangelogTitle", RhiProductInfo.Version), Width = 960, Height = 760, MinWidth = 480, MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = root
         };
         close.Click += (_, _) => dialog.Close();
