@@ -217,7 +217,8 @@ internal sealed class AppComposition
         var dlssEnablerPreferences = new StandaloneDlssEnablerPreferenceStore();
         var dlssEnablerStandalone = new StandaloneDlssEnablerDeploymentService(http, records, wineOverrides, dlssEnablerPreferences, journal: journal);
         var rtx40MfgPreferences = new Rtx40MfgPreferenceStore();
-        var rtx40Mfg = new Rtx40MfgStandaloneDeploymentService(http, records, wineOverrides, rtx40MfgPreferences, journal: journal);
+        var intelXess = new IntelXessFiles(http); // w14/extras-fg: Intel's XeSS files for Universal MFG Unlocker, MFG Unlock and RTX Encore
+        var rtx40Mfg = new Rtx40MfgStandaloneDeploymentService(http, records, wineOverrides, rtx40MfgPreferences, journal: journal) { Xess = intelXess }; // #278
         var dlss5Bridge = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.Dlss5Dx11Bridge,
             "dlss5-dx11-bridge",

@@ -35,7 +35,7 @@
           <ComboBox Grid.Column="1" ItemsSource="{Binding GpuOptions}" SelectedItem="{Binding SelectedGpu}" MinWidth="{Binding GpuMinWidth}"
                     IsEnabled="{Binding CanChoose}"/>
         </Grid>
-        <Grid ColumnDefinitions="220,*" ColumnSpacing="12">
+        <Grid ColumnDefinitions="220,*" ColumnSpacing="12" IsVisible="{Binding HasProxy}">
           <TextBlock Text="{Binding ProxyLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
           <ComboBox Grid.Column="1" ItemsSource="{Binding ProxyOptions}" SelectedItem="{Binding SelectedProxy}" MinWidth="{Binding ProxyMinWidth}"
                     IsEnabled="{Binding CanChoose}" IsVisible="{Binding !ShowsProxyAsText}" ToolTip.Tip="{Binding ProxyTip}"/>
@@ -46,6 +46,18 @@
         <CheckBox Content="{Binding NeuralRenderingLabel}" IsChecked="{Binding NeuralRenderingChosen}" IsVisible="{Binding HasNeuralRendering}"
                   IsEnabled="{Binding CanChangeNeuralRendering}" ToolTip.Tip="{Binding NeuralRenderingTip}"/>
         <TextBlock Text="{Binding CompatibilityText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding HasCompatibility}"/>
+        <!-- w14/extras-fg: headings, notes and gold warnings (Universal MFG Unlocker's plugin and XeMFG sections, #278). -->
+        <ItemsControl ItemsSource="{Binding Lines}" IsVisible="{Binding HasLines}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ComponentDialogLine">
+              <StackPanel Margin="0,0,0,8">
+                <TextBlock Text="{Binding Text}" FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding IsHeading}" Margin="0,4,0,0"/>
+                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding IsPlain}"/>
+                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="#D7B65A" IsVisible="{Binding IsWarning}"/>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
         <TextBlock Text="{Binding InstalledText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding IsInstalled}"/>
         <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsInstalled}">
           <Button Classes="rhi" Content="{Binding CheckLabel}" Command="{Binding CheckCommand}" IsEnabled="{Binding CanCheck}"/>

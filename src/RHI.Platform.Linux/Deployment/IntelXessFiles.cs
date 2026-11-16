@@ -100,6 +100,15 @@ public sealed class IntelXessFiles
         _cacheRoot = cacheRoot ?? System.IO.Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "intel-xess");
     }
 
+    /// <summary>The files XeMFG needs, as this instance places them (<see cref="FrameGeneration"/>; tests substitute small files).</summary>
+    public IReadOnlyList<IntelXessFile> FrameGenerationFiles { get; init; } = FrameGeneration;
+
+    /// <summary>RTX Encore's DLLs, as this instance places them (<see cref="Encore"/>; tests substitute small files).</summary>
+    public IReadOnlyList<IntelXessFile> EncoreFiles { get; init; } = Encore;
+
+    /// <summary>Intel's licence, as this instance places it (<see cref="License"/>).</summary>
+    public IntelXessFile LicenseFile { get; init; } = License;
+
     /// <summary>The cache path of <paramref name="file"/>.</summary>
     public string CachePath(IntelXessFile file) => System.IO.Path.Combine(_cacheRoot, SdkTag, file.Name);
 

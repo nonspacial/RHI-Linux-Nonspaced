@@ -21,6 +21,18 @@ Wave 14 — extras-fg
   (its author publishes only the DLL, not the code), with Install, Cancel and **Don't show this again**. The tick is
   remembered per mod, also when you press Cancel. The ⓘ on the RTX Encore, 20/30 FG Unlock, Universal MFG Unlocker and
   MFG Unlock rows opens the mod's GitHub page.
+- **Universal MFG Unlocker** (formerly Universal MFG / RTX 40 MFG, upstream 2.8.9): the row has the mod's name and links
+  to its new GitHub page. The GPU generation choice is gone: RTX 30 is supported (RTX 20 experimental) and XeSS frame
+  generation (XeMFG) runs on any GPU, in DirectX 12 and (experimentally) Vulkan games.
+  - Installing it also puts Intel's `libxess_fg.dll` and `libxell.dll` in an `RTXMFG-XeSS` folder beside it, which
+    the mod's "XeMFG standalone" mode needs. Files you put there yourself are left alone. **Existing installs get them
+    with Update or Update All.**
+  - With RHI's OptiScaler Nightly, F5 DLSSNR or DLSS NR in the same game it installs as an OptiScaler plugin
+    (`OptiScaler/plugins/MFGUnlocker.asi`), as its author recommends; installing such an OptiScaler moves an existing
+    install in, and removing OptiScaler moves it back beside the game first. Choose DLSSG or XeFG with FG Output in
+    OptiScaler's ⚙.
+  - Installing it where ReShade is warns that XeMFG standalone does not start while ReShade is loaded, with **Don't
+    show this again**. The ⚙ explains XeMFG, says whether its files are there and warns about ReShade as `dxgi.dll`.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

@@ -109,23 +109,21 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
             }
             default:
             {
+                // #278 (upstream 2.8.9): no GPU generation; the mod's modes, its XeMFG files and its OptiScaler-plugin placement.
                 var preferences = shell.GetRtx40MfgPreferences();
                 var record = shell.GetRtx40MfgRecord();
+                var status = shell.GetUniversalMfgStatus();
                 Title = T("Ui.Rtx40MfgTitle");
                 Intro = T("Ui.Rtx40MfgIntro");
-                GpuLabel = T("Ui.Rtx40MfgGpuGeneration");
-                GpuOptions = Rtx40MfgStandaloneDeploymentService.GpuGenerations;
-                SelectedGpu = preferences.GpuGeneration;
-                GpuMinWidth = 240;
                 ProxyLabel = T("Ui.Rtx40MfgProxy");
                 ProxyOptions = Rtx40MfgStandaloneDeploymentService.SelectableProxyNames;
                 SelectedProxy = preferences.ProxyName;
                 ProxyMinWidth = 240;
+                HasProxy = status is not { AsPlugin: true };
                 CompatibilityText = T("Ui.Rtx40MfgCompatibility");
                 IsInstalled = record is not null;
-                InstalledText = record is null ? null : TF("Win.InstalledChangeGPUProxyRemoveReinstall", record.Version ?? "?",
-                    record.Metadata.GetValueOrDefault("UniversalMFG.GpuGeneration") ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40,
-                    record.Metadata.GetValueOrDefault("UniversalMFG.ProxyName") ?? record.Metadata.GetValueOrDefault("RTX40MFG.ProxyName") ?? preferences.ProxyName);
+                InstalledText = record is null ? null : TF("Ui.UmfgInstalledAs", record.Version ?? "?", status?.InstalledAs ?? preferences.ProxyName);
+                Lines = UniversalMfgLines(status, IsInstalled);
                 CheckLabel = T("Ui.Rtx40MfgCheck");
                 UpdateLabel = T("Ui.Rtx40MfgUpdate");
                 FooterNote = T("Ui.Rtx40MfgCompatibilityNote");
@@ -137,6 +135,35 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
         WindowTitle = $"{Title} — {game}";
         _loading = false;
         _shell.Operations.PropertyChanged += OnOperationsChanged;
+    }
+
+    /// <summary>
+    /// w14/extras-fg: the dialog's extra lines under the choices (headings, notes, warnings): Universal MFG Unlocker's
+    /// plugin and XeMFG sections (#278), and the status lines of the other FG unlocks.
+    /// </summary>
+    public IReadOnlyList<ComponentDialogLine> Lines { get; } = [];
+    public bool HasLines => Lines.Count > 0;
+
+    /// <summary>The proxy-name row shows (hidden while Universal MFG Unlocker is, or would be, an OptiScaler plugin).</summary>
+    public bool HasProxy { get; } = true;
+
+    /// <summary>#278: Universal MFG Unlocker's ⚙ sections, in upstream's order.</summary>
+    internal static IReadOnlyList<ComponentDialogLine> UniversalMfgLines(UniversalMfgStatus? status, bool installed)
+    {
+        var lines = new List<ComponentDialogLine>();
+        if (status is { AsPlugin: true })
+        {
+            lines.Add(ComponentDialogLine.Heading(T("Ui.UmfgPluginHeading")));
+            lines.Add(ComponentDialogLine.Plain(installed ? T("Ui.UmfgPluginText") : T("Ui.UmfgPluginBeforeInstall")));
+            lines.Add(ComponentDialogLine.Plain(T("Ui.UmfgPluginNote")));
+        }
+        lines.Add(ComponentDialogLine.Heading(T("Ui.UmfgXessHeading")));
+        lines.Add(ComponentDialogLine.Plain(T(status is { AsPlugin: true } ? "Ui.UmfgXessPlugin" : "Ui.UmfgXessStandalone")));
+        if (status?.XessInstalled is { } xess)
+            lines.Add(xess ? ComponentDialogLine.Plain(T("Ui.UmfgXessInstalled")) : ComponentDialogLine.Warning(T("Ui.UmfgXessMissing")));
+        if (status is { ReShadeAsDxgi: true })
+            lines.Add(ComponentDialogLine.Warning(T("Ui.UmfgReShadeDxgi")));
+        return lines;
     }
 
     public string WindowTitle { get; }
@@ -326,4 +353,13 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
     }
 
     public void Dispose() => _shell.Operations.PropertyChanged -= OnOperationsChanged;
+}
+
+/// <summary>One extra line of a component dialog (w14/extras-fg): a heading, a note or a (gold) warning.</summary>
+public sealed record ComponentDialogLine(string Text, bool IsHeading, bool IsWarning)
+{
+    public bool IsPlain => !IsHeading && !IsWarning;
+    public static ComponentDialogLine Heading(string text) => new(text, true, false);
+    public static ComponentDialogLine Plain(string text) => new(text, false, false);
+    public static ComponentDialogLine Warning(string text) => new(text, false, true);
 }

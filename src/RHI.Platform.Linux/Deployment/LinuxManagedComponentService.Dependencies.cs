@@ -258,7 +258,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.UltimateAsiLoader => "Ultimate ASI Loader",
         ManagedComponentKind.Dlssg2030Unlock => "RTX 20 FG Unlock",
         ManagedComponentKind.DlssEnablerStandalone => "DLSS Enabler (Standalone)",
-        ManagedComponentKind.Rtx40MfgStandalone => "Universal MFG",
+        ManagedComponentKind.Rtx40MfgStandalone => Rtx40MfgStandaloneDeploymentService.DisplayName, // #278
         ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)
         ManagedComponentKind.RtxEncore => RtxEncoreDeploymentService.DisplayName, // w4/encore (#158)
         ManagedComponentKind.ReShadeAddonManager => ReShadeAddonManagerService.DisplayName, // #194

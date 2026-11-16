@@ -94,7 +94,7 @@ public sealed partial class LinuxManagedComponentService
         return guard is not null
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
-                () => InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild, cancellationToken)); // #172
+                () => MovingUniversalMfgIntoOptiScalerAsync(game, InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild, cancellationToken), cancellationToken)); // #172; w14/extras-fg hook (#278)
     }
 
     /// <summary>

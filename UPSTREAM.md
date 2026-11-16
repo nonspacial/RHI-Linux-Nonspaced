@@ -1498,3 +1498,46 @@ release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
   so Settings → Reset does not bring the notices back. A dismissal that cannot be saved (an unreadable file) is reported
   on the status line and the notice shows again next time. Without a window (tests, headless runs) every notice is
   accepted.
+
+### Shared: Intel XeSS files for the frame-generation mods (2.8.9–2.9.3)
+
+- One service (`IntelXessFiles`) downloads and places Intel's XeSS SDK files for Universal MFG Unlocker (#278), MFG
+  Unlock (#279) and RTX Encore (#280), from upstream's source (`intel/xess` at tag `v3.0.2` on
+  raw.githubusercontent.com, policy `IntelXess` in [`docs/download-trust.md`](docs/download-trust.md)).
+- Linux deviation: every file is checked against a pinned SHA-256 (upstream pins them for RTX Encore only and accepts any
+  `MZ` file of at least 1 KiB for the other two mods), and a DLL must be a 64-bit PE. A file that does not match is
+  refused.
+- The moves run inside the component's own journaled operation, so a failure or a crash undoes them with the rest.
+  A step either adds a file the folder lacks (a file RHI did not place is left alone) or replaces the game's own copy in
+  place after copying it to a backup name. Unlike upstream, an existing backup is never overwritten: that file is
+  skipped and named. Removal deletes an added file, or puts the game's copy back from its backup, only while the file
+  still holds RHI's bytes; a file changed since is left, with its backup, and named.
+- Linux deviation: installs from before get the files through Update / Update All, not at start-up (the check plans it
+  even without a new release), as for the 20/30 FG Unlock package repair (#261, D1 = No).
+
+### #278 — Universal MFG Unlocker: rename, RTX 30 and XeMFG, Intel files, OptiScaler-plugin mode, ReShade warning (2.8.9)
+
+- The row is **Universal MFG Unlocker** (internal key and records unchanged) and its ⓘ opens
+  `github.com/dashdogy/MFG-Unlocker`.
+- The GPU-generation dropdown is gone, as upstream. Linux kept a stricter API rule for a saved "RTX 30" choice (DX12
+  only); it now applies one rule to every card: DirectX 12, Vulkan experimental. A saved generation is kept in the
+  record but no longer read. The proxy-name dropdown stays in the ⚙ (upstream asks for the name in a picker at install).
+- Intel files: `libxess_fg.dll` and `libxell.dll` go in `RTXMFG-XeSS` beside the proxy (the binary folder; upstream uses
+  its install folder, which is the same place for the games it supports). A download that fails does not stop the
+  install (upstream); the message says so and Update adds them.
+- OptiScaler-plugin mode: with RHI's OptiScaler Nightly, F5 DLSSNR or DLSS NR (an `OptiScaler` folder beside the game)
+  the mod is placed as `OptiScaler/plugins/MFGUnlocker.asi`, with no Wine override and no Intel files. Installing such an
+  OptiScaler moves an existing proxy install in (proxy, Wine override and Intel files removed); removing RHI's OptiScaler
+  first moves it back beside the game under the name it came from, else version.dll, winmm.dll, dinput8.dll or the next
+  free proxy name, never over an existing file, and puts the Intel files back. OptiScaler keeps `LoadAsiPlugins=true`,
+  which it already sets on every install. Stable OptiScaler is not a host. Linux deviations: upstream also reconciles
+  every game at start-up; RHI Linux moves only through these OptiScaler installs and removals, so an install made before
+  this build stays a proxy until OptiScaler is installed again or the mod is reinstalled. A move that cannot be made (a
+  file changed outside RHI, Wine running) is named in OptiScaler's message and never fails OptiScaler's own result.
+- ReShade warning: before a user-started install beside a ReShade (RHI's or the user's; not for a Vulkan game, whose
+  ReShade is the layer, and not for a plugin install), upstream's "XeMFG and ReShade" notice with Continue / Cancel and
+  **Don't show this again** (key `UmfgReShadeWarningDismissed`, through the #285 confirm).
+- ⚙: upstream's text (Backspace menu and its modes, preset B above 2x), the "Loaded by OptiScaler" section for a plugin
+  install, the XeMFG section with "XeSS files: installed / missing", and the ReShade-as-dxgi.dll warning at 5x/6x
+  (Linux wording points at installing ReShade under another DLL name instead of upstream's DLL naming overrides).
+  Upstream's "Open GitHub page" button is the row's ⓘ.

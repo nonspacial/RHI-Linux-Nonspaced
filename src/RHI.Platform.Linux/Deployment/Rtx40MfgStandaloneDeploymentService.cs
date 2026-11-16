@@ -18,7 +18,7 @@ namespace RHI.Platform.Linux.Deployment;
 /// digest/checksum when available, validates PE x64, applies a per-game Wine
 /// native,builtin override, and hash-guards update/removal.
 /// </summary>
-public sealed class Rtx40MfgStandaloneDeploymentService
+public sealed partial class Rtx40MfgStandaloneDeploymentService
 {
     // #236: the repository was renamed (dashdogy/RTX40MFG-Unlock → dashdogy/MFG-Unlocker); the old API URL answers 301.
     public const string ReleasesApiUrl = "https://api.github.com/repos/dashdogy/MFG-Unlocker/releases/latest";
@@ -162,10 +162,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
     public static bool IsGameEligible(DetectedGame game, string? gpuGeneration, LinuxDeploymentRecord? managedOptiScaler)
     {
-        var gpu = NormalizeGpuGeneration(gpuGeneration);
-        var apiEligible = gpu == GpuGenRtx30
-            ? game.EffectiveGraphicsApi == GraphicsApi.DirectX12
-            : game.EffectiveGraphicsApi is GraphicsApi.DirectX12 or GraphicsApi.Vulkan;
+        // #278 (upstream 2.8.9): the mod supports RTX 30 (RTX 20 experimental) and XeMFG on any GPU; upstream has no GPU
+        // generation setting and gates no API, so the stored generation no longer narrows the APIs (DX12, Vulkan experimental).
+        _ = gpuGeneration;
+        var apiEligible = game.EffectiveGraphicsApi is GraphicsApi.DirectX12 or GraphicsApi.Vulkan;
 
         return !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
                && game.HasConfirmedPatchTarget
@@ -193,9 +193,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return "Selecione primeiro o executável real do jogo em Editar jogo.";
         if (ResolveArchitecture(game) != PeArchitecture.X64)
             return "Universal MFG exige um executável Windows x64.";
-        if (gpu == GpuGenRtx30 && game.EffectiveGraphicsApi != GraphicsApi.DirectX12)
-            return "Universal MFG em RTX 30 é experimental e exige DirectX 12; Vulkan não é habilitado para RTX 30 neste caminho.";
-        if (gpu == GpuGenRtx40 && game.EffectiveGraphicsApi is not (GraphicsApi.DirectX12 or GraphicsApi.Vulkan))
+        if (game.EffectiveGraphicsApi is not (GraphicsApi.DirectX12 or GraphicsApi.Vulkan))
             return "Universal MFG em RTX 40 usa DirectX 12 como caminho principal e Vulkan experimental; DirectX 11 não é elegível.";
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o Universal MFG.";
@@ -226,8 +224,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (conflict is not null)
             return ComponentOperationResult.Fail($"{conflict} já está ativo. Remova esse método antes de instalar Universal MFG para manter uma única autoridade de Frame Generation.");
 
+        // #278: with OptiScaler Nightly, F5 or DLSS NR the mod goes in OptiScaler's plugins folder, as its author recommends.
+        var asPlugin = IsPluginHost(managedOptiScaler);
         var requested = proxyName ?? preferences.ProxyName;
-        var selectedProxy = CanonicalProxyOrNull(requested);
+        var selectedProxy = asPlugin ? PluginRelativePath : CanonicalProxyOrNull(requested);
         if (selectedProxy is null)
             return ComponentOperationResult.Fail($"Proxy não suportado pelo Universal MFG: {requested}.");
         if (IsBinkProxy(selectedProxy))
@@ -242,8 +242,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         var targetPath = Path.Combine(binaryDir, selectedProxy);
         if (IsRhiManagedPath(game, targetPath))
             return ComponentOperationResult.Fail($"{selectedProxy} já pertence a outro componente gerenciado pelo RHI. Escolha outro proxy no botão ⚙.");
-        if (FindExistingProxySlot(binaryDir, selectedProxy) is not null)
-            return ComponentOperationResult.Fail($"{selectedProxy} já existe e é externo (inclusive considerando variações de maiúsculas/minúsculas). O RHI não sobrescreve nem adota uma DLL proxy existente; escolha outro nome.");
+        if (asPlugin ? File.Exists(targetPath) || Directory.Exists(targetPath) : FindExistingProxySlot(binaryDir, selectedProxy) is not null)
+            return ComponentOperationResult.Fail(asPlugin
+                ? PluginSlotTakenPrefix + targetPath
+                : $"{selectedProxy} já existe e é externo (inclusive considerando variações de maiúsculas/minúsculas). O RHI não sobrescreve nem adota uma DLL proxy existente; escolha outro nome.");
 
         Rtx40MfgReleaseInfo release;
         string payloadPath;
@@ -256,8 +258,12 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         {
             return ComponentOperationResult.Fail($"Universal MFG download/validation failed: {ex.Message}");
         }
+        // #278: the Intel files XeMFG standalone needs (not for a plugin install: OptiScaler brings its own). A download that
+        // fails does not stop the install (upstream); the files then come with the next Update.
+        var (xessCache, xessFailure) = asPlugin ? (null, null) : await CacheXessAsync(cancellationToken).ConfigureAwait(false);
 
         string? tempPath = null;
+        IntelXessPlaced? xessPlaced = null;
         WineOverrideRecord? wineOverride = null;
 
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
@@ -271,13 +277,18 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
+            if (asPlugin) Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!); // OptiScaler/plugins (#278)
             // Verified, fsynced copy beside the target (full re-read hash), placed without replacing anything.
             var staged = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);
             tempPath = staged.Path;
             ValidatePayload(tempPath);
-            wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+            // A plugin is loaded by OptiScaler, not by Windows' DLL search: no Wine override (#278).
+            if (!asPlugin)
+                wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
             // Tracked and declared first (#23): a crash before the record is saved removes it at the next start.
             await scope.PlaceStagedAsync(staged, targetPath, cancellationToken, overwrite: false).ConfigureAwait(false);
+            if (xessCache is not null)
+                xessPlaced = await IntelXessFiles.PlaceAsync(scope, XessSteps(binaryDir), xessCache, cancellationToken).ConfigureAwait(false);
 
             var payloadHash = staged.Sha256;
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -292,6 +303,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                 [MetaExperimental] = "1",
                 [MetaUpstream] = RepositoryUrl,
             };
+            if (asPlugin) metadata[MetaPlacement] = PlacementPlugin;
+            if (xessPlaced is not null) IntelXessFiles.MarkDone(metadata, XessPrefix, xessPlaced.Entries);
             // Fail-closed source: every payload matched GitHub's digest or the publisher's SHA256SUMS.txt (#26).
             VerifiedDownload.Record(metadata, payloadHash, digestVerified: true);
             // The preference is saved before the commit point (review w3-journal #3): a failure here still rolls back
@@ -330,8 +343,11 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         }
         // The record carries the operation id: it is the commit point. Nothing after it rolls back.
         await scope.CommitAsync().ConfigureAwait(false);
+        if (asPlugin)
+            return ComponentOperationResult.Ok(InstalledAsPluginPrefix + release.Version, targetPath);
         return ComponentOperationResult.Ok(
-            $"Universal MFG {release.Version} instalado para {selectedGpu} como {selectedProxy}. Pressione Backspace no jogo para abrir o menu upstream; a compatibilidade sob Wine/Proton deve ser confirmada no jogo.",
+            $"Universal MFG {release.Version} instalado para {selectedGpu} como {selectedProxy}. Pressione Backspace no jogo para abrir o menu upstream; a compatibilidade sob Wine/Proton deve ser confirmada no jogo."
+            + (xessPlaced is not null ? IntelXessFiles.Notes(xessPlaced) : xessFailure is not null ? XessNotInstalledPrefix + xessFailure : ""),
             targetPath);
     }
 
@@ -372,9 +388,12 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         WineOverrideRestoreResult? overrideRestore = null;
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        var xessEntries = IntelXessFiles.Load(record.Metadata, XessPrefix);
+        IntelXessRemoved? xessRemoved = null;
         try
         {
             await scope.DeleteAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            xessRemoved = await IntelXessFiles.RemoveAsync(scope, xessEntries, cancellationToken).ConfigureAwait(false);
             overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone);
         }
@@ -390,8 +409,11 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         }
         // The record is gone: the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
+        IntelXessFiles.DeleteEmptyFolders(xessEntries);
+        if (IsPluginRecord(record)) DeleteEmptyPluginFolder(record.BinaryDirectory);
         return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado."
-            + WineDllOverrideService.KeptValueNotes(overrideRestore));
+            + WineDllOverrideService.KeptValueNotes(overrideRestore)
+            + (xessRemoved is not null ? IntelXessFiles.Notes(xessRemoved) : ""));
     }
 
     /// <summary>
@@ -485,7 +507,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         {
             latest = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
             if (string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase))
-                return ComponentOperationResult.Ok($"Universal MFG {record.Version} já está atualizado.");
+                return NeedsXessFiles(record)
+                    ? await AddXessFilesAsync(game, record, cancellationToken).ConfigureAwait(false) // #278: an install from before
+                    : ComponentOperationResult.Ok($"Universal MFG {record.Version} já está atualizado.");
             payloadPath = await EnsureCachedPayloadAsync(latest, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -519,6 +543,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             record.Metadata[MetaPayloadSha256] = newHash;
             record.Metadata[MetaUpstream] = RepositoryUrl; // #236: the renamed repository
             VerifiedDownload.Record(record.Metadata, newHash, digestVerified: true);
+            // #278: an install from before the Intel files gets them with its update.
+            if (NeedsXessFiles(record) && await CacheXessAsync(cancellationToken).ConfigureAwait(false) is ({ } xessCache, _))
+                IntelXessFiles.MarkDone(record.Metadata, XessPrefix,
+                    (await IntelXessFiles.PlaceAsync(scope, XessSteps(record.BinaryDirectory), xessCache, cancellationToken).ConfigureAwait(false)).Entries);
             _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
@@ -552,8 +580,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (ManagedUpdateFileGuard.Removed([proxyPath], record.Version) is { } removed)
             return removed;
         var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
-        var planned = new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
-            CouldNotCheck: !status.Success);
+        var xessDue = status.Success && !status.HasUpdate && NeedsXessFiles(record); // #278: an install from before the Intel files
+        var planned = new ManagedUpdateCheck(true, status.Success && (status.HasUpdate || xessDue), xessDue ? XessDueMessage : status.Message,
+            status.InstalledVersion, status.LatestVersion, CouldNotCheck: !status.Success);
         // w11 lesson: a swap is planned only while the proxy still holds RHI's bytes (hashed only then); F5: a record without
         // the proxy's hash reads as the guard's one "no recorded hash" line.
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));

@@ -38,17 +38,26 @@ public sealed class InstallNoticePresenter
     public const string AnrFgRepositoryUrl = "https://github.com/apex-compute/ANR";
 
     private readonly MainWindowViewModel _shell;
+    private readonly LinuxManagedComponentService _managed;
     private readonly DismissedNoticeStore _store;
 
-    private InstallNoticePresenter(MainWindowViewModel shell, DismissedNoticeStore store)
+    private InstallNoticePresenter(MainWindowViewModel shell, LinuxManagedComponentService managed, DismissedNoticeStore store)
     {
         _shell = shell;
+        _managed = managed;
         _store = store;
     }
 
     /// <summary>The presenter of <paramref name="shell"/> (one per shell; the shell's one-line hook).</summary>
-    public static InstallNoticePresenter For(MainWindowViewModel shell, Func<DismissedNoticeStore> store)
-        => Presenters.GetValue(shell, s => new InstallNoticePresenter(s, store()));
+    public static InstallNoticePresenter For(MainWindowViewModel shell, LinuxManagedComponentService managed, Func<DismissedNoticeStore> store)
+        => Presenters.GetValue(shell, s => new InstallNoticePresenter(s, managed, store()));
+
+    /// <summary>The key of Universal MFG Unlocker's ReShade warning (upstream's <c>UmfgReShadeWarningDismissed</c>).</summary>
+    public const string UniversalMfgReShadeKey = "UmfgReShadeWarningDismissed";
+
+    /// <summary>#278: XeMFG standalone does not start while ReShade is loaded (upstream 2.8.9's warning, Continue / Cancel).</summary>
+    public static DismissibleNotice UniversalMfgReShade()
+        => new(UniversalMfgReShadeKey, T("Notice.UmfgReShadeTitle"), [T("Notice.UmfgReShadeWhat"), T("Notice.UmfgReShadeHow")], T("Vm.Continue"));
 
     /// <summary>The store's key of a closed-source notice (upstream's settings <c>…ClosedSourceDismissed</c> names).</summary>
     public static string ClosedSourceKey(ClosedSourceMod mod) => mod switch
@@ -110,7 +119,8 @@ public sealed class InstallNoticePresenter
 
     /// <summary>
     /// The notices a user-started install of <paramref name="kind"/> shows first: the closed-source notice (RTX Encore,
-    /// 20/30 FG Unlock). False when the user cancelled; the status line then says the install was cancelled.
+    /// 20/30 FG Unlock) and Universal MFG Unlocker's ReShade warning (#278: only beside a ReShade, and not when it goes into
+    /// OptiScaler). False when the user cancelled; the status line then says the install was cancelled.
     /// </summary>
     public async Task<bool> ConfirmBeforeInstallAsync(DetectedGame game, ManagedComponentKind kind, string displayName)
     {
@@ -119,6 +129,8 @@ public sealed class InstallNoticePresenter
         {
             ManagedComponentKind.RtxEncore => await ConfirmClosedSourceAsync(ClosedSourceMod.RtxEncore),
             ManagedComponentKind.Dlssg2030Unlock => await ConfirmClosedSourceAsync(ClosedSourceMod.Dlssg2030),
+            ManagedComponentKind.Rtx40MfgStandalone when !IsDismissed(UniversalMfgReShadeKey)
+                && await Task.Run(() => _managed.UniversalMfgNeedsReShadeWarning(game)) => await ConfirmAsync(UniversalMfgReShade()),
             _ => true
         };
         if (!go) _shell.StatusText = TF("Vm.InstallationCancelled", displayName);

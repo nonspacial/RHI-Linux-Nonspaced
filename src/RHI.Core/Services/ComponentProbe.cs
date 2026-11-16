@@ -90,7 +90,7 @@ public static class ComponentProbe
             Make(ManagedComponentKind.DlssEnablerStandalone, "DLSS Enabler (Standalone)", false),
             // Universal RTXMFG is also a generic proxy DLL; ownership records are the safe
             // authority for Installed state. A bare version/dxgi/etc. must never be adopted.
-            Make(ManagedComponentKind.Rtx40MfgStandalone, "Universal MFG (Experimental)", false),
+            Make(ManagedComponentKind.Rtx40MfgStandalone, "Universal MFG Unlocker", false), // #278 (upstream 2.8.9)
             // Generic proxy names as well, but identified by its own version resource; RHI's record marks it managed.
             Make(ManagedComponentKind.RtxEncore, RtxEncoreDisplayName, rtxEncoreInstalled),
             Make(ManagedComponentKind.Dlss5Feeder, Dlss5FeederDisplayName, files.Any(IsDlss5FeederAddonFileName)),

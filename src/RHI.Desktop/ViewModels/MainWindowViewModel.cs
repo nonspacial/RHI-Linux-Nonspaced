@@ -200,7 +200,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w14 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w14/extras-fg rows
     /// <summary>#285/#278: install notices with "Don't show this again" (closed-source mods, Universal MFG's ReShade warning).</summary>
-    public InstallNoticePresenter InstallNotices => InstallNoticePresenter.For(this, () => new DismissedNoticeStore(Path.Combine(_settingsStore.ConfigRoot, "dismissed-notices.json")));
+    public InstallNoticePresenter InstallNotices => InstallNoticePresenter.For(this, _managedComponents, () => new DismissedNoticeStore(Path.Combine(_settingsStore.ConfigRoot, "dismissed-notices.json")));
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1240,6 +1240,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     public LinuxDeploymentRecord? GetRtx40MfgRecord()
         => SelectedGame is null ? null : _managedComponents.GetRtx40MfgRecord(SelectedGame);
+
+    /// <summary>#278: the Universal MFG Unlocker ⚙'s facts for the selected game (null without one).</summary>
+    public UniversalMfgStatus? GetUniversalMfgStatus()
+        => SelectedGame is null ? null : _managedComponents.UniversalMfgStatus(SelectedGame);
 
     public ComponentOperationResult SetRtx40MfgPreferences(string proxyName)
     {
