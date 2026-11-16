@@ -721,7 +721,7 @@
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
                 <StackPanel x:Name="ExtrasSectionBody" Spacing="10">
-                  <views:ResponsiveRow Columns="150,150,190,Auto,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
+                  <views:ResponsiveRow x:Name="UalRow" Columns="150,150,190,Auto,Auto,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                       <TextBlock Text="Ultimate ASI Loader" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold"/>
                       <TextBlock Text="{DynamicResource Ui.WineProtonProxy}" Classes="muted" FontSize="10"/>
@@ -746,7 +746,11 @@
                             IsEnabled="{Binding CanInstallOrUpdateUal}"
                             Padding="12,6"/>
 
-                    <Button Grid.Column="5" Classes="rhi remove" Content="{DynamicResource Ui.Remove}"
+                    <!-- w14/layouts-a (#297 owner decision): ASI Loader's ⚙ with nothing to set, between Install and Remove (upstream 2.9.0). -->
+                    <Button x:Name="UalSettingsButton" Grid.Column="5" Classes="rhi" Content="⚙" Click="AsiLoaderSettings_Click"
+                            ToolTip.Tip="{Binding UalSettingsTip}" ToolTip.ShowDelay="2000" Padding="10,6"/>
+
+                    <Button Grid.Column="6" Classes="rhi remove" Content="{DynamicResource Ui.Remove}"
                             Command="{Binding RemoveUalCommand}"
                             IsEnabled="{Binding CanRemoveUal}"
                             Padding="12,6"/>
