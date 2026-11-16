@@ -779,7 +779,9 @@
         <Button x:Name="CustomGamesNotice" Content="{Binding CustomGamesNoticeText}" IsVisible="{Binding ShowCustomGamesNotice}"
                 ToolTip.Tip="{Binding CustomGamesNoticeTip}" Click="CustomGamesNotice_Click" Background="Transparent" BorderThickness="0"
                 Padding="0" FontSize="10" Foreground="#4DA3FF" Cursor="Hand" VerticalAlignment="Center"/>
-        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
+        <!-- #298: background activity, a status line for a while, else when RHI last checked for updates and the next check. -->
+        <TextBlock x:Name="StatusBarText" Grid.Column="1" Text="{Binding StatusBar.Text}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip.Tip="{Binding StatusBar.ToolTip}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
         <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
         <TextBlock x:Name="ProductVersionText" Grid.Column="2" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"

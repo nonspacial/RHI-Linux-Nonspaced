@@ -640,6 +640,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             UiExceptionGuard.Forget(RefreshLibraryFactsAsync(), "RefreshLibraryFactsAsync");
         }
         _statusNotice.SetBusy(value);
+        StatusBar.SetBusy(value); // #298
         Updates.NotifyCanUpdateAll();
         ManualGames.NotifyRemove();
         RepairAfterMoveCommand.NotifyCanExecuteChanged();
@@ -726,6 +727,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         var decorated = _statusNotice.Decorate(value);
         if (!ReferenceEquals(decorated, value))
             StatusText = decorated;
+        else StatusBar.ShowMessage(value); // #298
     }
 
     /// <summary>
@@ -1006,6 +1008,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     {
         using var op = _operations.TryBegin("refresh");
         if (op is null) return false;
+        using var activity = BeginActivity("Sb.ActScanning"); // #298
         StatusText = onlyDetectors is null
             ? T("Vm.ScanningSteamHeroicLutrisWinePrefixes")
             : T("Vm.UpdatingLibrary");

@@ -41,6 +41,7 @@ public sealed partial class MainWindow
 
     private void InitializeLinuxUx()
     {
+        InitializeStatusBar(); // #298
         // The state to come back to from a minimised window (and from the tray when it was minimised first). Changes
         // while hidden in the tray are the window manager's, not the user's (e.g. dropping maximised on withdraw).
         PropertyChanged += (_, e) =>

@@ -1945,5 +1945,27 @@ internal static class UiStrings
         ("Osc.RemoveTitle", "Remover {0}?", "Remove {0}?"),
         ("Osc.RemoveUnused", "Os arquivos dela são apagados do RHI.", "Its files are deleted from RHI."),
         ("Osc.RemoveUsed", "{0} jogo(s) a têm instalada. Eles mantêm os arquivos, mas não podem ser atualizados ou reinstalados com ela. Escolha outra versão nas configurações do OptiScaler deles.", "{0} game(s) have it installed. They keep their files, but can't be updated or reinstalled with it. Pick another version in their OptiScaler settings."),
+        // w14/ui-settings (small) rows
+        // #298: the status bar's background activity and its "last checked / next check" line (Settings' countdown too).
+        ("Sb.NotYet", "Ainda não", "Not yet"),
+        ("Sb.JustNow", "Agora mesmo", "Just now"),
+        ("Sb.MinutesAgo", "há {0} min", "{0}m ago"),
+        ("Sb.HoursAgo", "há {0}h {1}min", "{0}h {1}m ago"),
+        ("Sb.DaysAgo", "há {0}d {1}h", "{0}d {1}h ago"),
+        ("Sb.UnderAMinute", "menos de um minuto", "under a minute"),
+        ("Sb.HoursMinutes", "{0}h {1}min", "{0}h {1}m"),
+        ("Sb.AfterStartup", "Depois da inicialização", "After startup"),
+        ("Sb.AnyMoment", "A qualquer momento", "Any moment"),
+        ("Sb.Countdown", "{0}h {1}min {2}s", "{0}h {1}m {2}s"),
+        ("Sb.LastCheckedNotYet", "Última verificação: ainda não", "Last checked: not yet"),
+        ("Sb.LastCheckedJustNow", "Última verificação: agora mesmo", "Last checked: just now"),
+        ("Sb.LastChecked", "Última verificação: {0}", "Last checked: {0}"),
+        ("Sb.NextCheckIn", "Próxima verificação em {0}", "Next check in {0}"),
+        ("Sb.LastMessage", "Última mensagem: {0}", "Last message: {0}"),
+        ("Sb.ActScanning", "Procurando seus jogos...", "Scanning your games..."),
+        ("Sb.ActCheckingUpdates", "Verificando atualizações...", "Checking for updates..."),
+        ("Sb.ActCheckingDlss", "Procurando DLSS e Streamline mais novos...", "Checking for newer DLSS and Streamline..."),
+        ("Sb.ActUpdatingDlss", "Levando o DLSS e o Streamline à versão mais nova...", "Updating DLSS and Streamline to the newest..."),
+        ("Sb.ActCustomFolders", "Verificando as pastas de jogos personalizadas...", "Checking custom game folders..."),
     ];
 }
