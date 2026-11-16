@@ -107,6 +107,16 @@ internal static class UiStrings
         ("Vm.NoLocalDLSSStreamlineDLLDetected", "Nenhuma DLL local de DLSS/Streamline detectada — a troca direta de DLLs está desativada para este jogo", "No local DLSS/Streamline DLL detected — direct DLL swapping is disabled for this game"),
         ("Vm.DefaultsSRRRFGNRSL", "Padrões · SR {0} · RR {1} · FG {2} · NR {3} · SL {4}", "Defaults · SR {0} · RR {1} · FG {2} · NR {3} · SL {4}"),
         ("Vm.SettingsSaved", "Configurações salvas em {0}.", "Settings saved to {0}."),
+        // #293 Remove from RHI / Removed games
+        ("Removed.Remove", "Remover do RHI", "Remove from RHI"),
+        ("Removed.RemoveTip", "Tira o jogo de todas as listas, inclusive Ocultos, e uma busca não o traz de volta. Os componentes que o RHI instalou nele continuam instalados; remova-os antes se quiser. Para trazê-lo de volta: Configurações → Jogos removidos → Restaurar.", "Takes the game out of every list, Hidden included, and a scan doesn't bring it back. Components RHI installed in it stay installed; remove them first if you want them gone. To bring it back: Settings → Removed games → Restore."),
+        ("Removed.Done", "{0} foi removido do RHI. Configurações → Jogos removidos traz de volta.", "{0} was removed from RHI. Settings → Removed games brings it back."),
+        ("Removed.Restored", "{0} foi restaurado.", "{0} was restored."),
+        ("Removed.Tab", "Jogos removidos", "Removed games"),
+        ("Removed.Intro", "Jogos que você removeu do RHI. Restaurar os traz de volta na próxima busca, que roda agora. Um jogo que você adicionou é removido com Remover jogo manual e volta adicionando-o de novo.", "Games you removed from RHI. Restore brings one back with the next scan, which runs now. A game you added yourself is removed with Remove manual game; add it again to get it back."),
+        ("Removed.None", "Nenhum jogo removido.", "No removed games."),
+        ("Removed.Restore", "Restaurar", "Restore"),
+        ("Removed.When", "{0} · removido em {1}", "{0} · removed {1}"),
         // #290 Block Steam updates
         ("Steam.BlockUpdates", "Bloquear atualizações da Steam", "Block Steam updates"),
         ("Steam.AllowUpdates", "Permitir atualizações da Steam", "Allow Steam updates"),

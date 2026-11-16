@@ -944,6 +944,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 game.LibraryIdentityPath ??= game.InstallPath;
                 adoptedMergedKeys |= _libraryState.AdoptOlderKeys(game); // older-build and merged-duplicate keys (Refs #55, #147)
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
+                if (_libraryState.IsRemoved(libraryKey)) continue; // #293: removed from RHI until Restore
                 if (previous is not null && previous.TryGetValue(Key(game), out var kept))
                 {
                     _library.SetLibraryFlags(kept, _libraryState.FavouriteGames.Contains(libraryKey), _libraryState.HiddenGames.Contains(libraryKey));
@@ -2116,6 +2117,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         OnPropertyChanged(nameof(SelectedExecutable));
         OnPropertyChanged(nameof(SelectedBinaryDirectory));
         NotifySteamUpdateBlock(); // #290
+        NotifyRemoveFromRhi(); // #293
         Runtime.NotifySection();
         OnPropertyChanged(nameof(HasSelectedGame));
         OnPropertyChanged(nameof(SelectedGameHasNotes));
