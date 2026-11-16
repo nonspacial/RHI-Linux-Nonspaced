@@ -194,16 +194,19 @@ public sealed partial class MainWindow : Window
             SyncAddonWatcherFromSettings();
             SyncTrayIcon();
         };
+        model.OpenDlssBatch = () => BatchDlss_Click(null, new RoutedEventArgs()); // #296: DLSS / Streamline › Batch deploy
+        // #296: upstream's Settings is a full page; here a window the size of the main window (fitted to the screen).
         var dialog = new Window
         {
             Title = model.WindowTitle,
-            Width = 760,
-            Height = 680,
-            MinWidth = 620,
-            MinHeight = 480,
+            Width = Math.Max(760, Bounds.Width),
+            Height = Math.Max(680, Bounds.Height),
+            MinWidth = 460,
+            MinHeight = 400,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = model
         };
+        dialog.Closing += (_, _) => model.Closing(null); // a pending change is saved; Settings reopens on this section
         await ShowFittedDialogAsync(dialog);
     });
 

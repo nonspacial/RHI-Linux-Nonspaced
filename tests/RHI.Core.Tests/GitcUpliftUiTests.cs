@@ -44,7 +44,10 @@ public sealed class GitcUpliftUiTests : IDisposable
         var presenter = (GitcUpliftPresenter)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GitcUpliftPresenter));
         var card = new GitcUpliftSettingsCard(new LinuxAppSettings { UpliftEnableKey = 0x78 }, presenter, null!, _ => { });
 
-        var panel = Assert.IsType<StackPanel>(card.Control);
+        var panel = Assert.IsType<Border>(card.Control); // w14/ui-settings (#296): the card itself, in the Settings layout
+        Assert.Contains("settingsCard", panel.Classes);
+        var saves = 0;
+        card.KeyChanged += () => saves++; // #297 (upstream): the key is saved the moment it is pressed
         var key = panel.GetLogicalDescendants().OfType<TextBox>().Single(c => c.Name == "GitcUpliftEnableKey");
         Assert.True(key.IsReadOnly);
         Assert.Equal("F9", key.Text);
@@ -53,6 +56,7 @@ public sealed class GitcUpliftUiTests : IDisposable
 
         Assert.True(Press(key, Avalonia.Input.Key.F10));
         Assert.Equal(0x79, card.Key);
+        Assert.Equal(1, saves);
         Assert.Equal("F10", key.Text);
         Assert.True(Press(key, Avalonia.Input.Key.NumPad5));
         Assert.Equal(0x65, card.Key);
@@ -61,6 +65,7 @@ public sealed class GitcUpliftUiTests : IDisposable
         Assert.False(Press(key, Avalonia.Input.Key.LeftCtrl)); // a modifier alone is not a key
         Assert.False(Press(key, Avalonia.Input.Key.Tab)); // Tab keeps moving the focus
         Assert.Equal(0x4B, card.Key);
+        Assert.Equal(3, saves); // F10, NumPad5, K; not the modifier nor Tab
 
         Assert.True(Press(key, Avalonia.Input.Key.Back));
         Assert.Equal(0, card.Key); // None: each game keeps its own key

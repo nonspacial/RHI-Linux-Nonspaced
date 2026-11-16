@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
+using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
@@ -18,25 +19,18 @@ namespace RHI.Desktop.Views;
 /// </summary>
 internal sealed class UpdatePolicySettingsRows
 {
-    private readonly CheckBox _followDlss;
-    private readonly CheckBox _followStreamline;
+    private readonly ComboBox _followDlss;
+    private readonly ComboBox _followStreamline;
     private readonly Dictionary<ManagedComponentKind, CheckBox> _included = [];
 
     public UpdatePolicySettingsRows(LinuxAppSettings settings)
     {
-        _followDlss = new CheckBox { Name = "FollowNewestDlss", Content = T("Upd.FollowDlss"), IsChecked = settings.FollowNewestDlss };
-        _followStreamline = new CheckBox { Name = "FollowNewestStreamline", Content = T("Upd.FollowStreamline"), IsChecked = settings.FollowNewestStreamline };
-        foreach (var box in new[] { _followDlss, _followStreamline })
-        {
-            ToolTip.SetTip(box, T("Upd.FollowTip"));
-            ToolTip.SetShowDelay(box, 2000);
-        }
-
-        var follow = new StackPanel { Spacing = 6 };
-        follow.Children.Add(new TextBlock { Text = T("Upd.FollowHeading"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
-        follow.Children.Add(_followDlss);
-        follow.Children.Add(_followStreamline);
-        follow.Children.Add(new TextBlock { Text = T("Upd.FollowNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
+        // #296 (upstream 2.8.9): General › Updates › Automatic updates, "DLSS" and "Streamline", Off / On.
+        _followDlss = Combo("FollowNewestDlss", settings.FollowNewestDlss);
+        _followStreamline = Combo("FollowNewestStreamline", settings.FollowNewestStreamline);
+        var follow = new StackPanel { Spacing = 8 };
+        follow.Children.Add(SettingsLayout.Row(T("Set.AutoDlss"), _followDlss, tip: T("Upd.FollowTip")));
+        follow.Children.Add(SettingsLayout.Row(T("Set.AutoStreamline"), _followStreamline, tip: T("Upd.FollowTip")));
         FollowControl = follow;
 
         var skips = UpdateInclusionStore.GlobalSkipsFrom(settings);
@@ -53,32 +47,39 @@ internal sealed class UpdatePolicySettingsRows
             _included[kind] = box;
             boxes.Children.Add(box);
         }
+        // #296: upstream's "Components to check" (its Global Update Inclusion).
         var inclusion = new StackPanel { Spacing = 6 };
-        inclusion.Children.Add(new TextBlock { Text = T("Upd.GlobalHeading"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
-        inclusion.Children.Add(boxes);
-        inclusion.Children.Add(new TextBlock { Text = T("Upd.GlobalNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
+        inclusion.Children.Add(SettingsLayout.SubHeading(T("Upd.GlobalHeading"), T("Upd.GlobalNote")));
+        inclusion.Children.Add(SettingsLayout.Block(boxes));
+        inclusion.Children.Add(SettingsLayout.Help(T("Upd.GlobalNote")));
         InclusionControl = inclusion;
     }
 
-    /// <summary>"Update All includes" (Maintenance tab).</summary>
+    /// <summary>"Components to check" (General › Updates).</summary>
     public Control InclusionControl { get; }
 
     /// <summary>True when Update All leaves <paramref name="kind"/> alone in every game (its box is cleared).</summary>
     public bool Skips(ManagedComponentKind kind) => _included.TryGetValue(kind, out var box) && box.IsChecked != true;
 
-    /// <summary>The two Follow newest toggles (DLSS/Streamline tab).</summary>
+    /// <summary>The two Follow newest rows (General › Updates › Automatic updates).</summary>
     public Control FollowControl { get; }
 
-    public bool FollowDlss => _followDlss.IsChecked == true;
+    public bool FollowDlss => OptionLists.OffOn.Value(_followDlss.SelectedItem as string);
 
-    public bool FollowStreamline => _followStreamline.IsChecked == true;
+    public bool FollowStreamline => OptionLists.OffOn.Value(_followStreamline.SelectedItem as string);
 
     public void Reset(LinuxAppSettings defaults)
     {
-        _followDlss.IsChecked = defaults.FollowNewestDlss;
-        _followStreamline.IsChecked = defaults.FollowNewestStreamline;
+        _followDlss.SelectedItem = OptionLists.OffOn.Display(defaults.FollowNewestDlss);
+        _followStreamline.SelectedItem = OptionLists.OffOn.Display(defaults.FollowNewestStreamline);
         var skips = UpdateInclusionStore.GlobalSkipsFrom(defaults);
         foreach (var (kind, box) in _included) box.IsChecked = !skips.Contains(kind);
+    }
+
+    private ComboBox Combo(string name, bool value)
+    {
+        var combo = new ComboBox { Name = name, ItemsSource = OptionLists.OffOn.Items, SelectedItem = OptionLists.OffOn.Display(value), MinWidth = 140 };
+        return combo;
     }
 
     private static string T(string key) => UiLocalizationService.Text(key);

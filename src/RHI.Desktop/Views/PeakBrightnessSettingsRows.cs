@@ -72,7 +72,7 @@ internal sealed class PeakBrightnessSettingsRows
         _enabled.SelectionChanged += (_, _) => SyncPresets();
         SyncPresets();
 
-        var apply = new Button { Name = "PeakNitsApplyAll", Content = UiLocalizationService.Text("Ini.ApplyToAllGames"), Padding = new Thickness(12, 6), HorizontalAlignment = HorizontalAlignment.Left };
+        var apply = new Button { Name = "PeakNitsApplyAll", Content = UiLocalizationService.Text("Set.WritePeakToAll"), Padding = new Thickness(12, 6), HorizontalAlignment = HorizontalAlignment.Left };
         ToolTip.SetTip(apply, UiLocalizationService.Text("Ini.PeakApplyTip"));
         ToolTip.SetShowDelay(apply, 2000);
         async Task ApplyAll()
@@ -102,14 +102,15 @@ internal sealed class PeakBrightnessSettingsRows
         nitsRow.Children.Add(auto);
 
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PeakSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(SettingsLayout.SubHeading(UiLocalizationService.Text("Ini.PeakSection"), UiLocalizationService.Text("Ini.PeakNote")));
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.PeakNits"), nitsRow));
         panel.Children.Add(monitorHost);
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.PeakEnabled"), _enabled));
         panel.Children.Add(_presetRow);
-        panel.Children.Add(apply);
+        apply.Classes.Add("settingsPrimary");
+        panel.Children.Add(SettingsLayout.Block(apply));
         panel.Children.Add(confirm.Control);
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PeakNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Ini.PeakNote")));
         Control = panel;
     }
 
@@ -141,13 +142,8 @@ internal sealed class PeakBrightnessSettingsRows
         => UiLocalizationService.Format(peak.Source == RHI.Platform.Linux.Hdr.DisplayPeakSource.KdeDisplaySettings ? "Ini.PeakFromKde" : "Ini.PeakFromMonitor",
             peak.Label, peak.PeakNits);
 
-    private static StackPanel Labeled(string label, Control control)
-    {
-        var panel = new StackPanel { Spacing = 5 };
-        panel.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(control);
-        return panel;
-    }
+    // #296: the Settings row layout (name left, control right).
+    private static Control Labeled(string label, Control control) => SettingsLayout.Row(label, control, tip: ToolTip.GetTip(control) as string);
 }
 
 /// <summary>

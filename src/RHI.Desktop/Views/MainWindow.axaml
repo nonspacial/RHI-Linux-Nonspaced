@@ -245,8 +245,8 @@
 
                   <!-- #251: the HDR section only for games that can use HDR; why it shows lives in the label's 2 s tooltip. -->
                   <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"
-                             IsVisible="{Binding Runtime.ShowHdrSection}" ToolTip.Tip="{Binding Runtime.HdrSectionTip}" ToolTip.ShowDelay="2000"/>
-                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrSection}">
+                             IsVisible="{Binding Runtime.ShowHdrRow}" ToolTip.Tip="{Binding Runtime.HdrSectionTip}" ToolTip.ShowDelay="2000"/>
+                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrRow}">
                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
                       <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}">
                               <ComboBox.ItemTemplate>
@@ -265,7 +265,7 @@
                   <!-- #191 resolution auto-toggle (saved with the HDR profile). w12/hdr-wsi (#251 correction): its own row, so it stays
                        wherever a switch can apply when the HDR row above is hidden. -->
                   <TextBlock Grid.Row="10" Grid.Column="0" Text="{Binding Runtime.ResolutionRowLabel}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"
-                             IsVisible="{Binding Runtime.ShowResolutionToggle}"/>
+                             IsVisible="{Binding Runtime.ShowResolutionRow}"/>
                   <views:ResolutionToggleRow Grid.Row="10" Grid.Column="1" DataContext="{Binding Runtime}"/>
 
                   <TextBlock Grid.Row="11" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>

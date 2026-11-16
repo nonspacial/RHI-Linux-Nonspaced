@@ -97,6 +97,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         ReShadeProfile.ReShadeManageIni = _settings.ReShadeManageIni;
         RefreshLocalizedPresentation();
         NotifyUxSettings();
+        Runtime?.NotifyLaunchButtonsShown(); // #312: Settings › Display & HDR › HDR / Resolution button
         if (restartLoop) Updates.RestartBackgroundUpdateLoop(runImmediate);
         NotifyDlssDefaults();
     }

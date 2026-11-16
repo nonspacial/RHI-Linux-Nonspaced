@@ -533,6 +533,22 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     public bool ShowHdrSection => SelectedGame is null
                                   || HdrSupportRule.ShowsHdrSection(_hdrSupportEvidence, CurrentAnalysis is null ? null : InstalledHdrMod is not null);
 
+    /// <summary>
+    /// #312 (upstream 2.9.3 ShowHdrLaunchButton): the HDR row is on the page when the section applies and Settings › Display
+    /// &amp; HDR does not hide it. Hiding only hides the row: the game's own HDR choice still applies at launch.
+    /// </summary>
+    public bool ShowHdrRow => ShowHdrSection && Host.Settings.ShowHdrLaunchButton;
+
+    /// <summary>#312 (upstream ShowResLaunchButton): the resolution row, unless Settings hides it (the game's choice still applies).</summary>
+    public bool ShowResolutionRow => ShowResolutionToggle && Host.Settings.ShowResLaunchButton;
+
+    /// <summary>#312: Settings changed the Show / Hide choice.</summary>
+    internal void NotifyLaunchButtonsShown()
+    {
+        OnPropertyChanged(nameof(ShowHdrRow));
+        OnPropertyChanged(nameof(ShowResolutionRow));
+    }
+
     /// <summary>#251: why the section shows, for the ~2 s tooltip on its label (provenance only there).</summary>
     public string? HdrSectionTip
     {
@@ -755,6 +771,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(ShowResolutionToggle));
         OnPropertyChanged(nameof(ShowHdrLegacyWsi)); // #250: follows the host snapshot
         OnPropertyChanged(nameof(ShowHdrSection)); // #251: follows the evidence and the analysis' HDR mods
+        NotifyLaunchButtonsShown(); // #312
         OnPropertyChanged(nameof(HdrSectionTip));
         Nvidia?.Notify(); // #211
     }

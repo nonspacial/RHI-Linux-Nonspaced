@@ -300,5 +300,58 @@
     <Style Selector="TextBlock.secondary">
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
     </Style>
+
+    <!-- w14/ui-settings (#296/#297): the Settings page's one layout (upstream Themes/DarkTheme.xaml Settings* styles), from
+         the theme resources only so colour themes apply. -->
+    <Style Selector="Border.settingsCard">
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="18,16"/>
+    </Style>
+    <Style Selector="Border.settingsRow">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding" Value="0,2"/>
+    </Style>
+    <Style Selector="Border.settingsFooter">
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="0,1,0,0"/>
+      <Setter Property="Padding" Value="16,8"/>
+    </Style>
+    <Style Selector="TextBlock.settingsHelp">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.settingsCardTitle">
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.settingsResultContext">
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+    <Style Selector="Button.settingsNav">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="MinHeight" Value="38"/>
+      <Setter Property="Padding" Value="14,8"/>
+    </Style>
+    <Style Selector="Button.settingsNav.active">
+      <Setter Property="Background" Value="{DynamicResource RhiControlPressedBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="Button.settingsResult">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
+    <Style Selector="Button.settingsPrimary">
+      <Setter Property="Background" Value="{DynamicResource RhiControlPressedBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
   </Application.Styles>
 </Application>

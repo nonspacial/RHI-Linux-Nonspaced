@@ -106,6 +106,15 @@ public sealed class LinuxAppSettings
     // w12/nr-logs rows
     // w12/pins rows
     // w12/hdr-wsi rows
+    // w14/ui-settings rows
+    /// <summary>#296 (upstream SettingsLastSection): the Settings section left last time; Settings reopens there.</summary>
+    public string SettingsLastSection { get; set; } = "";
+    /// <summary>#296 (upstream 2.9.3 "Tabs"): Settings shows one section at a time with a tab strip.</summary>
+    public bool SettingsTabbed { get; set; }
+    /// <summary>#312 (upstream 2.9.3 ShowHdrLaunchButton): the HDR row on game pages; hidden, a game's own choice still applies at launch.</summary>
+    public bool ShowHdrLaunchButton { get; set; } = true;
+    /// <summary>#312 (upstream 2.9.3 ShowResLaunchButton): the resolution switch row on game pages; hidden, a game's own choice still applies.</summary>
+    public bool ShowResLaunchButton { get; set; } = true;
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -156,6 +165,7 @@ public sealed class LinuxAppSettings
         // w5/shell-launch rows
         OptiScalerMenuKey = NormalizeOptiScalerMenuKey(OptiScalerMenuKey);
         if (UpliftEnableKey is < 0 or > 255) UpliftEnableKey = 0; // w14/nr (#274)
+        SettingsLastSection = SettingsLastSection?.Trim() ?? ""; // w14/ui-settings (#296)
         // w5/reshade-core rows
         // w7/smalls rows
         // w7/reshade rows

@@ -14,11 +14,12 @@ public sealed class LocalizationTableTests
     // Product names and symbols that read the same in both languages.
     private static readonly HashSet<string> SameInBothLanguages = new(StringComparer.Ordinal)
     {
-        "Ui.ShadersAddons", "Ui.Links", "Ui.Motd", "Ui.DlssStreamline", "Ui.Extras", "Ui.UxTab", "Ui.Rtx40MfgTitle",
+        "Ui.ShadersAddons", "Ui.Links", "Ui.Motd", "Ui.DlssStreamline", "Ui.Extras", "Ui.Rtx40MfgTitle",
         "Ui.Dlssg2030Title", // w14/extras-fg (#281): the mod's name, as Universal MFG Unlocker's
         "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra",
         "Ui.UpliftVersion", "Ui.UpliftLaunchpad", "Ui.UpliftLink", "Uplift.CardTitle", // w14/nr (#274): product names
-        "Ui.Dlss5ToolFoveated", "Ui.Dlss5ToolFoveatedLink" // w14/nr-2 (#276): the build's and project's names
+        "Ui.Dlss5ToolFoveated", "Ui.Dlss5ToolFoveatedLink", // w14/nr-2 (#276): the build's and project's names
+        "Set.SectionDlss", "Set.AutoDlss", "Set.AutoStreamline" // w14/ui-settings (#296): product names
     };
 
     private static readonly Regex PortugueseLetters = new("[ãõçáâêôíúéóàÃÕÇÁÂÊÔÍÚÉÓÀ]");

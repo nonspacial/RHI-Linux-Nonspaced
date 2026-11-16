@@ -18,7 +18,7 @@ internal sealed class OptiScalerTemplateSettingsRows
 {
     private readonly ComboBox _gpu;
     private readonly ComboBox _dlss;
-    private readonly StackPanel _dlssPanel;
+    private readonly Control _dlssPanel;
     private readonly ComboBox _defaultVersion;
     private readonly CheckBox _removeOldNightlies;
 
@@ -76,22 +76,16 @@ internal sealed class OptiScalerTemplateSettingsRows
             if (openFolder(templatesFolder) is { } error) showStatus(error);
         };
 
-        var choices = new WrapPanel { Orientation = Orientation.Horizontal };
-        var defaultPanel = Labeled(UiLocalizationService.Text("Osv.DefaultVersion"), _defaultVersion);
-        defaultPanel.Margin = new Thickness(0, 0, 16, 8);
-        choices.Children.Add(defaultPanel);
-        var gpuPanel = Labeled(UiLocalizationService.Text("Names.OptiScalerGpuType"), _gpu);
-        gpuPanel.Margin = new Thickness(0, 0, 16, 8);
-        _dlssPanel.Margin = new Thickness(0, 0, 16, 8);
-        choices.Children.Add(gpuPanel);
-        choices.Children.Add(_dlssPanel);
-
+        // #296 (upstream 2.9.0 Components › ReLimiter and OptiScaler › OptiScaler): Default version, Remove old Nightly
+        // builds under it, GPU type, DLSS inputs (AMD and Intel only), then the templates.
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Names.OptiScalerTemplateHeading"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(choices);
-        panel.Children.Add(_removeOldNightlies);
-        panel.Children.Add(open);
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Names.OptiScalerTemplateNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(SettingsLayout.SubHeading("OptiScaler", UiLocalizationService.Text("Names.OptiScalerTemplateNote")));
+        panel.Children.Add(Labeled(UiLocalizationService.Text("Osv.DefaultVersion"), _defaultVersion));
+        panel.Children.Add(SettingsLayout.Block(_removeOldNightlies));
+        panel.Children.Add(Labeled(UiLocalizationService.Text("Names.OptiScalerGpuType"), _gpu));
+        panel.Children.Add(_dlssPanel);
+        panel.Children.Add(Labeled(UiLocalizationService.Text("Names.OptiScalerTemplateHeading"), open));
+        panel.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Names.OptiScalerTemplateNote")));
         Control = panel;
     }
 
@@ -122,11 +116,5 @@ internal sealed class OptiScalerTemplateSettingsRows
     private void SyncDlssVisibility()
         => _dlssPanel.IsVisible = !string.Equals(GpuType, "NVIDIA", StringComparison.OrdinalIgnoreCase);
 
-    private static StackPanel Labeled(string label, Control control)
-    {
-        var panel = new StackPanel { Spacing = 5 };
-        panel.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(control);
-        return panel;
-    }
+    private static Control Labeled(string label, Control control) => SettingsLayout.Row(label, control, tip: ToolTip.GetTip(control) as string);
 }

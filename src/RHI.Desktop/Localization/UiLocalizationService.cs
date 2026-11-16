@@ -97,10 +97,6 @@ public static class UiLocalizationService
         ["Ui.LanguageNote"] = "A alteração é aplicada imediatamente à janela principal e fica salva no XDG. Reabra Configurações para atualizar todos os textos desta janela.",
         ["Ui.Save"] = "Salvar",
         ["Ui.ResetSettings"] = "Restaurar configurações",
-        ["Ui.UxTab"] = "UX",
-        ["Ui.MaintenanceTab"] = "Manutenção",
-        ["Ui.Maintenance"] = "Manutenção / caminhos XDG",
-        ["Ui.DesktopExperience"] = "Experiência de desktop Linux",
         ["Ui.ViewMode"] = "Modo de visualização",
         ["Ui.QuickStartTip"] = "Guia inicial do Linux e regras de responsabilidade dos componentes",
         ["Ui.AvailableModsTip"] = "Todos os jogos com mod RenoDX, Luma ou Ultra+, com link para a página de cada mod",
@@ -338,10 +334,6 @@ public static class UiLocalizationService
         ["Ui.LanguageNote"] = "The change is applied immediately to the main window and is saved in XDG. Reopen Settings to refresh every label in this dialog.",
         ["Ui.Save"] = "Save",
         ["Ui.ResetSettings"] = "Reset settings",
-        ["Ui.UxTab"] = "UX",
-        ["Ui.MaintenanceTab"] = "Maintenance",
-        ["Ui.Maintenance"] = "Maintenance / XDG paths",
-        ["Ui.DesktopExperience"] = "Linux desktop experience",
         ["Ui.ViewMode"] = "View mode",
         ["Ui.QuickStartTip"] = "Linux quick-start guide and component responsibility rules",
         ["Ui.AvailableModsTip"] = "Every game with a RenoDX, Luma or Ultra+ mod, with a link to each mod's page",
@@ -2205,8 +2197,8 @@ public static class UiLocalizationService
 
     // Every UI string, by language: the XAML resource table above plus the code table in UiStrings. Built once; a key
     // defined twice throws here, so a duplicate fails every test instead of silently shadowing a translation.
-    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Select(e => (e.Key, e.PtBr)));
-    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Select(e => (e.Key, e.EnUs)));
+    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Select(e => (e.Key, e.PtBr)));
+    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Select(e => (e.Key, e.EnUs)));
 
     private static Dictionary<string, string> Merge(IReadOnlyDictionary<string, string> resources, IEnumerable<(string Key, string Value)> code)
     {

@@ -51,7 +51,7 @@ internal sealed class ReLimiterSettingsRows
         var apply = new Button
         {
             Name = "ReLimiterApplyAll",
-            Content = UiLocalizationService.Text("Ini.ApplyToAllGames"),
+            Content = UiLocalizationService.Text("Set.WriteReLimiterToAll"),
             Padding = new Thickness(12, 6),
             HorizontalAlignment = HorizontalAlignment.Left
         };
@@ -79,16 +79,14 @@ internal sealed class ReLimiterSettingsRows
             else await ApplyAll();
         }, nameof(ReLimiterSettingsRows));
 
-        var choices = new WrapPanel { Orientation = Orientation.Horizontal };
+        var choices = new StackPanel { Spacing = 8 };
         foreach (var (label, control) in new (string, Control)[]
                  {
                      (UiLocalizationService.Text("Ini.ReLimiterSharedPresets"), _shared),
                      (UiLocalizationService.Text("Ini.ReLimiterDlssHooks"), _dlssHooks)
                  })
         {
-            var item = Labeled(label, control);
-            item.Margin = new Thickness(0, 0, 16, 8);
-            choices.Children.Add(item);
+            choices.Children.Add(Labeled(label, control));
         }
         var fpsRow = new WrapPanel { Orientation = Orientation.Horizontal };
         _fps.Margin = new Thickness(0, 0, 8, 6);
@@ -96,13 +94,14 @@ internal sealed class ReLimiterSettingsRows
         fpsRow.Children.Add(_customFps);
 
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = "ReLimiter", FontWeight = FontWeight.SemiBold, FontSize = 15 });
-        panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.ReLimiterOsdKey"), _osdKey.Control));
+        panel.Children.Add(SettingsLayout.SubHeading("ReLimiter", UiLocalizationService.Text("Ini.ReLimiterApplyNote")));
+        panel.Children.Add(Labeled(UiLocalizationService.Text("Set.OverlayKey"), _osdKey.Control));
         panel.Children.Add(choices);
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.ReLimiterTargetFps"), fpsRow));
-        panel.Children.Add(apply);
+        apply.Classes.Add("settingsPrimary");
+        panel.Children.Add(SettingsLayout.Block(apply));
         panel.Children.Add(confirm.Control);
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.ReLimiterApplyNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Ini.ReLimiterApplyNote")));
         Control = panel;
     }
 
@@ -159,11 +158,6 @@ internal sealed class ReLimiterSettingsRows
         return combo;
     }
 
-    private static StackPanel Labeled(string label, Control control)
-    {
-        var panel = new StackPanel { Spacing = 5 };
-        panel.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(control);
-        return panel;
-    }
+    // #296: the Settings row layout (name left, control right).
+    private static Control Labeled(string label, Control control) => SettingsLayout.Row(label, control, tip: ToolTip.GetTip(control) as string);
 }

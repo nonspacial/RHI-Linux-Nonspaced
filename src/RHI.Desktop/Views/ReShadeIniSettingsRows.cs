@@ -139,17 +139,22 @@ internal sealed class ReShadeIniSettingsRows
             deployButtons.Children.Add(button);
         }
 
+        // #296 (upstream 2.8.9): Effect list style and "Write these to all games" sit in ReShade & RenoDX › Keys, screenshots
+        // and brightness; the INI templates and the deploy buttons in Tools & Maintenance › Tools › Deploy to many games.
+        var keys = new StackPanel { Spacing = 8 };
+        keys.Children.Add(SettingsLayout.Row(UiLocalizationService.Text("Ini.EffectListStyle"), _effectList, tip: UiLocalizationService.Text("Set.EffectListStyleTip")));
+        applyAll.Classes.Add("settingsPrimary");
+        keys.Children.Add(SettingsLayout.Block(applyAll));
+        keys.Children.Add(applyAllConfirm.Control);
+        keys.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Ini.ApplyToAllGamesNote")));
+        KeysControl = keys;
+
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.EffectListStyle"), _effectList));
-        panel.Children.Add(applyAll);
-        panel.Children.Add(applyAllConfirm.Control);
-        panel.Children.Add(Note(UiLocalizationService.Text("Ini.ApplyToAllGamesNote")));
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.TemplateSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
-        panel.Children.Add(open);
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.DeployAllHeading"), TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(deployButtons);
+        panel.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Ini.TemplatesNote")));
+        panel.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Ini.DeployAllHeading")));
+        panel.Children.Add(SettingsLayout.Block(deployButtons));
         panel.Children.Add(deployHost);
-        panel.Children.Add(Note(UiLocalizationService.Text("Ini.TemplatesNote")));
+        panel.Children.Add(SettingsLayout.Block(open));
 
         // #180: one preset into every game whose ReShade RHI manages (upstream MassPresetInstall); hidden without presets.
         var presets = presenter.AvailablePresets();
@@ -175,14 +180,18 @@ internal sealed class ReShadeIniSettingsRows
         var presetRow = new WrapPanel { Orientation = Orientation.Horizontal };
         presetRow.Children.Add(presetPicker);
         presetRow.Children.Add(presetAll);
-        presetPanel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PresetSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        presetPanel.Children.Add(SettingsLayout.SubHeading(UiLocalizationService.Text("Ini.PresetSection")));
         presetPanel.Children.Add(presetRow);
         presetPanel.Children.Add(withPacks);
         if (presets.Count > 0) panel.Children.Add(presetPanel); // no presets: nothing to pick, the rows are left out
         Control = panel;
     }
 
+    /// <summary>Tools &amp; Maintenance › Tools › Deploy to many games: INI templates, one button per INI, a preset for every game.</summary>
     public Control Control { get; }
+
+    /// <summary>ReShade &amp; RenoDX › Keys, screenshots and brightness: Effect list style and Write these to all games.</summary>
+    public Control KeysControl { get; }
 
     public bool UseTabs => OptionLists.ReShadeEffectListStyle.Value(_effectList.SelectedItem?.ToString());
 
@@ -200,13 +209,4 @@ internal sealed class ReShadeIniSettingsRows
         return button;
     }
 
-    private static TextBlock Note(string text) => new() { Text = text, FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap };
-
-    private static StackPanel Labeled(string label, Control control)
-    {
-        var panel = new StackPanel { Spacing = 5 };
-        panel.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(control);
-        return panel;
-    }
 }

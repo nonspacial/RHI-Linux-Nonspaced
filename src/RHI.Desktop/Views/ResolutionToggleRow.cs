@@ -77,7 +77,7 @@ public sealed class ResolutionToggleRow : ContentControl
     {
         if (e.PropertyName is nameof(RuntimePanelViewModel.ResolutionToggle) or nameof(RuntimePanelViewModel.SelectedResolution)
             or nameof(RuntimePanelViewModel.ResolutionHint) or nameof(RuntimePanelViewModel.CanEditHdrProfile)
-            or nameof(RuntimePanelViewModel.ResolutionOptions) or nameof(RuntimePanelViewModel.ShowResolutionToggle))
+            or nameof(RuntimePanelViewModel.ResolutionOptions) or nameof(RuntimePanelViewModel.ShowResolutionToggle) or nameof(RuntimePanelViewModel.ShowResolutionRow))
             Sync();
     }
 
@@ -86,7 +86,7 @@ public sealed class ResolutionToggleRow : ContentControl
         _syncing = true;
         try
         {
-            IsVisible = _vm?.ShowResolutionToggle == true;
+            IsVisible = _vm?.ShowResolutionRow == true; // #312: Settings can hide the row
             // A new list (the display's own sizes): swapped while syncing, so the null the ComboBox writes is ignored.
             if (_vm is not null && !ReferenceEquals(_size.ItemsSource, _vm.ResolutionOptions)) _size.ItemsSource = _vm.ResolutionOptions;
             var on = _vm?.ResolutionToggle == true;
