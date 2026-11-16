@@ -182,7 +182,7 @@ public sealed partial class LumaFrameworkDeploymentServiceTests : IDisposable
         var staging = Path.Combine(_root, "staging-layout");
         Directory.CreateDirectory(staging);
 
-        var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, staging, CancellationToken.None);
+        var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, game.PrefixPath, staging, CancellationToken.None);
         var targets = plan.Select(x => Path.GetFullPath(x.TargetPath)).ToArray();
 
         Assert.Contains(Path.Combine(game.BinaryDirectory!, "addons", "Luma.addon64"), targets);
@@ -207,7 +207,7 @@ public sealed partial class LumaFrameworkDeploymentServiceTests : IDisposable
         var staging = Path.Combine(_root, "staging-neutral-addon");
         Directory.CreateDirectory(staging);
 
-        var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, staging, CancellationToken.None);
+        var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, game.PrefixPath, staging, CancellationToken.None);
 
         Assert.Contains(plan, item => item.TargetPath == Path.Combine(game.BinaryDirectory!, "addons", "Luma.addon"));
     }
@@ -226,7 +226,7 @@ public sealed partial class LumaFrameworkDeploymentServiceTests : IDisposable
         var staging = Path.Combine(_root, "staging-direct-addon");
         Directory.CreateDirectory(staging);
 
-        var plan = await LumaFrameworkDeploymentService.BuildPackagePlanAsync(package, "Luma.addon", game.BinaryDirectory!, staging, CancellationToken.None);
+        var plan = await LumaFrameworkDeploymentService.BuildPackagePlanAsync(package, "Luma.addon", game.BinaryDirectory!, game.PrefixPath, staging, CancellationToken.None);
 
         var item = Assert.Single(plan);
         Assert.Equal(Path.Combine(game.BinaryDirectory!, "addons", "Luma.addon"), item.TargetPath);
@@ -335,7 +335,7 @@ public sealed partial class LumaFrameworkDeploymentServiceTests : IDisposable
         Directory.CreateDirectory(staging);
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
-            LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, staging, CancellationToken.None));
+            LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, game.PrefixPath, staging, CancellationToken.None));
         Assert.False(File.Exists(Path.Combine(_root, "escape.txt")));
     }
 

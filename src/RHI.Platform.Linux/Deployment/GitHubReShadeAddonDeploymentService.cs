@@ -135,7 +135,10 @@ public sealed class GitHubReShadeAddonDeploymentService
         try { deployFileName = GetDeployFileName(architecture); }
         catch (Exception ex) { return ComponentOperationResult.Fail(ex.Message); }
 
-        var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
+        // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+        var addonFolder = AddonPathFolder.Resolve(game.BinaryDirectory!, game.PrefixPath);
+        if (addonFolder.Refusal is not null) return ComponentOperationResult.Fail(addonFolder.Refusal);
+        var deployDir = addonFolder.Folder;
         Directory.CreateDirectory(deployDir);
 
         if (_definition.MutuallyExclusiveWith is ManagedComponentKind otherKind)

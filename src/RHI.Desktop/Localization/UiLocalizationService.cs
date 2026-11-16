@@ -1791,6 +1791,9 @@ public static class UiLocalizationService
         // #255: an add-on RHI put in reshade.ini's AddonPath folder; a same-named file in the game folder is not RHI's.
         (RHI.Platform.Linux.Deployment.AddonPathFolder.LeftInGameFolderPrefix,
             "Não é do RHI, então ficou na pasta do jogo (o ReShade carrega add-ons do AddonPath do reshade.ini, não de lá): "),
+        // w13 final review m2: an AddonPath on a Windows drive the game's Wine prefix does not map (the value follows).
+        (RHI.Platform.Linux.Deployment.AddonPathFolder.UnmappedPrefix,
+            "O AddonPath do ReShade aponta para uma unidade do Windows que o RHI não encontra no prefixo Wine deste jogo, então nada foi alterado. Defina o AddonPath como uma pasta dentro do prefixo (C:\\…, Z:\\…) ou como uma pasta relativa: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

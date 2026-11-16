@@ -34,7 +34,7 @@ public sealed partial class LumaFrameworkDeploymentServiceTests
         var staging = Directory.CreateDirectory(Path.Combine(_root, "pin288-staging-" + Guid.NewGuid().ToString("N"))).FullName;
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, staging, CancellationToken.None));
+            LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, game.PrefixPath, staging, CancellationToken.None));
 
         Assert.StartsWith(refusal, error.Message, StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFileSystemEntries(staging));

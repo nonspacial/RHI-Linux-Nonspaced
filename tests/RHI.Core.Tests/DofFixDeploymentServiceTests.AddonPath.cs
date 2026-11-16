@@ -106,4 +106,40 @@ public sealed partial class DofFixDeploymentServiceTests
         Assert.Equal("the user's own build", File.ReadAllText(users));
         Assert.Contains(AddonPathFolder.LeftInGameFolderPrefix + users, result.Message);
     }
+
+    // w13 final review m2: a Windows drive the game's prefix does not map is refused, never joined on as <bin>/Q:/….
+    [Fact]
+    public async Task Install_AddonPathOnAnUnmappedDrive_IsRefused_AndNoJunkFolderIsMade()
+    {
+        var (service, records, game, http) = CancelFixture("addonpath-unmapped");
+        using var _ = http;
+        game.PrefixPath = Path.Combine(_root, "addonpath-unmapped-pfx");
+        Directory.CreateDirectory(Path.Combine(game.PrefixPath, "drive_c"));
+        SetAddonPath(game, @"Q:\ReShade\Addons");
+
+        var result = await service.InstallAsync(game);
+
+        Assert.False(result.Success);
+        Assert.StartsWith(AddonPathFolder.UnmappedPrefix, result.Message);
+        Assert.Empty(Directory.EnumerateDirectories(game.BinaryDirectory!));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, DofFixDeploymentService.AddonFileName)));
+        Assert.Null(records.Find(game, ManagedComponentKind.DofFix));
+    }
+
+    [Fact]
+    public async Task Install_AddonPathOnDriveC_GoesIntoThePrefix()
+    {
+        var (service, records, game, http) = CancelFixture("addonpath-drive-c");
+        using var _ = http;
+        game.PrefixPath = Path.Combine(_root, "addonpath-drive-c-pfx");
+        Directory.CreateDirectory(Path.Combine(game.PrefixPath, "drive_c"));
+        SetAddonPath(game, @"C:\ReShade\Addons");
+
+        var result = await service.InstallAsync(game);
+
+        var expected = Path.Combine(game.PrefixPath, "drive_c", "ReShade", "Addons", DofFixDeploymentService.AddonFileName);
+        Assert.True(result.Success, result.Message);
+        Assert.True(File.Exists(expected));
+        Assert.Equal(expected, records.Find(game, ManagedComponentKind.DofFix)!.Files.Single().Path);
+    }
 }

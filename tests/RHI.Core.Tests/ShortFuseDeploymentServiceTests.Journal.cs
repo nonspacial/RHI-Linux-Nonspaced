@@ -53,7 +53,7 @@ public sealed partial class ShortFuseDeploymentServiceTests
         Assert.False(File.Exists(Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName)));
         Assert.Equal(iniBytes, File.ReadAllBytes(ini));
         Assert.False(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
-        Assert.False(File.Exists(Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin), ShortFuseDeploymentService.AddonFileName)));
+        Assert.False(File.Exists(Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin, prefixPath: null), ShortFuseDeploymentService.AddonFileName)));
         Assert.Equal("native,builtin", Override(fixture, "dxgi")); // the suspension is undone
         var after = new LinuxDeploymentRecordStore(ledger);
         Assert.Null(after.Find(fixture.Game, ManagedComponentKind.ShortFuse));
@@ -188,7 +188,7 @@ public sealed partial class ShortFuseDeploymentServiceTests
         using var _ = ctx;
         AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
         Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
-        var addon = Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin), ShortFuseDeploymentService.AddonFileName);
+        var addon = Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin, prefixPath: null), ShortFuseDeploymentService.AddonFileName);
         using var death = new SimulatedDeath(journal);
         // The first registry edit of the removal is ReShade's override re-enable; the save after it is the commit write,
         // the one after that dies.

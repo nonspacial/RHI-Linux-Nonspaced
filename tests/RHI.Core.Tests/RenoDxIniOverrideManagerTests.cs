@@ -150,7 +150,7 @@ public sealed class RenoDxIniOverrideManagerTests : IDisposable
         var addons = Path.Combine(_root, "reshade-addons");
         File.WriteAllText(Path.Combine(_root, "ReShade.ini"), "[ADDON]\nAddonPath=.\\reshade-addons\n");
 
-        var resolved = RenoDxDeploymentService.ResolveAddonDeployPath(_root);
+        var resolved = RenoDxDeploymentService.ResolveAddonDeployPath(_root, prefixPath: null);
 
         Assert.Equal(Path.GetFullPath(addons), resolved);
     }

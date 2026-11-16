@@ -807,7 +807,7 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
 
     private static (string Normal, string Zzz) AddonPaths(GameFixture fixture)
     {
-        var dir = RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin);
+        var dir = RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin, prefixPath: null);
         return (Path.Combine(dir, ShortFuseDeploymentService.AddonFileName), Path.Combine(dir, ShortFuseDeploymentService.ZzzAddonFileName));
     }
 

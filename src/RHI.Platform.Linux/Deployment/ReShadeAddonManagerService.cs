@@ -304,7 +304,10 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
             if (normalized.Length == 0 && existing is null)
                 return ComponentOperationResult.Ok("RHI-managed generic ReShade addons removed.");
 
-            var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
+            // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+            var addonFolder = AddonPathFolder.Resolve(game.BinaryDirectory, game.PrefixPath);
+            if (addonFolder.Refusal is not null) return ComponentOperationResult.Fail(addonFolder.Refusal);
+            var deployDir = addonFolder.Folder;
             var oldByPath = oldFiles.Select(file => Path.GetFullPath(WithoutOffSuffix(file.Path))).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             foreach (var item in prepared)
@@ -414,7 +417,7 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
                 var changed = false;
                 var deployDir = string.IsNullOrWhiteSpace(game.BinaryDirectory)
                     ? null
-                    : RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
+                    : RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory, game.PrefixPath);
                 foreach (var file in entry.Files)
                 {
                     var targets = new[] { move.MapPath(file.Path), deployDir is null ? null : Path.Combine(deployDir, Path.GetFileName(file.Path)) };

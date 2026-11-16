@@ -1,3 +1,5 @@
+using RHI.Platform.Linux.Detection.Launchers;
+
 namespace RHI.Platform.Linux.Deployment;
 
 /// <summary>
@@ -10,6 +12,77 @@ public static class AddonPathFolder
     /// <summary>Fixed text before the paths of add-ons left in the game folder (PT-BR presentation pair).</summary>
     public const string LeftInGameFolderPrefix =
         "Not RHI's, so left in the game folder (ReShade loads add-ons from reshade.ini's AddonPath, not from there): ";
+
+    /// <summary>
+    /// Fixed text before the AddonPath value when it names a Windows drive RHI cannot map to a Linux folder (PT-BR
+    /// presentation pair). w13 final review m2.
+    /// </summary>
+    public const string UnmappedPrefix =
+        "ReShade's AddonPath names a Windows drive RHI cannot find in this game's Wine prefix, so nothing was changed. Set AddonPath to a folder inside the prefix (C:\\…, Z:\\…) or to a relative folder: ";
+
+    /// <summary>
+    /// ReShade's add-on folder for a game whose binaries are in <paramref name="binaryDirectory"/> and whose Wine prefix is
+    /// <paramref name="prefixPath"/>: <c>[ADDON] AddonPath</c> in its reshade.ini (the first of a <c>;</c> list), else the
+    /// binary folder. ReShade runs in Wine, so an absolute AddonPath is a Windows path: a drive path (<c>C:\…</c>,
+    /// <c>Z:\home\…</c>) maps through the prefix's <c>drive_c</c> / <c>dosdevices</c> links
+    /// (<see cref="WindowsPathMapper"/>); a relative one joins the binary folder; a Linux absolute path is kept. A Windows
+    /// path that cannot be mapped (an unknown prefix, a drive the prefix does not link, a UNC or drive-relative path) is
+    /// never joined on as a folder: <see cref="Resolution.Refusal"/> says so and <see cref="Resolution.Folder"/> stays the
+    /// binary folder, so probes look there and installers refuse.
+    /// </summary>
+    public static Resolution Resolve(string binaryDirectory, string? prefixPath)
+    {
+        string? first;
+        try
+        {
+            first = ReadAddonPath(binaryDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new Resolution(binaryDirectory, null);
+        }
+        if (string.IsNullOrWhiteSpace(first)) return new Resolution(binaryDirectory, null);
+        var value = first.Trim().Trim('"');
+        if (value.Length >= 2 && char.IsAsciiLetter(value[0]) && value[1] == ':')
+        {
+            var mapped = string.IsNullOrWhiteSpace(prefixPath) ? null : WindowsPathMapper.ToLinux(prefixPath, value);
+            return mapped is null ? new Resolution(binaryDirectory, UnmappedPrefix + value) : new Resolution(mapped, null);
+        }
+        // UNC (\\server\share) and drive-relative (\Addons) paths name no Linux folder RHI can know.
+        if (value.StartsWith('\\')) return new Resolution(binaryDirectory, UnmappedPrefix + value);
+        if (value.StartsWith('/')) return new Resolution(value, null);
+        try
+        {
+            return new Resolution(Path.GetFullPath(Path.Combine(binaryDirectory, value.Replace('\\', '/'))), null);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return new Resolution(binaryDirectory, UnmappedPrefix + value);
+        }
+    }
+
+    /// <summary>The folder, and the refusal an installer returns instead of writing there (null when the folder is usable).</summary>
+    public readonly record struct Resolution(string Folder, string? Refusal);
+
+    private static string? ReadAddonPath(string binaryDirectory)
+    {
+        var ini = RenoDxIniOverrideManager.ResolveIniPath(binaryDirectory);
+        if (ini is null || !File.Exists(ini)) return null;
+        var inAddon = false;
+        foreach (var raw in File.ReadLines(ini))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith('['))
+            {
+                inAddon = line.Equals("[ADDON]", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+            if (!inAddon || !line.StartsWith("AddonPath", StringComparison.OrdinalIgnoreCase) || !line.Contains('=')) continue;
+            var value = line[(line.IndexOf('=') + 1)..].Trim();
+            return value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+        }
+        return null;
+    }
 
     /// <summary>True when ReShade's add-on folder for <paramref name="binaryDirectory"/> is not that folder itself.</summary>
     public static bool UsesAddonPath(string binaryDirectory, string deployDirectory)

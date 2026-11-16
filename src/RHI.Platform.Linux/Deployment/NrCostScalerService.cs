@@ -128,7 +128,8 @@ public sealed class NrCostScalerService
         var realPath = Path.Combine(directory, RealDllName);
         var iniPath = Path.Combine(directory, IniFileName);
         // #255: the companion add-on goes where ReShade loads add-ons (reshade.ini's AddonPath, else beside the proxy).
-        var addonPath = CompanionAddonPath(directory);
+        var (addonPath, addonPathRefusal) = CompanionAddonPath(directory, game.PrefixPath);
+        if (addonPathRefusal is not null) return ComponentOperationResult.Fail(addonPathRefusal);
         foreach (var inTheWay in new[] { realPath, iniPath, addonPath })
             if (File.Exists(inTheWay) || Directory.Exists(inTheWay)) return ComponentOperationResult.Fail(ForeignFilePrefix + inTheWay);
 
@@ -308,7 +309,8 @@ public sealed class NrCostScalerService
             .Select(f => f.Path).ToList();
         if (changed.Count > 0) return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + string.Join(", ", changed));
         // #255: the add-on moves to reshade.ini's AddonPath folder when that is set or changed after the install.
-        var addonPath = CompanionAddonPath(directory);
+        var (addonPath, addonPathRefusal) = CompanionAddonPath(directory, game.PrefixPath);
+        if (addonPathRefusal is not null) return ComponentOperationResult.Fail(addonPathRefusal);
         if ((addon is null || !string.Equals(addon.Path, addonPath, StringComparison.Ordinal)) && (File.Exists(addonPath) || Directory.Exists(addonPath)))
             return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + addonPath);
         var iniIsRhis = File.Exists(ini.Path) && ini.Sha256 is { Length: > 0 } && FileHash.HexEquals(FileHash.Sha256Hex(ini.Path), ini.Sha256);
@@ -388,9 +390,15 @@ public sealed class NrCostScalerService
         return ComponentOperationResult.Ok(UpdatedPrefix + staged.Version + "." + (iniIsRhis ? "" : IniKeptNote), updated.Files.Select(f => f.Path).ToArray());
     }
 
-    /// <summary>#255: where the companion add-on goes for a scaler beside <paramref name="proxyDirectory"/>.</summary>
-    internal static string CompanionAddonPath(string proxyDirectory)
-        => Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(proxyDirectory), CompanionAddonName);
+    /// <summary>
+    /// #255: where the companion add-on goes for a scaler beside <paramref name="proxyDirectory"/>, or why it cannot go
+    /// anywhere (w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map).
+    /// </summary>
+    internal static (string Path, string? Refusal) CompanionAddonPath(string proxyDirectory, string? prefixPath)
+    {
+        var folder = AddonPathFolder.Resolve(proxyDirectory, prefixPath);
+        return (Path.Combine(folder.Folder, CompanionAddonName), folder.Refusal);
+    }
 
     private sealed record Release(string Version, string Url, string? Digest, string AssetName);
 

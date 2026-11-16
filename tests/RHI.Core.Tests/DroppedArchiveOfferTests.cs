@@ -294,7 +294,7 @@ public sealed class DroppedArchiveOfferTests(ITestOutputHelper output) : IDispos
                     zip.Entries.ToDictionary(e => e.FullName, e => { using var r = e.Open(); using var m = new MemoryStream(); r.CopyTo(m); return m.ToArray(); }), 0);
             // The Luma install's own reader takes it: every file planned, the add-on beside ReShade.
             var staging = Directory.CreateDirectory(Path.Combine(fx.Root, "luma-staging")).FullName;
-            var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(path, game.BinaryDirectory!, staging, ct);
+            var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(path, game.BinaryDirectory!, game.PrefixPath, staging, ct);
             called = called!.Value with { Planned = plan.Count };
             return ComponentOperationResult.Ok("Luma Framework installed.");
         };

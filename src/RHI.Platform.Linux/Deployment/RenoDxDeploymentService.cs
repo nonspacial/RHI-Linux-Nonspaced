@@ -324,7 +324,10 @@ public sealed class RenoDxDeploymentService
         var unityUpgrades = await ResolveUnityDatabaseUpgradesAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false);
         var requestedIniOverrides = MergeIniOverrides(unityUpgrades, manifestIniOverrides);
 
-        var deployDir = ResolveAddonDeployPath(game.BinaryDirectory);
+        // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+        var addonFolder = AddonPathFolder.Resolve(game.BinaryDirectory, game.PrefixPath);
+        if (addonFolder.Refusal is not null) return ComponentOperationResult.Fail(addonFolder.Refusal);
+        var deployDir = addonFolder.Folder;
         Directory.CreateDirectory(deployDir);
         var target = Path.Combine(deployDir, fileName);
         var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
@@ -860,7 +863,10 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail(addonArchitecture == PeArchitecture.X86 ? Local32BitOn64BitMessage : Local64BitOn32BitMessage);
         if (ControlUePostInstallService.Applies(game, fileName)) return ComponentOperationResult.Fail(LocalControlUeMessage);
 
-        var deployDir = ResolveAddonDeployPath(game.BinaryDirectory);
+        // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+        var addonFolder = AddonPathFolder.Resolve(game.BinaryDirectory, game.PrefixPath);
+        if (addonFolder.Refusal is not null) return ComponentOperationResult.Fail(addonFolder.Refusal);
+        var deployDir = addonFolder.Folder;
         var target = Path.Combine(deployDir, fileName);
         var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
         // The record is the commit point: refuse before the copy when it cannot be saved (an unreadable ledger) — and before
@@ -1269,36 +1275,13 @@ public sealed class RenoDxDeploymentService
                                            + (engineKeysLeft is null ? "" : " · " + engineKeysLeft));
     }
 
-    public static string ResolveAddonDeployPath(string binaryDirectory)
-    {
-        try
-        {
-            var ini = RenoDxIniOverrideManager.ResolveIniPath(binaryDirectory);
-            if (ini is null || !File.Exists(ini)) return binaryDirectory;
-            var inAddon = false;
-            foreach (var raw in File.ReadLines(ini))
-            {
-                var line = raw.Trim();
-                if (line.StartsWith('['))
-                {
-                    inAddon = line.Equals("[ADDON]", StringComparison.OrdinalIgnoreCase);
-                    continue;
-                }
-                if (!inAddon || !line.StartsWith("AddonPath", StringComparison.OrdinalIgnoreCase) || !line.Contains('=')) continue;
-                var value = line[(line.IndexOf('=') + 1)..].Trim();
-                if (string.IsNullOrWhiteSpace(value)) return binaryDirectory;
-                var first = value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
-                if (string.IsNullOrWhiteSpace(first)) return binaryDirectory;
-                var normalized = first.Replace('\\', Path.DirectorySeparatorChar);
-                return Path.IsPathRooted(normalized)
-                    ? normalized
-                    : Path.GetFullPath(Path.Combine(binaryDirectory, normalized));
-            }
-        }
-        catch { }
-        return binaryDirectory;
-    }
-
+    /// <summary>
+    /// ReShade's add-on folder (<see cref="AddonPathFolder.Resolve"/>): reshade.ini's AddonPath mapped through the game's
+    /// Wine prefix, else the binary folder. An AddonPath that cannot be mapped gives the binary folder here; installers
+    /// ask <see cref="AddonPathFolder.Resolve"/> for the refusal instead.
+    /// </summary>
+    public static string ResolveAddonDeployPath(string binaryDirectory, string? prefixPath)
+        => AddonPathFolder.Resolve(binaryDirectory, prefixPath).Folder;
 
     private static readonly EnumerationOptions CaseInsensitiveTopLevel = new()
     {

@@ -425,7 +425,10 @@ public sealed class ShortFuseDeploymentService
         if (!Path.GetFullPath(originalReShadePath).Equals(Path.GetFullPath(asiPath), StringComparison.Ordinal) && File.Exists(asiPath))
             return ComponentOperationResult.Fail($"{ReShadeAsiName} already exists but is not owned by this ShortFuse transaction. External/stale files are protected from overwrite.");
 
-        var addonDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
+        // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+        var addonFolder = AddonPathFolder.Resolve(game.BinaryDirectory, game.PrefixPath);
+        if (addonFolder.Refusal is not null) return ComponentOperationResult.Fail(addonFolder.Refusal);
+        var addonDir = addonFolder.Folder;
         var addonTarget = Path.Combine(addonDir, _settings.IsZzzLoadOrderEnabled(game) ? ZzzAddonFileName : AddonFileName);
         // Either name loads under Wine (case-insensitive lookup), so both block an unowned install.
         foreach (var name in new[] { AddonFileName, ZzzAddonFileName })

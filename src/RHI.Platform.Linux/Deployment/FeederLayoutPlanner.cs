@@ -168,7 +168,10 @@ internal static class FeederLayoutPlanner
     internal static (FeederInstallTargets? Targets, string? Refusal) PlanInstall(DetectedGame game, PeArchitecture architecture, Dlss5FeederConsumer consumer)
     {
         var binaryDir = Path.GetFullPath(game.BinaryDirectory!);
-        var addonDir = RenoDxDeploymentService.ResolveAddonDeployPath(binaryDir);
+        // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+        var addonFolder = AddonPathFolder.Resolve(binaryDir, game.PrefixPath);
+        if (addonFolder.Refusal is not null) return (null, addonFolder.Refusal);
+        var addonDir = addonFolder.Folder;
         FeederDeploymentLayout layout;
         try { layout = ResolveFeederLayout(binaryDir, addonDir, architecture, consumer); }
         catch (NotSupportedException ex) { return (null, ex.Message); }

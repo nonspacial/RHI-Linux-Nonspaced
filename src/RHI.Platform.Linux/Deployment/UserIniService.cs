@@ -154,7 +154,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     public static string AddonIniPath(DetectedGame game, ManagedComponentKind kind)
     {
         var name = AddonIniName(kind) ?? throw new ArgumentOutOfRangeException(nameof(kind), kind, "No INI template for this component.");
-        var directory = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
+        var directory = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!, game.PrefixPath);
         return ExistingCaseInsensitive(directory, name) ?? Path.Combine(directory, name);
     }
 
@@ -444,7 +444,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         if (game.BinaryDirectory is not { } bin || !Directory.Exists(bin)) return [];
         var found = new List<string>();
         var name = UserIniTemplates.FileName(UserIniTemplate.ReLimiter);
-        if (ExistingCaseInsensitive(RenoDxDeploymentService.ResolveAddonDeployPath(bin), name) is { } beside) found.Add(beside);
+        if (ExistingCaseInsensitive(RenoDxDeploymentService.ResolveAddonDeployPath(bin, game.PrefixPath), name) is { } beside) found.Add(beside);
         if (REFrameworkDeploymentService.FindStorageFolder(game) is { } storage && ExistingCaseInsensitive(storage, name) is { } stored)
             found.Add(stored);
         return found.Distinct(StringComparer.Ordinal).ToList();

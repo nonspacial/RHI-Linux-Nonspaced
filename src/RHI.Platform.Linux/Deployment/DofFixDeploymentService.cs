@@ -123,7 +123,10 @@ public sealed class DofFixDeploymentService
         if (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir))
             return ComponentOperationResult.Fail("Game binary/install directory is not available for DOF Fix deployment.");
         // #255 (upstream 2.8.8 54ec8f2): ReShade loads add-ons from reshade.ini's AddonPath when it is set.
-        var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(gameDir);
+        // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+        var addonFolder = AddonPathFolder.Resolve(gameDir, game.PrefixPath);
+        if (addonFolder.Refusal is not null) return ComponentOperationResult.Fail(addonFolder.Refusal);
+        var deployDir = addonFolder.Folder;
 
         var target = Path.Combine(deployDir, AddonFileName);
         var existingRecord = GetRecord(game);

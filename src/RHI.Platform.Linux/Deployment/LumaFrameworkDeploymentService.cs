@@ -438,6 +438,9 @@ public sealed class LumaFrameworkDeploymentService
             return ComponentOperationResult.Fail("Luma Framework requires RHI-managed ReShade first. External ReShade is not adopted automatically.");
         if (RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory) is null)
             return ComponentOperationResult.Fail("Luma Framework requires the RHI-managed ReShade.ini before package deployment.");
+        // w13 final review m2: an AddonPath on a drive the game's Wine prefix does not map is refused, never joined on.
+        if (AddonPathFolder.Resolve(game.BinaryDirectory, game.PrefixPath).Refusal is { } addonPathRefusal)
+            return ComponentOperationResult.Fail(addonPathRefusal);
 
         var existingRecord = _records.Find(game, ManagedComponentKind.LumaFramework);
         var requiresDgVoodoo = false;
@@ -561,7 +564,7 @@ public sealed class LumaFrameworkDeploymentService
                 }
             }
             IReadOnlyList<LumaPlanItem> plan;
-            try { plan = await BuildPackagePlanAsync(archivePath, release.AssetName, game.BinaryDirectory, stagingRoot, cancellationToken).ConfigureAwait(false); }
+            try { plan = await BuildPackagePlanAsync(archivePath, release.AssetName, game.BinaryDirectory, game.PrefixPath, stagingRoot, cancellationToken).ConfigureAwait(false); }
             catch (Exception ex) { return ComponentOperationResult.Fail($"Luma package validation failed: {ex.Message}"); }
             if (plan.Count == 0)
                 return ComponentOperationResult.Fail("Luma package did not contain any deployable files after RHI exclusions.");
@@ -924,9 +927,9 @@ public sealed class LumaFrameworkDeploymentService
            && !string.IsNullOrWhiteSpace(state);
 
     internal static async Task<IReadOnlyList<LumaPlanItem>> BuildExtractionPlanAsync(
-        string archivePath, string binaryDirectory, string stagingRoot, CancellationToken cancellationToken)
+        string archivePath, string binaryDirectory, string? prefixPath, string stagingRoot, CancellationToken cancellationToken)
     {
-        var addonDirectory = RenoDxDeploymentService.ResolveAddonDeployPath(binaryDirectory);
+        var addonDirectory = RenoDxDeploymentService.ResolveAddonDeployPath(binaryDirectory, prefixPath);
         var result = new List<LumaPlanItem>();
         var targetKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using var archive = ZipFile.OpenRead(archivePath);
@@ -972,18 +975,19 @@ public sealed class LumaFrameworkDeploymentService
         string packagePath,
         string assetName,
         string binaryDirectory,
+        string? prefixPath,
         string stagingRoot,
         CancellationToken cancellationToken)
     {
         if (!IsAddonAssetName(assetName))
-            return await BuildExtractionPlanAsync(packagePath, binaryDirectory, stagingRoot, cancellationToken).ConfigureAwait(false);
+            return await BuildExtractionPlanAsync(packagePath, binaryDirectory, prefixPath, stagingRoot, cancellationToken).ConfigureAwait(false);
 
         if (!File.Exists(packagePath))
             throw new FileNotFoundException("Luma package is missing.", packagePath);
         if (!BinarySignatureInspector.HasPeSignature(packagePath, MinimumArchiveSize))
             throw new InvalidDataException("Direct Luma add-on failed the local PE/minimum-size validation.");
 
-        var addonDirectory = RenoDxDeploymentService.ResolveAddonDeployPath(binaryDirectory);
+        var addonDirectory = RenoDxDeploymentService.ResolveAddonDeployPath(binaryDirectory, prefixPath);
         var safeName = Path.GetFileName(assetName);
         if (string.IsNullOrWhiteSpace(safeName) || !IsAddonAssetName(safeName))
             throw new InvalidDataException($"Unsupported direct Luma add-on name: {assetName}");
@@ -1132,7 +1136,7 @@ public sealed class LumaFrameworkDeploymentService
         if (!string.IsNullOrWhiteSpace(game.BinaryDirectory))
         {
             roots.Add(game.BinaryDirectory);
-            roots.Add(RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory));
+            roots.Add(RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory, game.PrefixPath));
         }
         return roots.Any(root => PathIdentity.IsSameOrInside(path, root));
     }

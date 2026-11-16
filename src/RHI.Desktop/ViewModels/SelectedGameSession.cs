@@ -330,7 +330,7 @@ public sealed class SelectedGameSession
 
     /// <summary>#255: ReShade's add-on folder (reshade.ini's AddonPath, else the binary folder), so the rows find add-ons there.</summary>
     private static string? AddonFolder(DetectedGame game)
-        => string.IsNullOrWhiteSpace(game.BinaryDirectory) ? null : RHI.Platform.Linux.Deployment.RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
+        => string.IsNullOrWhiteSpace(game.BinaryDirectory) ? null : RHI.Platform.Linux.Deployment.RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory, game.PrefixPath);
 
     private GameAnalysis Derive(DetectedGame working, IReadOnlyList<string> files, bool skipDlss, CancellationToken cancellationToken)
     {

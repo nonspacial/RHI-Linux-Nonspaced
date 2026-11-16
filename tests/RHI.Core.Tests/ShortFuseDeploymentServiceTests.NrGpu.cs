@@ -84,7 +84,7 @@ public sealed partial class ShortFuseDeploymentServiceTests
         var (fixture, ctx) = await LegacyShortFuseOn50xxAsync("nrmove");
         using var disposeFixture = fixture;
         var managed = NrManaged(ctx, fixture.Root, RtxGeneration.Rtx40, out _, out var log);
-        var addon = Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin), ShortFuseDeploymentService.AddonFileName);
+        var addon = Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin, prefixPath: null), ShortFuseDeploymentService.AddonFileName);
         var addonBefore = File.ReadAllBytes(addon);
 
         var all = await new RHI.Platform.Linux.Deployment.LinuxUpdateAllService(ctx.Records, managed, new NrGpuTestKit.NeverRunning())

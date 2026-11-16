@@ -193,7 +193,7 @@ public sealed class DroppedRenoDxPresenter(LinuxManagedComponentService componen
 
     /// <summary>The folder the add-on would go into for <paramref name="game"/> (beside ReShade).</summary>
     public static string FolderFor(DetectedGame game)
-        => game.BinaryDirectory is { Length: > 0 } binaries ? RenoDxDeploymentService.ResolveAddonDeployPath(binaries) : game.InstallPath;
+        => game.BinaryDirectory is { Length: > 0 } binaries ? RenoDxDeploymentService.ResolveAddonDeployPath(binaries, game.PrefixPath) : game.InstallPath;
 
     /// <summary>The line naming the RenoDX add-on RHI installed for <paramref name="game"/> that this one replaces, else null.</summary>
     public string? ReplacesFor(DetectedGame game)
