@@ -271,7 +271,7 @@ public sealed partial class MainWindow
         void Text(string text, double opacity = 0.86) => panel.Children.Add(new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Opacity = opacity });
 
         Heading("Win.RHILinuxQuickStart");
-        Text(T("Win.N1UseRefreshDetectSteamHeroic"));
+        foreach (var step in QuickStartGuide.Steps) panel.Children.Add(QuickStartView.Step(step)); // #309: rewritten for this app (upstream 2.8.9)
 
         Heading("Shell.HelpQuestions");
         foreach (var (question, answer) in Faq)

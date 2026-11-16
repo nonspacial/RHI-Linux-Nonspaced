@@ -336,6 +336,20 @@
     <Style Selector="Button.motdLink:pointerover">
       <Setter Property="Background" Value="Transparent"/>
     </Style>
+    <!-- #309 (upstream 2.8.9): the Quick Start's step badges and tip boxes. -->
+    <Style Selector="Border.quickStartBadge">
+      <Setter Property="Background" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.quickStartBadge">
+      <Setter Property="Foreground" Value="{DynamicResource RhiBackgroundBrush}"/>
+    </Style>
+    <Style Selector="Border.quickStartTip">
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
     <!-- #309 (upstream 2.9.2): What's New's version list. -->
     <Style Selector="Button.whatsNewItem">
       <Setter Property="Background" Value="Transparent"/>
