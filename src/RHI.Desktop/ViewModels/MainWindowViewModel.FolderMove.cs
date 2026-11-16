@@ -58,7 +58,8 @@ public partial class MainWindowViewModel
     /// </summary>
     private async Task AutoMoveInstallFolderAsync(DetectedGame game)
     {
-        if (game.ManifestInstallRoot is null || game.PatchTargetAuthority != "Automatic") return;
+        // A splitGames child shares its store key (and root) with its siblings: their installs are not its own.
+        if (game.ManifestInstallRoot is null || game.IsManifestSplitChild || game.PatchTargetAuthority != "Automatic") return;
         // The first analysis lands inside the start-up scan (or Refresh): the move waits for it to finish.
         while (IsBusy) await _operations.WhenIdleAsync();
         if (FolderChangeRunning || game.ManifestInstallRoot is not { } storeRoot || game.PatchTargetAuthority != "Automatic"

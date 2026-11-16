@@ -173,6 +173,24 @@ public sealed class InstallFolderMoveViewModelTests : IDisposable
         Assert.Equal(oldDir, Assert.Single(fx.Records.All()).BinaryDirectory);
     }
 
+    [Fact]
+    public async Task ASplitGamesChild_NeverTakesItsSiblingsMods()
+    {
+        // splitGames children share the store's key and root: another child's installs sit in another folder of that root.
+        var game = ManifestMoved("Split Child", 80003, out var siblingDir, out _);
+        game.IsManifestSplitChild = true;
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        fx.Managed.FolderMoveRunningProbe = new Running(false);
+        var addon = Addon(fx, game, siblingDir);
+
+        await fx.Vm.RefreshCommand.ExecuteAsync(null);
+        await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromSeconds(30));
+        await Task.Delay(300);
+
+        Assert.True(File.Exists(addon));
+        Assert.Equal(siblingDir, Assert.Single(fx.Records.All()).BinaryDirectory);
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         for (var i = 0; i < 400 && !condition(); i++) await Task.Delay(25);
