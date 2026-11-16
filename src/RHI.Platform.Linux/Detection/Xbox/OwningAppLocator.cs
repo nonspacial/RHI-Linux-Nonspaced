@@ -48,7 +48,9 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
     /// for Edit game's detected launch: typed back as a command it does the same. RHI itself executes the vector.
     /// <c>env</c> reads a word starting with <c>-</c> as an option and any word holding <c>=</c> as an assignment, so a
     /// variable name starting with <c>-</c> gets <c>--</c> before the assignments, and a program path holding <c>=</c>
-    /// is started through <c>sh -c 'exec "$0" "$@"'</c> (scan re-review nit 2).
+    /// is started through <c>sh -c 'exec "$0" "$@"'</c> (scan re-review nit 2). That wrapper is <c>bash</c> when a
+    /// variable name is not a valid shell name: dash, <c>/bin/sh</c> on Debian and Ubuntu, drops such a variable before
+    /// it runs the program; bash passes it on.
     /// </summary>
     public static string Render(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string>? environment)
     {
@@ -58,7 +60,11 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
             words.Add("env");
             if (environment.Keys.Any(name => name.StartsWith('-'))) words.Add("--");
             words.AddRange(environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => Shell($"{pair.Key}={pair.Value}")));
-            if (argv.Count > 0 && argv[0].Contains('=')) words.AddRange(["sh", "-c", Shell("exec \"$0\" \"$@\"")]);
+            if (argv.Count > 0 && argv[0].Contains('='))
+            {
+                var shell = environment.Keys.All(IsShellName) ? "sh" : "bash";
+                words.AddRange([shell, "-c", Shell("exec \"$0\" \"$@\"")]);
+            }
         }
         words.AddRange(argv.Select(Shell));
         return string.Join(' ', words);
@@ -180,4 +186,8 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
     }
 
     internal static string Shell(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+    // A POSIX shell variable name: a letter or '_', then letters, digits or '_'.
+    private static bool IsShellName(string name)
+        => name.Length > 0 && (char.IsAsciiLetter(name[0]) || name[0] == '_') && name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
 }

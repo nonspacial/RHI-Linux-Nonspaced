@@ -574,11 +574,7 @@ public sealed class XboxGameDetectorTests : IDisposable
     {
         var dir = _tree.Dir("odd=dir");
         var record = _tree.Path_("record.txt");
-        // The record reads the environment the script was started with (/proc/$$/environ): dash, /bin/sh on Debian and
-        // Ubuntu, drops a variable whose name is not a valid shell name before running `env`, bash keeps it.
-        var script = _tree.File(
-            $"#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > '{record}'\ntr '\\0' '\\n' < /proc/$$/environ | grep -E '^(-DASH|PLAIN)=' | sort >> '{record}'\n",
-            "odd=dir", "run.sh");
+        var script = _tree.File($"#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > '{record}'\nenv | grep -E '^(-DASH|PLAIN)=' | sort >> '{record}'\n", "odd=dir", "run.sh");
         File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var line = OwningAppLocator.Render([script, "--play", "9A B"], new Dictionary<string, string> { ["-DASH"] = "1", ["PLAIN"] = "x y" });
 
@@ -594,6 +590,19 @@ public sealed class XboxGameDetectorTests : IDisposable
 
         Assert.Equal([script, "--play", "9A B", "-DASH=1", "PLAIN=x y"], File.ReadAllLines(record));
         Assert.StartsWith(dir, script);
+    }
+
+    // The '=' path's wrapper is bash when a variable name is not a shell name (dash, /bin/sh on Debian and Ubuntu, drops
+    // such a variable before running the program), and plain sh otherwise. Pinned on the text, so it holds on any host.
+    [Theory]
+    [InlineData("-DASH", "bash -c ")]
+    [InlineData("A.B", "bash -c ")]
+    [InlineData("PLAIN", "sh -c ")]
+    public void Render_APathHoldingEquals_WrapsItInAShellThatKeepsTheEnvironment(string name, string expected)
+    {
+        var line = OwningAppLocator.Render(["/odd=dir/run.sh", "--play"], new Dictionary<string, string> { [name] = "1" });
+        Assert.Contains(" " + expected, line, StringComparison.Ordinal);
+        if (expected.StartsWith("sh", StringComparison.Ordinal)) Assert.DoesNotContain("bash", line, StringComparison.Ordinal);
     }
 
     // The entry point's launcher counts even when the rendered card command starts it through `sh -c` (a path with '=').
