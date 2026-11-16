@@ -2138,7 +2138,6 @@ internal static class UiStrings
         ("Top.CheckedTip", "Quando o RHI verificou atualizações pela última vez.", "When RHI last checked for updates."),
         ("Top.RefreshTip", "Procura atualizações e examina seus jogos de novo. O jogo selecionado é examinado por completo (arquivos DLSS e mais).", "Check for updates and rescan your games. The selected game gets a full rescan (DLSS files and more)."),
         ("Top.UpdateAllTip", "Atualiza os componentes instalados pelo RHI em toda a biblioteca (jogos ocultos ficam de fora).", "Updates the components RHI installed across your library (hidden games are left out)."),
-        ("Top.UpdateAllCountTip", "O RHI já viu atualizações em {0} jogo(s). Atualizar tudo atualiza os componentes instalados pelo RHI em toda a biblioteca (jogos ocultos ficam de fora).", "RHI has seen updates for {0} game(s). Update All updates the components RHI installed across your library (hidden games are left out)."),
         ("Top.SettingsTip", "Configurações", "Settings"),
         ("Top.GlobalShaders", "Shaders globais", "Global Shaders"),
         ("Top.GlobalAddons", "Add-ons globais", "Global Addons"),

@@ -575,7 +575,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     }
 
     // #292: a start runs a pass at once only when the last one (kept between launches) is an interval or more ago.
-    void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate: false);
+    void IStartupSteps.StartBackgroundUpdates(bool runImmediate)
+    {
+        Updates.RestartBackgroundUpdateLoop(runImmediate: false);
+        Updates.RestartCheckLoop(); // w14/layouts-c: the top bar's Update All count, on the same cadence
+    }
     bool IStartupSteps.AutoUpdateComponents => _settings.AutoUpdateComponents;
 
     /// <summary>#194/#267: the start-up shader-pack check (updates, and with CacheAllShaders the missing packs); a test seam.</summary>
@@ -1671,6 +1675,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         }
         Updates.SetLibraryHasManagedTargets(managed);
         for (var i = 0; i < games.Length; i++) _library.RowFor(games[i])?.SetReShadeInstalled(reShade[i]); // #309
+        MarkRowUpdates(); // w14/layouts-c: rows made by this refresh show their update mark too
         _libraryHasDlssBatchCandidates = batch;
         Updates.NotifyCanUpdateAll();
         OnPropertyChanged(nameof(CanOpenDlssBatch));

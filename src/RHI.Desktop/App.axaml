@@ -468,6 +468,17 @@
     <Style Selector="Border#TopBar Button.rhi.updateAll.hasUpdates:pointerover">
       <Setter Property="Background" Value="{DynamicResource RhiNavyPurpleButtonHoverBrush}"/>
     </Style>
+    <!-- w14/layouts-c: "✓ All up to date" (upstream: a green tick on the quiet button) and the game list's update mark. -->
+    <Style Selector="Border#TopBar Button.rhi.updateAll TextBlock.upToDateTick">
+      <Setter Property="Foreground" Value="{DynamicResource RhiInstalledBrush}"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style Selector="Border.gameRow">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiGameRowBorderBrush}"/>
+    </Style>
+    <Style Selector="Border.gameRow.hasUpdate">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiUpdateBrush}"/>
+    </Style>
     <Style Selector="Border#TopBar Button.rhi TextBlock">
       <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}"/>
     </Style>

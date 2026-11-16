@@ -1,4 +1,5 @@
 using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
 
@@ -10,6 +11,21 @@ public partial class MainWindowViewModel
 
     /// <summary>Game Overrides' Launch arguments box and Reset launch options, for the selected game.</summary>
     public LaunchArgumentsPresenter LaunchArguments => _launchArguments ??= new LaunchArgumentsPresenter(this);
+
+    /// <summary>The top bar's results also mark the game list's rows (upstream: the orange dot; Spotlight's covers read the same).</summary>
+    private TopBarPresenter WithRowMarks(TopBarPresenter bar)
+    {
+        bar.UpdatesChanged += MarkRowUpdates;
+        return bar;
+    }
+
+    /// <summary>Each row's update mark from the top bar's results (a game Update All covers with an update RHI knows of).</summary>
+    internal void MarkRowUpdates()
+    {
+        if (_topBar is not { } bar) return;
+        foreach (var game in _library.AllGames)
+            _library.RowFor(game)?.SetHasUpdate(!game.IsHidden && bar.HasUpdate(LinuxGameLibraryStore.GameKey(game)));
+    }
 
     /// <summary>
     /// Launch ▾'s first entry (upstream "Executable: name" or "auto-detect"): the program RHI starts, by file name; a launch

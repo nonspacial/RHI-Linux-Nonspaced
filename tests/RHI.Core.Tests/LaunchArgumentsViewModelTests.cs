@@ -17,6 +17,9 @@ public sealed class LaunchArgumentsViewModelTests : IDisposable
 {
     private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-args-vm-" + Guid.NewGuid().ToString("N"))).FullName;
 
+    // The expected lines are English: the UI language is process-wide and this collection's tests set it themselves.
+    public LaunchArgumentsViewModelTests() => UiLocalizationService.Apply("en-US");
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); }
@@ -154,12 +157,10 @@ public sealed class LaunchArgumentsViewModelTests : IDisposable
                      "LcArgs.RouteUserCommand", "LcArgs.RouteHeroic", "LcArgs.RouteLutris", "LcArgs.RouteOtherLauncher", "LcArgs.RouteNoCommand",
                      "LcMenu.Executable", "LcMenu.Arguments", "DmItem.LaunchArgs", "DmHelp.LaunchArgs", "DmWhy.LaunchArgsNotOffered" })
         {
-            UiLocalizationService.Apply("pt-BR");
-            var pt = UiLocalizationService.Text(key);
-            UiLocalizationService.Apply("en-US");
-            var en = UiLocalizationService.Text(key);
-            Assert.NotEqual(key, en);
-            Assert.NotEqual(en, pt);
+            // Read from the tables, not by switching the UI language (other tests read it).
+            var row = Assert.Single(RHI.Desktop.Localization.LayoutsCUiStrings.Entries.Concat(RHI.Desktop.Localization.UiStrings.Entries), e => e.Key == key);
+            Assert.False(string.IsNullOrWhiteSpace(row.EnUs));
+            Assert.NotEqual(row.EnUs, row.PtBr);
         }
     }
 

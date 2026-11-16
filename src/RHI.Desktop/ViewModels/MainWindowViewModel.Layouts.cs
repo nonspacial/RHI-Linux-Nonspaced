@@ -19,10 +19,10 @@ public partial class MainWindowViewModel
     public GameLayoutPresenter Layout => _layout ??= new GameLayoutPresenter(() => _settings, SaveLayoutSettings);
 
     /// <summary>#303: the top bar's "Checked … ago" and the Update All count.</summary>
-    public TopBarPresenter TopBar => _topBar ??= new TopBarPresenter(
+    public TopBarPresenter TopBar => _topBar ??= WithRowMarks(new TopBarPresenter(
         () => Updates?.Now() ?? DateTimeOffset.UtcNow,
-        () => Updates?.LastPass,
-        () => UnattendedLibraryGames.Select(LinuxGameLibraryStore.GameKey).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        () => Updates?.LastCheck, // w14/layouts-c: the check-only pass counts as a check
+        () => UnattendedLibraryGames.Select(LinuxGameLibraryStore.GameKey).ToHashSet(StringComparer.OrdinalIgnoreCase)));
 
     /// <summary>
     /// Saves only the layout fields (layout, tab, sizes): the file's settings are read, changed and written; the ones in use

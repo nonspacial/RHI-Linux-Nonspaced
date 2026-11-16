@@ -512,6 +512,12 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
         Interlocked.Exchange(ref _rateLimitedUntilTicks, until.UtcTicks);
     }
 
+    /// <summary>
+    /// w14/layouts-c: inside the rate-limit window GitHub advertised now. The library-wide update check stops there rather than
+    /// send requests GitHub would refuse (and say so).
+    /// </summary>
+    public bool RateLimitedNow => IsRateLimited();
+
     /// <summary>Inside the rate-limit window GitHub advertised (403/429 with no quota left, until its reset time).</summary>
     private bool IsRateLimited() => _now().UtcTicks < Interlocked.Read(ref _rateLimitedUntilTicks);
 

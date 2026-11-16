@@ -61,12 +61,20 @@
                    ToolTip.Tip="{DynamicResource Top.CheckedTip}"/>
         <Button x:Name="TopBarRefresh" Classes="rhi topIcon" Content="⟳" Command="{Binding RefreshCommand}"
                 ToolTip.Tip="{DynamicResource Top.RefreshTip}" AutomationProperties.Name="{DynamicResource Ui.Refresh}"/>
-        <!-- Update All: purple with the number of games RHI has seen updates for (TopBarPresenter). -->
-        <Button x:Name="TopBarUpdateAll" Classes="rhi updateAll" Classes.hasUpdates="{Binding TopBar.HasUpdateCount}"
-                Command="{Binding Updates.UpdateAllCommand}" IsEnabled="{Binding Updates.CanUpdateAll}"
-                ToolTip.Tip="{Binding TopBar.UpdateAllTip}" ToolTip.ShowOnDisabled="True" AutomationProperties.Name="{DynamicResource Ui.UpdateAll}">
+        <!-- Update All: purple with the number of games that have updates, else "✓ All up to date" once the library-wide check
+             (w14/layouts-c) found none; disabled then, as upstream (TopBarPresenter). -->
+        <Button x:Name="TopBarUpdateAll" Classes="rhi updateAll" Classes.hasUpdates="{Binding TopBar.HasUpdateCount}" Classes.upToDate="{Binding TopBar.AllUpToDate}"
+                Command="{Binding Updates.UpdateAllCommand}"
+                ToolTip.Tip="{Binding TopBar.UpdateAllTip}" ToolTip.ShowOnDisabled="True" AutomationProperties.Name="{Binding TopBar.UpdateAllText}">
+          <Button.IsEnabled>
+            <MultiBinding Converter="{x:Static BoolConverters.And}">
+              <Binding Path="Updates.CanUpdateAll"/>
+              <Binding Path="!TopBar.AllUpToDate"/>
+            </MultiBinding>
+          </Button.IsEnabled>
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="{DynamicResource Ui.UpdateAll}" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TopBarUpToDateTick" Classes="upToDateTick" Text="✓" IsVisible="{Binding TopBar.AllUpToDate}" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TopBarUpdateAllText" Text="{Binding TopBar.UpdateAllText}" VerticalAlignment="Center"/>
             <Border Classes="countTag" IsVisible="{Binding TopBar.HasUpdateCount}" VerticalAlignment="Center">
               <TextBlock Text="{Binding TopBar.UpdateCountText}"/>
             </Border>
@@ -142,7 +150,7 @@
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:GameRowViewModel">
-                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="{DynamicResource RhiGameRowBrush}" BorderBrush="{DynamicResource RhiGameRowBorderBrush}" BorderThickness="1"
+                <Border Classes="gameRow" Classes.hasUpdate="{Binding HasUpdate}" Padding="10,8" Margin="0,1" CornerRadius="7" Background="{DynamicResource RhiGameRowBrush}" BorderThickness="1"
                         ToolTip.Tip="{Binding ToolTip}">
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                     <StackPanel>
@@ -151,8 +159,11 @@
                       <TextBlock Text="{Binding Source}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="9"/>
                     </StackPanel>
                     <TextBlock Grid.Column="1" Text="{Binding LibraryBadge}" Foreground="{DynamicResource RhiWarningBrush}" VerticalAlignment="Center" FontSize="12"/>
+                    <!-- w14/layouts-c (upstream: the orange dot): a game with an update has an update-coloured dot and outline. -->
                     <Border Grid.Column="2" Width="8" Height="8" CornerRadius="4" Background="{DynamicResource RhiInstalledBrush}" VerticalAlignment="Center"
-                            ToolTip.Tip="{DynamicResource Ui.DetectedLinuxTip}"/>
+                            ToolTip.Tip="{DynamicResource Ui.DetectedLinuxTip}" IsVisible="{Binding !HasUpdate}"/>
+                    <Border Grid.Column="2" Width="8" Height="8" CornerRadius="4" Background="{DynamicResource RhiUpdateBrush}" VerticalAlignment="Center"
+                            ToolTip.Tip="{l:T Lib.UpdateTip}" IsVisible="{Binding HasUpdate}"/>
                   </Grid>
                 </Border>
               </DataTemplate>
