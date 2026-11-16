@@ -701,6 +701,7 @@ internal static class UiStrings
         ("Parity.AppUpdateUpToDate", "Você tem a versão mais nova ({0}).", "You have the newest version ({0})."),
         ("Parity.AppUpdateNoReleases", "Nenhuma versão publicada para comparar; esta é a {0}.", "No published release to compare with; this is {0}."),
         ("Parity.AppUpdateCouldNotCheck", "Não foi possível procurar agora (sem conexão ou limite do GitHub); esta é a {0}.", "Could not check just now (offline or GitHub's limit); this is {0}."),
+        ("Parity.AppUpdateRateLimited", "O limite de pedidos por hora do GitHub foi atingido, então o RHI não pôde procurar atualizações; esta é a {0}. Um token do GitHub (Configurações → Contas e atualizações) aumenta o limite.", "GitHub's hourly request limit is reached, so RHI could not check for updates; this is {0}. A GitHub token (Settings → Accounts & updates) raises the limit."),
         ("Parity.AppUpdateNotice", "RHI-Linux {0} está disponível (esta é a {1}) — veja Configurações → Contas e atualizações.", "RHI-Linux {0} is available (this is {1}) — see Settings → Accounts & updates."),
         ("Parity.ShortcutCreate", "Criar atalho", "Create shortcut"),
         ("Parity.ShortcutTip", "Cria um atalho que inicia este jogo pelo RHI, como o botão Jogar (perfil HDR incluído).", "Creates a launcher that starts this game through RHI, as Play does (HDR profile included)."),

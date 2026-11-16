@@ -1480,3 +1480,18 @@ makes the check could-not-check and the update refuse, as for the proxy (#238). 
 Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
 MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
 release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane library-updates)
+
+### #266 — The app update check never says "up to date" when GitHub refused it (2.9.4)
+
+Upstream 2.9.4 fixed its update check reading GitHub's hourly-limit refusal as "no newer version". Here the check
+already told a refusal apart, but the GitHub API cache (#35/#244) answers a refused or rate-limited request with the
+release list it holds (confirmed this session, or saved by an earlier launch while GitHub's advertised rate-limit window
+runs), and the check read that older list as current, so RHI-Linux said "You have the newest version" when a newer
+release might be out. The cache now marks every answer it stands in with (`X-RHI-GitHub-Stand-In: rate-limit` or
+`refused`), and the app update check refuses such an answer: it says GitHub's hourly request limit is reached (and that a
+token raises it) or that it could not check, and offers no release page. An answer GitHub confirmed less than a minute
+earlier (the cache's ordinary reuse) still counts. Every other caller of the cache keeps the stand-in answers as before.
+The start-up check stays quiet unless a newer release is found, as upstream. Not part of this lane: upstream 2.9.4's
+handling of an expired or revoked token.

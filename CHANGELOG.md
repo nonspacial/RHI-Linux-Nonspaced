@@ -15,6 +15,11 @@ upstream's release leaves beta; until then its builds carry a beta label (such a
 
 Not on `main` yet: nothing at the moment.
 
+Wave 14 — library-updates
+
+- **The RHI-Linux update check no longer says "You have the newest version" after GitHub's hourly request limit was
+  reached** (upstream 2.9.4). It says the limit is reached and that a GitHub token raises it, or that it could not check.
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one
