@@ -2238,3 +2238,8 @@ The HSF lane's stand-in (`ILaunchpadStep` / `ImmerseLaunchpadStep`) is gone: HSF
   `Shaders/iMMERSE` folder; a ReShade.ini that only Launchpad's search paths created is deleted with the last user while
   ReShade has not written to it.
 
+### Component numbers (wave 14 check)
+
+`ManagedComponentKind` is persisted as a number. Checked across the wave: every member has its own value, the retired 11
+stays free; wave 14 adds `GitcUplift = 24` (nr), `Dlss5Tool = 25` (nr-2) and `Hsf = 30` (extras-addons, a deliberate
+gap). No clash, so nothing is renumbered; 26–29 are free and nothing reads them. A test pins every value.
