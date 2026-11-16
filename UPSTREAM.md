@@ -1619,3 +1619,16 @@ auto-updated; Replace offers to redeploy the games using it) is not in this wave
 fixed at build time (the version list, per-game choice, Default version and install records), an import path through
 the archive checks for user-supplied files and links (a trust warning for links outside the download policy), and new
 Settings rows. Tracked on #271.
+
+### #272 — OptiScaler custom FG providers in FG Nvngx Override (2.9.3); All Settings, saved inis and ANR FG deferred
+
+- **Custom FG providers, ported.** FG Nvngx Override (the ⚙'s FG Nvngx Replacement row) lists, after OptiScaler's own
+  choices, every custom frame generation provider in OptiScaler's custom folder by name: a folder in
+  `OptiScaler/custom` (OptiScaler 10 builds, else `custom` beside OptiScaler) holding a `dlssg` folder with a DLL, as
+  upstream's `FindCustomFgProviders`. The name is written as `FGNvngxReplacement`. Linux addition: a folder name with a
+  line break, `=`, `[` or `]` is not offered, so it cannot break the INI. Updates keep that folder (#273).
+- **Deferred to a later wave (tracked on #272):** the All Settings section (every OptiScaler.ini setting with the
+  options the installed build's own ini lists, search, Apply with a backup, changes re-applied after reinstall, update or
+  version switch); Save ini / Load saved ini; and the ANR FG preset (Apex Compute's closed-source DLL, verified against
+  its published hashes, `nr_fg.ini` kept, the closed-source notice first; #285's shared notice is in the extras lane).
+  Until RHI installs ANR FG, the recommended presets leave the ANR FG preset out (#269).

@@ -1,5 +1,6 @@
 using RHI.Core.Deployment;
 using RHI.Core.Models;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -114,6 +115,40 @@ public sealed partial class OptiScalerDeploymentService
     public ComponentOperationResult? SetMenuKey(DetectedGame game, string value)
         => GetRecord(game) is null ? null : SetAdvancedSetting(game, MenuShortcutKeySettingId, value);
 
+    /// <summary>OptiScaler's folder for custom providers (<c>custom/&lt;name&gt;/&lt;kind&gt;</c>), as upstream.</summary>
+    public const string CustomProvidersFolder = "custom";
+
+    /// <summary>
+    /// #272 (upstream 2.9.3 <c>FindCustomFgProviders</c>): the custom frame generation providers in the game — folders in
+    /// OptiScaler's custom folder (<c>OptiScaler/custom</c> on OptiScaler 10 builds, else <c>custom</c> beside it) with a
+    /// <c>dlssg</c> folder holding a DLL. Their names are valid <c>FGNvngxReplacement</c> values. Sorted, never throws.
+    /// </summary>
+    public static IReadOnlyList<string> FindCustomFgProviders(string binaryDirectory)
+    {
+        try
+        {
+            var os10 = Path.Combine(binaryDirectory, OptiScalerFolderName);
+            var root = Path.Combine(Directory.Exists(os10) ? os10 : binaryDirectory, CustomProvidersFolder);
+            if (!Directory.Exists(root)) return [];
+            return Directory.GetDirectories(root)
+                .Where(dir => Directory.Exists(Path.Combine(dir, "dlssg")) && Directory.EnumerateFiles(Path.Combine(dir, "dlssg"), "*.dll").Any())
+                .Select(dir => Path.GetFileName(dir))
+                .Where(name => name.Length > 0 && !name.Any(ch => ch is '\r' or '\n' or '=' or '[' or ']'))
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("optiscaler", "OptiScaler's custom providers could not be listed", ex);
+            return [];
+        }
+    }
+
+    private static OptiScalerAdvancedOption[] FgNvngxOptionsFor(string binaryDirectory)
+        => [.. FgNvngxOptions, .. FindCustomFgProviders(binaryDirectory)
+            .Where(name => !FgNvngxOptions.Any(option => option.Value.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            .Select(name => new OptiScalerAdvancedOption(name, name))];
+
     public const string DxgiSpoofingHelp = "Makes the game see an NVIDIA GPU (Dxgi in [Spoofing]) so it offers DLSS options. Auto turns it on for AMD and Intel GPUs and off for NVIDIA. Set it to False if a game crashes or behaves oddly with spoofing on.";
 
     public OptiScalerAdvancedSnapshot GetAdvancedSettings(DetectedGame game)
@@ -151,7 +186,7 @@ public sealed partial class OptiScalerDeploymentService
                 "Controls OptiScaler FrameGen.Enabled."),
             new("FGInput", "Frame Generation", "FG input/source", Read("FrameGen", "FGInput"), EnsureCurrent(FgInputOptions, Read("FrameGen", "FGInput"))),
             new("FGOutput", "Frame Generation", "FG output", Read("FrameGen", "FGOutput"), EnsureCurrent(FgOutputOptions, Read("FrameGen", "FGOutput"))),
-            new("FGNvngxReplacement", "Frame Generation", "FG Nvngx Replacement", Read("FrameGen", "FGNvngxReplacement", "None"), EnsureCurrent(FgNvngxOptions, Read("FrameGen", "FGNvngxReplacement", "None")),
+            new("FGNvngxReplacement", "Frame Generation", "FG Nvngx Replacement", Read("FrameGen", "FGNvngxReplacement", "None"), EnsureCurrent(FgNvngxOptionsFor(binaryDirectory), Read("FrameGen", "FGNvngxReplacement", "None")),
                 "Only relevant when FG Output = DLSSG. Enabler uses dlss-enabler-headless.dll from the managed OptiScaler Streamline stack. Combo needs the FSR 3/4 FG and Enabler files: FSR FG renders the middle frames, Enabler the rest."),
             new("HUDFix", "Frame Generation", "HUD Fix", Read("OptiFG", "HUDFix"), AutoBoolOptions),
             new("DisableHUDFix", "Frame Generation", "Disable HUD Fix tracking", Read("OptiFG", "DisableHUDFix"), AutoBoolOptions),
@@ -248,7 +283,7 @@ public sealed partial class OptiScalerDeploymentService
                 case "FGOutput":
                     WriteChoice(binaryDirectory, "FrameGen", "FGOutput", value, FgOutputOptions); break;
                 case "FGNvngxReplacement":
-                    WriteChoice(binaryDirectory, "FrameGen", "FGNvngxReplacement", value, FgNvngxOptions); break;
+                    WriteChoice(binaryDirectory, "FrameGen", "FGNvngxReplacement", value, FgNvngxOptionsFor(binaryDirectory)); break;
                 case "HUDFix":
                     WriteChoice(binaryDirectory, "OptiFG", "HUDFix", value, AutoBoolOptions); break;
                 case "DisableHUDFix":

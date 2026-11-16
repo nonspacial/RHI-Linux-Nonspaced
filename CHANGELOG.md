@@ -41,6 +41,8 @@ Not on `main` yet: nothing at the moment.
   Nightly, DLSS NR and F5 DLSSNR. RHI downloads them from their GitHub releases and keeps them up to date like the
   others; the Neural Rendering forks get NVIDIA's Neural Rendering file (#271, upstream 2.9.2/2.9.3). Custom OptiScaler
   builds are not in this build yet.
+- OptiScaler ⚙: FG Nvngx Override lists custom frame generation providers found in OptiScaler's custom folder by name
+  (#272, upstream 2.9.3).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

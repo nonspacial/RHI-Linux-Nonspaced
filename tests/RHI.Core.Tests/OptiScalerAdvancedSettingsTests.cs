@@ -208,6 +208,32 @@ public sealed class OptiScalerAdvancedSettingsTests : IDisposable
         Assert.False(service.SetAdvancedSetting(game, OptiScalerDeploymentService.DxgiSpoofingSettingId, "yes").Success);
     }
 
+    // #272 (upstream 2.9.3 FindCustomFgProviders): FG Nvngx Override lists the custom frame generation providers in
+    // OptiScaler's custom folder (a folder with a dlssg folder holding a DLL) by name, and saves one.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FgNvngxReplacement_ListsCustomFgProvidersByName_AndSavesOne(bool optiScalerFolder)
+    {
+        var (game, store, ini) = CreateGame("custom-fg-" + optiScalerFolder, managed: true, OptiScalerVariant.Nightly);
+        File.WriteAllText(ini, "[FrameGen]\nFGInput=nvngxfg\nFGNvngxReplacement=None\n");
+        var bin = Path.GetDirectoryName(ini)!;
+        var custom = optiScalerFolder ? Path.Combine(bin, "OptiScaler", "custom") : Path.Combine(bin, "custom");
+        Directory.CreateDirectory(Path.Combine(custom, "Apex Neural Rendering FG", "dlssg"));
+        File.WriteAllText(Path.Combine(custom, "Apex Neural Rendering FG", "dlssg", "nr_fg.dll"), "MZ");
+        Directory.CreateDirectory(Path.Combine(custom, "Empty", "dlssg")); // no DLL: not a provider
+        Directory.CreateDirectory(Path.Combine(custom, "Upscaler", "fsr")); // not a frame generation provider
+        var service = NewService(store);
+
+        var row = service.GetAdvancedSettings(game).Settings.Single(setting => setting.Id == "FGNvngxReplacement");
+        Assert.Equal(["None", "Nukems", "Arturs", "FFX", "Combo", "Apex Neural Rendering FG"], row.Options.Select(option => option.Value));
+        Assert.Equal("Apex Neural Rendering FG", row.Options[^1].Name);
+
+        Assert.True(service.SetAdvancedSetting(game, "FGNvngxReplacement", "Apex Neural Rendering FG").Success);
+        Assert.Contains("FGNvngxReplacement=Apex Neural Rendering FG", File.ReadAllText(ini));
+        Assert.False(service.SetAdvancedSetting(game, "FGNvngxReplacement", "Empty").Success);
+    }
+
     [Fact]
     public void SetAdvancedSetting_InvalidChoiceIsRejectedWithoutChangingIni()
     {
