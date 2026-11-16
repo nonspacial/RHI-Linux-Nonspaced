@@ -1480,3 +1480,17 @@ makes the check could-not-check and the update refuse, as for the proxy (#238). 
 Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
 MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
 release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane optiscaler)
+
+### #264 — OptiPatcher reads its build commit again (2.9.3)
+
+Upstream 2.9.3 `487b4fc`. Since November 2026 the OptiPatcher rolling release notes read `**Build commit:** ^G<sha>`
+(a literal caret and G before the commit). RHI's pattern wanted the commit right after the label, found none and fell
+back to the asset digest (`sha256-…`), so the card and the update log showed a digest instead of a build. Updates were
+still detected (the digest changes with every build), but each build was cached and named by digest. RHI now takes
+upstream's pattern: after `Build commit:` and its bold markers, a `^` and any one character are skipped, then anything
+that is not hex or a line break, and the commit is 7–40 hex digits (`OptiPatcherProvider.ParseBuildCommit`). A real
+control character (BEL) before the commit is read too. A release that names no commit still falls back to the asset
+digest; upstream keeps the previous version string. The release as served on 2026-11-16 is a test fixture
+(`optipatcher-rolling-2026-11.json`), with upstream's `OptiPatcherVersionTests` cases.
