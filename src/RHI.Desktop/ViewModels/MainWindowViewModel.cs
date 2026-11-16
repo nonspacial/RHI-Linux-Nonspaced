@@ -268,6 +268,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w12/hdr-wsi rows
     // w14/nr rows
     public GitcUpliftPresenter GitcUplift => GitcUpliftPresenter.For(this, _managedComponents); // #274 Settings card, Launchpad, Uplift Version
+    // w14 lane rows: shell hooks (one member each; logic lives in your presenter)
+    // w14/extras-fg rows
+    /// <summary>#285/#278: install notices with "Don't show this again" (closed-source mods, Universal MFG's ReShade warning).</summary>
+    public InstallNoticePresenter InstallNotices => InstallNoticePresenter.For(this, _managedComponents, () => new DismissedNoticeStore(Path.Combine(_settingsStore.ConfigRoot, "dismissed-notices.json")));
+    internal LinuxManagedComponentService ManagedForFgSettings => _managedComponents; // #279–#281: the FG unlocks' ⚙ read and write the mods' files
+    /// <summary>#279: RHI's MFG Unlock record for the selected game, or null.</summary>
+    public LinuxDeploymentRecord? GetMfgUnlockRecord() => SelectedGame is null ? null : _managedComponents.GetMfgUnlockRecord(SelectedGame);
+    /// <summary>#280: rtx-encore.jsonc beside RHI's RTX Encore (null when it is not installed).</summary>
+    public string? RtxEncoreConfigPath() => SelectedGame is null ? null : _managedComponents.RtxEncoreConfigPath(SelectedGame);
+    /// <summary>#280: whether RTX Encore's Intel XeSS files are in place (null when it is not installed).</summary>
+    public RtxEncoreXessStatus? RtxEncoreXessStatus() => SelectedGame is null ? null : _managedComponents.RtxEncoreXessStatus(SelectedGame);
+    /// <summary>#281: the installed dlssg_sm86.ini's lines (null when 20/30 FG Unlock is not installed or the file is gone).</summary>
+    public IReadOnlyList<string>? GetDlssg2030IniLines() => SelectedGame is null ? null : _managedComponents.Dlssg2030IniLines(SelectedGame);
+    /// <summary>#281: writes one ⚙ setting; the refusal (or null) and the INI as written.</summary>
+    public (string? Refusal, IReadOnlyList<string>? After) SetDlssg2030IniSetting(Dlssg2030Setting setting, int index)
+        => SelectedGame is not { } game ? (Dlssg2030Ini.NotInstalledMessage, null)
+            : _managedComponents.SetDlssg2030IniSetting(game, setting, index) is { } refusal ? (refusal, null) : (null, _managedComponents.Dlssg2030IniLines(game));
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1316,6 +1333,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public LinuxDeploymentRecord? GetRtx40MfgRecord()
         => SelectedGame is null ? null : _managedComponents.GetRtx40MfgRecord(SelectedGame);
 
+    /// <summary>#278: the Universal MFG Unlocker ⚙'s facts for the selected game (null without one).</summary>
+    public UniversalMfgStatus? GetUniversalMfgStatus()
+        => SelectedGame is null ? null : _managedComponents.UniversalMfgStatus(SelectedGame);
+
     public ComponentOperationResult SetRtx40MfgPreferences(string proxyName)
     {
         if (SelectedGame is null)
@@ -1427,6 +1448,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>Set by the window: shows a confirmation (title, message, accept text) and returns true to proceed.</summary>
     public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
 
+    /// <summary>w14/extras-fg (#285): set by the window; shows a notice with "Don't show this again" (see <see cref="InstallNoticePresenter"/>).</summary>
+    public Func<DismissibleNotice, Task<DismissibleNoticeAnswer>>? ConfirmDismissibleAsync { get; set; }
+
     /// <summary>w3/dllnames (#136): the Control UE RenoDX confirmation with its FG/HDR choices; null = plain confirmation, FG No.</summary>
     public Func<ControlUeInstallDialogModel, Task<bool>>? ConfirmControlUeAsync { get; set; }
 
@@ -1503,6 +1527,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             if (!removing && !await AcceptManifestInstallWarningsAsync(game, kind, component.DisplayName, installsTarget: true, probe.Files)) return;
             if (!removing && kind == ManagedComponentKind.DxvkHdr && !await DxvkHdr.ConfirmInstallAsync(game)) return; // w7/dxvk-hdr hook (#200)
             if (!removing && kind == ManagedComponentKind.OptiScaler && !await F5Driver.ConfirmInstallAsync(game, Runtime.SelectedOptiScalerVariant.Value)) return; // w11/nr-gpu hook (#231)
+            if (!removing && !await InstallNotices.ConfirmBeforeInstallAsync(game, kind, component.DisplayName)) return; // w14/extras-fg hook (#285, #278)
 
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first. Since 2.8.1
             // the confirmation also offers OptiScaler FG and "Using HDR?" (w3/dllnames #136; a plain confirmation = FG No).

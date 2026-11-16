@@ -196,7 +196,7 @@ internal sealed class ManagedComponentRowDecorator
                         : managedRenoDxUpgrade is not null ? "RenoDX Upgrade"
                         : managedReLimiter is not null ? "ReLimiter"
                         : managedDisplayCommander is not null ? "Display Commander"
-                        : managedMfgAdaUnlock is not null ? "MFG Ada Unlock"
+                        : managedMfgAdaUnlock is not null ? "MFG Unlock"
                         : managedDlss5Feeder is not null ? "DLSS5 Feeder"
                         : managedDlss5Bridge is not null ? "DLSS5 DX11 Bridge"
                         : managedShortFuse is not null ? "ShortFuse"
@@ -496,22 +496,22 @@ internal sealed class ManagedComponentRowDecorator
                         if (managedDlssg2030 is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Ada Unlock; os métodos de desbloqueio de Frame Generation são mutuamente exclusivos no RHI-Linux.";
+                            component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Unlock; os métodos de desbloqueio de Frame Generation são mutuamente exclusivos no RHI-Linux.";
                         }
                         else if (managedRtx40Mfg is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar MFG Ada Unlock; mantenha uma única autoridade de Frame Generation.";
+                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar MFG Unlock; mantenha uma única autoridade de Frame Generation.";
                         }
                         else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || GameArchitecture.Of(game) != PeArchitecture.X64)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock is a 64-bit ReShade add-on.";
+                            component.Note = "MFG Unlock is a 64-bit ReShade add-on.";
                         }
                         else if (!components.Any(c => c.Kind == ManagedComponentKind.Streamline && c.Availability == ComponentAvailability.Installed))
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock requires a game with Streamline/DLSS frame generation. Streamline was not detected.";
+                            component.Note = "MFG Unlock requires a game with Streamline/DLSS frame generation. Streamline was not detected.";
                         }
                         else
                         {
@@ -600,7 +600,7 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedMfgAdaUnlock is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock já está ativo. Remova-o antes de instalar RTX 20 FG Unlock legado.";
+                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar RTX 20 FG Unlock legado.";
                         }
                         else if (managedShortFuse is not null)
                         {
@@ -658,7 +658,7 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedMfgAdaUnlock is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Ada Unlock já está ativo. Remova-o antes de instalar Universal MFG.";
+                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar Universal MFG.";
                         }
                         else if (managedDlssg2030 is not null)
                         {

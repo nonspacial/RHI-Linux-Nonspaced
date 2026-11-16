@@ -103,7 +103,7 @@ public sealed class ComponentInfoPresenter(ComponentInfoCatalogue catalogue)
         if (selectedGame() is not { } game) return;
         var key = HighlightKey(game);
         var kinds = new HashSet<ManagedComponentKind>();
-        foreach (var row in added.Where(row => row.HasInfo))
+        foreach (var row in added.Where(row => row.HasInfo && !row.HasGitHubInfo)) // #285: a GitHub ⓘ has no notes
         {
             lock (_highlightSync)
                 if (_knownHighlights.TryGetValue(key + "|" + row.Kind, out var known)) row.InfoHighlight.Set(known);
@@ -279,8 +279,11 @@ public sealed class ComponentInfoHighlightState(string componentName) : INotifyP
     {
         ComponentInfoHighlight.GameNotes => UiLocalizationService.Format("Sm.InfoTipGameNotes", componentName),
         ComponentInfoHighlight.Changelog => UiLocalizationService.Format("Sm.InfoTipChangelog", componentName),
-        _ => ComponentInfoPresenter.TipFor(componentName)
+        _ => GeneralTip ?? ComponentInfoPresenter.TipFor(componentName)
     };
+
+    /// <summary>#285: the plain tooltip of an ⓘ that opens a GitHub page instead of the notes dialog.</summary>
+    public string? GeneralTip { get; init; }
 
     internal void Set(ComponentInfoHighlight highlight)
     {

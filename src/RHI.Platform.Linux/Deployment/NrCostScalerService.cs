@@ -43,7 +43,7 @@ public sealed class NrCostScalerService
     public const string RemovedMessage = "NR Cost Scaler removed; the Neural Rendering runtime is back as it was.";
     public const string FailedRolledBackPrefix = "NR Cost Scaler failed and was rolled back: ";
     public const string OwnerBlockedPrefix = "Remove NR Cost Scaler first: it wraps nvngx_dlssnr.dll for ";
-    public const string RtxEncoreOwnerMessage = "NR Cost Scaler cannot wrap RTX Encore's Neural Rendering file: RTX Encore accepts only NVIDIA's own 310.8.0 file.";
+    public const string RtxEncoreOwnerMessage = "NR Cost Scaler cannot wrap RTX Encore's Neural Rendering file: RTX Encore accepts only NVIDIA's own 310.9.16 file.";
     // #199: Update All.
     public const string CouldNotCheckPrefix = "NR Cost Scaler: the latest release could not be checked: ";
     public const string UpToDatePrefix = "NR Cost Scaler is up to date: ";

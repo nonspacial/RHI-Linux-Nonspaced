@@ -2135,3 +2135,141 @@ FoveatedDLSS5 (maximedgoulet) is a build of the DLSS5 Tool's `renodx-dlss5.addon
 `dlss5-dx11-bridge.addon64`, and `renodx-dlss5.addon64` is deployed only as the DLSS5 Feeder's consumer, where upstream
 offers no Foveated switch. The switch waits for the owner's choice on the tracker: port the DLSS5 Tool methods first, or
 use another mapping.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane extras-fg)
+
+### #285 — Closed-source notice for RTX Encore, 20/30 FG Unlock and ANR FG (2.9.3)
+
+- Before the first install of RTX Encore or 20/30 FG Unlock (the row's Install; never on update), RHI shows upstream's
+  notice: "<mod> is closed source: <author> publishes only the finished DLL, not its code …", Install / Cancel and
+  **Don't show this again**. As upstream, a tick is saved whatever the answer and is kept per mod (upstream's
+  `RtxEncoreClosedSourceDismissed`, `Dlssg2030ClosedSourceDismissed`, `AnrFgClosedSourceDismissed`).
+- The notice is a reusable confirm (`InstallNoticePresenter.ConfirmAsync`): the Universal MFG ReShade warning (#278)
+  uses it, and the OptiScaler lane calls `ConfirmClosedSourceAsync(ClosedSourceMod.AnrFg)` before an ANR FG preset
+  install; ANR FG has no row, so its notice carries its GitHub page as a link, as upstream.
+- The ⓘ button of the RTX Encore, 20/30 FG Unlock, Universal MFG Unlocker and MFG Unlock rows opens the mod's GitHub
+  page (upstream's Info buttons) instead of a notes dialog.
+- Linux deviations: the dismissals live in `~/.config/rhi-linux/dismissed-notices.json`, not in the main settings file,
+  so Settings → Reset does not bring the notices back. A dismissal that cannot be saved (an unreadable file) is reported
+  on the status line and the notice shows again next time. Without a window (tests, headless runs) every notice is
+  accepted.
+
+### Shared: Intel XeSS files for the frame-generation mods (2.8.9–2.9.3)
+
+- One service (`IntelXessFiles`) downloads and places Intel's XeSS SDK files for Universal MFG Unlocker (#278), MFG
+  Unlock (#279) and RTX Encore (#280), from upstream's source (`intel/xess` at tag `v3.0.2` on
+  raw.githubusercontent.com, policy `IntelXess` in [`docs/download-trust.md`](docs/download-trust.md)).
+- Linux deviation: every file is checked against a pinned SHA-256 (upstream pins them for RTX Encore only and accepts any
+  `MZ` file of at least 1 KiB for the other two mods), and a DLL must be a 64-bit PE. A file that does not match is
+  refused.
+- The moves run inside the component's own journaled operation, so a failure or a crash undoes them with the rest.
+  A step either adds a file the folder lacks (a file RHI did not place is left alone) or replaces the game's own copy in
+  place after copying it to a backup name. Unlike upstream, an existing backup is never overwritten: that file is
+  skipped and named. Removal deletes an added file, or puts the game's copy back from its backup, only while the file
+  still holds RHI's bytes; a file changed since is left, with its backup, and named.
+- Linux deviation: installs from before get the files through Update / Update All, not at start-up (the check plans it
+  even without a new release), as for the 20/30 FG Unlock package repair (#261, D1 = No).
+
+### #278 — Universal MFG Unlocker: rename, RTX 30 and XeMFG, Intel files, OptiScaler-plugin mode, ReShade warning (2.8.9)
+
+- The row is **Universal MFG Unlocker** (internal key and records unchanged) and its ⓘ opens
+  `github.com/dashdogy/MFG-Unlocker`.
+- The GPU-generation dropdown is gone, as upstream. Linux kept a stricter API rule for a saved "RTX 30" choice (DX12
+  only); it now applies one rule to every card: DirectX 12, Vulkan experimental. A saved generation is kept in the
+  record but no longer read. The proxy-name dropdown stays in the ⚙ (upstream asks for the name in a picker at install).
+- Intel files: `libxess_fg.dll` and `libxell.dll` go in `RTXMFG-XeSS` beside the proxy (the binary folder; upstream uses
+  its install folder, which is the same place for the games it supports). A download that fails does not stop the
+  install (upstream); the message says so and Update adds them.
+- OptiScaler-plugin mode: with RHI's OptiScaler Nightly, F5 DLSSNR or DLSS NR (an `OptiScaler` folder beside the game)
+  the mod is placed as `OptiScaler/plugins/MFGUnlocker.asi`, with no Wine override and no Intel files. Installing such an
+  OptiScaler moves an existing proxy install in (proxy, Wine override and Intel files removed); removing RHI's OptiScaler
+  first moves it back beside the game under the name it came from, else version.dll, winmm.dll, dinput8.dll or the next
+  free proxy name, never over an existing file, and puts the Intel files back. OptiScaler keeps `LoadAsiPlugins=true`,
+  which it already sets on every install. Stable OptiScaler is not a host. Linux deviations: upstream also reconciles
+  every game at start-up; RHI Linux moves only through these OptiScaler installs and removals, so an install made before
+  this build stays a proxy until OptiScaler is installed again or the mod is reinstalled. A move that cannot be made (a
+  file changed outside RHI, Wine running) is named in OptiScaler's message and never fails OptiScaler's own result.
+- ReShade warning: before a user-started install beside a ReShade (RHI's or the user's; not for a Vulkan game, whose
+  ReShade is the layer, and not for a plugin install), upstream's "XeMFG and ReShade" notice with Continue / Cancel and
+  **Don't show this again** (key `UmfgReShadeWarningDismissed`, through the #285 confirm).
+- ⚙: upstream's text (Backspace menu and its modes, preset B above 2x), the "Loaded by OptiScaler" section for a plugin
+  install, the XeMFG section with "XeSS files: installed / missing", and the ReShade-as-dxgi.dll warning at 5x/6x
+  (Linux wording points at installing ReShade under another DLL name instead of upstream's DLL naming overrides).
+  Upstream's "Open GitHub page" button is the row's ⓘ.
+
+### #279 — MFG Unlock (formerly MFG Ada Unlock): rename, frame-generation method, XeSS files with backup, DX11 warning (2.8.9/2.9.2)
+
+- The row, its ⚙ and RHI's own messages say **MFG Unlock**; the component key, records and the add-on file
+  (`renodx-mfgunlock.addon64`) are unchanged, and the upstream manifest's `packageName` ("MFG Ada Unlock") is no longer
+  shown (`KeepDisplayName`). The ⓘ opens the mod's GitHub page (#285).
+- New ⚙ (upstream's `BuildMfgAdaCogContent`): **Frame generation method** writes `[Backend] Selected` (`DLSSG`/`XeMFG`)
+  and `[DLSSG] XmxGenerator` (`0`/`1`) to `MFGAdaUnlock.ini` in the game's executable folder (the mod reads it from
+  there, not from the add-on folder); **DLSS-SR input (experimental)** writes `[Adapters] DlssSr` and is greyed out
+  unless the method is Intel XeMFG (CUDA). A missing file reads as the mod's defaults and a change creates it; other
+  lines and comments are kept. The help texts sit under each row, as upstream. **Open MFGAdaUnlock.ini** is greyed out
+  while the file does not exist.
+- Intel XeSS files (shared service above): `libxess_fg.dll` and `libxell.dll` go in the game's executable folder; a game
+  copy of another build is kept as `<file>.mfgada-original` and put back on removal; an identical copy is left alone.
+  The step runs as its own journaled operation after the add-on's install or update, with MFG Unlock's record as its
+  commit point (the add-on's update keeps the list when it rebuilds the record). Removal puts the game's copies back
+  first and refuses, removing nothing, when that cannot be done. Linux deviation: a download that fails never fails the
+  add-on's install; the message says so and Update adds the files.
+- ⚙ status: "ready", "missing (…)" or "a version MFG Unlock doesn't accept (…)", judged by RHI's pinned file or upstream's
+  accepted versions (libxess_fg 1.3.1.78, libxell 1.3.2.10 / 1.3.0.5) read from the PE version resource.
+- API warning, as upstream (only in the ⚙): any DirectX 12 among the game's APIs is fine; Vulkan gets the "experimental"
+  text; DirectX 8–11 or OpenGL get "won't work here". Linux reads the effective API list (manifest or detection).
+
+### #281 — DLSSG 20/30 FG Unlock ⚙ settings (2.8.9)
+
+- The ⚙ shows upstream's six settings as dropdowns of valid values only, in upstream's order and with its help text
+  under each: Frame Generation (`[General] Enabled` 1/0), Engine (`[FrameGeneration] Engine` DLSS/XeSS), Max Frames
+  (`MaxGeneratedFrames` 1–5, "Game decides" 0), Preset (`[DLSSG] Preset` A/B/C), Speed Tier (`[DLSSG] Optimized` 0–3)
+  and Super Resolution (`[SuperResolution] Mode` Off/M-INT8/L-INT8/M-FP16/L-FP16). Upstream's Engine/Max Frames rule is
+  kept: XeSS at 5X/6X moves Max Frames to 4X, and 5X/6X are refused under XeSS. Until the mod is installed the rows are
+  greyed out with upstream's warning. **Open dlssg_sm86.ini** and **Open log** (`dlssg_sm86/logs/dlssg_sm86.log`) are
+  greyed out while the file does not exist. The values are pinned against the 0.4.2 package's INI fixture.
+- Kept on update, as upstream: a change made in the ⚙ keeps RHI's ownership of the INI (the record takes the new hash),
+  so Update puts the new release's INI in place and writes the six values back into it, and Remove deletes it. Linux
+  deviation (unchanged from #261): an INI changed outside RHI is the user's and is kept whole on update and removal.
+- Linux deviation: a missing Speed Tier reads as 1, the mod's documented default (upstream's fallback reads 0 while its
+  label marks 1 as the default).
+- The GPU-generation dropdown is gone, as upstream; the intro now describes the mod (RTX 20 and 30, DirectX 12,
+  driver R580+) instead of "Legacy SM75 path" (EN and PT-BR), and the dialog title is "20/30 FG Unlock". A saved
+  generation is not asked for any more; the preference store already reads an old "RTX 30" choice as RTX 20.
+
+### #280 — RTX Encore: ⚙ settings, XeSS files in place, NR DLL 310.9.16, Bink names, .asi build, DLL-name recommendation (2.8.9–2.9.3)
+
+- The row is **RTX Encore** (no "Beta").
+- ⚙ settings: upstream's sections and settings, with its keys and values (`renderingEngines.frameGenerationEngine`,
+  `frameGeneration.mode`/`multiplier`/`dynamicTargetFrameRate`/…, `xefg.*`, `imageQuality.*`, `hudUi.*`, upscaling,
+  `neuralRendering/core.nrEnabled` and the NR presets, `general.gpuSeries`, `compatibility.*`,
+  `nativeMenuFeatures.hairEnabled`), written at once into `rtx-encore.jsonc` beside RTX Encore by a port of upstream's
+  line editor (`RtxEncoreConfig`): only the value token changes, comments and newline style are kept, a missing key or
+  section is inserted, and a missing file is created with just that setting. Upstream's dependencies grey rows out
+  (Multiplier in Fixed mode, the dynamic rows in Dynamic mode, the XeFG engine rows with XeFG, XeSS on Tensor Cores with
+  the XeSS upscaler, custom scale with Custom). Number boxes check their range and go back to the saved value when it is
+  out of range. Greyed out until RHI's RTX Encore is installed. Pinned against upstream's own editor tests.
+  Linux deviations: Smooth Motion is left out (it needs NVIDIA's Windows driver and does not run under Wine/Proton);
+  the rows have labels but not upstream's long per-row tooltips yet; the "game is running" warning is not shown.
+- Intel XeSS files (shared service above): the game's own `libxess.dll`, `libxess_fg.dll` and `libxell.dll` (any
+  folder under the game, Intel's version resource, links, `OptiScaler.ini` folders, `rtx-encore-runtimes`,
+  `RTXMFG-XeSS` and files another RHI component placed skipped; at most 16 levels and 20 000 folders) are replaced in
+  place, each kept as `<file>.encore-original`; the others and Intel's licence (`license.txt`) go in
+  `rtx-encore-runtimes/intel` beside RTX Encore. All in RTX Encore's own journaled install, removal or update. The ⚙
+  says whether they are installed and how many replace the game's copies.
+- Neural Rendering file 310.9.16 (`nvngx_dlssnr.dll`, pinned SHA-256 `CDFA6C1E…FEABF3ED`, from the DLSS list's
+  "310.9.16 (20/30/40/50)" entry). An RHI copy of 310.8.0 is replaced by Update, while it still holds RHI's bytes.
+- Bink names: `binkw64.dll` / `bink2w64.dll` are offered; the game's own Bink DLL is kept as `<stem>Hooked.dll` (where
+  RTX Encore loads it) and put back on removal. Linux deviation: a `…Hooked.dll` RHI did not record is never adopted,
+  so the install is refused with the file named instead of being treated as already set up.
+- `.asi`: the separate ASI build (`alternative-proxies/rtx-encore.asi`; the DLL when a release has none, as upstream)
+  replaces the renamed DLL; an .asi install from an older build is corrected by Update. Linux deviation: the `.asi`
+  stays beside the game's executable next to its Neural Rendering file, where RHI Linux has always put it (Ultimate ASI
+  Loader reads that folder), so upstream's move to `plugins/` is not needed.
+- Recommended DLL name: the manifest's `rtxEncoreDllNames` (Euro Truck Simulator 2: `winmm.dll`) is read into the game
+  and, when it is one of RTX Encore's DLL names, listed first and used as the default; the user's own choice wins; the
+  ⚙ names it.
+- Extras summary (upstream 2.9.4 fix): on Linux the RTX Encore row is in Managed components, whose collapsed summary
+  already lists it.
+- Linux deviation: installs from before get the XeSS files, 310.9.16 and the ASI build through Update / Update All (the
+  check plans it), not at start-up. A failed XeSS download does not stop an install (upstream); the message says so.

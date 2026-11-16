@@ -103,6 +103,9 @@ public sealed class UpstreamLibraryPolicySnapshot
     /// <summary>#211: manifest <c>dlssPresets</c> (extra DLSS presets for the per-game NVIDIA settings); null when absent.</summary>
     public RHI.Platform.Linux.Hdr.UpstreamDlssPresetsDefinition? DlssPresets { get; init; }
     // w7/dxvk-hdr rows
+    // w14/extras-fg rows
+    /// <summary>#280: manifest <c>rtxEncoreDllNames</c> — game → the DLL name RTX Encore needs there (ETS2: winmm.dll).</summary>
+    public IReadOnlyDictionary<string, string> RtxEncoreDllNames { get; init; } = EmptyStrings();
 
     private static IReadOnlyDictionary<string, string> EmptyStrings()
         => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -238,6 +241,9 @@ internal sealed partial class UpstreamManifestDocument
     [JsonPropertyName("dlssPresets")]
     public RHI.Platform.Linux.Hdr.UpstreamManifestDlssPresets? DlssPresets { get; set; } // #211
     // w7/dxvk-hdr rows
+    // w14/extras-fg rows
+    [JsonPropertyName("rtxEncoreDllNames")]
+    public Dictionary<string, string>? RtxEncoreDllNames { get; set; } // #280
 }
 
 internal sealed class UpstreamManifestSplitGame
@@ -354,6 +360,8 @@ public sealed partial class UpstreamRhiManifestService
             // w7/nvapi-launch rows
             DlssPresets = RHI.Platform.Linux.Hdr.DlssPresetCatalogue.FromManifest(manifest.DlssPresets), // #211
             // w7/dxvk-hdr rows
+            // w14/extras-fg rows
+            RtxEncoreDllNames = NormalizeStringDictionary(manifest.RtxEncoreDllNames), // #280
         };
     }
 
@@ -385,6 +393,7 @@ public sealed partial class UpstreamRhiManifestService
         Add(result, manifest.UeExtendedCompatibility?.Keys);
         Add(result, manifest.ForceExternalOnly?.Keys);
         Add(result, manifest.DllNameOverrides?.Keys);
+        Add(result, manifest.RtxEncoreDllNames?.Keys); // w14/extras-fg (#280)
         Add(result, manifest.OptiScalerDllOverrides?.Keys);
         Add(result, manifest.DlssPathOverrides?.Keys);
         Add(result, manifest.StreamlinePathOverrides?.Keys);

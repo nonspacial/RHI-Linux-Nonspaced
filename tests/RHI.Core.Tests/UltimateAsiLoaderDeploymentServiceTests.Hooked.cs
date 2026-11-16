@@ -119,7 +119,7 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
 
         Assert.Equal(["version.dll", "dxgi.dll", "winmm.dll", "winmmHooked.dll", "dbghelp.dll", "psapi.dll", "winhttp.dll"], options.Select(o => o.Name));
         Assert.Equal("Ultimate ASI Loader", options.Single(o => o.Name == "winmm.dll").BlockedBy);
-        Assert.Equal("Universal MFG", options.Single(o => o.Name == "dxgi.dll").BlockedBy);
+        Assert.Equal("Universal MFG Unlocker", options.Single(o => o.Name == "dxgi.dll").BlockedBy);
         var hooked = options.Single(o => o.Name == "winmmHooked.dll");
         Assert.True(hooked.IsHooked);
         Assert.True(hooked.IsFree);

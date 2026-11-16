@@ -135,22 +135,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposab
         Assert.Equal("RTX 30 Series", Rtx40MfgStandaloneDeploymentService.GpuGenRtx30);
     }
 
-    [Fact]
-    public void Eligibility_Rtx30IsDx12OnlyWhileRtx40AlsoAllowsExperimentalVulkan()
-    {
-        using var fixture = CreateGame("gpu-eligibility", 0x8664, GraphicsApi.Vulkan);
-
-        Assert.True(Rtx40MfgStandaloneDeploymentService.IsGameEligible(
-            fixture.Game, Rtx40MfgStandaloneDeploymentService.GpuGenRtx40));
-        Assert.False(Rtx40MfgStandaloneDeploymentService.IsGameEligible(
-            fixture.Game, Rtx40MfgStandaloneDeploymentService.GpuGenRtx30));
-        Assert.Contains("DirectX 12", Rtx40MfgStandaloneDeploymentService.EligibilityReason(
-            fixture.Game, Rtx40MfgStandaloneDeploymentService.GpuGenRtx30), StringComparison.OrdinalIgnoreCase);
-
-        fixture.Game.GraphicsApi = GraphicsApi.DirectX12;
-        Assert.True(Rtx40MfgStandaloneDeploymentService.IsGameEligible(
-            fixture.Game, Rtx40MfgStandaloneDeploymentService.GpuGenRtx30));
-    }
+    // #278 (upstream 2.8.9): RTX 30 is no longer DX12-only; see Eligibility_IsTheSameForEveryGpuGeneration.
 
     [Fact]
     public void PreferenceStore_RoundTripsGpuGenerationAndProxy()

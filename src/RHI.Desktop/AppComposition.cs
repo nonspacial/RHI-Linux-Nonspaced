@@ -214,18 +214,20 @@ internal sealed class AppComposition
         var mfgAdaUnlock = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.MfgAdaUnlock,
             "mfgunlock",
-            "MFG Ada Unlock",
+            "MFG Unlock",
             "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases?per_page=1",
             128 * 1024,
             ExactAssetName64: "renodx-mfgunlock.addon64",
             DeployFileName64: "renodx-mfgunlock.addon64",
-            X64Only: true));
+            X64Only: true,
+            KeepDisplayName: true)); // #279: shown as MFG Unlock
         var dlssg2030Preferences = new Dlssg2030PreferenceStore();
         var dlssg2030 = new Dlssg2030UnlockDeploymentService(http, records, wineOverrides, dlssg2030Preferences, journal: journal);
         var dlssEnablerPreferences = new StandaloneDlssEnablerPreferenceStore();
         var dlssEnablerStandalone = new StandaloneDlssEnablerDeploymentService(http, records, wineOverrides, dlssEnablerPreferences, journal: journal);
         var rtx40MfgPreferences = new Rtx40MfgPreferenceStore();
-        var rtx40Mfg = new Rtx40MfgStandaloneDeploymentService(http, records, wineOverrides, rtx40MfgPreferences, journal: journal);
+        var intelXess = new IntelXessFiles(http); // w14/extras-fg: Intel's XeSS files for Universal MFG Unlocker, MFG Unlock and RTX Encore
+        var rtx40Mfg = new Rtx40MfgStandaloneDeploymentService(http, records, wineOverrides, rtx40MfgPreferences, journal: journal) { Xess = intelXess }; // #278
         var dlss5Bridge = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.Dlss5Dx11Bridge,
             "dlss5-dx11-bridge",
@@ -323,7 +325,7 @@ internal sealed class AppComposition
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
             updateLog, nrCostScaler: nrCostScaler, // w3/parity hook (#96): named argument
-            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) // w4/encore (#158)
+            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) { Xess = intelXess } // w4/encore (#158); #280: Intel XeSS files
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
             , updateInclusion: updateInclusion
@@ -373,6 +375,7 @@ internal sealed class AppComposition
         // on/off key comes from Settings at install time.
         managedComponents.GitcUplift = new GitcUpliftDeploymentService(http, records, dlss, new ImmerseLaunchpadService(http), journal: journal);
         managedComponents.GitcUpliftEnableKey = () => settingsStore.Load().UpliftEnableKey;
+        managedComponents.MfgUnlockFiles = new MfgUnlockFiles(intelXess, records, journal); // w14/extras-fg (#279)
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows
