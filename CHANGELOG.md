@@ -13,7 +13,37 @@ once upstream's release leaves beta; until then its builds carry a beta label (`
 
 ## In progress
 
-Not on `main` yet: nothing at the moment.
+Not on `main` yet: wave 13 below (draft; it takes its date when it reaches `main`).
+
+### Wave 13 (draft): the upstream RHI 2.8.8 release — Available mods, add-ons in reshade.ini's AddonPath
+
+Mods list
+
+- **"Available HDR mods" is now "Available mods"** (upstream 2.8.8) and adds an **Ultra+** column: games on the Ultra+
+  list get a tick there, and games with only an Ultra+ mod get a row of their own.
+- **Every tick opens that mod's page**; the separate Download column is gone. A game covered only by RenoDX's generic
+  Unreal, Unity or Source add-on opens the RenoDX wiki's mod list.
+- **The top line counts** the RenoDX, Luma and Ultra+ mods, and says which list could not be loaded (the rest still
+  shows).
+- **Type RenoDX, Luma or Ultra+ in the search box** to show only games with that mod; add a game name after it to narrow
+  it down, e.g. "luma dead".
+- **Source engine games** that RenoDX's Source add-on supports (Half-Life 2, Portal, Left 4 Dead 2 and so on) are
+  listed. Installing the Source add-on from RHI comes with a later upstream release.
+
+Components
+
+- **ReShade add-ons go where ReShade loads them** when the game's `reshade.ini` sets an `AddonPath`: the Universal UE
+  DOF Fix and NR Cost Scaler's companion add-on went beside the executable, where ReShade then ignored them. The next
+  install or update moves RHI's copy into the AddonPath folder (also for MFG Ada Unlock, ReLimiter, Display Commander
+  and the Addon Manager's add-ons, which already installed there). A copy you changed is left alone and the update says
+  so; a same-named file in the game folder that is not RHI's is left there and named. The component rows also find
+  add-ons in an AddonPath folder outside the game folder.
+
+Settings
+
+- **The GitHub token is recommended**, as upstream now says: without one GitHub allows 60 requests an hour and installs
+  and update checks fail once they run out; with one, 5,000. The note says how to make one (a classic token with no
+  scopes).
 
 ## 2.8.8 beta 1 — not released yet
 
