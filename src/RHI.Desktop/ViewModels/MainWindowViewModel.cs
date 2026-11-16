@@ -478,6 +478,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _deploymentRecords = deploymentRecords ?? new LinuxDeploymentRecordStore();
         _hdrProfiles = hdrProfiles ?? new LinuxHdrLaunchProfileService();
         _session = session ?? new SelectedGameSession(runtimeProbe, managedComponents, _dlssDefaults, _hdrProfiles);
+        _managedComponents.DlssSection ??= _dlssDefaults; // #317: a DLSS5 Tool install upgrades DLSS through the DLSS section
         Dlss = new DlssPanelViewModel(this, _dlss, _dlssDefaults);
         Extras = new ExtrasViewModel(this, _managedComponents, Dlss);
         Runtime = new RuntimePanelViewModel(this, _managedComponents, _apiOverrideStore, _optiScalerVariantStore, _hdrProfiles);

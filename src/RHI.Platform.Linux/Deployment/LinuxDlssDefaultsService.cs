@@ -260,6 +260,27 @@ public sealed class LinuxDlssDefaultsService
         return new LinuxDlssBatchResult(results);
     }
 
+    /// <summary>
+    /// #317 (upstream 2.9.x <c>UpgradeDlssDllsAsync</c>, run by a DLSS5 Tool install): the game's DLSS Super Resolution, Ray
+    /// Reconstruction and Frame Generation files to the newest the DLSS section's "Latest" offers, through Quick Apply
+    /// (<see cref="ApplyDefaultsAsync"/>): only files the game has, never one an owner (OptiScaler, a Neural Rendering owner)
+    /// or an orchestrated stack (ShortFuse, DLSS5 Feeder Full) holds, never over DLSS 1.x, deferred while the game runs,
+    /// each original kept as .original and each swap in Update History. Neural Rendering and Streamline are not touched.
+    /// </summary>
+    public async Task<LinuxDlssBatchResult> ApplyNewestDlssAsync(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        if (_dlss.Manifest is null) await _dlss.FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+        var newest = new LinuxDlssVersionDefaults(
+            _dlss.LatestVersion(DlssComponentKind.SuperResolution) ?? "",
+            _dlss.LatestVersion(DlssComponentKind.RayReconstruction) ?? "",
+            _dlss.LatestVersion(DlssComponentKind.FrameGeneration) ?? "");
+        return await ApplyDefaultsAsync(game, newest, indexedFiles, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<LinuxDlssBatchResult> RestoreAllAsync(
         DetectedGame game,
         IReadOnlyList<string>? indexedFiles = null,

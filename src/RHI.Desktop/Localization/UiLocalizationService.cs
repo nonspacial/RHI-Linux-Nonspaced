@@ -2115,7 +2115,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.Dlss5ToolDeploymentService.FoveatedNote,
             " Versão Foveated: ligue a foveação e defina as zonas nas configurações do add-on no overlay do ReShade (Add-ons > DLSS 5 Neural Rendering)."),
         (RHI.Platform.Linux.Deployment.Dlss5ToolDeploymentService.AvailableNote,
-            "DLSS5 Tool (RenoDX): Renderização Neural sobre o DLSS do próprio jogo. Para jogos DX12 com DLSS nativo; com o DX11 Bridge para jogos DX11 e Vulkan. O RHI instala o add-on e, quando o jogo não tem, o nvngx_dlssnr.dll. Para o DLSS mais novo use a seção DLSS."),
+            "DLSS5 Tool (RenoDX): Renderização Neural sobre o DLSS do próprio jogo. Para jogos DX12 com DLSS nativo; com o DX11 Bridge para jogos DX11 e Vulkan. O RHI instala o add-on e, quando o jogo não tem, o nvngx_dlssnr.dll, e leva os arquivos DLSS SR, RR e FG do jogo à versão mais nova pela seção DLSS (os originais ficam guardados lá)."),
         (RHI.Platform.Linux.Deployment.Dlss5ToolDeploymentService.SwitchMethodNote,
             " Instalá-lo remove antes o método de Renderização Neural que o RHI instalou aqui."),
         (RHI.Platform.Linux.Deployment.Dlss5ToolDeploymentService.FeederOwnsNote,
@@ -2190,6 +2190,16 @@ public static class UiLocalizationService
             " Estes arquivos Intel XeSS mudaram desde que o RHI os colocou, então ficaram como estão: "),
         (RHI.Platform.Linux.Deployment.IntelXessFiles.BackupsLeftPrefix,
             " As cópias do próprio jogo ficam nestas cópias de segurança, porque o arquivo mudou desde que o RHI o colocou: "),
+        // w14/ui-settings (small) rows
+        // #317: a DLSS5 Tool install brings the game's DLSS SR/RR/FG to the newest through the DLSS section.
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DlssNewestPrefix,
+            " O DLSS do jogo foi levado à versão mais nova na seção DLSS / Streamline (os originais ficam como .original): "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DlssNewestFailedPrefix,
+            " Não foi possível levar o DLSS do jogo à versão mais nova; use a seção DLSS / Streamline: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DlssNewestDeferredNote,
+            " O DLSS do jogo ficou como está enquanto o jogo roda; use a Aplicação rápida na seção DLSS / Streamline depois."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DlssKeptByInclusionNote,
+            " O DLSS do jogo ficou como está: a inclusão de atualizações dele deixa o DLSS de fora."),
         // w14/extras-fg-2 rows (#281: the FG unlock rows' notes, no card generation)
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.AvailableNotePrefix,
             "Ativa o DLSS Frame Generation (até 6X) em GPUs RTX 20 e 30 (RTX 20 experimental); o mod detecta a placa sozinho. "
