@@ -13,7 +13,13 @@ upstream's release leaves beta; until then its builds carry a beta label (such a
 
 ## In progress
 
-Not on `main` yet: nothing at the moment.
+Not on `main` yet.
+
+### Wave 14 — renodx-reshade
+
+- The generic Unity RenoDX add-on comes from its new location (Voosh's GitHub Pages, 64-bit), and the upstream
+  manifest can move it again without an app update. Games with the add-on from the old link show an update. When a
+  link cannot be reached, RHI tries the add-on's older links in turn (#268).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

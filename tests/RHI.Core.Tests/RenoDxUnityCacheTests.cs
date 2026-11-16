@@ -13,15 +13,16 @@ public sealed class RenoDxUnityCacheTests : IDisposable
     public RenoDxUnityCacheTests() => Directory.CreateDirectory(_root);
 
     [Fact]
-    public void UnityAddonUrls_ResolveToHttpsGitHubReleasesWhateverTheSource()
+    public void UnityAddonUrls_ResolveToTheCurrentLinkWhateverTheSource()
     {
         var entry = new RenoDxModEntry("Outer Wilds", PagesUnityUrl, "https://clshortfuse.github.io/renodx/renodx-unityengine.addon32", null);
 
         Assert.Equal(RenoDxCatalogService.GenericUnityUrl64, entry.UrlFor(PeArchitecture.X64));
         Assert.Equal(RenoDxCatalogService.GenericUnityUrl32, entry.UrlFor(PeArchitecture.X86));
         Assert.Equal("https://cdn.test/renodx-sf6.addon64", RenoDxCatalogService.ResolveAddonUrl("https://cdn.test/renodx-sf6.addon64"));
-        Assert.All([RenoDxCatalogService.GenericUnityUrl64, RenoDxCatalogService.GenericUnityUrl32],
-            url => Assert.StartsWith("https://github.com/NotVoosh/renodx-unity/releases/download/", url, StringComparison.Ordinal));
+        // #268: upstream 2.9.5 moved 64-bit to Voosh's new GitHub Pages location; 32-bit stays on his release.
+        Assert.StartsWith("https://notvoosh.github.io/renodx/", RenoDxCatalogService.GenericUnityUrl64, StringComparison.Ordinal);
+        Assert.StartsWith("https://github.com/NotVoosh/renodx-unity/releases/download/", RenoDxCatalogService.GenericUnityUrl32, StringComparison.Ordinal);
     }
 
     [Fact]

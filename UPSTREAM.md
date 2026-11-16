@@ -1480,3 +1480,25 @@ makes the check could-not-check and the update refuse, as for the proxy (#238). 
 Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
 MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
 release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane renodx-reshade)
+
+### #268 — Generic Unity add-on from its new location; manifest `componentUrls.unity64` / `unity32`
+
+Upstream 2.9.5 beta `a593a09` (ported ahead of the 2.9.5 release, as the triage asks). Voosh moved the generic Unity
+add-on to GitHub Pages: the 64-bit link is now `https://notvoosh.github.io/renodx/renodx-unityengine.addon64`; 32-bit
+stays on his `renodx-unity` release, as upstream does (its new Pages copy returned 404 on 15 Nov 2026; on 16 Nov it
+serves, and upstream's manifest still points 32-bit at the release). The manifest's `componentUrls.unity64` / `unity32`
+move either link without an app update (`GenericUnityAddonUrls`); upstream's manifest on 16 Nov 2026 (`7e234dc`) sets
+both, and that `componentUrls` block is a test fixture. The add-on is recognised by file name, so the older links in
+the database, the wiki, manifest snapshot overrides and install records all follow the current one: a game with the
+add-on from the old release link shows an update, which installs from the new link. Checked on 16 Nov 2026: the old
+release links still serve the 14 Oct build, so nothing breaks before the move; the new links serve the 16 Nov build.
+
+When a link cannot be reached, the download tries the add-on's other links in upstream's order (new Pages, old
+release, old Pages, ShortFuse's Pages); the record keeps the catalogue's link and the failure names every link tried.
+Linux deviations: a manifest link is taken only when the RenoDX download policy allows it (HTTPS, a trusted host) and
+it names a 64- or 32-bit add-on to match its key; anything else keeps the built-in link (upstream takes any http(s)
+link). Each fallback link passes the same policy. A copy downloaded from a fallback link is not reused from the cache
+for the catalogue's link, so it is downloaded again while that link stays unreachable. Not ported from `a593a09`: the
+Built-in add-ons setting (Generic Depth / Effect Runtime Sync), which belongs to the ReShade settings lanes.

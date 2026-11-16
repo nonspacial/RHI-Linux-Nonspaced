@@ -1311,6 +1311,34 @@ public sealed class RenoDxDeploymentService
         var (current, cachedRemote) = await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false);
         if (current)
             return (cache, cachedRemote);
+        // #268/#287: a link that cannot be reached falls back to the same file elsewhere (upstream's candidate list); every
+        // alternative passes the same policy. The cache sidecar names the link that served the file, so a copy from an
+        // alternative is not reused for the catalogue's link (it is downloaded again while that link stays unreachable).
+        var candidates = RenoDxDownloadFallback.Candidates(url).Where(DownloadPolicy.IsTrusted).ToArray();
+        var failures = new List<string>();
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var result = await DownloadFromAsync(candidate, cache, source, cancellationToken).ConfigureAwait(false);
+                if (failures.Count > 0) AppLog.Warn("renodx", $"RenoDX add-on downloaded from {candidate} after: {string.Join("; ", failures)}");
+                return result;
+            }
+            catch (HttpRequestException ex) when (!cancellationToken.IsCancellationRequested && candidate != candidates[^1])
+            {
+                failures.Add($"{candidate}: {ex.Message}");
+            }
+            catch (HttpRequestException ex) when (!cancellationToken.IsCancellationRequested && failures.Count > 0)
+            {
+                failures.Add($"{candidate}: {ex.Message}");
+                throw new HttpRequestException("Could not download the RenoDX add-on. Tried: " + string.Join("; ", failures), ex);
+            }
+        }
+        throw new InvalidOperationException("RenoDX add-on link is not allowed: " + url);
+    }
+
+    private async Task<(string Path, RenoDxRemoteStamp? Stamp)> DownloadFromAsync(string url, string cache, string source, CancellationToken cancellationToken)
+    {
         CacheStamp.Invalidate(cache);
         RenoDxRemoteStamp? remote = null;
         // HTTPS + allow-list on the request and after redirects, size cap, fsynced verified temp (TrustedDownload).
