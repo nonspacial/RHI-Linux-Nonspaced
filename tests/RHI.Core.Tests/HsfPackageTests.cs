@@ -117,23 +117,15 @@ public sealed class HsfPackageTests
     }
 
     [Fact]
-    public void MoveTechniqueFirst_OnlyReorders_AndNeverAdds()
+    public void LaunchpadKeptFirst_OnlyReorders_AndNeverAdds()
     {
+        // w14/nr-2: HSF moves Launchpad first with the shared service (one rule for HSF and GITC Uplift).
         const string lp = HsfPackage.LaunchpadToken;
-        var (text, changed) = HsfPackage.MoveTechniqueFirst("Techniques=HSF_Depth@HSF.fx," + lp + "\r\nTechniqueSorting=HSF_Depth@HSF.fx,Uplift@Uplift.fx," + lp + "\r\n", lp);
+        Assert.Equal(ImmerseLaunchpadService.Token, lp);
+        var (text, changed) = ImmerseLaunchpadService.KeepFirst("Techniques=HSF_Depth@HSF.fx," + lp + "\r\nTechniqueSorting=HSF_Depth@HSF.fx,Uplift@Uplift.fx," + lp + "\r\n");
         Assert.True(changed);
         Assert.Equal("Techniques=" + lp + ",HSF_Depth@HSF.fx\r\nTechniqueSorting=" + lp + ",HSF_Depth@HSF.fx,Uplift@Uplift.fx\r\n", text);
-        Assert.False(HsfPackage.MoveTechniqueFirst("Techniques=HSF_Depth@HSF.fx\n", lp).Changed);
-        Assert.False(HsfPackage.MoveTechniqueFirst("Techniques=" + lp + ",X\n", lp).Changed);
-    }
-
-    [Fact]
-    public void LaunchpadEntries_OnlyLaunchpadsFilesFromTheImmerseArchive()
-    {
-        Assert.Equal("Shaders/iMMERSE/MartysMods_LAUNCHPAD.fx", ImmerseLaunchpadStep.RelativeFor("iMMERSE-main/Shaders/MartysMods_LAUNCHPAD.fx"));
-        Assert.Equal("Shaders/iMMERSE/MartysMods/mmx_global.fxh", ImmerseLaunchpadStep.RelativeFor("iMMERSE-main/Shaders/MartysMods/mmx_global.fxh"));
-        Assert.Equal("Textures/iMMERSE/iMMERSE_bluenoise_opt.png", ImmerseLaunchpadStep.RelativeFor("iMMERSE-main/Textures/iMMERSE_bluenoise_opt.png"));
-        Assert.Null(ImmerseLaunchpadStep.RelativeFor("iMMERSE-main/Shaders/MartysMods_MXAO.fx"));
-        Assert.Null(ImmerseLaunchpadStep.RelativeFor("iMMERSE-main/Shaders/../MartysMods_LAUNCHPAD.fx"));
+        Assert.False(ImmerseLaunchpadService.KeepFirst("Techniques=HSF_Depth@HSF.fx\n").Changed);
+        Assert.False(ImmerseLaunchpadService.KeepFirst("Techniques=" + lp + ",X\n").Changed);
     }
 }

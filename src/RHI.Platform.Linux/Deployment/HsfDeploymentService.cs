@@ -15,7 +15,8 @@ public sealed record HsfState(bool Installed, string? Version, bool LaunchpadOn,
 /// that adds DLSS frame generation to DirectX 9/11/12 and Vulkan games. One install places the add-on for the game's
 /// bitness, HSF's <c>HSF_streamline/</c> folder (Streamline, frame generation files, the 64-bit helper, the licences),
 /// <c>HSF.ini</c> beside the add-on (ReShade's AddonPath honoured), <c>HSF.fx</c> in the game's <c>reshade-shaders</c> and,
-/// unless switched off, iMMERSE Launchpad for optical flow (<see cref="ILaunchpadStep"/>). DirectX 12 games get HSF's D3D12
+/// unless switched off, iMMERSE Launchpad for optical flow (the shared <see cref="ImmerseLaunchpadService"/>, w14/nr-2: the same
+/// files and search paths as GITC Uplift, removed only when no other component lists them). DirectX 12 games get HSF's D3D12
 /// route in HSF.ini before the first launch (it follows the Rendering API override). An update brings the release's clean
 /// HSF.ini with the player's settings carried over. Every change is journaled on HSF's record; files RHI did not place are
 /// never overwritten, and only RHI's files (and HSF's own logs) are removed.
@@ -26,7 +27,10 @@ public sealed class HsfDeploymentService
     public const string MetaVersion = "HSF.Version";
     public const string MetaLaunchpad = "HSF.Launchpad";
     public const string MetaRouteOptOut = "HSF.RouteOptOut";
+    /// <summary>Records from before w14/nr-2: HSF's own Launchpad copies under <c>reshade-shaders/Shaders/iMMERSE</c> (moved by <see cref="MigrateLaunchpadAsync"/>).</summary>
     public const string MetaLaunchpadFiles = "HSF.LaunchpadFiles";
+    /// <summary>w14/nr-2: the SHA-256 of a ReShade.ini Launchpad's search paths created (deleted with the last Launchpad user while unchanged).</summary>
+    public const string MetaLaunchpadIniCreated = "HSF.LaunchpadIniCreated";
     private const long FileMaxBytes = 64L * 1024 * 1024;
 
     // Fixed texts (values follow), each with a PT-BR presentation pair.
@@ -63,10 +67,10 @@ public sealed class HsfDeploymentService
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
     private readonly DeploymentJournal? _journal;
-    private readonly ILaunchpadStep _launchpad;
+    private readonly ImmerseLaunchpadService _launchpad;
     private readonly string _cacheDir;
 
-    public HsfDeploymentService(HttpClient http, LinuxDeploymentRecordStore records, DeploymentJournal? journal, ILaunchpadStep launchpad, string? cacheDir = null)
+    public HsfDeploymentService(HttpClient http, LinuxDeploymentRecordStore records, DeploymentJournal? journal, ImmerseLaunchpadService launchpad, string? cacheDir = null)
     {
         _http = http;
         _records = records;
@@ -135,14 +139,16 @@ public sealed class HsfDeploymentService
 
         // Everything from the network first: nothing in the game changes before the package is staged and checked.
         Staged staged;
-        IReadOnlyList<LaunchpadFile> launchpadFiles = [];
+        LaunchpadStage? launchpad = null;
+        var launchpadStage = Path.Combine(_cacheDir, "launchpad-" + Guid.NewGuid().ToString("N"));
         try
         {
             staged = await StageAsync(cancellationToken).ConfigureAwait(false);
-            if (launchpadOn) launchpadFiles = await _launchpad.StageAsync(cancellationToken).ConfigureAwait(false);
+            if (launchpadOn) launchpad = await _launchpad.StageAsync(launchpadStage, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested && IsDownloadFailure(ex))
         {
+            DeleteStaging(launchpadStage);
             AppLog.Warn("hsf", "The HSF download failed", ex);
             return new ComponentOperationResult(false, DownloadFailedPrefix + ex.Message, SourceUnavailable: ex is HttpRequestException or TaskCanceledException);
         }
@@ -156,13 +162,18 @@ public sealed class HsfDeploymentService
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var created = new List<string>();
         var routeSet = false;
+        string? launchpadIni = null;
         try
         {
             var files = new List<LinuxDeployedFile>();
             foreach (var (relative, source) in PackageFiles(staged, is32))
                 files.Add(await PlaceAsync(scope, source, Path.Combine(addonDir, relative.Replace('/', Path.DirectorySeparatorChar)), created).ConfigureAwait(false));
             files.Add(await PlaceAsync(scope, Path.Combine(staged.Folder, HsfPackage.ShaderFx), shaderTarget, created).ConfigureAwait(false));
-            var placedLaunchpad = await PlaceLaunchpadAsync(scope, binaryDir, launchpadFiles, files, created).ConfigureAwait(false);
+            if (launchpad is not null)
+            {
+                files.AddRange(await ImmerseLaunchpadService.PlaceAsync(scope, launchpad, binaryDir, _records, game, ManagedComponentKind.Hsf).ConfigureAwait(false));
+                launchpadIni = await ImmerseLaunchpadService.AddSearchPathsAsync(scope, game, binaryDir).ConfigureAwait(false);
+            }
             if (!iniIsUsers)
             {
                 var lines = IniLines.FromBytes(await File.ReadAllBytesAsync(Path.Combine(staged.Folder, HsfPackage.IniName), CancellationToken.None).ConfigureAwait(false));
@@ -175,9 +186,10 @@ public sealed class HsfDeploymentService
             {
                 [MetaVersion] = staged.Release.Version,
                 [MetaLaunchpad] = launchpadOn ? "on" : "off",
-                [MetaLaunchpadFiles] = string.Join("\n", placedLaunchpad),
             };
             VerifiedDownload.Record(metadata, staged.ArchiveSha256, staged.DigestVerified);
+            if (launchpad is not null) VerifiedDownload.Record(metadata, launchpad.ArchiveSha256, false, ImmerseLaunchpadService.DownloadPart);
+            if (launchpadIni is not null) metadata[MetaLaunchpadIniCreated] = launchpadIni;
             _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -201,6 +213,7 @@ public sealed class HsfDeploymentService
         finally
         {
             DeleteStaging(staged.Folder);
+            DeleteStaging(launchpadStage);
         }
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(InstalledPrefix + staged.Release.Version + "." + (routeSet ? RouteSetNote : "") + (iniIsUsers ? IniKeptNote : "")
@@ -232,6 +245,8 @@ public sealed class HsfDeploymentService
     /// </summary>
     public async Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
+        if (GetRecord(game) is null) return ComponentOperationResult.Fail(NotInstalledMessage);
+        await MigrateLaunchpadAsync(game, cancellationToken).ConfigureAwait(false); // w14/nr-2: an older record's Launchpad to the shared tree
         if (GetRecord(game) is not { } record) return ComponentOperationResult.Fail(NotInstalledMessage);
         if (Changed(record) is { Count: > 0 } changed) return ComponentOperationResult.Fail(ChangedPrefix + string.Join(", ", changed));
         var binaryDir = record.BinaryDirectory;
@@ -281,7 +296,7 @@ public sealed class HsfDeploymentService
                     var sha = await scope.PlaceBytesAsync(iniPath, System.Text.Encoding.UTF8.GetBytes(merged), CancellationToken.None).ConfigureAwait(false);
                     files.Add(new LinuxDeployedFile { Path = iniPath, Sha256 = sha, AllowUserChanges = true });
                 }
-                else if (IsLaunchpadFile(record, file.Path)) files.Add(file);
+                else if (IsLaunchpadFile(record, file.Path)) files.Add(file); // shared (new tree) or HSF's own older copies
                 else await scope.DeleteAsync(file.Path, CancellationToken.None).ConfigureAwait(false); // the new release no longer has it
             }
             updated.Files = files;
@@ -329,9 +344,16 @@ public sealed class HsfDeploymentService
         if (refusal is not null) return ComponentOperationResult.Fail(refusal);
         await using var scope = opened!;
         _ = OperationCancellation.BeginWrites(cancellationToken);
+        var keptLaunchpad = new List<string>();
         try
         {
-            foreach (var path in record.Files.Select(f => f.Path).Concat(logs)) await scope.DeleteAsync(path, CancellationToken.None).ConfigureAwait(false);
+            // w14/nr-2: Launchpad's shared files go only when no other component lists them (a changed one is kept); its
+            // search paths go with the last one out. HSF's own older copies (Shaders/iMMERSE) go with HSF's other files.
+            keptLaunchpad.AddRange(await ImmerseLaunchpadService.DeleteOwnedAsync(scope, record, _records, game).ConfigureAwait(false));
+            foreach (var path in record.Files.Select(f => f.Path).Where(p => !ImmerseLaunchpadService.IsLaunchpadFile(p)).Concat(logs))
+                await scope.DeleteAsync(path, CancellationToken.None).ConfigureAwait(false);
+            await ImmerseLaunchpadService.RemoveSearchPathsIfLastAsync(scope, game, record.BinaryDirectory, _records, ManagedComponentKind.Hsf,
+                record.Metadata.GetValueOrDefault(MetaLaunchpadIniCreated)).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.Hsf); // the commit point
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -346,7 +368,10 @@ public sealed class HsfDeploymentService
             if (folder.StartsWith(streamline, StringComparison.Ordinal) || folder.Contains(Path.Combine("reshade-shaders", "Shaders", "iMMERSE"), StringComparison.Ordinal)
                 || folder.Contains(Path.Combine("reshade-shaders", "Textures", "iMMERSE"), StringComparison.Ordinal))
                 FileCleanup.TryDeleteEmptyDirectory(folder);
+        FileCleanup.TryDeleteEmptyTree(ImmerseLaunchpadService.TreeRoot(record.BinaryDirectory));
+        FileCleanup.TryDeleteEmptyDirectory(Path.Combine(record.BinaryDirectory, "reshade-shaders", "RHI"));
         var kept = Directory.Exists(streamline) ? SafeFileEnumeration.Entries(streamline, ignoreInaccessible: true).Select(e => e.FullName).ToList() : [];
+        kept.AddRange(keptLaunchpad);
         var profiles = Path.Combine(addonDir, "HSF_profiles");
         if (Directory.Exists(profiles)) kept.Add(profiles);
         return ComponentOperationResult.Ok(RemovedMessage + (kept.Count > 0 ? KeptFilesPrefix + string.Join(", ", kept) : ""), record.Files.Select(f => f.Path).ToArray());
@@ -357,33 +382,51 @@ public sealed class HsfDeploymentService
     /// <summary>Turns iMMERSE Launchpad on (its files placed where free) or off (RHI's Launchpad files removed) for HSF.</summary>
     public async Task<ComponentOperationResult> SetLaunchpadAsync(DetectedGame game, bool on, CancellationToken cancellationToken = default)
     {
+        if (GetRecord(game) is null) return ComponentOperationResult.Fail(NotInstalledMessage);
+        if (on) await MigrateLaunchpadAsync(game, cancellationToken).ConfigureAwait(false); // w14/nr-2: never two Launchpads
         if (GetRecord(game) is not { } record) return ComponentOperationResult.Fail(NotInstalledMessage);
-        IReadOnlyList<LaunchpadFile> staged = [];
-        if (on)
+        LaunchpadStage? staged = null;
+        var stageRoot = Path.Combine(_cacheDir, "launchpad-" + Guid.NewGuid().ToString("N"));
+        if (on && !record.Files.Any(f => ImmerseLaunchpadService.IsLaunchpadFile(f.Path)))
         {
-            try { staged = await _launchpad.StageAsync(cancellationToken).ConfigureAwait(false); }
+            try { staged = await _launchpad.StageAsync(stageRoot, cancellationToken).ConfigureAwait(false); }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested && IsDownloadFailure(ex))
             {
+                DeleteStaging(stageRoot);
                 return new ComponentOperationResult(false, DownloadFailedPrefix + ex.Message, SourceUnavailable: ex is HttpRequestException or TaskCanceledException);
             }
         }
-        return await ChangeAsync(game, record, "HSF Launchpad", async (scope, updated, created) =>
+        try
         {
-            var current = LaunchpadPaths(updated);
-            if (on)
+            return await ChangeAsync(game, record, "HSF Launchpad", async (scope, updated, _) =>
             {
-                var placed = await PlaceLaunchpadAsync(scope, updated.BinaryDirectory, staged, updated.Files, created).ConfigureAwait(false);
-                updated.Metadata[MetaLaunchpadFiles] = string.Join("\n", current.Concat(placed).Distinct(StringComparer.Ordinal));
-            }
-            else
-            {
-                foreach (var path in current) await scope.DeleteAsync(path, CancellationToken.None).ConfigureAwait(false);
-                updated.Files.RemoveAll(f => current.Contains(f.Path));
-                updated.Metadata[MetaLaunchpadFiles] = "";
-            }
-            updated.Metadata[MetaLaunchpad] = on ? "on" : "off";
-            return on ? LaunchpadOnMessage : LaunchpadOffMessage;
-        }, cancellationToken).ConfigureAwait(false);
+                if (on && staged is not null)
+                {
+                    updated.Files.AddRange(await ImmerseLaunchpadService.PlaceAsync(scope, staged, updated.BinaryDirectory, _records, game, ManagedComponentKind.Hsf).ConfigureAwait(false));
+                    VerifiedDownload.Record(updated.Metadata, staged.ArchiveSha256, false, ImmerseLaunchpadService.DownloadPart);
+                    if (await ImmerseLaunchpadService.AddSearchPathsAsync(scope, game, updated.BinaryDirectory).ConfigureAwait(false) is { } createdIni)
+                        updated.Metadata[MetaLaunchpadIniCreated] = createdIni;
+                    await KeepLaunchpadFirstInScopeAsync(scope, game, updated).ConfigureAwait(false);
+                }
+                else if (!on)
+                {
+                    await ImmerseLaunchpadService.DeleteOwnedAsync(scope, updated, _records, game).ConfigureAwait(false);
+                    var older = LaunchpadPaths(updated); // HSF's own copies from before w14/nr-2
+                    foreach (var path in older) await scope.DeleteAsync(path, CancellationToken.None).ConfigureAwait(false);
+                    updated.Files.RemoveAll(f => ImmerseLaunchpadService.IsLaunchpadFile(f.Path) || older.Contains(f.Path));
+                    updated.Metadata.Remove(MetaLaunchpadFiles);
+                    await ImmerseLaunchpadService.RemoveSearchPathsIfLastAsync(scope, game, updated.BinaryDirectory, _records, ManagedComponentKind.Hsf,
+                        updated.Metadata.GetValueOrDefault(MetaLaunchpadIniCreated)).ConfigureAwait(false);
+                    updated.Metadata.Remove(MetaLaunchpadIniCreated);
+                }
+                updated.Metadata[MetaLaunchpad] = on ? "on" : "off";
+                return on ? LaunchpadOnMessage : LaunchpadOffMessage;
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            DeleteStaging(stageRoot);
+        }
     }
 
     /// <summary>Sets HSF's D3D12 route in HSF.ini now (the ⚙'s choice; None = HSF decides, remembered so RHI never pre-sets it).</summary>
@@ -411,6 +454,8 @@ public sealed class HsfDeploymentService
     /// <summary>Moves iMMERSE Launchpad to the top of the game's ReShade preset where HSF listed it lower down (only the order changes).</summary>
     public async Task<ComponentOperationResult> KeepLaunchpadFirstAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
+        if (GetRecord(game) is null) return ComponentOperationResult.Fail(NotInstalledMessage);
+        await MigrateLaunchpadAsync(game, cancellationToken).ConfigureAwait(false); // w14/nr-2: older records first
         if (GetRecord(game) is not { } record) return ComponentOperationResult.Fail(NotInstalledMessage);
         return await ChangeAsync(game, record, "HSF Launchpad order", async (scope, updated, _) =>
             await KeepLaunchpadFirstInScopeAsync(scope, game, updated).ConfigureAwait(false) ? "moved" : "", cancellationToken).ConfigureAwait(false);
@@ -419,7 +464,7 @@ public sealed class HsfDeploymentService
     private async Task<bool> KeepLaunchpadFirstInScopeAsync(DeploymentScope scope, DetectedGame game, LinuxDeploymentRecord record)
     {
         if (record.Metadata.GetValueOrDefault(MetaLaunchpad) == "off" || PresetPath(game) is not { } preset || !File.Exists(preset)) return false;
-        var (text, changed) = _launchpad.KeepFirst(await File.ReadAllTextAsync(preset, CancellationToken.None).ConfigureAwait(false));
+        var (text, changed) = ImmerseLaunchpadService.KeepFirst(await File.ReadAllTextAsync(preset, CancellationToken.None).ConfigureAwait(false));
         if (!changed) return false;
         var roots = ReShadeGlobalSettingsApplier.GameRoots(game, game.BinaryDirectory!);
         var written = IniLines.ResolveTarget(preset, roots);
@@ -476,25 +521,108 @@ public sealed class HsfDeploymentService
         return new LinuxDeployedFile { Path = target, Sha256 = sha, ExistedBeforeInstall = false };
     }
 
-    // Launchpad's files where none is there yet (a user's own iMMERSE pack keeps its copies); the paths placed.
-    private static async Task<List<string>> PlaceLaunchpadAsync(DeploymentScope scope, string binaryDir, IReadOnlyList<LaunchpadFile> launchpad,
-        List<LinuxDeployedFile> files, List<string> created)
-    {
-        var placed = new List<string>();
-        foreach (var file in launchpad)
-        {
-            var target = Path.Combine(binaryDir, "reshade-shaders", file.Relative.Replace('/', Path.DirectorySeparatorChar));
-            if (File.Exists(target) || files.Any(f => f.Path == target)) continue;
-            files.Add(await PlaceAsync(scope, file.Source, target, created).ConfigureAwait(false));
-            placed.Add(target);
-        }
-        return placed;
-    }
-
+    // HSF's own Launchpad copies from before w14/nr-2 (reshade-shaders/Shaders/iMMERSE, Textures/iMMERSE).
     private static HashSet<string> LaunchpadPaths(LinuxDeploymentRecord record)
         => (record.Metadata.GetValueOrDefault(MetaLaunchpadFiles) ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
 
-    private static bool IsLaunchpadFile(LinuxDeploymentRecord record, string path) => LaunchpadPaths(record).Contains(path);
+    private static bool IsLaunchpadFile(LinuxDeploymentRecord record, string path)
+        => ImmerseLaunchpadService.IsLaunchpadFile(path) || LaunchpadPaths(record).Contains(path);
+
+    // ── w14/nr-2: records from before the shared Launchpad ───────────────────────────────────────────────────────
+
+    /// <summary>What <see cref="MigrateLaunchpadAsync"/> did.</summary>
+    public enum LaunchpadMigration { NotNeeded, Moved, Running, Kept }
+
+    /// <summary>The shared tree's path (relative to it) for one of HSF's older Launchpad copies, or null.</summary>
+    internal static string? SharedRelativeOf(string binaryDirectory, string olderPath)
+    {
+        var relative = Path.GetRelativePath(Path.Combine(binaryDirectory, "reshade-shaders"), olderPath).Replace('\\', '/');
+        string? mapped = relative switch
+        {
+            _ when relative.StartsWith("Shaders/iMMERSE/", StringComparison.Ordinal) => "Shaders/" + relative["Shaders/iMMERSE/".Length..],
+            _ when relative.StartsWith("Textures/iMMERSE/", StringComparison.Ordinal) => "Textures/" + relative["Textures/iMMERSE/".Length..],
+            _ => null
+        };
+        return mapped is null || mapped.Split('/').Any(p => p is ".." or "." or "") ? null : mapped.Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>
+    /// w14/nr-2: an HSF record from before the shared Launchpad lists HSF's own copies under <c>reshade-shaders/Shaders/iMMERSE</c>
+    /// and <c>Textures/iMMERSE</c>. They move into the shared tree (<c>reshade-shaders/RHI/iMMERSE-Launchpad</c>, the same
+    /// files GITC Uplift uses; one GITC Uplift already placed is shared, not placed again), Launchpad's search paths are added,
+    /// and the record lists the shared files, so ReShade never loads two Launchpads. Journaled on HSF's record; never while the
+    /// game runs; nothing moves when one of the older copies is missing or changed since RHI placed it (they stay HSF's, as
+    /// before, and are removed with it).
+    /// </summary>
+    public async Task<LaunchpadMigration> MigrateLaunchpadAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (GetRecord(game) is not { } record) return LaunchpadMigration.NotNeeded;
+        var older = record.Files.Where(f => LaunchpadPaths(record).Contains(f.Path)).ToList();
+        if (older.Count == 0) return LaunchpadMigration.NotNeeded;
+        if (_launchpad.GameRunning(game)) return LaunchpadMigration.Running;
+        var binaryDir = record.BinaryDirectory;
+        var moves = new List<(string Relative, string Source)>();
+        foreach (var file in older)
+        {
+            if (SharedRelativeOf(binaryDir, file.Path) is not { } relative || !File.Exists(file.Path)
+                || file.Sha256 is not { Length: > 0 } sha || !FileHash.HexEquals(FileHash.Sha256Hex(file.Path), sha))
+            {
+                AppLog.Warn("hsf", $"HSF's iMMERSE Launchpad copy {file.Path} is missing or changed; it stays where it is.");
+                return LaunchpadMigration.Kept;
+            }
+            moves.Add((relative, file.Path));
+        }
+        // The sources are the older copies themselves; they are read before they are deleted (the stage is the game folder).
+        var stageRoot = Path.Combine(_cacheDir, "launchpad-move-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var stage = new List<(string, string)>();
+            foreach (var (relative, source) in moves)
+            {
+                var copy = Path.Combine(stageRoot, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+                AtomicFile.WriteAllBytes(copy, File.ReadAllBytes(source)); // RHI's own scratch copy, read before the move
+                stage.Add((relative, copy));
+            }
+            var result = await ChangeAsync(game, record, "HSF iMMERSE Launchpad move", async (scope, updated, _) =>
+            {
+                var placed = await ImmerseLaunchpadService.PlaceAsync(scope, new LaunchpadStage(stage, ""), binaryDir, _records, game, ManagedComponentKind.Hsf).ConfigureAwait(false);
+                foreach (var file in older) await scope.DeleteAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
+                updated.Files.RemoveAll(f => older.Any(o => o.Path == f.Path));
+                updated.Files.AddRange(placed);
+                updated.Metadata.Remove(MetaLaunchpadFiles);
+                if (await ImmerseLaunchpadService.AddSearchPathsAsync(scope, game, binaryDir).ConfigureAwait(false) is { } createdIni)
+                    updated.Metadata[MetaLaunchpadIniCreated] = createdIni;
+                return "moved";
+            }, cancellationToken).ConfigureAwait(false);
+            if (!result.Success) return LaunchpadMigration.Kept;
+            foreach (var folder in older.Select(f => Path.GetDirectoryName(f.Path)!).Distinct().OrderByDescending(p => p.Length))
+                FileCleanup.TryDeleteEmptyDirectory(folder);
+            return LaunchpadMigration.Moved;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("hsf", "HSF's iMMERSE Launchpad copies could not be staged for the move", ex);
+            return LaunchpadMigration.Kept;
+        }
+        finally
+        {
+            DeleteStaging(stageRoot);
+        }
+    }
+
+    /// <summary>
+    /// The start / background pass (w14/nr-2): an older record's Launchpad moved to the shared tree, then Launchpad back at
+    /// the top of the preset when HSF's Launchpad is on — only while the game is not running (upstream keeps it first
+    /// whenever the game is closed). True when the preset changed.
+    /// </summary>
+    public async Task<bool> KeepLaunchpadFirstWhenClosedAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (GetRecord(game) is null) return false;
+        await MigrateLaunchpadAsync(game, cancellationToken).ConfigureAwait(false);
+        return GetRecord(game) is { } record && record.Metadata.GetValueOrDefault(MetaLaunchpad) != "off"
+            && await _launchpad.KeepFirstAsync(game, _records, ManagedComponentKind.Hsf, _journal, cancellationToken).ConfigureAwait(false);
+    }
 
     // The package's files a game gets (relative to the add-on folder): its add-on and everything in HSF_streamline/.
     private static IEnumerable<(string Relative, string Source)> PackageFiles(Staged staged, bool is32Bit)
@@ -507,7 +635,7 @@ public sealed class HsfDeploymentService
 
     // RHI's files (other than HSF.ini, which holds HSF's settings) that no longer hold what RHI placed.
     private static List<string> Changed(LinuxDeploymentRecord record)
-        => record.Files.Where(f => !f.AllowUserChanges && File.Exists(f.Path) && f.Sha256 is { Length: > 0 } sha && !FileHash.HexEquals(FileHash.Sha256Hex(f.Path), sha))
+        => record.Files.Where(f => !f.AllowUserChanges && !ImmerseLaunchpadService.IsLaunchpadFile(f.Path) && File.Exists(f.Path) && f.Sha256 is { Length: > 0 } sha && !FileHash.HexEquals(FileHash.Sha256Hex(f.Path), sha))
             .Select(f => f.Path).ToList();
 
     /// <summary>

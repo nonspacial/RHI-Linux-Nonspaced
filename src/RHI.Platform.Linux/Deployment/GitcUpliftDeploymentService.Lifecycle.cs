@@ -64,16 +64,20 @@ public sealed partial class GitcUpliftDeploymentService
                 var iniTarget = ReShadeIniManager.ResolveWriteTarget(iniPath, binaryDir, game.InstallPath);
                 await scope.TrackAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
                 RestoreKey(iniPath, binaryDir, game.InstallPath, record);
+                // w14/nr-2: Launchpad's search paths are shared with HSF (#277): never in Uplift's own clean-up, and a file
+                // RHI created stays while another component still needs its Launchpad lines.
+                var shared = ImmerseLaunchpadService.InUseElsewhere(_records, game, ManagedComponentKind.GitcUplift);
                 ReShadeIniManager.Cleanup(iniPath,
-                    record.Metadata.GetValueOrDefault(MetaIniCreated) == "1",
+                    record.Metadata.GetValueOrDefault(MetaIniCreated) == "1" && !shared,
                     record.Metadata.GetValueOrDefault(MetaIniHash),
-                    ReadList(record.Metadata.GetValueOrDefault(MetaIniEffectAdded)),
-                    ReadList(record.Metadata.GetValueOrDefault(MetaIniTextureAdded)),
+                    ImmerseLaunchpadService.WithoutSharedPaths(ReadList(record.Metadata.GetValueOrDefault(MetaIniEffectAdded))),
+                    ImmerseLaunchpadService.WithoutSharedPaths(ReadList(record.Metadata.GetValueOrDefault(MetaIniTextureAdded))),
                     record.Metadata.GetValueOrDefault(MetaIniEffectKeyCreated) == "1",
                     record.Metadata.GetValueOrDefault(MetaIniTextureKeyCreated) == "1",
                     game.InstallPath);
                 if (File.Exists(iniTarget)) await scope.DeclareWrittenContentAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
             }
+            await ImmerseLaunchpadService.RemoveSearchPathsIfLastAsync(scope, game, binaryDir, _records, ManagedComponentKind.GitcUplift).ConfigureAwait(false);
 
             kept.AddRange(await ImmerseLaunchpadService.DeleteOwnedAsync(scope, record, _records, game).ConfigureAwait(false));
             foreach (var file in record.Files.Where(f => !ImmerseLaunchpadService.IsLaunchpadFile(f.Path) && !f.ExistedBeforeInstall))

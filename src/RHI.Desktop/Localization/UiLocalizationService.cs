@@ -1534,7 +1534,6 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.HsfDeploymentService.NoIniMessage, "O HSF.ini ainda não existe, então nada foi alterado."),
         (RHI.Platform.Linux.Deployment.HsfDeploymentService.VulkanDxgiWarningPrefix, "O HSF usa a camada Vulkan do ReShade neste jogo, mas uma cópia DirectX do ReShade (dxgi.dll) na pasta do jogo bloqueia a camada Vulkan, então o HSF não vai carregar. Arquivo: "),
         (RHI.Platform.Linux.Deployment.HsfDeploymentService.AntiCheatWarning, "O HSF intercepta os gráficos do jogo: não o use em jogos online com anti-cheat, que podem banir você por isso."),
-        (RHI.Platform.Linux.Deployment.ImmerseLaunchpadStep.MissingMessage, "O download do iMMERSE não tem o efeito Launchpad (MartysMods_LAUNCHPAD.fx); nada foi alterado."),
         (RHI.Platform.Linux.Deployment.DownloadSources.Hsf.RefusalPrefix, "Download recusado: links do HSF devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // w14/extras-addons rows (#282)
         (RHI.Platform.Linux.Deployment.DisplayCommanderSettingsService.NotManagedPrefix, "As configurações do Display Commander precisam do Display Commander instalado pelo RHI: "),

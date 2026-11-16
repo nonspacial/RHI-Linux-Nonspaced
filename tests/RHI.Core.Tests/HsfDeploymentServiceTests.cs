@@ -40,7 +40,9 @@ public sealed class HsfDeploymentServiceTests : IDisposable
         Assert.True(File.Exists(Path.Combine(fx.Bin, "HSF_streamline", "licenses", "Streamline-license.txt")));
         Assert.False(File.Exists(Path.Combine(fx.Bin, "LICENSE.txt"))); // never beside the game's own files
         Assert.True(File.Exists(Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "HSF.fx")));
-        Assert.True(File.Exists(Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE", "MartysMods_LAUNCHPAD.fx")));
+        // w14/nr-2: Launchpad in the shared tree GITC Uplift uses, found through ReShade.ini's search paths.
+        Assert.True(File.Exists(Path.Combine(ImmerseLaunchpadService.TreeRoot(fx.Bin), "Shaders", "MartysMods_LAUNCHPAD.fx")));
+        Assert.Contains(ImmerseLaunchpadService.EffectSearchPath, File.ReadAllText(Path.Combine(fx.Bin, "ReShade.ini")));
         var ini = File.ReadAllText(Path.Combine(fx.Bin, "HSF.ini"));
         Assert.Contains("SlBringIn=2", ini); // no Streamline of the game's own: HSF's
         var record = fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!;
@@ -65,7 +67,8 @@ public sealed class HsfDeploymentServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(fx.Bin, "HSF.ini")));
         Assert.False(File.Exists(Path.Combine(fx.Bin, "HSF_sl_probe.log")));
         Assert.False(File.Exists(Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "HSF.fx")));
-        Assert.False(Directory.Exists(Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE")));
+        Assert.False(Directory.Exists(ImmerseLaunchpadService.TreeRoot(fx.Bin)));
+        Assert.Equal(fx.IniBefore, File.ReadAllBytes(Path.Combine(fx.Bin, "ReShade.ini"))); // Launchpad's search paths gone with the last user
         Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.Hsf));
     }
 
@@ -137,7 +140,7 @@ public sealed class HsfDeploymentServiceTests : IDisposable
         Assert.Contains("Multiplier=4", ini);
         Assert.DoesNotContain("Dx9ExRun", ini);
         Assert.Equal("0.9.9", fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!.Version);
-        Assert.True(File.Exists(Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE", "MartysMods_LAUNCHPAD.fx"))); // kept
+        Assert.True(File.Exists(Path.Combine(ImmerseLaunchpadService.TreeRoot(fx.Bin), "Shaders", "MartysMods_LAUNCHPAD.fx"))); // kept
     }
 
     [Fact]
@@ -161,7 +164,7 @@ public sealed class HsfDeploymentServiceTests : IDisposable
     {
         var fx = Fixture("gear", GraphicsApi.DirectX12);
         Assert.True((await fx.Service.InstallAsync(fx.Game)).Success);
-        var launchpad = Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE", "MartysMods_LAUNCHPAD.fx");
+        var launchpad = Path.Combine(ImmerseLaunchpadService.TreeRoot(fx.Bin), "Shaders", "MartysMods_LAUNCHPAD.fx");
 
         Assert.True((await fx.Service.SetLaunchpadAsync(fx.Game, false)).Success);
         Assert.False(File.Exists(launchpad));
@@ -193,6 +196,111 @@ public sealed class HsfDeploymentServiceTests : IDisposable
         Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
 
         Assert.Equal("the player's iMMERSE", File.ReadAllText(users));
+    }
+
+    // ── w14/nr-2: one iMMERSE Launchpad for HSF and GITC Uplift ──────────────────────────────────────────────────────
+
+    private static LinuxDeploymentRecord UpliftListing(Fx fx)
+        => new()
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(fx.Game), GameName = fx.Game.Name, Component = ManagedComponentKind.GitcUplift,
+            BinaryDirectory = fx.Bin, Version = "2.0.0",
+            Files = Directory.EnumerateFiles(ImmerseLaunchpadService.TreeRoot(fx.Bin), "*", SearchOption.AllDirectories)
+                .Select(p => new LinuxDeployedFile { Path = p, Sha256 = FileHash.Sha256Hex(p) }).ToList()
+        };
+
+    [Fact]
+    public async Task SharedLaunchpad_HsfRemoval_LeavesTheFilesAndSearchPathsGitcUpliftStillLists()
+    {
+        var fx = Fixture("shared", GraphicsApi.DirectX12);
+        Assert.True((await fx.Service.InstallAsync(fx.Game)).Success);
+        fx.Records.Upsert(UpliftListing(fx)); // GITC Uplift installed after HSF shares the same files (ImmerseLaunchpadService.PlaceAsync)
+        var launchpad = Path.Combine(ImmerseLaunchpadService.TreeRoot(fx.Bin), "Shaders", "MartysMods_LAUNCHPAD.fx");
+
+        var remove = await fx.Service.RemoveAsync(fx.Game);
+
+        Assert.True(remove.Success, remove.Message);
+        Assert.True(File.Exists(launchpad));
+        var ini = File.ReadAllText(Path.Combine(fx.Bin, "ReShade.ini"));
+        Assert.Contains(ImmerseLaunchpadService.EffectSearchPath, ini);
+        Assert.Contains(ImmerseLaunchpadService.TextureSearchPath, ini);
+    }
+
+    [Fact]
+    public async Task SharedLaunchpad_HsfAfterGitcUplift_ListsTheSameFiles_NeverPlacesASecondCopy()
+    {
+        var fx = Fixture("shared-after", GraphicsApi.DirectX12);
+        Assert.True((await fx.Service.InstallAsync(fx.Game)).Success);
+        var upliftRecord = UpliftListing(fx);
+        fx.Records.Upsert(upliftRecord);
+        Assert.True((await fx.Service.SetLaunchpadAsync(fx.Game, false)).Success); // HSF off: Uplift keeps them
+        Assert.All(upliftRecord.Files, f => Assert.True(File.Exists(f.Path), f.Path));
+
+        Assert.True((await fx.Service.SetLaunchpadAsync(fx.Game, true)).Success);
+
+        var hsf = fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!;
+        Assert.Equal(upliftRecord.Files.Select(f => f.Path).Order(), hsf.Files.Where(f => ImmerseLaunchpadService.IsLaunchpadFile(f.Path)).Select(f => f.Path).Order());
+        Assert.Single(Directory.EnumerateFiles(fx.Bin, "MartysMods_LAUNCHPAD.fx", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task OlderHsfRecord_ItsOwnLaunchpadCopies_MoveIntoTheSharedTree()
+    {
+        // An HSF install from before w14/nr-2: Launchpad under reshade-shaders/Shaders/iMMERSE and Textures/iMMERSE, listed in
+        // HSF.LaunchpadFiles, no search paths. Shaped here from a current install.
+        var fx = Fixture("older", GraphicsApi.DirectX12);
+        Assert.True((await fx.Service.InstallAsync(fx.Game)).Success);
+        var record = LinuxDeploymentRecordStore.Clone(fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!);
+        var older = new List<string>();
+        foreach (var file in record.Files.Where(f => ImmerseLaunchpadService.IsLaunchpadFile(f.Path)))
+        {
+            var relative = Path.GetRelativePath(ImmerseLaunchpadService.TreeRoot(fx.Bin), file.Path);
+            var top = relative.Split(Path.DirectorySeparatorChar)[0];
+            var target = Path.Combine(fx.Bin, "reshade-shaders", top, "iMMERSE", relative[(top.Length + 1)..]);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Move(file.Path, target);
+            file.Path = target;
+            older.Add(target);
+        }
+        Directory.Delete(ImmerseLaunchpadService.TreeRoot(fx.Bin), recursive: true);
+        record.Metadata[HsfDeploymentService.MetaLaunchpadFiles] = string.Join("\n", older);
+        fx.Records.Upsert(record);
+        File.WriteAllBytes(Path.Combine(fx.Bin, "ReShade.ini"), fx.IniBefore);
+
+        Assert.Equal(HsfDeploymentService.LaunchpadMigration.Moved, await fx.Service.MigrateLaunchpadAsync(fx.Game));
+
+        Assert.All(older, path => Assert.False(File.Exists(path), path));
+        Assert.False(Directory.Exists(Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE")));
+        var migrated = fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!;
+        Assert.False(migrated.Metadata.ContainsKey(HsfDeploymentService.MetaLaunchpadFiles));
+        Assert.Equal(3, migrated.Files.Count(f => ImmerseLaunchpadService.IsLaunchpadFile(f.Path) && File.Exists(f.Path)));
+        Assert.Contains(ImmerseLaunchpadService.EffectSearchPath, File.ReadAllText(Path.Combine(fx.Bin, "ReShade.ini")));
+        Assert.Equal(HsfDeploymentService.LaunchpadMigration.NotNeeded, await fx.Service.MigrateLaunchpadAsync(fx.Game));
+
+        Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
+        Assert.Equal(fx.IniBefore, File.ReadAllBytes(Path.Combine(fx.Bin, "ReShade.ini")));
+        Assert.False(Directory.Exists(ImmerseLaunchpadService.TreeRoot(fx.Bin)));
+    }
+
+    [Fact]
+    public async Task OlderHsfRecord_ACopyChangedSinceRhiPlacedIt_StaysWhereItIs()
+    {
+        var fx = Fixture("older-changed", GraphicsApi.DirectX12);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, launchpadOn: false)).Success);
+        var record = LinuxDeploymentRecordStore.Clone(fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!);
+        var olderFx = Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE", "MartysMods_LAUNCHPAD.fx");
+        Directory.CreateDirectory(Path.GetDirectoryName(olderFx)!);
+        File.WriteAllText(olderFx, "launchpad");
+        record.Files.Add(new LinuxDeployedFile { Path = olderFx, Sha256 = FileHash.Sha256Hex(olderFx) });
+        record.Metadata[HsfDeploymentService.MetaLaunchpadFiles] = olderFx;
+        record.Metadata[HsfDeploymentService.MetaLaunchpad] = "on";
+        fx.Records.Upsert(record);
+        File.WriteAllText(olderFx, "edited by the player");
+
+        Assert.Equal(HsfDeploymentService.LaunchpadMigration.Kept, await fx.Service.MigrateLaunchpadAsync(fx.Game));
+
+        Assert.Equal("edited by the player", File.ReadAllText(olderFx));
+        Assert.False(Directory.Exists(ImmerseLaunchpadService.TreeRoot(fx.Bin)));
     }
 
     [Fact]
@@ -244,7 +352,7 @@ public sealed class HsfDeploymentServiceTests : IDisposable
 
     // ── fixture ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private sealed record Fx(DetectedGame Game, string Bin, LinuxDeploymentRecordStore Records, HsfDeploymentService Service, HsfServer Server);
+    private sealed record Fx(DetectedGame Game, string Bin, LinuxDeploymentRecordStore Records, HsfDeploymentService Service, HsfServer Server, byte[] IniBefore);
 
     private Fx Fixture(string name, GraphicsApi api, ushort machine = 0x8664, bool withReShade = true, bool badDigest = false)
     {
@@ -258,6 +366,8 @@ public sealed class HsfDeploymentServiceTests : IDisposable
             Runner = "Proton", GraphicsApi = api, Source = "Test", UserGraphicsApiOverride = api
         };
         var records = new LinuxDeploymentRecordStore(Path.Combine(_root, name + "-records.json"));
+        // The ReShade.ini RHI's ReShade install writes (Launchpad's search paths are added to it, #274/#277).
+        File.WriteAllText(Path.Combine(bin, "ReShade.ini"), "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\\**\nTextureSearchPaths=.\\reshade-shaders\\Textures\\**\n");
         if (withReShade)
             records.Upsert(new LinuxDeploymentRecord
             {
@@ -266,9 +376,10 @@ public sealed class HsfDeploymentServiceTests : IDisposable
             });
         var server = new HsfServer(badDigest);
         server.Publish("0.9.8.8", helperBytes: "helper 0.9.8.8");
-        var service = new HsfDeploymentService(new HttpClient(server), records, null, new FakeLaunchpad(Path.Combine(_root, name + "-lp")),
+        var http = new HttpClient(server);
+        var service = new HsfDeploymentService(http, records, null, new ImmerseLaunchpadService(http, new GitcUpliftDeploymentServiceTests.FakeRunning()),
             Path.Combine(_root, name + "-cache"));
-        return new Fx(game, bin, records, service, server);
+        return new Fx(game, bin, records, service, server, File.ReadAllBytes(Path.Combine(bin, "ReShade.ini")));
     }
 
     /// <summary>GitHub's release list and the zip, built with the real 0.9.8.8 entry list (stand-in bytes).</summary>
@@ -301,7 +412,9 @@ public sealed class HsfDeploymentServiceTests : IDisposable
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.ToString();
-            var response = url == HsfPackage.ReleasesApiUrl
+            var response = url == ImmerseLaunchpadService.ArchiveUrl
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(ImmerseArchive) }
+                : url == HsfPackage.ReleasesApiUrl
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(_json, Encoding.UTF8, "application/json") }
                 : url.StartsWith("https://github.com/Capt-Hunter/HSF/releases/download/", StringComparison.Ordinal)
                     ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(_zip) }
@@ -311,19 +424,24 @@ public sealed class HsfDeploymentServiceTests : IDisposable
         }
     }
 
-    private sealed class FakeLaunchpad(string folder) : ILaunchpadStep
-    {
-        public Task<IReadOnlyList<LaunchpadFile>> StageAsync(CancellationToken cancellationToken = default)
-        {
-            Directory.CreateDirectory(folder);
-            var fx = Path.Combine(folder, "MartysMods_LAUNCHPAD.fx");
-            var include = Path.Combine(folder, "mmx_global.fxh");
-            File.WriteAllText(fx, "launchpad");
-            File.WriteAllText(include, "include");
-            return Task.FromResult<IReadOnlyList<LaunchpadFile>>(
-                [new("Shaders/iMMERSE/MartysMods_LAUNCHPAD.fx", fx), new("Shaders/iMMERSE/MartysMods/mmx_global.fxh", include)]);
-        }
+    /// <summary>The iMMERSE branch archive's Launchpad files (stand-in bytes; layout as martymcmodding/iMMERSE main).</summary>
+    internal static readonly byte[] ImmerseArchive = BuildImmerseArchive();
 
-        public (string Text, bool Changed) KeepFirst(string presetText) => HsfPackage.MoveTechniqueFirst(presetText, HsfPackage.LaunchpadToken);
+    private static byte[] BuildImmerseArchive()
+    {
+        using var buffer = new MemoryStream();
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+            foreach (var (name, text) in new[]
+                     {
+                         ("iMMERSE-main/Shaders/MartysMods_LAUNCHPAD.fx", "#include \".\\MartysMods\\mmx_global.fxh\"\ntechnique MartysMods_Launchpad { }\n"),
+                         ("iMMERSE-main/Shaders/MartysMods/mmx_global.fxh", "// global\n"),
+                         ("iMMERSE-main/Shaders/MartysMods_MXAO.fx", "// not Launchpad\n"),
+                         ("iMMERSE-main/Textures/iMMERSE_bluenoise_opt.png", "png"),
+                     })
+            {
+                using var stream = zip.CreateEntry(name).Open();
+                stream.Write(Encoding.UTF8.GetBytes(text));
+            }
+        return buffer.ToArray();
     }
 }

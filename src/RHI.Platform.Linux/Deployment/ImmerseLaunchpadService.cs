@@ -159,6 +159,57 @@ public sealed class ImmerseLaunchpadService
         return kept;
     }
 
+    /// <summary>Whether the game is running (Launchpad's files and its place in the preset change only while it is not).</summary>
+    public bool GameRunning(DetectedGame game) => _running.IsRunning(game);
+
+    /// <summary>
+    /// w14/nr-2: Launchpad's two search paths (<see cref="EffectSearchPath"/>, <see cref="TextureSearchPath"/>) added to the
+    /// game's ReShade.ini through <paramref name="scope"/> (tracked, written under ReShade.ini's link rule, declared). They
+    /// are RHI's own paths, shared by every component that lists Launchpad's files.
+    /// </summary>
+    /// <returns>The SHA-256 of a ReShade.ini this call created (so the last one out can delete it while unchanged), else null.</returns>
+    public static async Task<string?> AddSearchPathsAsync(DeploymentScope scope, DetectedGame game, string binaryDirectory)
+    {
+        var iniPath = ReShadeIniManager.ResolveIniPath(binaryDirectory);
+        var target = ReShadeIniManager.ResolveWriteTarget(iniPath, binaryDirectory, game.InstallPath);
+        await scope.TrackAsync(target, CancellationToken.None).ConfigureAwait(false);
+        var result = ReShadeIniManager.Apply(binaryDirectory, [EffectSearchPath], [TextureSearchPath], gameRoot: game.InstallPath);
+        await scope.DeclareWrittenContentAsync(target, CancellationToken.None).ConfigureAwait(false);
+        return result.CreatedByRhi && File.Exists(result.Path) ? FileHash.Sha256Hex(result.Path) : null;
+    }
+
+    /// <summary>True when a record of the game other than <paramref name="owner"/>'s lists one of Launchpad's files.</summary>
+    public static bool InUseElsewhere(LinuxDeploymentRecordStore records, DetectedGame game, ManagedComponentKind owner)
+        => records.FindAll(game).Any(r => r.Component != owner && r.Files.Any(f => IsLaunchpadFile(f.Path)));
+
+    /// <summary>
+    /// w14/nr-2: the last component out takes Launchpad's search paths out of ReShade.ini (through <paramref name="scope"/>):
+    /// nothing while another record of the game still lists Launchpad's files (GITC Uplift and HSF share them).
+    /// </summary>
+    /// <param name="createdIniSha256">The hash <see cref="AddSearchPathsAsync"/> returned: a ReShade.ini the component's
+    /// Launchpad created goes whole while it still holds those bytes (ReShade has not written its own settings into it).</param>
+    public static async Task RemoveSearchPathsIfLastAsync(DeploymentScope scope, DetectedGame game, string binaryDirectory, LinuxDeploymentRecordStore records,
+        ManagedComponentKind owner, string? createdIniSha256 = null)
+    {
+        if (InUseElsewhere(records, game, owner)) return;
+        var iniPath = ReShadeIniManager.ResolveIniPath(binaryDirectory);
+        if (!File.Exists(iniPath)) return;
+        if (!string.IsNullOrWhiteSpace(createdIniSha256) && new FileInfo(iniPath).LinkTarget is null
+            && FileHash.HexEquals(FileHash.Sha256Hex(iniPath), createdIniSha256))
+        {
+            await scope.DeleteAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
+        var target = ReShadeIniManager.ResolveWriteTarget(iniPath, binaryDirectory, game.InstallPath);
+        await scope.TrackAsync(target, CancellationToken.None).ConfigureAwait(false);
+        if (ReShadeIniManager.RemoveSearchPathEntries(iniPath, [EffectSearchPath], [TextureSearchPath], binaryDirectory, game.InstallPath))
+            await scope.DeclareWrittenContentAsync(target, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    /// <summary>Launchpad's search paths left out of a component's own "added" lists (they are shared; see <see cref="RemoveSearchPathsIfLastAsync"/>).</summary>
+    public static IReadOnlyList<string> WithoutSharedPaths(IReadOnlyList<string> paths)
+        => paths.Where(p => !p.Equals(EffectSearchPath, StringComparison.OrdinalIgnoreCase) && !p.Equals(TextureSearchPath, StringComparison.OrdinalIgnoreCase)).ToArray();
+
     /// <summary>Another component's record of the game that lists <paramref name="path"/>, as its file entry; null when none.</summary>
     public static LinuxDeployedFile? ListedElsewhere(LinuxDeploymentRecordStore records, DetectedGame game, ManagedComponentKind owner, string path)
         => records.FindAll(game)

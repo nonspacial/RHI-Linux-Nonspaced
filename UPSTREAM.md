@@ -2214,3 +2214,27 @@ mapped to the Windows code (letters, digits, F1–F24, the numpad, navigation an
 lane's "key picked from a list" deviation. As before on Linux the key is saved by the Settings dialog's Save (upstream
 saves on the key press) until the Settings restyle (#296/#297).
 
+### #277 follow-up — one iMMERSE Launchpad for HSF and GITC Uplift
+
+The HSF lane's stand-in (`ILaunchpadStep` / `ImmerseLaunchpadStep`) is gone: HSF uses the shared
+`ImmerseLaunchpadService` GITC Uplift uses.
+
+- HSF's Launchpad goes in the shared tree (`reshade-shaders/RHI/iMMERSE-Launchpad`) with its search paths in
+  ReShade.ini, the same files GITC Uplift uses: one placed by the other is listed, never placed twice, so ReShade never
+  loads two Launchpads.
+- **Removal deletes a shared Launchpad file only when no other component's record lists it**, and Launchpad's search
+  paths go with the last component that lists Launchpad (HSF and GITC Uplift alike; before, Uplift's removal took out
+  search paths HSF still needed). A file changed since RHI placed it is kept and named.
+- **Kept at the top of the preset for both**: the start / background pass that keeps Launchpad first for GITC Uplift now
+  does it for HSF too (when HSF's Launchpad is on, only while the game is not running), besides the ⚙ and Update. This
+  removes the HSF lane's "not continuously" deviation.
+- **Existing HSF installs**: an HSF record from before this change lists HSF's own Launchpad copies under
+  `reshade-shaders/Shaders/iMMERSE` and `Textures/iMMERSE`. They are moved into the shared tree (a copy GITC Uplift
+  already placed is shared instead), the search paths are added and the record lists the shared files — at the next
+  start / background pass, ⚙, Update or Launchpad switch, journaled, never while the game runs. When one of the older
+  copies is missing or was changed since RHI placed it, nothing moves: they stay HSF's and are removed with it, as
+  before.
+- Linux deviation (unchanged from both lanes): Launchpad lives in RHI's shader tree rather than upstream's shared
+  `Shaders/iMMERSE` folder; a ReShade.ini that only Launchpad's search paths created is deleted with the last user while
+  ReShade has not written to it.
+

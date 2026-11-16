@@ -250,6 +250,20 @@ internal static class ReShadeIniManager
             Write(path, lines, Path.GetDirectoryName(path) ?? path, gameRoot);
     }
 
+    /// <summary>
+    /// w14/nr-2: takes the given entries out of <c>[GENERAL]</c>'s search paths (a key left empty goes, so ReShade's default
+    /// applies again); every other line stays as it is. False when nothing was there to take out.
+    /// </summary>
+    internal static bool RemoveSearchPathEntries(string path, IReadOnlyList<string> effects, IReadOnlyList<string> textures, string gameDirectory, string? gameRoot)
+    {
+        if (!File.Exists(path)) return false;
+        var lines = File.ReadAllLines(path).ToList();
+        var changed = RemoveSearchPaths(lines, "GENERAL", EffectKey, effects, keyCreated: true);
+        changed |= RemoveSearchPaths(lines, "GENERAL", TextureKey, textures, keyCreated: true);
+        if (changed) Write(path, lines, gameDirectory, gameRoot);
+        return changed;
+    }
+
     /// <summary>The entries of <c>[GENERAL] <paramref name="key"/></c> in the file at <paramref name="path"/>; null when the file or key is missing.</summary>
     internal static IReadOnlyList<string>? SearchPaths(string path, string key)
         => File.Exists(path) && IniLines.Get(File.ReadAllLines(path).ToList(), "GENERAL", key) is { } value ? SplitList(value) : null;

@@ -98,6 +98,29 @@ public sealed class GitcUpliftDeploymentServiceTests
     }
 
     [Fact]
+    public async Task Remove_WhileHsfListsTheSameLaunchpad_LeavesItsFilesAndSearchPaths()
+    {
+        // w14/nr-2 (#277): HSF and GITC Uplift share one iMMERSE Launchpad; the last one out removes it.
+        using var f = new UpliftFixture();
+        Assert.True((await f.Service.InstallAsync(f.Game, new GitcUpliftOptions(null, null, Launchpad: true, EnableKey: 0))).Success);
+        var launchpad = f.Records.Find(f.Game, ManagedComponentKind.GitcUplift)!.Files.Where(x => ImmerseLaunchpadService.IsLaunchpadFile(x.Path)).ToList();
+        f.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(f.Game), GameName = f.Game.Name, Component = ManagedComponentKind.Hsf,
+            BinaryDirectory = f.Bin, Version = "0.9.8.8", Files = launchpad.Select(x => new LinuxDeployedFile { Path = x.Path, Sha256 = x.Sha256 }).ToList()
+        });
+
+        var remove = await f.Service.RemoveAsync(f.Game);
+
+        Assert.True(remove.Success, remove.Message);
+        Assert.All(launchpad, x => Assert.True(File.Exists(x.Path), x.Path));
+        var ini = File.ReadAllText(f.IniPath);
+        Assert.Contains(ImmerseLaunchpadService.EffectSearchPath, ini);
+        Assert.Contains(ImmerseLaunchpadService.TextureSearchPath, ini);
+        Assert.DoesNotContain(GitcUpliftDeploymentService.EffectSearchPath, ini); // Uplift's own path went
+    }
+
+    [Fact]
     public async Task Install_OpenGl_SwitchesUpliftOnFirst_InTheUsersPreset_AndRemovalTakesOnlyThatOut()
     {
         // Upstream's OpenGL MSAA set-up: NR runs at the Uplift technique, on ReShade's resolved single-sampled copy.
