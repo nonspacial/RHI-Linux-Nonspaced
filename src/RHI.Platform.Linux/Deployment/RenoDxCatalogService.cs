@@ -292,7 +292,33 @@ public sealed class RenoDxCatalogService
             return SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint, credited?.Author, credited?.DiscussionUrl);
         }
 
-        return named ?? GenericFallback(indexedFiles, await KnownUnrealAsync(game, manifestEngineHint).ConfigureAwait(false));
+        return named
+               ?? await SourceEngineEntryAsync(game, cancellationToken).ConfigureAwait(false)
+               ?? GenericFallback(indexedFiles, await KnownUnrealAsync(game, manifestEngineHint).ConfigureAwait(false));
+    }
+
+    /// <summary>#286: upstream's Source engine database (<c>RenoDXdb-source.json</c>), for <see cref="SourceEngineEntryAsync"/>; optional.</summary>
+    public RenoDxSourceDatabaseService? SourceDatabase { get; set; }
+
+    /// <summary>
+    /// #286 (upstream 2.9.3 <c>MakeGenericSourceFor</c>): a game the Source database lists gets CommandGenius's Source engine
+    /// add-on when no named mod matches it. Fail-open: no database, no entry.
+    /// </summary>
+    private async Task<RenoDxModEntry?> SourceEngineEntryAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (SourceDatabase is null) return null;
+        try
+        {
+            var lookupName = string.IsNullOrWhiteSpace(game.WikiNameOverride) ? game.Name : game.WikiNameOverride;
+            return RenoDxSourceEngine.Find(await SourceDatabase.GetAsync(cancellationToken).ConfigureAwait(false), lookupName) is { } entry
+                ? RenoDxSourceEngine.EntryFor(entry)
+                : null;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException
+                                       or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     /// <summary>#287: upstream's UE-Extended database (<c>RenoDXdb-unreal.json</c>), for <see cref="KnownUnrealAsync"/>; optional.</summary>

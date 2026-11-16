@@ -408,6 +408,8 @@ internal sealed class AppComposition
         // w8/renodx rows
         renodx.UnrealDatabase = renodxUnrealDatabase; // #218: UE-Extended's install settings (Method, Upgrades)
         renodxCatalog.UnrealDatabase = renodxUnrealDatabase; // #287: a game in it gets the Unreal mod when the scan missed the engine
+        var renodxSourceDatabase = new RenoDxSourceDatabaseService(http);
+        renodxCatalog.SourceDatabase = renodxSourceDatabase; // #286: Source games get CommandGenius's Source engine mod
         // w8/commit-point rows
         // w10/dlss-presets rows
         // w10/archives rows
@@ -467,7 +469,7 @@ internal sealed class AppComposition
             RenoDxUnrealDatabase = renodxUnrealDatabase,
             // #256/#257: Available mods adds the Ultra+ list the card links read and RenoDX's Source engine database.
             HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog, renodxUnityDatabase, renodxUnrealDatabase,
-                new RenoDxSourceDatabaseService(http), parity.GameLinks.Links.UltraPlusGamesAsync),
+                renodxSourceDatabase, parity.GameLinks.Links.UltraPlusGamesAsync),
             NewModsSources = new NewModsSources(new SeenModsStore(),
                 async ct => (await renodxCatalog.FetchListingAsync(ct).ConfigureAwait(false))
                     .Where(mod => mod.SnapshotUrl64 is not null || mod.SnapshotUrl32 is not null || mod.NexusUrl is not null).Select(mod => mod.Name).ToArray(),

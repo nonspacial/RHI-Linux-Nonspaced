@@ -1574,3 +1574,34 @@ ReShade. So nothing was broken here; the three upstream cases are pinned as test
 build; Nightly and Stable swap the layer DLL even when both builds are the same size (compared by content); a Legacy
 version installs into the layer and stays pinned. Linux deviation: no "apply to all Vulkan games" question, because a
 channel or version choice is that game's own and changes no other game's layer.
+
+### #286 — RenoDX Source engine one-click install (partial: matching and folder rules; the DXVK chain waits for a game test)
+
+Upstream 2.9.3 `870f4a9` / `3da42bc` (`SourceEngineSetup.cs`, `MainViewModel.SourceEngine.cs`): for the games of
+`RenoDXdb-source.json`, ReShade as `d3d9.dll` beside the engine (bin for 32-bit games, the main folder for 64-bit,
+Garry's Mod both), stable DXVK's `d3d9.dll` as `dxgi_dxvk.dll` loaded through ReShade's `[PROXY]`, `[GENERAL]
+Disable=1`, a pre-made `ReShade2.ini`, `dxvk.conf` with the two `deferSurfaceCreation` lines, `-insecure` in RHI's launch
+options with a VAC warning, a Source Engine badge, and update and uninstall for all of it.
+
+Linux design (comment on #286, 2026-11-16). The chain's point is ReShade's second, Vulkan runtime on DXVK's device
+(`Disable=1` turns the DirectX 9 one off). Under Wine, stable DXVK asks for `winevulkan.dll` before `vulkan-1.dll`
+(found for #200), so ReShade most likely never gets that runtime and the game would be left with none; the runner's own
+DXVK has the same problem. The route that reaches the same runtime is #200's: a DXVK build that asks for
+`vulkan-1.dll` first (DX9 HDR's) as the game's `d3d9.dll` and ReShade on this game's Vulkan layer (#92). That needs a
+game run to confirm, so this wave does not install the mod.
+
+Ported now:
+- Matching (`RenoDxSourceEngine`, upstream `GetDbSourceEntry` / `MakeGenericSourceFor`): a game the Source database lists
+  (exact name, then ignoring punctuation and spacing) gets "Generic Source Engine", CommandGenius's add-on
+  (`CommandGenius/renodx` snapshot release, 64- and 32-bit), with the database's comment as its note and WIP status, when
+  no named RenoDX mod matches. The catalogue and Available mods share one database loader.
+- Upstream's folder rules (`DetectTargets`, `PrimarySubfolder`), pinned with upstream's test layouts; Linux matches the
+  `bin` / `win64` folders and engine DLLs ignoring case. Not used yet: the install folder change belongs with the
+  one-click install and the install-folder work (#293).
+- Installing the Source add-on is refused before any download with a plain EN/PT-BR reason that points to the RenoDX
+  wiki's manual steps, so the add-on is never placed without the chain it needs.
+
+Deferred to the owner test: the DXVK chain (above), `dxvk.conf`, the `ReShade2.ini` and `Disable=1` handling (not needed
+on the layer route), Garry's Mod's second install, moving a 32-bit main-folder ReShade to bin, the Source Engine badge,
+update and uninstall. `-insecure`: RHI Linux hands Steam, Heroic and Lutris games to their client, whose launch options
+RHI does not edit, so the one-click install will say to add it there (upstream's own advice for Steam starts).

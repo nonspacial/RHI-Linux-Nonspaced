@@ -294,6 +294,9 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("Nenhum perfil RenoDX específico ou fallback genérico seguro foi encontrado para este jogo.");
 
         var url = mod.UrlFor(architecture);
+        // #286: the Source engine mod only works with its DXVK chain, which RHI Linux does not set up yet (owner test pending).
+        if (RenoDxSourceEngine.IsSourceAddonUrl(url))
+            return ComponentOperationResult.Fail(RenoDxSourceEngine.SetupNotYetMessage);
         if (string.IsNullOrWhiteSpace(url))
             return ComponentOperationResult.Fail($"{mod.Name} does not publish a compatible {(architecture == PeArchitecture.X86 ? "32-bit" : "64-bit")} add-on.");
         // DEP-06: wiki, database, manifest and Unity links alike must be HTTPS on a trusted host; checked before any download.

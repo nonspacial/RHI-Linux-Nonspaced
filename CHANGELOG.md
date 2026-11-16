@@ -33,6 +33,10 @@ Not on `main` yet.
 - Vulkan ReShade: checked against upstream's three Vulkan fixes. Each Vulkan game here has its own ReShade layer, so
   updates show and Update All applies them, and Stable, Nightly and Legacy each switch that game's layer; new tests
   keep it that way (#288).
+- Source engine games (Half-Life 2, Portal, Counter-Strike: Source and the others in RenoDX's Source list) now show
+  RenoDX's Source engine mod on their RenoDX row. RHI does not install it yet: the mod needs DXVK set up in front of
+  ReShade, and how to do that under Proton is waiting for a test on a real game. Install says so and points to the
+  RenoDX wiki's manual steps (#286, partial).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
