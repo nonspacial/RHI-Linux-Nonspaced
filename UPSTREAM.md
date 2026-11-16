@@ -1571,3 +1571,24 @@ never RHI's here). Nexus Mods files reach RHI as dropped add-ons or Luma package
   reach games through "Apply to all games", whose line counts only the ReShade.ini files it wrote.
 - **ReLimiter ⚙ with a separate add-on folder** (already so since #255): the ⚙ finds relimiter.ini in the AddonPath
   folder.
+
+### #294 — Detection fixes (2.8.9–2.9.3)
+
+- **Helper libraries and exes made games look DX12** (fixed; upstream 2.9.2 `93d0fcb`): the graphics-API detector's
+  last step reads nearby binaries, and FFmpeg (`avutil`, `avcodec`, …), Qt 5/6, SDL 2/3, CEF, ANGLE (`libEGL`,
+  `libGLESv2`) and `d3dcompiler` name D3D11/D3D12 whatever the game renders with (OpenMW, an OpenGL game, read as DX12).
+  They are skipped there now, with upstream's list, and so are RHI's own helper exes (`gitc-uplift-helper64.exe`,
+  `dlss5-feed-host64.exe`) and crash reporters / uninstallers.
+- **GOG games read as 32-bit from the uninstaller** (already so; upstream 2.9.3 `870f4a9`): upstream took the biggest
+  exe in the folder for bitness. Here bitness comes from the chosen game exe, and the chooser has always skipped
+  uninstallers, redistributables and crash handlers by name (`unins000.exe`, `UnityCrashHandler64.exe`). Pinned with
+  Ghost Song's layout (a 3 MB 32-bit uninstaller beside a 650 KB 64-bit game exe).
+- **Running-game tracking following the crash reporter** (already so; upstream 2.9.3 `2984022`): the running probe
+  matches the chosen exe's full path in `/proc/<pid>/cmdline`, and the chooser never picks `CrashReportClient.exe`
+  (pinned with Phantom Blade Zero's layout).
+- **DLSS / Streamline for Unreal games outside `Binaries`** (already so): DLSS detection reads the game's whole file
+  index (depth 8 from the install root), not only the exe's folder, and manifest `dlssPathOverrides` /
+  `streamlinePathOverrides` (#155) reach deeper layouts such as Mafia: The Old Country's.
+- **Config button and UE-Extended Engine.ini with several PCGW config paths** (not applicable): RHI Linux never used
+  PCGamingWiki's config paths (see #12); the Engine.ini RenoDX writes is found in the game's prefix from the game's
+  own folder name.

@@ -31,6 +31,8 @@ Wave 14 — library-updates
 - **Settings no longer saves an add-on watch folder that does not exist**: it says so and saves the rest (upstream 2.8.9).
 - **An invalid ReLimiter custom FPS is no longer saved as "no cap" without a word**: the saved cap stays and RHI says the
   value must be a whole number from 20 to 1000 (upstream 2.8.9).
+- **Games that ship FFmpeg, Qt, SDL or a web view no longer read as DirectX 12** when nothing else says which API they
+  use (OpenMW, for example; upstream 2.9.2).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
