@@ -36,6 +36,8 @@ Wave 14 — library-updates
 - **Block Steam updates** (upstream 2.9.4): a new action beside Favourite and Hide for Steam games makes the game's Steam
   app manifest read-only, so Steam can't update the game and your mods keep working until they're updated. Allow Steam
   updates turns it off. Refused while Steam is in the middle of updating the game.
+- **Remove from RHI** (upstream 2.9.0): takes a game out of every list, Hidden included, and scans don't bring it back.
+  **Settings → Removed games** lists them with Restore. Components RHI installed in the game stay installed.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

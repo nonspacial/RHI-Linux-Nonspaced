@@ -1609,3 +1609,24 @@ bits off; Allow gives the owner write back), never its contents. Blocking is ref
 (`StateFlags` update running, started or paused); an update that is only queued can be blocked, which is the point. The
 state is read from the file every time, so if Steam replaces the manifest with a new file the switch reads "Block"
 again. Not journaled: nothing in the game folder changes, and the change is undone by the same switch.
+
+### #293 — Game folders: Remove from RHI and Removed games (2.9.0–2.9.3; partial)
+
+- **Remove from RHI** (ported): a header action beside Hide for every detected game. The game is gone from every list,
+  Hidden included, and a scan does not bring it back: the library file keeps it under `RemovedGames` by its library key
+  (omitted while empty, so the file keeps the shape older builds wrote). Upstream places the button in Management;
+  Linux has no Management section yet, so it sits with Favourite / Hide (restyle in phase 2). A game the user added is
+  removed with the existing "Remove manual game", as upstream deletes it. Linux deviation: upstream offers to uninstall
+  the game's components at the same time; here they stay installed and the tooltip says to remove them first if wanted.
+- **Settings → Removed games** (ported, as its own Settings tab; upstream Tools & Maintenance › Troubleshooting): every
+  removed game, newest first, with Restore, which drops it from the list and rescans so the game comes back.
+- **Reset install folder** (by design here): Linux's Edit game keeps one install-folder override per game; clearing it
+  goes back to the folder the scan found, so upstream's "goes back to an earlier pick" bug has no counterpart.
+- **"Folder moved → offer Refresh instead of a folder browser"** (not applicable): RHI Linux never opens a folder
+  browser for a missing game folder; it says the folder is missing and offers Refresh and Repair after move (#38).
+- **Not ported in this wave (deferred, see #293):** custom game folders (Settings list, scan on start / Refresh / Scan
+  now, review list with name, exe choice and "Check the exe", ignore list, and on Linux a runner / prefix choice like
+  manual games), and install-folder migration (moving a game's mods, settings and presets after Change / Reset install
+  folder, automatic when RHI corrects the folder, manifest `installPathMigrations`). Both need journaled moves of user
+  and RHI files across folders and a review UI; they were left for a follow-up so this lane's other items could land
+  with their tests.
