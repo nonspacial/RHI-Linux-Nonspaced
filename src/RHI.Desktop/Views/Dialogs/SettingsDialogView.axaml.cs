@@ -153,7 +153,24 @@ public sealed partial class SettingsDialogView : UserControl
 
         // ── General ── (upstream: Updates; Windows and Admin Mode)
         var parity = vm.Parity;
+        // #298 (upstream SettingsHandler.UpdateCountdown): "Next check in" and "Last checked", ticking once a second while
+        // Settings is open.
+        var nextCheck = new TextBlock { Name = "SettingsNextCheck", FontFamily = new FontFamily("monospace") };
+        var lastCheck = new TextBlock { Name = "SettingsLastCheck" };
+        void Tick()
+        {
+            var now = vm.StatusBar.Now;
+            nextCheck.Text = StatusBarText.Countdown(vm.StatusBar.NextCheck, now);
+            lastCheck.Text = StatusBarText.LastChecked(vm.StatusBar.LastCheck, now);
+        }
+        Tick();
+        var countdown = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        countdown.Tick += (_, _) => Tick();
+        nextCheck.AttachedToVisualTree += (_, _) => countdown.Start();
+        nextCheck.DetachedFromVisualTree += (_, _) => countdown.Stop();
         cards[SettingsSections.General].Add(SettingsLayout.Card(T("Set.CardUpdates"), null,
+            SettingsLayout.Row(T("Set.NextCheckIn"), nextCheck, tip: T("Set.CheckCadenceTip")),
+            SettingsLayout.Row(T("Set.LastChecked"), lastCheck, tip: T("Set.CheckCadenceTip")),
             parity is null ? null : SettingsLayout.Block(ParitySettingsTab.AppUpdateSection(parity.AppUpdate)),
             updatePolicyRows.InclusionControl,
             SettingsLayout.SubHeading(T("Set.AutomaticUpdates")),

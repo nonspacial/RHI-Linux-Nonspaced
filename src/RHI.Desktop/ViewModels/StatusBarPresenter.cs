@@ -155,6 +155,9 @@ public sealed partial class StatusBarPresenter : ObservableObject
     [ObservableProperty] private string? _toolTip;
 
     /// <summary>When RHI last checked for updates (Settings' countdown panel reads it too).</summary>
+    /// <summary>The clock the bar uses (Settings' countdown reads the same one).</summary>
+    public DateTimeOffset Now => _now();
+
     public DateTimeOffset? LastCheck => _lastCheck();
 
     /// <summary>When the next automatic check is due; null while none is scheduled.</summary>

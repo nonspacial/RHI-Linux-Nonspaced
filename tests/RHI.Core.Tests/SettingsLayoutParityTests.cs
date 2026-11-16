@@ -267,6 +267,10 @@ public sealed class SettingsLayoutParityTests
         Assert.Contains(view.Find("HDR button on game pages"), r => r.Entry.SectionKey == "Display");
         Assert.Contains(view.Find("Clear cache"), r => r.Entry.SectionKey == "Tools" && r.Entry.Target is Button);
         Assert.Contains(view.Find("Components to check"), r => r.Entry.SectionKey == "General");
+        // #298: the update countdown in General › Updates, from the status bar's clock.
+        Assert.Contains(view.Find("Next check in"), r => r.Entry.SectionKey == "General");
+        Assert.Equal(StatusBarText.Countdown(fx.Vm.StatusBar.NextCheck, fx.Vm.StatusBar.Now),
+            all.OfType<TextBlock>().Single(t => t.Name == "SettingsNextCheck").Text);
 
         // Upstream's red destructive buttons.
         foreach (var name in new[] { "SettingsReset", "SettingsClearCache" })

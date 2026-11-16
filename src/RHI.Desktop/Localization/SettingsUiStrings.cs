@@ -40,6 +40,9 @@ internal static class SettingsUiStrings
 
         // General
         ("Set.CardUpdates", "Atualizações", "Updates"),
+        ("Set.NextCheckIn", "Próxima verificação em", "Next check in"),
+        ("Set.LastChecked", "Última verificação", "Last checked"),
+        ("Set.CheckCadenceTip", "O RHI verifica a cada hora com um token do GitHub, a cada 4 horas sem um (o GitHub permite bem menos pedidos sem token), contando entre reinícios.", "RHI checks every hour with a GitHub token, every 4 hours without one (GitHub allows far fewer requests without one), counted across restarts."),
         ("Set.AutomaticUpdates", "Atualizações automáticas", "Automatic updates"),
         ("Set.AutoComponents", "Componentes", "Components"),
         ("Set.AutoComponentsHelp", "ReShade, RenoDX, ReLimiter, Display Commander, OptiScaler, RE Framework e os demais, instalados em segundo plano.", "ReShade, RenoDX, ReLimiter, Display Commander, OptiScaler, RE Framework and the others, installed in the background."),
