@@ -247,7 +247,13 @@ public static class UiLocalizationService
         ["Ui.Dlss5ToolFoveated"] = "Foveated",
         ["Ui.Dlss5ToolFoveatedTip"] = "Ligado: o DLSS5 Tool usa o FoveatedDLSS5 (de maximedgoulet) em vez do add-on padrão. A Renderização Neural roda em resolução total no centro da tela, em resolução menor ao redor e desligada nas bordas, para um grande ganho de desempenho (maior em telas ultrawide).\n\nPré-lançamento. Baseado num DLSS5 Tool mais antigo, então correções mais novas do padrão podem faltar. Só funciona quando o NR roda depois do upscaling. Ligue a foveação e defina as zonas nas configurações do add-on no overlay do ReShade (Add-ons > DLSS 5 Neural Rendering).\n\nMudar com o DLSS5 Tool instalado troca o add-on no lugar. A lista de versões passa a mostrar as versões do Foveated. Atualizações do add-on padrão nunca o substituem.",
         ["Ui.Dlss5ToolFoveatedLink"] = "FoveatedDLSS5",
-        ["Ui.Dlss5ToolFoveatedLinkTip"] = "Abre a página do FoveatedDLSS5 (maximedgoulet)."
+        ["Ui.Dlss5ToolFoveatedLinkTip"] = "Abre a página do FoveatedDLSS5 (maximedgoulet).",
+        // w14/ui-settings (#297) rows
+        ["Cog.Title"] = "Configurações do {0}",
+        ["Cog.NoSettings"] = "Este componente não tem configurações.",
+        ["Cog.ChangeFailed"] = "Não foi possível alterar {0}: {1}",
+        ["Cog.ActionFailed"] = "{0} falhou: {1}",
+        ["Cog.LumaNotUnreal"] = "As configurações do Luma são para jogos Unreal Engine. Este jogo não tem nada para configurar aqui."
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -488,7 +494,13 @@ public static class UiLocalizationService
         ["Ui.Dlss5ToolFoveated"] = "Foveated",
         ["Ui.Dlss5ToolFoveatedTip"] = "When on, the DLSS5 Tool uses FoveatedDLSS5 (by maximedgoulet) instead of the stock add-on. Neural Rendering runs at full resolution in the centre of the screen, at lower resolution around it, and is off at the edges, for a large performance gain (biggest on ultrawide screens).\n\nPre-release. Based on an older DLSS5 Tool, so newer stock fixes may be missing. Works only when NR runs after upscaling. Turn on foveation and set the zones in the add-on's settings in the ReShade overlay (Add-ons > DLSS 5 Neural Rendering).\n\nSwitching while installed swaps the add-on in place. The version list switches to Foveated releases. Stock updates never replace it.",
         ["Ui.Dlss5ToolFoveatedLink"] = "FoveatedDLSS5",
-        ["Ui.Dlss5ToolFoveatedLinkTip"] = "Opens FoveatedDLSS5's page (maximedgoulet)."
+        ["Ui.Dlss5ToolFoveatedLinkTip"] = "Opens FoveatedDLSS5's page (maximedgoulet).",
+        // w14/ui-settings (#297) rows
+        ["Cog.Title"] = "{0} Settings",
+        ["Cog.NoSettings"] = "This component has no settings.",
+        ["Cog.ChangeFailed"] = "Couldn't change {0}: {1}",
+        ["Cog.ActionFailed"] = "{0} failed: {1}",
+        ["Cog.LumaNotUnreal"] = "Luma's settings are for Unreal Engine games. This game has nothing to set here."
     };
 
 

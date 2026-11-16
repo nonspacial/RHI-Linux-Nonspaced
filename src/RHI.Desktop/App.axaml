@@ -20,6 +20,14 @@
       <SolidColorBrush x:Key="RhiRemoveBackgroundBrush">#281818</SolidColorBrush>
       <SolidColorBrush x:Key="RhiRemoveForegroundBrush">#E07A7A</SolidColorBrush>
       <SolidColorBrush x:Key="RhiRemoveBorderBrush">#563030</SolidColorBrush>
+      <!-- w14/ui-settings (#297): the component ⚙ layout's brushes (cards, explanation text, status line, notices). -->
+      <SolidColorBrush x:Key="RhiCardBrush">#161C26</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiCardBorderBrush">#232C3A</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiDialogBarBrush">#0E1217</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiWarningTextBrush">#D7B65A</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiSuccessTextBrush">#5ECB7D</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiDisabledForegroundBrush">#626A75</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiDisabledBorderBrush">#292D34</SolidColorBrush>
     </ResourceDictionary>
   </Application.Resources>
 
@@ -299,6 +307,73 @@
     </Style>
     <Style Selector="TextBlock.secondary">
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+
+    <!-- w14/ui-settings (#297): the shared component ⚙ layout (Views/Cog: CogDialog, CogWindow, CogCard, CogRow, CogCell). -->
+    <Style Selector="TextBlock.cogTitle">
+      <Setter Property="FontSize" Value="20"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="Border.cogCard">
+      <Setter Property="Background" Value="{DynamicResource RhiCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="18,16"/>
+    </Style>
+    <Style Selector="TextBlock.cogHeading">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="LetterSpacing" Value="0.6"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogLabel">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogHelp">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogIntro">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogEmpty">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogWarning">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiWarningTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogNote">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogStatus">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogStatus.success">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSuccessTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogStatus.error">
+      <Setter Property="Foreground" Value="{DynamicResource RhiRemoveForegroundBrush}"/>
+    </Style>
+    <Style Selector="Border.cogButtonBar">
+      <Setter Property="Background" Value="{DynamicResource RhiDialogBarBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="0,1,0,0"/>
+    </Style>
+    <Style Selector="Button.rhi.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.rhi.secondary:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource RhiDisabledForegroundBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiDisabledBorderBrush}"/>
     </Style>
   </Application.Styles>
 </Application>
