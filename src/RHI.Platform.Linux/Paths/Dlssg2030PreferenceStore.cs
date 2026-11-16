@@ -20,7 +20,7 @@ public sealed class Dlssg2030Preferences
 }
 
 /// <summary>
-/// XDG-native per-game preferences for the legacy RTX 20 / SM75 experimental path.
+/// XDG-native per-game preferences for 20/30 FG Unlock (the proxy name; the GPU generation is kept for old files only).
 /// Preferences are deliberately separate from deployment ownership so uninstalling the
 /// component does not forget the user's preferred GPU route/proxy for a later field test.
 /// </summary>
@@ -46,8 +46,8 @@ public sealed class Dlssg2030PreferenceStore : IGameStateStore
                 return new Dlssg2030Preferences();
 
             var normalized = (preferences ?? new Dlssg2030Preferences()).Normalize();
-            // New RTX 30 installs use Universal MFG instead of the legacy SM86 backend.
-            // Migrate saved (not deployed) RTX 30 preferences to the remaining RTX 20 / SM75 route.
+            // #281: the mod detects the card itself, so the saved generation narrows nothing; an old "RTX 30 Series"
+            // reads as the default like any other value.
             if (string.Equals(normalized.GpuGeneration, Dlssg2030UnlockDeploymentService.GpuGenRtx30, StringComparison.OrdinalIgnoreCase))
                 normalized.GpuGeneration = Dlssg2030UnlockDeploymentService.GpuGenRtx20;
             return normalized;

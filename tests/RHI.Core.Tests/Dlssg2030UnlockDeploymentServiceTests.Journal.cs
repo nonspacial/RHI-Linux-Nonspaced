@@ -5,7 +5,7 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Core.Tests;
 
-// w3/journal: the file side of RTX 20 FG Unlock's journal (#23): proxy and INI are rolled back by the next start when
+// w3/journal: the file side of 20/30 FG Unlock's journal (#23): proxy and INI are rolled back by the next start when
 // the process dies before the record is saved or removed; an update failure puts the previous proxy back (#31).
 public sealed partial class Dlssg2030UnlockDeploymentServiceTests
 {

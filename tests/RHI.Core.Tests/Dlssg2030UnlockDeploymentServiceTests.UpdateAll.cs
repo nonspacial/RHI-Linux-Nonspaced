@@ -3,7 +3,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-// #238 (upstream v2.8.8 Beta bb9b2fd: DLSSG 20/30 deployed at start): the RTX 20 FG Unlock (DLSSG 20/30) is an Update All
+// #238 (upstream v2.8.8 Beta bb9b2fd: DLSSG 20/30 deployed at start): the 20/30 FG Unlock (DLSSG 20/30) is an Update All
 // family. Its check compares the release tag (#261; the pinned upstream commit before), keeps the proxy name, never plans a swap over a proxy (or INI)
 // removed or changed outside RHI, and could not check when the lookup fails.
 public sealed partial class Dlssg2030UnlockDeploymentServiceTests
@@ -90,7 +90,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         public bool IsRunning(DetectedGame game) => false;
     }
 
-    // Proved first on 8f15e44: Update All left the RTX 20 FG Unlock out (no family, no check or update arm).
+    // Proved first on 8f15e44: Update All left the 20/30 FG Unlock out (no family, no check or update arm).
     [Fact]
     public async Task UpdateAll_NewerCommit_UpdatesIt_ThroughTheAppsArms_InBothModes()
     {

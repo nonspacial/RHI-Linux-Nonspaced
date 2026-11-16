@@ -173,6 +173,13 @@ Wave 14 — extras-fg
   - The DLL name list puts the name the RHI manifest recommends for a game first and uses it by default (Euro Truck
     Simulator 2: `winmm.dll`); the ⚙ names it.
 
+Wave 14 — extras-fg-2
+
+- **20/30 FG Unlock on RTX 30** (upstream 2.8.9+): RTX 30 owners are no longer sent to Universal MFG Unlocker; 20/30
+  FG Unlock installs on RTX 20 and 30 alike, and the mod finds the card itself. Both rows are offered on every card, as
+  upstream's are. Their notes now give upstream's description instead of a "legacy RTX 20" path or a card generation
+  you never picked, and every message calls the mod 20/30 FG Unlock (#281).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

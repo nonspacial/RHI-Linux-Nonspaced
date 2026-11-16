@@ -2273,3 +2273,19 @@ use another mapping.
   already lists it.
 - Linux deviation: installs from before get the XeSS files, 310.9.16 and the ASI build through Update / Update All (the
   check plans it), not at start-up. A failed XeSS download does not stop an install (upstream); the message says so.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane extras-fg-2)
+
+**20/30 FG Unlock on RTX 30 (#281).** Upstream 2.8.9 dropped the GPU-generation setting (the mod 0.4.x finds an RTX 20
+or 30 card itself) and offers the 20/30 FG Unlock, Universal MFG Unlocker and MFG Unlock rows on every card: in 2.9.4
+the card (`GpuInfoService`) is read only for HSF and the BFI presenter. RHI Linux now matches. The install and the
+saved preferences no longer refuse "RTX 30 Series" (they sent RTX 30 owners to Universal MFG), both generations are
+accepted and narrow nothing, and the Extras rows of both unlocks are offered for RTX 20, 30, 40, 50 and non-NVIDIA
+cards alike (`FgUnlockGpuGenerationTests`, one case per card through the NVIDIA facts seam). The rows' notes are
+upstream 2.9.4's descriptions ("RTX 20 and 30 series GPUs"; Universal MFG "RTX 40 and RTX 30 Series GPUs (RTX 20
+experimental), plus XeMFG on any GPU") with the Linux facts (Proton/VKD3D experimental, the proxy name), in EN and
+PT-BR; they no longer name a card generation from a setting the ⚙ no longer has. The messages say "20/30 FG Unlock"
+instead of "legacy RTX 20 FG Unlock", and so does the row (upstream's name). Linux deviation: none in behaviour; the
+row notes are the Linux stand-in for upstream's tooltips. The post-2.9.4 grouping of Extras by what the game needs
+(upstream `22865df`, 2.9.5) is not ported.
+

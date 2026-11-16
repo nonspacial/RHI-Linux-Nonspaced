@@ -73,9 +73,11 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void NewInstallGpuChoices_ExposeOnlyRtx20LegacyRoute()
+    public void GpuChoices_AcceptRtx20AndRtx30_TheModDetectsTheCardItself()
     {
-        Assert.Equal(new[] { Dlssg2030UnlockDeploymentService.GpuGenRtx20 }, Dlssg2030UnlockDeploymentService.GpuGenerations);
+        // w14/extras-fg-2 (#281): 0.4.x finds an RTX 20 or 30 card by itself; neither saved value narrows anything.
+        Assert.Equal(new[] { Dlssg2030UnlockDeploymentService.GpuGenRtx20, Dlssg2030UnlockDeploymentService.GpuGenRtx30 },
+            Dlssg2030UnlockDeploymentService.GpuGenerations);
     }
 
     [Fact]
@@ -94,32 +96,34 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void SetPreferences_Rtx30RedirectsToUniversalMfg()
+    public void SetPreferences_Rtx30IsAccepted_NotSentToUniversalMfg()
     {
-        using var fixture = CreateGame("redirect-prefs", 0x8664, GraphicsApi.DirectX12);
+        // w14/extras-fg-2 (#281, upstream 2.8.9+): 20/30 FG Unlock is offered on RTX 30 too.
+        using var fixture = CreateGame("rtx30-prefs", 0x8664, GraphicsApi.DirectX12);
         using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x28), UpstreamIni()));
         var service = CreateService(fixture, http, new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json")));
 
-        var result = service.SetPreferences(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx30, "version.dll");
+        var result = service.SetPreferences(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx30, "winmm.dll");
 
-        Assert.False(result.Success);
-        Assert.Contains("Universal MFG", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.Success, result.Message);
+        Assert.DoesNotContain("Universal MFG", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("winmm.dll", service.GetPreferences(fixture.Game).ProxyName);
     }
 
     [Fact]
-    public async Task Install_Rtx30IsBlockedBeforeNetworkAndRedirectsToUniversalMfg()
+    public async Task Install_Rtx30Installs_NotSentToUniversalMfg()
     {
-        using var fixture = CreateGame("redirect-install", 0x8664, GraphicsApi.DirectX12);
+        using var fixture = CreateGame("rtx30-install", 0x8664, GraphicsApi.DirectX12);
         using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x29), UpstreamIni());
         using var http = new HttpClient(handler);
-        var service = CreateService(fixture, http, new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json")));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
 
         var result = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx30, "version.dll");
 
-        Assert.False(result.Success);
-        Assert.Contains("Universal MFG", result.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, handler.RequestCount);
-        Assert.False(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
+        Assert.True(result.Success, result.Message);
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
     }
 
     [Fact]

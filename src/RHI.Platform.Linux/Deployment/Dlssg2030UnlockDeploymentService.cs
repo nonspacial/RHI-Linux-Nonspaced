@@ -11,9 +11,9 @@ using RHI.Platform.Linux.Persistence;
 namespace RHI.Platform.Linux.Deployment;
 
 /// <summary>
-/// Legacy experimental Linux/Wine deployment for sdli1995/dlssg_for_sm86.
-/// New RTX 30 installs are retired in favor of Universal MFG; this service remains
-/// available for RTX 20 / SM75 and for safe removal/update of historical managed records.
+/// 20/30 FG Unlock: the Linux/Wine deployment of sdli1995/dlssg_for_sm86 (experimental under Proton/VKD3D).
+/// w14/extras-fg-2 (#281, upstream 2.8.9+): offered on RTX 20 and RTX 30 alike (and, as upstream's row, on every card);
+/// the mod 0.4.x detects the card itself, so RTX 30 is no longer sent to Universal MFG.
 /// <para>#261 (upstream 2.8.9 <c>68856af</c>): since 0.4.0 the mod is a release package, <c>dlssg-release-X-x64.zip</c>, and a game
 /// needs, beside its rendering executable, exactly one proxy DLL, <c>dlssg_sm86.ini</c> and the whole <c>dlssg_sm86/</c> folder
 /// (backend, kernel packs, bundled DLSS-G runtime, XeSS-FG, SR). Each proxy name is its own build that forwards to the system
@@ -51,7 +51,16 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     /// </summary>
     public static readonly IReadOnlyList<string> ProxyNames = Dlssg2030ProxyNames.Offered;
 
-    public static readonly IReadOnlyList<string> GpuGenerations = [GpuGenRtx20];
+    /// <summary>
+    /// w14/extras-fg-2 (#281, upstream 2.8.9+): both generations are accepted. The mod 0.4.x finds an RTX 20 or 30 card
+    /// itself, so the saved value (from the ⚙ before #281) narrows nothing and RTX 30 is no longer sent to Universal MFG.
+    /// </summary>
+    public static readonly IReadOnlyList<string> GpuGenerations = [GpuGenRtx20, GpuGenRtx30];
+
+    /// <summary>#281: the row's note before install (upstream 2.9.4's description); the proxy name follows.</summary>
+    public const string AvailableNotePrefix = "Enables DLSS Frame Generation (up to 6X) on RTX 20 and 30 series GPUs (RTX 20 experimental); "
+        + "the mod detects the card itself. DirectX 12 only, NVIDIA driver R580 or newer, no ASI Loader or ReShade needed. "
+        + "Experimental under Proton/VKD3D. Proxy: ";
 
     /// <summary>Files under <see cref="ModFolderName"/> a package must hold for an install to work (upstream's list).</summary>
     public static readonly IReadOnlyList<string> RequiredModFiles =
@@ -111,17 +120,14 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     public ComponentOperationResult SetPreferences(DetectedGame game, string gpuGeneration, string proxyName)
     {
         if (GetRecord(game) is not null)
-            return ComponentOperationResult.Fail("RTX 20 FG Unlock legado já está instalado. Remova e reinstale para trocar a DLL proxy.");
-
-        if (string.Equals(gpuGeneration?.Trim(), GpuGenRtx30, StringComparison.OrdinalIgnoreCase))
-            return ComponentOperationResult.Fail("RTX 30 agora usa Universal MFG. Abra as configurações do Universal MFG e selecione RTX 30 Series.");
+            return ComponentOperationResult.Fail("20/30 FG Unlock já está instalado. Remova e reinstale para trocar a DLL proxy.");
 
         var normalizedGpu = NormalizeGpuGeneration(gpuGeneration);
         var normalizedProxy = NormalizeProxyName(proxyName);
         if (!GpuGenerations.Contains(normalizedGpu, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"Geração de GPU inválida: {gpuGeneration}.");
         if (HookedDllNames.Canonical(normalizedProxy, ProxyNames) is null) // #284: a Hooked name of an offered name too
-            return ComponentOperationResult.Fail($"Nome de proxy não suportado pelo RTX 20 FG Unlock legado: {proxyName}.");
+            return ComponentOperationResult.Fail($"Nome de proxy não suportado pelo 20/30 FG Unlock: {proxyName}.");
 
         try
         {
@@ -132,7 +138,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
             });
         }
         catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
-        return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado: {normalizedGpu}, proxy {normalizedProxy}.");
+        return ComponentOperationResult.Ok($"20/30 FG Unlock: proxy {normalizedProxy}."); // #281: no card generation (the mod detects it)
     }
 
     public static string NormalizeGpuGeneration(string? value)
@@ -173,15 +179,15 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     public static string EligibilityReason(DetectedGame game)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            return "RTX 20 FG Unlock legado é um proxy DLL Windows e não se aplica a jogos Linux nativos.";
+            return "20/30 FG Unlock é um proxy DLL Windows e não se aplica a jogos Linux nativos.";
         if (!game.HasConfirmedPatchTarget)
             return "Selecione primeiro o executável real do jogo em Editar jogo.";
         if (ResolveArchitecture(game) != PeArchitecture.X64)
-            return "RTX 20 FG Unlock legado exige um executável Windows x64.";
+            return "20/30 FG Unlock exige um executável Windows x64.";
         if (game.EffectiveGraphicsApi != GraphicsApi.DirectX12)
-            return "O caminho experimental RTX 20 / SM75 está habilitado somente para jogos DirectX 12.";
+            return "O 20/30 FG Unlock funciona somente em jogos DirectX 12.";
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
-            return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o RTX 20 FG Unlock legado.";
+            return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o 20/30 FG Unlock.";
         if (ResolveBinaryDirectory(game) is null)
             return "O diretório do executável alvo não pôde ser resolvido.";
         return "Compatível com o caminho experimental: Windows x64 + DirectX 12 + prefixo Wine/Proton inicializado.";
@@ -220,17 +226,17 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         "winhttp.dll is no longer offered and RHI moves this install to version.dll, but that name is taken. Remove it, then Install it with another DLL name: ";
 
     /// <summary>The install's result line: this fixed text, then "&lt;version&gt; (&lt;proxy name&gt;).", then <see cref="InstalledNote"/>.</summary>
-    public const string InstalledPrefix = "Legacy RTX 20 FG Unlock installed with dlssg_sm86.ini and the dlssg_sm86 folder: ";
+    public const string InstalledPrefix = "20/30 FG Unlock installed with dlssg_sm86.ini and the dlssg_sm86 folder: ";
     public const string InstalledNote = " Support under VKD3D-Proton remains experimental and must be confirmed in a real game.";
 
     /// <summary>The update's result line: this fixed text, then "&lt;version&gt;.", then the notes below.</summary>
-    public const string UpdatedPrefix = "Legacy RTX 20 FG Unlock updated to the release package ";
+    public const string UpdatedPrefix = "20/30 FG Unlock updated to the release package ";
     public const string UpdatedIniKeptNote = " Your dlssg_sm86.ini was kept.";
     public const string UpdatedIniReplacedNote = " dlssg_sm86.ini now comes from the new release.";
     public const string UpdatedProxyMovedNote = " winhttp.dll is no longer offered, so it now runs as version.dll.";
 
     /// <summary>The check's lines; the version (or "old → new") follows.</summary>
-    public const string CurrentPrefix = "Legacy RTX 20 FG Unlock is on the latest release: ";
+    public const string CurrentPrefix = "20/30 FG Unlock is on the latest release: ";
     public const string LatestPrefix = "Latest DLSSG 20/30 release: ";
     public const string UpdateAvailablePrefix = "DLSSG 20/30 update available: ";
 
@@ -246,11 +252,9 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         CancellationToken cancellationToken = default)
     {
         if (GetRecord(game) is not null)
-            return ComponentOperationResult.Fail("RTX 20 FG Unlock legado já é gerenciado pelo RHI para este jogo.");
+            return ComponentOperationResult.Fail("20/30 FG Unlock já é gerenciado pelo RHI para este jogo.");
 
-        var requestedGpu = gpuGeneration ?? GetPreferences(game).GpuGeneration;
-        if (string.Equals(requestedGpu?.Trim(), GpuGenRtx30, StringComparison.OrdinalIgnoreCase))
-            return ComponentOperationResult.Fail("RTX 30 agora usa Universal MFG. A rota SM86 antiga foi aposentada para novas instalações; use Universal MFG com RTX 30 Series.");
+        var requestedGpu = gpuGeneration ?? GetPreferences(game).GpuGeneration; // #281: any card; the mod detects it
 
         if (!IsGameEligible(game))
             return ComponentOperationResult.Fail(EligibilityReason(game));
@@ -258,13 +262,13 @@ public sealed partial class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail(wineRunning);
 
         if (_records.Find(game, ManagedComponentKind.MfgAdaUnlock) is not null)
-            return ComponentOperationResult.Fail("MFG Unlock já está ativo. Remova-o antes de instalar o RTX 20 FG Unlock legado; os dois métodos de desbloqueio de Frame Generation não devem compartilhar o mesmo processo.");
+            return ComponentOperationResult.Fail("MFG Unlock já está ativo. Remova-o antes de instalar o 20/30 FG Unlock; os dois métodos de desbloqueio de Frame Generation não devem compartilhar o mesmo processo.");
 
         if (_records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
-            return ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar o RTX 20 FG Unlock legado; os dois métodos não devem disputar o mesmo pipeline de Frame Generation.");
+            return ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar o 20/30 FG Unlock; os dois métodos não devem disputar o mesmo pipeline de Frame Generation.");
 
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null)
-            return ComponentOperationResult.Fail("ShortFuse já está ativo e gerencia a pilha DLSS/Frame Generation deste jogo. Remova-o antes de usar o RTX 20 FG Unlock legado para evitar duas autoridades sobre o mesmo runtime.");
+            return ComponentOperationResult.Fail("ShortFuse já está ativo e gerencia a pilha DLSS/Frame Generation deste jogo. Remova-o antes de usar o 20/30 FG Unlock para evitar duas autoridades sobre o mesmo runtime.");
 
         var preferences = GetPreferences(game);
         var selectedGpu = NormalizeGpuGeneration(requestedGpu);
@@ -280,7 +284,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         if (IsRhiManagedPath(game, proxyPath))
             return ComponentOperationResult.Fail($"{selectedProxy} já pertence a outro componente gerenciado pelo RHI. Escolha outro proxy no botão ⚙.");
         if (File.Exists(proxyPath))
-            return ComponentOperationResult.Fail($"{selectedProxy} já existe e não pertence ao RTX 20 FG Unlock legado gerenciado pelo RHI. Escolha outro proxy; o RHI não sobrescreve uma DLL externa.");
+            return ComponentOperationResult.Fail($"{selectedProxy} já existe e não pertence ao 20/30 FG Unlock gerenciado pelo RHI. Escolha outro proxy; o RHI não sobrescreve uma DLL externa.");
         if (File.Exists(iniPath))
             return ComponentOperationResult.Fail(ExternalIniRefusal);
         if (ModFolderLink(binaryDir) is { } link)
@@ -299,7 +303,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado download/validation failed: {ex.Message}");
+            return ComponentOperationResult.Fail($"20/30 FG Unlock download/validation failed: {ex.Message}");
         }
         if (package.ProxySource(selectedProxy) is not { } proxySource)
             return ComponentOperationResult.Fail(PackageFileMissingPrefix + PackagePathFor(selectedProxy));
@@ -313,7 +317,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
         // leaves an entry start-up recovery rolls back, never an override nothing owns.
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
-            _journal, "RTX 20 FG Unlock install: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+            _journal, "20/30 FG Unlock install: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         var operation = scope.Operation;
@@ -374,13 +378,13 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         {
             if (proxyTemp is not null) FileCleanup.TryDelete(proxyTemp);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado");
+            if (rollback.Committed) return DeploymentScope.Landed("20/30 FG Unlock");
             if (rollback.RolledBack)
             {
                 _overrides.TryRestore(game.PrefixPath, wineOverride);
                 RemoveEmptyFolders(createdFolders);
             }
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"20/30 FG Unlock install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: it is the commit point. Nothing after it rolls back.
         await scope.CommitAsync().ConfigureAwait(false);
@@ -395,7 +399,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     {
         var record = GetRecord(game);
         if (record is null)
-            return ComponentOperationResult.Fail("RTX 20 FG Unlock legado não é gerenciado pelo RHI para este jogo. A remoção externa permanece protegida.");
+            return ComponentOperationResult.Fail("20/30 FG Unlock não é gerenciado pelo RHI para este jogo. A remoção externa permanece protegida.");
 
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
@@ -409,7 +413,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         var proxyRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
         var iniRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, iniPath));
         if (proxyRecord is null || string.IsNullOrWhiteSpace(proxyRecord.Sha256))
-            return ComponentOperationResult.Fail("Registro do RTX 20 FG Unlock legado perdeu o hash da DLL gerenciada; remoção bloqueada.");
+            return ComponentOperationResult.Fail("Registro do 20/30 FG Unlock perdeu o hash da DLL gerenciada; remoção bloqueada.");
 
         if (File.Exists(proxyPath))
         {
@@ -435,7 +439,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         // Journaled (#23): the record is stamped with the removal's id first; a crash before it is removed puts the
         // files and the override back as the record still describes them.
         var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
-            _journal, _records, "RTX 20 FG Unlock removal: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+            _journal, _records, "20/30 FG Unlock removal: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
@@ -456,18 +460,18 @@ public sealed partial class Dlssg2030UnlockDeploymentService
             // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
             // value stays, #30); the record kept so the restored files stay owned.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "fg2030").ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado", removal: true);
+            if (rollback.Committed) return DeploymentScope.Landed("20/30 FG Unlock", removal: true);
             if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"20/30 FG Unlock removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record is gone: the commit point. The journal's copies are gone with it, so the empty folders can go.
         await scope.CommitAsync().ConfigureAwait(false);
         PruneModFolder(record.BinaryDirectory);
 
         return ComponentOperationResult.Ok((preserveIni
-            ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
-            : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
+            ? $"20/30 FG Unlock removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
+            : "20/30 FG Unlock removido; DLL, INI gerenciado e override Wine foram limpos.")
             + WineDllOverrideService.KeptValueNotes(overrideRestore)
             + (modLeft.Count == 0 ? "" : ProxylessRecordRemoval.NotDeletedPrefix + string.Join("; ", modLeft)));
     }
@@ -488,7 +492,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         var logs = ModLogFiles(Path.Combine(record.BinaryDirectory, ModFolderName));
 
         var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
-            _journal, _records, "RTX 20 FG Unlock removal: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+            _journal, _records, "20/30 FG Unlock removal: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
@@ -503,14 +507,14 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "fg2030").ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado", removal: true);
+            if (rollback.Committed) return DeploymentScope.Landed("20/30 FG Unlock", removal: true);
             if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"20/30 FG Unlock removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
         PruneModFolder(record.BinaryDirectory);
-        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("RTX 20 FG Unlock", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
+        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("20/30 FG Unlock", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
     }
 
     // ── Update ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -533,7 +537,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         }
         catch (Exception ex)
         {
-            return new(false, GetRecord(game)?.Version, null, false, $"Falha ao verificar RTX 20 FG Unlock legado: {ex.Message}");
+            return new(false, GetRecord(game)?.Version, null, false, $"Falha ao verificar 20/30 FG Unlock: {ex.Message}");
         }
     }
 
@@ -559,7 +563,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     {
         var record = GetRecord(game);
         if (record is null)
-            return new ManagedUpdateCheck(false, false, "RTX 20 FG Unlock is not RHI-managed.");
+            return new ManagedUpdateCheck(false, false, "20/30 FG Unlock is not RHI-managed.");
         // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
         if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.Dlssg2030Unlock, record.Version).ConfigureAwait(false) is { } held)
             return held;
@@ -588,7 +592,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     {
         var record = GetRecord(game);
         if (record is null)
-            return ComponentOperationResult.Fail("RTX 20 FG Unlock legado não está instalado pelo RHI.");
+            return ComponentOperationResult.Fail("20/30 FG Unlock não está instalado pelo RHI.");
 
         // F1 (review w12/mfg; toolkit rule since w10 D15): the hold's restart text before the file checks below.
         if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.Dlssg2030Unlock).ConfigureAwait(false) is { } held)
@@ -602,7 +606,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         var proxyRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
         var iniRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, iniPath));
         if (proxyRecord is null || string.IsNullOrWhiteSpace(proxyRecord.Sha256) || !File.Exists(proxyPath))
-            return ComponentOperationResult.Fail("A DLL gerenciada do RTX 20 FG Unlock legado está ausente ou sem hash. Remova/reinstale para recuperar com segurança.");
+            return ComponentOperationResult.Fail("A DLL gerenciada do 20/30 FG Unlock está ausente ou sem hash. Remova/reinstale para recuperar com segurança.");
         if (!File.Exists(iniPath))
             return ComponentOperationResult.Fail($"{IniFileName} foi removido externamente. Atualização bloqueada; use remover/reinstalar para não recriar configuração apagada pelo usuário.");
 
@@ -634,7 +638,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update download/validation failed: {ex.Message}");
+            return ComponentOperationResult.Fail($"20/30 FG Unlock update download/validation failed: {ex.Message}");
         }
         if (package.ProxySource(newProxyName) is not { } proxySource)
             return ComponentOperationResult.Fail(PackageFileMissingPrefix + PackagePathFor(newProxyName));
@@ -651,7 +655,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
                          && string.Equals(await FileHash.Sha256HexAsync(iniPath, cancellationToken).ConfigureAwait(false), iniRecord.Sha256, StringComparison.OrdinalIgnoreCase);
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
-            _journal, "RTX 20 FG Unlock update: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+            _journal, "20/30 FG Unlock update: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         string? staged = null;
@@ -728,14 +732,14 @@ public sealed partial class Dlssg2030UnlockDeploymentService
             if (staged is not null) FileCleanup.TryDelete(staged);
             // Every file goes back from the scope's verified copies; a copy that cannot be put back is kept and named.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado");
+            if (rollback.Committed) return DeploymentScope.Landed("20/30 FG Unlock");
             if (rollback.RolledBack)
             {
                 _overrides.TryRestore(game.PrefixPath, newOverride);
                 if (oldOverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored) _overrides.TryReapply(game.PrefixPath, record.WineOverride);
                 RemoveEmptyFolders(createdFolders);
             }
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"20/30 FG Unlock update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
         if (dropped.Length > 0) PruneModFolder(binaryDir);
@@ -1010,12 +1014,12 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     internal static void ValidateCachedDll(string path)
     {
         if (!File.Exists(path))
-            throw new FileNotFoundException("RTX 20 FG Unlock legado DLL was not downloaded.", path);
+            throw new FileNotFoundException("20/30 FG Unlock DLL was not downloaded.", path);
         var info = new FileInfo(path);
         if (info.Length < MinimumDllSize)
-            throw new InvalidDataException($"RTX 20 FG Unlock legado DLL is implausibly small ({info.Length} bytes). ");
+            throw new InvalidDataException($"20/30 FG Unlock DLL is implausibly small ({info.Length} bytes). ");
         if (PeArchitectureDetector.Detect(path) != PeArchitecture.X64)
-            throw new InvalidDataException("RTX 20 FG Unlock legado payload is not a Windows x64 PE DLL.");
+            throw new InvalidDataException("20/30 FG Unlock payload is not a Windows x64 PE DLL.");
     }
 
     internal static PeArchitecture ResolveArchitecture(DetectedGame game) => GameArchitecture.Of(game);

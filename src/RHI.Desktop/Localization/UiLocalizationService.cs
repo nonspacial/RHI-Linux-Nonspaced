@@ -365,7 +365,7 @@ public static class UiLocalizationService
         ["Ui.FeederPackageNote"] = "Feeder Full uses RenoDX DLSS5 as the default neural consumer and keeps Deep Fried Chicken as a manual alternative. With RenoDX DLSS5, RHI downloads the dedicated consumer automatically. With DFC, the official package is validated against SHA256SUMS.txt and known AES packages use the public upstream password without persistence. Only one neural consumer may be used per installation.",
         ["Ui.QuickPackages"] = "Quick packages:",
         ["Ui.XdgSettingsNote"] = "Settings are native XDG settings and include optional add-on monitoring, detailed/compact view, tray/close-to-tray and MOTD preferences. Windows-only controls such as NVAPI and driver profiles remain outside RHI-Linux.",
-        ["Ui.ManagedComponentsNote"] = "ReShade, RenoDX HDR, RenoDX Upgrade, OptiScaler, RE Framework, ReLimiter, Display Commander, Universal MFG, legacy RTX 20 FG Unlock, and per-game add-ons are available on compatible Wine/Proton targets. DirectX translation remains the runner's responsibility on Linux. External installations remain protected from removal.",
+        ["Ui.ManagedComponentsNote"] = "ReShade, RenoDX HDR, RenoDX Upgrade, OptiScaler, RE Framework, ReLimiter, Display Commander, Universal MFG, 20/30 FG Unlock, and per-game add-ons are available on compatible Wine/Proton targets. DirectX translation remains the runner's responsibility on Linux. External installations remain protected from removal.",
         ["Ui.ExtrasNote"] = "Extra integrations · UAL and ShortFuse orchestration.",
         ["Ui.PerGameOrchestration"] = "Per-game orchestration",
         ["Ui.LinuxPolicyNote"] = "Linux policy: DirectX translation belongs to the selected Wine/Proton runner; RHI-Linux does not install, update, replace or remove translation-layer DLLs, except DX9 HDR, which you add per game from its row. HDR only prepares a per-game launch profile. Store launchers must apply that profile; RHI does not wrap the launcher process.",
@@ -682,7 +682,7 @@ public static class UiLocalizationService
         // w12/pins rows
         // w12/hdr-wsi rows
         // w12 integration rows (message sweep): wave-12 check results that had no PT-BR presentation.
-        ("RTX 20 FG Unlock is not RHI-managed.", "O RTX 20 FG Unlock não é gerenciado pelo RHI."),
+        ("20/30 FG Unlock is not RHI-managed.", "O 20/30 FG Unlock não é gerenciado pelo RHI."),
         ("Ultimate ASI Loader is not RHI-managed.", "O Ultimate ASI Loader não é gerenciado pelo RHI."),
         // w12 follow-up rows
         // Re-review mfg N2: one line, with its way out, for a record without its proxy DLL's name (three MFG families).
@@ -788,13 +788,13 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.ModFolderLinkPrefix, "A pasta dlssg_sm86 ao lado do jogo é um link, e o RHI não grava através de links: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.PackageFileChangedPrefix, "Não atualizado: um arquivo do pacote do DLSSG 20/30 foi alterado fora do RHI, e uma atualização nunca o substitui. Remova e instale de novo: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.RetiredProxyTargetTakenPrefix, "A winhttp.dll não é mais oferecida e o RHI move esta instalação para version.dll, mas esse nome está ocupado. Remova e instale com outro nome de DLL: "),
-        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.InstalledPrefix, "RTX 20 FG Unlock legado instalado com dlssg_sm86.ini e a pasta dlssg_sm86: "),
+        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.InstalledPrefix, "20/30 FG Unlock instalado com dlssg_sm86.ini e a pasta dlssg_sm86: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.InstalledNote, " O suporte sob VKD3D-Proton permanece experimental e deve ser confirmado em jogo real."),
-        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.UpdatedPrefix, "RTX 20 FG Unlock legado atualizado para o pacote da release "),
+        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.UpdatedPrefix, "20/30 FG Unlock atualizado para o pacote da release "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.UpdatedIniKeptNote, " O seu dlssg_sm86.ini foi mantido."),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.UpdatedIniReplacedNote, " O dlssg_sm86.ini agora vem da nova release."),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.UpdatedProxyMovedNote, " A winhttp.dll não é mais oferecida, então ele agora roda como version.dll."),
-        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.CurrentPrefix, "RTX 20 FG Unlock legado está na release mais recente: "),
+        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.CurrentPrefix, "20/30 FG Unlock está na release mais recente: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.LatestPrefix, "Release mais recente do DLSSG 20/30: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.UpdateAvailablePrefix, "Atualização do DLSSG 20/30 disponível: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.OldLayoutSuffix, " (DLL única, antes do pacote da release)"),
@@ -802,7 +802,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.RollbackIncompletePrefix, "A instalação do Luma Framework falhou e a reversão não foi concluída (detalhes em rhi.log): "),
         ("Universal MFG update failed: ", "Falha na atualização do Universal MFG: "),
         ("DLSS Enabler Standalone update failed: ", "Falha na atualização do DLSS Enabler Standalone: "),
-        ("RTX 20 FG Unlock legado update failed: ", "Falha na atualização do RTX 20 FG Unlock legado: "),
+        ("20/30 FG Unlock update failed: ", "Falha na atualização do 20/30 FG Unlock: "),
         ("RE Framework update failed: ", "Falha na atualização do RE Framework: "),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.NightlyLookupFailedMessage, "Não foi possível consultar no GitHub a build nightly atual do ReShade."),
         ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
@@ -2025,6 +2025,13 @@ public static class UiLocalizationService
             " Estes arquivos Intel XeSS mudaram desde que o RHI os colocou, então ficaram como estão: "),
         (RHI.Platform.Linux.Deployment.IntelXessFiles.BackupsLeftPrefix,
             " As cópias do próprio jogo ficam nestas cópias de segurança, porque o arquivo mudou desde que o RHI o colocou: "),
+        // w14/extras-fg-2 rows (#281: the FG unlock rows' notes, no card generation)
+        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.AvailableNotePrefix,
+            "Ativa o DLSS Frame Generation (até 6X) em GPUs RTX 20 e 30 (RTX 20 experimental); o mod detecta a placa sozinho. "
+            + "Somente DirectX 12, driver NVIDIA R580 ou mais novo, sem ASI Loader nem ReShade. Experimental sob Proton/VKD3D. Proxy: "),
+        (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.AvailableNotePrefix,
+            "DLSS Multi Frame Generation acima de 2x (até 6x) em GPUs RTX 40 e RTX 30 (RTX 20 experimental), "
+            + "mais a geração de quadros XeSS (XeMFG) em qualquer GPU. DirectX 12, Vulkan experimental. O RHI verifica os arquivos e protege os existentes. Proxy: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

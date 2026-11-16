@@ -26,7 +26,7 @@ public sealed class Wave12MessageLocalizationTests
         { UltimateAsiLoaderDeploymentService.ArchitectureChangedPrefix + "x86 → x64", "no longer has the architecture" },
         { ManagedUpdateFileGuard.MissingProxyNameMessage, "has no proxy DLL name" }, // w12 follow-up (re-review mfg N2)
         { "Ultimate ASI Loader is not RHI-managed.", "is not RHI-managed" },
-        { "RTX 20 FG Unlock is not RHI-managed.", "is not RHI-managed" },
+        { "20/30 FG Unlock is not RHI-managed.", "is not RHI-managed" },
         // shaders (#239–#241)
         { ReShadeShaderPackService.ProtectedShaderFilePrefix + "/jogos/Exemplo/reshade-shaders/RHI/Prod80/Shaders/x.fx", "outside RHI" },
         { ReShadeShaderPackService.LinkedShaderFolderPrefix + "/jogos/Exemplo/reshade-shaders/RHI", "is a link" },
@@ -56,7 +56,7 @@ public sealed class Wave12MessageLocalizationTests
         { RHI.Platform.Linux.Network.NexusModUpdateCheck.ModNotShownMessage, "would not show this mod's files" }, // follow-up B25
         // w12 final review M1: Remove of a record without its proxy DLL name (one row per fixed part)
         { ProxylessRecordRemoval.Message("Universal MFG", []), "had no proxy DLL name" },
-        { ProxylessRecordRemoval.Message("RTX 20 FG Unlock", [P]), "Files RHI did not delete" },
+        { ProxylessRecordRemoval.Message("20/30 FG Unlock", [P]), "Files RHI did not delete" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [], ProxylessRecordRemoval.ChainedOriginalBackNote), "is back under its own name" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P], ProxylessRecordRemoval.ChainedOriginalMissingNote), "was left where it is" },
         { ProxylessRecordRemoval.Message("Ultimate ASI Loader", [P], ProxylessRecordRemoval.ChainedOriginalMissingNote), "delete it yourself" },
