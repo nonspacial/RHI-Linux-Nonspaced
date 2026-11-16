@@ -1592,3 +1592,20 @@ never RHI's here). Nexus Mods files reach RHI as dropped add-ons or Luma package
 - **Config button and UE-Extended Engine.ini with several PCGW config paths** (not applicable): RHI Linux never used
   PCGamingWiki's config paths (see #12); the Engine.ini RenoDX writes (#217/#218) has its own lookup, which this lane
   did not change.
+
+### #290 — Block Steam updates (2.9.4)
+
+Upstream 2.9.4 adds "Block Steam updates" to the Game settings cog beside a Steam game's title: the game's Steam app
+manifest is made read-only so Steam cannot update the game, and turning it off lets Steam update again. Ported as a
+header action beside Favourite / Hide ("Block Steam updates" / "Allow Steam updates"), shown only for a Steam game whose
+manifest RHI finds; Linux has no Game settings cog yet (the header is restyled in phase 2 of wave 14). The tooltip says
+what it does to the user's Steam: Steam may show the game as needing an update, or report a disk write error, while it
+is blocked.
+
+Linux details: the manifest is `steamapps/appmanifest_<appid>.acf` in the game's own Steam library (the parent of
+`steamapps/common/<installdir>`), so native and Flatpak Steam libraries and extra library folders all work. RHI checks
+that the manifest's `appid` and `installdir` are this game's before touching it. Only the file's mode changes (all write
+bits off; Allow gives the owner write back), never its contents. Blocking is refused while Steam is updating the game
+(`StateFlags` update running, started or paused); an update that is only queued can be blocked, which is the point. The
+state is read from the file every time, so if Steam replaces the manifest with a new file the switch reads "Block"
+again. Not journaled: nothing in the game folder changes, and the change is undone by the same switch.

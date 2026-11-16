@@ -2115,6 +2115,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         OnPropertyChanged(nameof(SelectedPrefix));
         OnPropertyChanged(nameof(SelectedExecutable));
         OnPropertyChanged(nameof(SelectedBinaryDirectory));
+        NotifySteamUpdateBlock(); // #290
         Runtime.NotifySection();
         OnPropertyChanged(nameof(HasSelectedGame));
         OnPropertyChanged(nameof(SelectedGameHasNotes));

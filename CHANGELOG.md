@@ -33,6 +33,9 @@ Wave 14 — library-updates
   value must be a whole number from 20 to 1000 (upstream 2.8.9).
 - **Games that ship FFmpeg, Qt, SDL or a web view no longer read as DirectX 12** when nothing else says which API they
   use (OpenMW, for example; upstream 2.9.2).
+- **Block Steam updates** (upstream 2.9.4): a new action beside Favourite and Hide for Steam games makes the game's Steam
+  app manifest read-only, so Steam can't update the game and your mods keep working until they're updated. Allow Steam
+  updates turns it off. Refused while Steam is in the middle of updating the game.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
