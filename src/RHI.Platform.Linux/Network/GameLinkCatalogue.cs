@@ -130,6 +130,29 @@ public sealed partial class GameLinkCatalogue
     /// <summary>Every game the Ultra+ list names (its own spelling), for the new-mods notice; empty until loaded.</summary>
     public IReadOnlyList<GameLinkEntry> UltraPlusGames => _ultraPlus.Entries;
 
+    /// <summary>
+    /// #256 (upstream 2.8.8 Available mods): every game on the Ultra+ list once that list (live or the last good copy) has
+    /// loaded — waits for that list only — else null. A game's page is the manifest's <c>ultraPlusUrlOverrides</c> entry for
+    /// its name when the manifest has one on the Ultra+ site (upstream <c>UltraPlusService.ResolveUrl</c>), else the list's.
+    /// </summary>
+    public async Task<IReadOnlyList<GameLinkEntry>?> UltraPlusGamesAsync(CancellationToken cancellationToken = default)
+    {
+        await _ultraPlus.LoadAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (!_ultraPlus.IsLoaded) return null;
+        IReadOnlyDictionary<string, string>? overrides = null;
+        try { overrides = _policy is null ? null : (await _policy(cancellationToken).ConfigureAwait(false))?.UltraPlusUrlOverrides; }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AppLog.Warn("game-links", "Manifest unavailable for the Ultra+ page overrides; using the Ultra+ list's pages", ex);
+        }
+        return _ultraPlus.Entries
+            .Select(entry => overrides is not null && overrides.TryGetValue(entry.Name, out var page) && SafePage(page, LinkHosts.UltraPlus) is { } safe
+                ? entry with { Url = safe }
+                : entry)
+            .ToArray();
+    }
+
     /// <summary>The game's Ultra+ page: the manifest's, else the Ultra+ list's, else null.</summary>
     public string? UltraPlusPageFor(DetectedGame? game)
         => game is null ? null : SafePage(game.UltraPlusUrlOverride, LinkHosts.UltraPlus) ?? _ultraPlus.Find(NexusGameCatalogue.NormalizeName(game.Name))?.Url;

@@ -112,21 +112,9 @@ public sealed class RenoDxUnityDatabaseService
     public const string PinnedUrl =
         "https://raw.githubusercontent.com/RankFTW/RHI/94da8c3ab0d878db91588fdd2c14bcf4c3b354fd/database/RenoDXdb-unity.json";
 
-    public static readonly TimeSpan DefaultFreshness = TimeSpan.FromHours(1);
-    private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
-    private const long MaxBytes = 8 * 1024 * 1024;
+    public static readonly TimeSpan DefaultFreshness = PinnedGitHubDatabaseFile<RenoDxUnityDatabase>.DefaultFreshness;
 
-    private readonly HttpClient _http;
-    private readonly string _cachePath;
-    private readonly string _etagPath;
-    private readonly string _liveUrl;
-    private readonly string? _fallbackUrl;
-    private readonly TimeSpan _freshness;
-    private readonly TimeProvider _time;
-    private readonly SemaphoreSlim _gate = new(1, 1);
-    private RenoDxUnityDatabase? _data;
-    private DateTimeOffset _loadedAt;
-    private DateTimeOffset _retryAfterFailure = DateTimeOffset.MinValue;
+    private readonly PinnedGitHubDatabaseFile<RenoDxUnityDatabase> _file;
 
     public RenoDxUnityDatabaseService(
         HttpClient http,
@@ -135,28 +123,53 @@ public sealed class RenoDxUnityDatabaseService
         string? fallbackUrl = PinnedUrl,
         TimeSpan? freshness = null,
         TimeProvider? timeProvider = null)
-    {
-        _http = http;
-        _cachePath = cachePath ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "renodx", "RenoDXdb-unity.json");
-        _etagPath = _cachePath + ".etag";
-        _liveUrl = RequireGitHubHttps(liveUrl ?? LiveUrl);
-        _fallbackUrl = fallbackUrl is null ? null : RequireGitHubHttps(fallbackUrl);
-        _freshness = freshness ?? DefaultFreshness;
-        _time = timeProvider ?? TimeProvider.System;
-    }
+        => _file = new("Unity database", http, cachePath ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "renodx", "RenoDXdb-unity.json"),
+            liveUrl ?? LiveUrl, fallbackUrl, raw => RenoDxUnityDatabase.Parse(raw), freshness, timeProvider);
+
+    internal static bool IsAllowedSource(string url) => PinnedGitHubDatabaseFile<RenoDxUnityDatabase>.IsAllowedSource(url);
+
+    /// <summary>Returns the database, or null when no source is reachable (retried after a pause).</summary>
+    public Task<RenoDxUnityDatabase?> GetAsync(CancellationToken cancellationToken = default) => _file.GetAsync(cancellationToken);
+}
+
+/// <summary>
+/// One of upstream RHI's database files on raw.githubusercontent.com (#15 Unity, #257 Source): revalidated with its ETag,
+/// kept <see cref="DefaultFreshness"/> in memory, the last good copy and its ETag persisted under the cache dir and used
+/// when the live file cannot be read, then a copy pinned at a commit. HTTPS on raw.githubusercontent.com only, 8 MB cap.
+/// <paramref name="parse"/> returns null for a file with no usable entries (it is then not used).
+/// </summary>
+internal sealed class PinnedGitHubDatabaseFile<T>(
+    string name, HttpClient http, string cachePath, string liveUrl, string? fallbackUrl, Func<byte[], T?> parse,
+    TimeSpan? freshness = null, TimeProvider? timeProvider = null) where T : class
+{
+    public static readonly TimeSpan DefaultFreshness = TimeSpan.FromHours(1);
+    private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
+    private const long MaxBytes = 8 * 1024 * 1024;
+
+    private readonly HttpClient _http = http;
+    private readonly string _cachePath = cachePath;
+    private readonly string _etagPath = cachePath + ".etag";
+    private readonly string _liveUrl = RequireGitHubHttps(name, liveUrl);
+    private readonly string? _fallbackUrl = fallbackUrl is null ? null : RequireGitHubHttps(name, fallbackUrl);
+    private readonly TimeSpan _freshness = freshness ?? DefaultFreshness;
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private T? _data;
+    private DateTimeOffset _loadedAt;
+    private DateTimeOffset _retryAfterFailure = DateTimeOffset.MinValue;
 
     internal static bool IsAllowedSource(string url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri)
            && uri.Scheme == Uri.UriSchemeHttps
            && uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase);
 
-    private static string RequireGitHubHttps(string url)
+    private static string RequireGitHubHttps(string name, string url)
         => IsAllowedSource(url)
             ? url
-            : throw new ArgumentException($"Unity database source must be HTTPS on raw.githubusercontent.com: {url}", nameof(url));
+            : throw new ArgumentException($"{name} source must be HTTPS on raw.githubusercontent.com: {url}", nameof(url));
 
     /// <summary>Returns the database, or null when no source is reachable (retried after a pause).</summary>
-    public async Task<RenoDxUnityDatabase?> GetAsync(CancellationToken cancellationToken = default)
+    public async Task<T?> GetAsync(CancellationToken cancellationToken = default)
     {
         if (_data is not null && _time.GetUtcNow() - _loadedAt < _freshness) return _data;
 
@@ -182,7 +195,7 @@ public sealed class RenoDxUnityDatabaseService
         }
     }
 
-    private async Task<RenoDxUnityDatabase?> LoadAsync(CancellationToken cancellationToken)
+    private async Task<T?> LoadAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -219,7 +232,7 @@ public sealed class RenoDxUnityDatabaseService
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException or InvalidDataException)
         {
-            // Both sources unavailable; installs proceed without Unity database keys.
+            // Both sources unavailable; callers go on without this database.
         }
         return null;
     }
@@ -240,20 +253,20 @@ public sealed class RenoDxUnityDatabaseService
             return (true, null, etag);
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength > MaxBytes)
-            throw new InvalidDataException("Unity database response is too large.");
+            throw new InvalidDataException($"{name} response is too large.");
         var raw = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
         if (raw.Length > MaxBytes)
-            throw new InvalidDataException("Unity database response is too large.");
+            throw new InvalidDataException($"{name} response is too large.");
         return (false, raw, response.Headers.ETag?.Tag);
     }
 
-    private static RenoDxUnityDatabase? Parse(byte[] raw)
+    private T? Parse(byte[] raw)
     {
-        try { return RenoDxUnityDatabase.Parse(raw); }
+        try { return parse(raw); }
         catch (JsonException) { return null; }
     }
 
-    private async Task<RenoDxUnityDatabase?> ReadCacheAsync(CancellationToken cancellationToken)
+    private async Task<T?> ReadCacheAsync(CancellationToken cancellationToken)
     {
         if (!File.Exists(_cachePath)) return null;
         try { return Parse(await File.ReadAllBytesAsync(_cachePath, cancellationToken).ConfigureAwait(false)); }

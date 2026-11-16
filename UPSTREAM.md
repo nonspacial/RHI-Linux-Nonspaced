@@ -30,7 +30,7 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 
 ### #11 — Available HDR mods, collapsed-section summaries, DLL-naming dropdowns (2.7.6)
 
-- **Available HDR mods.** Toolbar button next to Quick start opens a searchable list of every game in the RenoDX and Luma catalogues (not only the library, as upstream), with ✓ / 🔨 (work in progress) / ✗ per mod and a link (RenoDX first, else Luma). Rows are joined by the normalised name both catalogues already use rather than upstream's exact name. Since #197 the RenoDX column holds every named mod of the RHI database, also those with only a Nexus Mods or Discord link (the row links there), and the games of upstream's UE-Extended database (`RenoDXdb-unreal.json`). Linux deviation: Luma rows have no Nexus fallback link (the Luma catalogue the installer uses has none). Only http(s) links are offered to the desktop opener. If one catalogue cannot be loaded the dialog says so and shows the other.
+- **Available HDR mods** (**Available mods** since #256). Toolbar button next to Quick start opens a searchable list of every game in the RenoDX and Luma catalogues (not only the library, as upstream), with ✓ / 🔨 (work in progress) / ✗ per mod and a link (RenoDX first, else Luma). Rows are joined by the normalised name both catalogues already use rather than upstream's exact name. Since #197 the RenoDX column holds every named mod of the RHI database, also those with only a Nexus Mods or Discord link (the row links there), and the games of upstream's UE-Extended database (`RenoDXdb-unreal.json`). Linux deviation: Luma rows have no Nexus fallback link (the Luma catalogue the installer uses has none). Only http(s) links are offered to the desktop opener. If one catalogue cannot be loaded the dialog says so and shows the other. Since upstream 2.8.8 (#256, #257, see the 2.8.8 release notes below) the dialog is **Available mods**: an Ultra+ column, Source engine games in the RenoDX column, every tick a link to that mod's page instead of the link column, per-mod counts and mod filters in the search box.
 - **Collapsed-section summaries.** A collapsed section shows one line under its title: Managed components lists installed components with versions (upstream "Components"), Extras shows ASI Loader and ShortFuse with its version, Runtime shows a forced graphics API (`API: DX11`, upstream "Game Overrides"). The DLSS / Streamline header already shows its summary line at all times; ReShade profile has no upstream counterpart. Upstream's Neural Rendering section and RS channel / launch-argument overrides have no matching Linux section.
 - **DLL-naming dropdowns: not ported.** No Linux deployment service consumes a DLL name override: ReShade picks its proxy from the graphics API (`dxgi.dll`, `d3d9.dll`, `opengl32.dll`, or `ReShade64.dll` beside OptiScaler), OptiScaler always deploys as `dxgi.dll`, and Display Commander is a ReShade add-on on Linux, not a proxy DLL. The manifest fields `ReShadeDllNameOverride` / `DisplayCommanderDllNameOverride` / `OptiScalerDllNameOverride` are parsed but unused. Offering a dropdown needs name-aware install, update, uninstall, Wine override and coexistence logic first; tracked on the ticket.
 
@@ -376,7 +376,7 @@ build.
 ### #197 — Available HDR mods: UE-Extended rows and Nexus/Discord-only RenoDX mods
 
 - The RenoDX column now lists every named mod of the RHI database (`RenoDXdb.json`), also the ones RHI cannot download because their author publishes them only on Nexus Mods or Discord; their row's Download button opens that page (upstream: download, else Nexus, else Discord). Only https links are offered.
-- Games of RHI's UE-Extended database (`RenoDXdb-unreal.json`, RankFTW/rhi-repo, read under the component-notes download policy, 1 h cache, last good copy offline) join the RenoDX column with ✓ or 🔨 by their `Status` and no link, as upstream; a named mod for the same game keeps its own row. Order as upstream: named mods, UE-Extended, Unity, then Luma merged in by name. The list itself is built once by the app (`AppComposition.HdrModsCatalog`) and shares the UE-Extended database instance with the ⓘ dialogs.
+- Games of RHI's UE-Extended database (`RenoDXdb-unreal.json`, RankFTW/rhi-repo, read under the component-notes download policy, 1 h cache, last good copy offline) join the RenoDX column with ✓ or 🔨 by their `Status` and no link, as upstream; a named mod for the same game keeps its own row. Order as upstream: named mods, UE-Extended, Unity, then Luma merged in by name. The list itself is built once by the app (`AppComposition.HdrModsCatalog`) and shares the UE-Extended database instance with the ⓘ dialogs. Since #256 (upstream 2.8.8) the Download button is gone: the RenoDX ✓/🔨 opens the mod's own link, and a UE-Extended, Unity or Source row's tick opens the RenoDX wiki's mod list; #257 adds the Source engine database's games after the Unity ones.
 
 ### #185 — "New mods" notice
 
@@ -1356,3 +1356,39 @@ is left, and the result line names it ("Not RHI's, so left in the game folder �
 wherever the file is. The component rows also look in the AddonPath folder when it lies outside the game tree
 (upstream's MFG Ada Unlock check reads the AddonPath folder; the Linux file index already covered an AddonPath inside
 the game). An AddonPath outside the game folder is used, as before (Luma relies on it); it is not refused.
+
+<!-- w13/available-mods notes -->
+
+### #256 — Available HDR mods becomes Available mods: Ultra+ column, ticks link to mod pages, counts, mod filters
+
+Behavioural port of upstream `54ec8f2` (`MainWindow.Events.Settings.cs`, `Models/HdrModEntry.cs`,
+`MainViewModel.GetAllHdrMods`). The toolbar button, dialog title, tooltip and localisation keys say **Available mods**
+(`Ui.AvailableMods`, `Win.RHILinuxAvailableMods`; PT-BR "Mods disponíveis"). Columns: Game, RenoDX, Luma, **Ultra+**.
+Ultra+ rows come from the theultraplace.com games list the card links already read (#183,
+`~/.cache/rhi-linux/links/ultraplus-games.json`, 24 h); the dialog waits for that list only, not the ultrawide or HDR
+lists. A game's Ultra+ page is the manifest's `ultraPlusUrlOverrides` entry for its name when that page is on
+theultraplace.com (upstream `UltraPlusService.ResolveUrl`), else the list's. Rows are joined by the dialog's normalised
+name (as RenoDX and Luma already are; upstream also normalises for Ultra+), the first Ultra+ entry for a name wins, and
+a game with only an Ultra+ mod gets its own row.
+
+Every ✓ or 🔨 with a page is a button that opens it; ✗ is plain text. The separate Download column is gone. RenoDX opens
+the mod's own link (download, else Nexus Mods, else Discord, #197), and a game covered only by a generic add-on
+(UE-Extended, Unity, Source) opens the RenoDX wiki's mod list (`github.com/clshortfuse/renodx/wiki/Mods`), as upstream;
+Luma opens its download link; Ultra+ its game page. Link checks are unchanged per site: RenoDX and Luma links must be
+http(s), Ultra+ pages https on theultraplace.com. The top line reads "{n} RenoDX mods, {n} Luma mods, {n} Ultra+ mods"
+(upstream's counts), then which source could not be loaded (RenoDX or Luma catalogue as before, the Source database, the
+Ultra+ list); the other columns still show. Search: a leading `renodx`, `luma` or `ultra+` (also `ultra` and
+`ultraplus`, upstream's tokens), any case, keeps only games with that mod, and the rest of the text narrows by name
+(`luma dead`); any other first word is a plain name search. Linux deviation kept from #11: the list covers the
+catalogues, not only the library, so the counts are catalogue-wide.
+
+### #257 — Available mods: Source engine games from the RenoDX Source database
+
+Behavioural port of upstream `698956d` (`Models/RenoDXDbSourceEntry.cs`, `RenoDXDbService.FetchSourceEntriesAsync`) for
+the database upstream `f5678e0` adds to its editor. `RenoDXdb-source.json` is read from RankFTW/rhi-repo `main` as the
+Unity database is (#15; the loader is now shared): HTTPS on raw.githubusercontent.com only, 8 MB cap, kept 1 h in
+memory, revalidated with its ETag, the last good copy and its ETag in `~/.cache/rhi-linux/renodx/`, then the copy pinned
+at RHI 2.8.8 (rhi-repo `9a9cf39`, the file's only commit, 13 games). Its games join the RenoDX column after the Unity
+ones (upstream's order), ✓ or 🔨 by `Status`, never over a named mod's row; Luma and Ultra+ merge into them by name.
+`Bitness` is not read (upstream ignores it as well). A database that cannot be loaded leaves those rows out and the
+dialog says so. Installing the Source add-on from RHI is not part of this (upstream added it in 2.9.3).

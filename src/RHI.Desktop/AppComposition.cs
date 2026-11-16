@@ -37,7 +37,7 @@ internal sealed class AppComposition
     public required LumaCatalogService LumaCatalog { get; init; }
     public required UpstreamRhiManifestService UpstreamManifest { get; init; }
     // w3/sync rows
-    /// <summary>RHI Unity database for the Available HDR mods list (#126); the RenoDX installer keeps its own instance (same disk cache, ETag revalidated).</summary>
+    /// <summary>RHI Unity database for the Available mods list (#126); the RenoDX installer keeps its own instance (same disk cache, ETag revalidated).</summary>
     public RenoDxUnityDatabaseService? RenoDxUnityDatabase { get; init; }
     // w3/journal rows
     // w3/scan rows
@@ -52,9 +52,9 @@ internal sealed class AppComposition
     /// <summary>#177 Follow newest DLSS / Streamline; handed to the view model by <see cref="CreateViewModel"/>.</summary>
     public UpdatePolicyFeatures? UpdatePolicy { get; init; }
     // w5/catalogue-info rows
-    /// <summary>#184/#197: RHI's UE-Extended database (ⓘ notes, Available HDR mods rows); one instance, one 1 h cache.</summary>
+    /// <summary>#184/#197: RHI's UE-Extended database (ⓘ notes, Available mods rows); one instance, one 1 h cache.</summary>
     public RenoDxUnrealDatabaseService? RenoDxUnrealDatabase { get; init; }
-    /// <summary>#197: the Available HDR mods list (RenoDX database incl. Nexus/Discord-only mods, UE-Extended, Unity, Luma).</summary>
+    /// <summary>#197/#256/#257: the Available mods list (RenoDX database incl. Nexus/Discord-only mods, UE-Extended, Unity, Source, Luma, Ultra+).</summary>
     public AvailableHdrModsCatalog? HdrModsCatalog { get; init; }
     /// <summary>#185: the lists the "New mods" notice compares with the seen sets.</summary>
     public NewModsSources? NewModsSources { get; init; }
@@ -464,7 +464,9 @@ internal sealed class AppComposition
             UpdatePolicy = updatePolicy,
             // w5/catalogue-info rows
             RenoDxUnrealDatabase = renodxUnrealDatabase,
-            HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog, renodxUnityDatabase, renodxUnrealDatabase),
+            // #256/#257: Available mods adds the Ultra+ list the card links read and RenoDX's Source engine database.
+            HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog, renodxUnityDatabase, renodxUnrealDatabase,
+                new RenoDxSourceDatabaseService(http), parity.GameLinks.Links.UltraPlusGamesAsync),
             NewModsSources = new NewModsSources(new SeenModsStore(),
                 async ct => (await renodxCatalog.FetchListingAsync(ct).ConfigureAwait(false))
                     .Where(mod => mod.SnapshotUrl64 is not null || mod.SnapshotUrl32 is not null || mod.NexusUrl is not null).Select(mod => mod.Name).ToArray(),

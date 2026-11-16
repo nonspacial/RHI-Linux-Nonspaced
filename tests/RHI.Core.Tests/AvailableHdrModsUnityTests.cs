@@ -26,7 +26,8 @@ public sealed class AvailableHdrModsUnityTests : IDisposable
         Assert.Equal(HdrModAvailability.Available, cult.RenoDx);
         Assert.Equal(HdrModAvailability.None, cult.Luma);
         Assert.Null(cult.RenoDxUrl);
-        Assert.Null(cult.DownloadUrl);
+        Assert.Equal(AvailableHdrModsCatalog.RenoDxWikiModsUrl, cult.RenoDxLink); // #256
+        Assert.Null(cult.LumaUrl);
         Assert.Equal(HdrModAvailability.WorkInProgress, entries.Single(e => e.Name == "Hollow Knight: Silksong").RenoDx);
     }
 
@@ -45,7 +46,7 @@ public sealed class AvailableHdrModsUnityTests : IDisposable
         var cuphead = entries.Single(e => e.Name == "Cuphead");
         Assert.Equal(HdrModAvailability.Available, cuphead.RenoDx);
         Assert.Equal(HdrModAvailability.Available, cuphead.Luma);
-        Assert.Equal("https://github.com/rhi-tests/cuphead.zip", cuphead.DownloadUrl);
+        Assert.Equal("https://github.com/rhi-tests/cuphead.zip", cuphead.LumaUrl);
     }
 
     [Fact]

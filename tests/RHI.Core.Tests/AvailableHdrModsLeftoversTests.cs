@@ -31,10 +31,10 @@ public sealed class AvailableHdrModsLeftoversTests : IDisposable
         ], []).ToDictionary(e => e.Name);
 
         Assert.Equal(HdrModAvailability.Available, entries["Nexus Game"].RenoDx);
-        Assert.Equal("https://www.nexusmods.com/nexusgame/mods/1", entries["Nexus Game"].DownloadUrl);
+        Assert.Equal("https://www.nexusmods.com/nexusgame/mods/1", entries["Nexus Game"].RenoDxUrl);
         Assert.Equal(HdrModAvailability.WorkInProgress, entries["Discord Game"].RenoDx);
-        Assert.Equal("https://discord.gg/abc", entries["Discord Game"].DownloadUrl);
-        Assert.Equal("https://github.com/rhi-tests/both.addon64", entries["Both Game"].DownloadUrl); // RHI's download first, as upstream
+        Assert.Equal("https://discord.gg/abc", entries["Discord Game"].RenoDxUrl);
+        Assert.Equal("https://github.com/rhi-tests/both.addon64", entries["Both Game"].RenoDxUrl); // RHI's download first, as upstream
     }
 
     [Fact]
@@ -52,7 +52,8 @@ public sealed class AvailableHdrModsLeftoversTests : IDisposable
         Assert.Null(entries["A Way Out"].RenoDxUrl); // no RenoDX link, as upstream
         Assert.Equal(HdrModAvailability.Available, entries["Abiotic Factor"].RenoDx);
         Assert.Equal(HdrModAvailability.Available, entries["Abiotic Factor"].Luma); // Luma merges into the UE-Extended row
-        Assert.Equal("https://github.com/rhi-tests/af.zip", entries["Abiotic Factor"].DownloadUrl);
+        Assert.Equal("https://github.com/rhi-tests/af.zip", entries["Abiotic Factor"].LumaUrl);
+        Assert.Equal(AvailableHdrModsCatalog.RenoDxWikiModsUrl, entries["Abiotic Factor"].RenoDxLink); // #256: the generic add-on's tick opens the wiki
         Assert.Equal(HdrModAvailability.Available, entries["Hogwarts Legacy"].RenoDx); // the named mod's status and link
         Assert.Equal("https://github.com/rhi-tests/hl.addon64", entries["Hogwarts Legacy"].RenoDxUrl);
         Assert.Equal(HdrModAvailability.WorkInProgress, entries["Both Engines"].RenoDx); // UE-Extended first, then Unity
@@ -78,7 +79,7 @@ public sealed class AvailableHdrModsLeftoversTests : IDisposable
         var snapshot = await catalog.LoadAsync();
 
         Assert.Equal(["A Plague Tale: Requiem", "Abiotic Factor", "Hades II"], snapshot.Entries.Select(e => e.Name));
-        Assert.Equal("https://www.nexusmods.com/aplaguetalerequiem/mods/50", snapshot.Entries[0].DownloadUrl);
+        Assert.Equal("https://www.nexusmods.com/aplaguetalerequiem/mods/50", snapshot.Entries[0].RenoDxUrl);
         Assert.False(snapshot.RenoDxUnavailable);
         Assert.True(snapshot.LumaUnavailable);
     }

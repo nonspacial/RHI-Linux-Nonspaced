@@ -44,18 +44,19 @@ public sealed class AvailableHdrModsTests
         var alanWake = entries[0];
         Assert.Equal(HdrModAvailability.WorkInProgress, alanWake.RenoDx);
         Assert.Equal(HdrModAvailability.None, alanWake.Luma);
-        Assert.Equal("https://cdn.test/aw2.addon32", alanWake.DownloadUrl);
+        Assert.Equal("https://cdn.test/aw2.addon32", alanWake.RenoDxLink);
 
         var batman = entries[1];
         Assert.Equal(HdrModAvailability.None, batman.RenoDx);
         Assert.Equal(HdrModAvailability.WorkInProgress, batman.Luma);
-        Assert.Null(batman.DownloadUrl);
+        Assert.Null(batman.RenoDxLink);
+        Assert.Null(batman.LumaUrl);
 
         var streetFighter = entries[2];
         Assert.Equal(HdrModAvailability.Available, streetFighter.RenoDx);
         Assert.Equal(HdrModAvailability.Available, streetFighter.Luma);
         Assert.Equal("https://github.com/luma/sf6.zip", streetFighter.LumaUrl);
-        Assert.Equal("https://cdn.test/sf6.addon64", streetFighter.DownloadUrl);
+        Assert.Equal("https://cdn.test/sf6.addon64", streetFighter.RenoDxLink);
     }
 
     [Fact]
@@ -66,8 +67,9 @@ public sealed class AvailableHdrModsTests
             [new LumaCatalogEntry("Local Game", "Someone", "https://github.com/luma/local.zip", "✅", null, null),
              new LumaCatalogEntry("Script Game", "Someone", "javascript:alert(1)", "✅", null, null)]);
 
-        Assert.Equal("https://github.com/luma/local.zip", entries.Single(x => x.Name == "Local Game").DownloadUrl);
-        Assert.Null(entries.Single(x => x.Name == "Script Game").DownloadUrl);
+        Assert.Equal("https://github.com/luma/local.zip", entries.Single(x => x.Name == "Local Game").LumaUrl);
+        Assert.Null(entries.Single(x => x.Name == "Local Game").RenoDxUrl);
+        Assert.Null(entries.Single(x => x.Name == "Script Game").LumaUrl);
     }
 
     [Theory]
