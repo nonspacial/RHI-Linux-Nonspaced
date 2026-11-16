@@ -130,7 +130,7 @@ public sealed partial class OptiScalerPackageProviderTests
         keep = ["20261004"];
         await provider.GetLatestAsync(OptiScalerVariant.Nightly);
 
-        var left = Directory.GetDirectories(Path.Combine(cache, "nightly")).Select(Path.GetFileName).Order().ToArray();
+        var left = Directory.GetDirectories(Path.Combine(cache, "nightly")).Select(dir => Path.GetFileName(dir)).Order().ToArray();
         Assert.Equal(["nightly-20261004", "nightly-20261012", "not-a-build"], left);
         Assert.Equal((0, 0L), provider.RemoveOldNightlyBuilds(["20261004"]));
     }
