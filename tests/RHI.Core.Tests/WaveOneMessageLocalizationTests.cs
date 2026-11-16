@@ -36,8 +36,19 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"{ExternalArchiveRunner.FailedPrefix}7zz (2): {E}";
         yield return $"{ReShadeArchiveExtractor.ArchiveRefusedPrefix}{ExternalArchiveRunner.SymlinkRefusal}pacote/mal -> /etc/hostname";
         yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + ReShadeArchiveExtractor.EmptyArchiveRefusal;
-        yield return Dlssg2030UnlockDeploymentService.BlobMismatchPrefix + "version.dll";
-        yield return Dlssg2030UnlockDeploymentService.BlobMissingPrefix + "version.dll@0123abc";
+        // #261: DLSSG 20/30 installs the release package (the commit blob pin of #41 is gone with the single-DLL path).
+        yield return Dlssg2030UnlockDeploymentService.NoPackagePrefix + "0.4.2";
+        yield return Dlssg2030UnlockDeploymentService.PackageFileMissingPrefix + "dlssg_sm86/runtime/nvngx_dlssg.dll";
+        yield return Dlssg2030UnlockDeploymentService.PackageFileCollisionPrefix + P;
+        yield return Dlssg2030UnlockDeploymentService.ModFolderLinkPrefix + P;
+        yield return Dlssg2030UnlockDeploymentService.PackageFileChangedPrefix + P;
+        yield return Dlssg2030UnlockDeploymentService.RetiredProxyTargetTakenPrefix + P;
+        yield return $"{Dlssg2030UnlockDeploymentService.InstalledPrefix}0.4.2 (winmm.dll).{Dlssg2030UnlockDeploymentService.InstalledNote}";
+        yield return $"{Dlssg2030UnlockDeploymentService.UpdatedPrefix}0.4.2.{Dlssg2030UnlockDeploymentService.UpdatedIniKeptNote}";
+        yield return $"{Dlssg2030UnlockDeploymentService.UpdatedPrefix}0.4.2.{Dlssg2030UnlockDeploymentService.UpdatedIniReplacedNote}{Dlssg2030UnlockDeploymentService.UpdatedProxyMovedNote}";
+        yield return Dlssg2030UnlockDeploymentService.CurrentPrefix + "0.4.2";
+        yield return Dlssg2030UnlockDeploymentService.LatestPrefix + "0.4.2";
+        yield return $"{Dlssg2030UnlockDeploymentService.UpdateAvailablePrefix}0.2.4{Dlssg2030UnlockDeploymentService.OldLayoutSuffix} → 0.4.2";
         yield return ReShadeDeploymentService.NightlyLookupFailedMessage;
         yield return $"{LumaEngineIniOverrideManager.LinkRefusalPrefix}/prefixo/drive_c/Engine.ini -> /outro/Engine.ini";
         yield return LumaFrameworkDeploymentService.RollbackIncompletePrefix + E;

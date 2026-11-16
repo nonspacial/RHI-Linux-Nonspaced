@@ -46,8 +46,11 @@ public static class ProxylessRecordRemoval
     public static bool Applies(LinuxDeploymentRecord record, params string[] metadataKeys)
         => metadataKeys.All(key => string.IsNullOrWhiteSpace(record.Metadata.GetValueOrDefault(key)));
 
-    /// <summary>Hashes every listed file: a file is deleted only while it sits in the record's binary folder and still matches.</summary>
-    public static async Task<Plan> PlanAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    /// <summary>
+    /// Hashes every listed file: a file is deleted only while it sits in the record's binary folder (or, for a package
+    /// such as DLSSG 20/30's <c>dlssg_sm86/</c>, anywhere under one of <paramref name="packageFolders"/> in it) and still matches.
+    /// </summary>
+    public static async Task<Plan> PlanAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken, params string[] packageFolders)
     {
         var delete = new List<string>();
         var left = new List<string>();
@@ -59,7 +62,9 @@ public static class ProxylessRecordRemoval
             var path = Path.GetFullPath(file.Path);
             if (!seen.Add(path)) continue;
             var deletable = folder is not null
-                            && string.Equals(Path.GetDirectoryName(path), folder.TrimEnd(Path.DirectorySeparatorChar), StringComparison.Ordinal)
+                            && (string.Equals(Path.GetDirectoryName(path), folder.TrimEnd(Path.DirectorySeparatorChar), StringComparison.Ordinal)
+                                || packageFolders.Any(sub => path.StartsWith(
+                                    Path.GetFullPath(Path.Combine(folder, sub)).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
                             && !string.IsNullOrWhiteSpace(file.Sha256)
                             && File.Exists(path)
                             && await MatchesAsync(path, file.Sha256!, cancellationToken).ConfigureAwait(false);

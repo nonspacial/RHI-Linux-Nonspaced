@@ -24,7 +24,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task Install_CrashWhileSavingTheRecord_NextStartRemovesProxyAndIni()
     {
         using var fixture = CreateGame("crash-install", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x71), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x71), UpstreamIni()));
         var (service, records, journal, journalDir, ledger, _) = JournaledService(fixture, http);
         using var death = new SimulatedDeath(journal);
         records.SaveFaultForTesting = death.Die;
@@ -45,13 +45,13 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task Update_CrashWhileSavingTheRecord_NextStartPutsThePreviousProxyBack()
     {
         using var fixture = CreateGame("crash-update", 0x8664, GraphicsApi.DirectX12);
-        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x72), UpstreamIni("SM86"));
+        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x72), UpstreamIni());
         using var http = new HttpClient(handler);
         var (service, records, journal, journalDir, ledger, _) = JournaledService(fixture, http);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
         var proxy = Path.Combine(fixture.Bin, "winmm.dll");
         var installed = File.ReadAllBytes(proxy);
-        handler.CommitSha = "fedcba9876543210fedcba9876543210fedcba98";
+        handler.Tag = NewerTag;
         handler.Dll = CreatePe(0x8664, 320 * 1024, 0x73);
         using var death = new SimulatedDeath(journal);
         records.SaveFaultForTesting = death.Die;
@@ -70,7 +70,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task Remove_CrashBeforeTheRecordIsGone_NextStartPutsProxyIniAndOverrideBack()
     {
         using var fixture = CreateGame("crash-remove", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x74), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x74), UpstreamIni()));
         var (service, records, journal, journalDir, ledger, overrides) = JournaledService(fixture, http);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
         var proxy = Path.Combine(fixture.Bin, "winmm.dll");
@@ -99,7 +99,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task Install_PreferenceSaveFails_RollsBackBeforeTheRecordIsEverSaved()
     {
         using var fixture = CreateGame("prefs-fail", 0x8664, GraphicsApi.DirectX12);
-        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x77), UpstreamIni("SM86"));
+        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x77), UpstreamIni());
         using var http = new HttpClient(handler);
         var (service, records, journal, journalDir, ledger, overrides) = JournaledService(fixture, http);
         using var death = new SimulatedDeath(journal);

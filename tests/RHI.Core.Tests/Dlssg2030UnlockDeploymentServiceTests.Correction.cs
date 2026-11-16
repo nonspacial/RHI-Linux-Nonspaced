@@ -13,14 +13,14 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
     public async Task HeldGame_CheckAndUpdate_SayTheHoldsRestartText_BeforeAnyFileCheck()
     {
         var fixture = CreateGame("correction-held", 0x8664, GraphicsApi.DirectX12);
-        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x35), UpstreamIni("SM86"));
+        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x35), UpstreamIni());
         var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var (journal, overrides) = SimulatedDeath.NewJournal(Path.Combine(fixture.Root, "journal"), records);
         var service = new Dlssg2030UnlockDeploymentService(http, records, overrides,
             new Dlssg2030PreferenceStore(Path.Combine(fixture.Root, "prefs.json")), Path.Combine(fixture.Root, "cache"), journal);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
-        handler.CommitSha = NewerCommit;
+        handler.Tag = NewerTag;
         handler.Dll = CreatePe(0x8664, 320 * 1024, 0x36);
         var proxy = Path.Combine(fixture.Bin, "winmm.dll");
         var halfUndone = CreatePe(0x8664, 320 * 1024, 0x38);
@@ -50,7 +50,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         if (shape == "blank") entry.Sha256 = "";
         else record.Files.Remove(entry);
         records.Upsert(record);
-        handler.CommitSha = NewerCommit;
+        handler.Tag = NewerTag;
         handler.Dll = CreatePe(0x8664, 320 * 1024, 0x39);
 
         var check = await service.CheckManagedUpdateAsync(fixture.Game);

@@ -10,46 +10,42 @@ namespace RHI.Core.Tests;
 
 public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
 {
-    private const string Commit = "0123456789abcdef0123456789abcdef01234567";
+    private const string Tag = "0.4.2";
+    private const string NewerTag = "0.4.3";
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-dlssg2030-tests-" + Guid.NewGuid().ToString("N"));
 
     public Dlssg2030UnlockDeploymentServiceTests() => Directory.CreateDirectory(_root);
 
     [Fact]
-    public void UpstreamContract_ProxyAndGpuRoutesMatchCurrentContract()
+    public void UpstreamContract_ProxyNamesFollowTheModsOrder_EachWithItsOwnBuild()
     {
-        Assert.Equal(new[] { "version.dll", "winmm.dll", "dinput8.dll", "winhttp.dll", "dxgi.dll" }, Dlssg2030UnlockDeploymentService.ProxyNames);
-        Assert.Equal("SM86", Dlssg2030UnlockDeploymentService.RouterFor(Dlssg2030UnlockDeploymentService.GpuGenRtx30));
-        Assert.Equal("SM75", Dlssg2030UnlockDeploymentService.RouterFor(Dlssg2030UnlockDeploymentService.GpuGenRtx20));
+        // #261: the order of the mod's alternatives/README.md; winhttp.dll is no longer offered.
+        Assert.Equal(new[] { "version.dll", "winmm.dll", "dbghelp.dll", "dinput8.dll", "dxgi.dll", "d3d12.dll" }, Dlssg2030UnlockDeploymentService.ProxyNames);
+        Assert.Equal("version.dll", Dlssg2030UnlockDeploymentService.PackagePathFor("version.dll"));
+        Assert.Equal("alternatives/winmm.dll", Dlssg2030UnlockDeploymentService.PackagePathFor("winmm.dll"));
+        Assert.Equal("alternatives/dbghelp.dll", Dlssg2030UnlockDeploymentService.PackagePathFor("DBGHELP.DLL"));
+        Assert.Equal("alternatives/d3d12.dll", Dlssg2030UnlockDeploymentService.PackagePathFor("d3d12.dll"));
+        Assert.Null(Dlssg2030UnlockDeploymentService.PackagePathFor("winhttp.dll"));
+        Assert.Equal("version.dll", Dlssg2030UnlockDeploymentService.NormalizeProxyName("winhttp.dll"));
         Assert.Contains("sdli1995/dlssg_for_sm86", Dlssg2030UnlockDeploymentService.RepositoryUrl, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void GitBlobId_MatchesGitHashObject()
+    public async Task Package_WhoseBytesAreNotGitHubsDigest_IsRefused_AndNothingIsCachedOrInstalled()
     {
-        // `printf 'hello\n' | git hash-object --stdin`
-        var path = Path.Combine(_root, "blob.txt");
-        File.WriteAllText(path, "hello\n");
-        Assert.Equal("ce013625030ba8dba906f756967f9e9ca394464a", Dlssg2030UnlockDeploymentService.GitBlobSha1(path));
-    }
-
-    [Fact]
-    public async Task Payload_IsFetchedAtTheResolvedCommit_AndMustMatchGitHubsBlobId()
-    {
-        // #41: the version follows upstream's newest commit (as upstream 2.8.5), but the bytes are taken at that exact
-        // commit and must be the blob GitHub reports for it; anything else is refused and nothing is cached.
-        using var fixture = CreateGame("blob-pin", 0x8664, GraphicsApi.DirectX12);
-        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x41), UpstreamIni("SM75")) { WrongDllBlob = true };
+        using var fixture = CreateGame("digest", 0x8664, GraphicsApi.DirectX12);
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x41), UpstreamIni()) { WrongDigest = true };
         using var http = new HttpClient(handler);
-        var service = CreateService(fixture, http, new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json")));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
 
-        var snapshot = await service.ResolveLatestSnapshotAsync(CancellationToken.None);
-        var error = await Assert.ThrowsAsync<InvalidDataException>(() => service.EnsureCachedPayloadAsync(snapshot, CancellationToken.None));
+        var result = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "version.dll");
 
-        Assert.Equal(Commit, snapshot.CommitSha);
-        Assert.Contains("git blob", error.Message, StringComparison.Ordinal);
-        Assert.False(Directory.Exists(Path.Combine(fixture.Root, "cache", Commit)) &&
-                     Directory.EnumerateFiles(Path.Combine(fixture.Root, "cache", Commit)).Any(), "nothing may be cached");
+        Assert.False(result.Success);
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "cache", Tag, handler.AssetName)));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
+        Assert.False(Directory.Exists(Path.Combine(fixture.Bin, Dlssg2030UnlockDeploymentService.ModFolderName)));
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
     }
 
     [Fact]
@@ -63,14 +59,6 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         fixture.Game.GraphicsApi = GraphicsApi.DirectX12;
         fixture.Game.ForcedArchitecture = PeArchitecture.X86;
         Assert.False(Dlssg2030UnlockDeploymentService.IsGameEligible(fixture.Game));
-    }
-
-    [Fact]
-    public void RouterWriter_MapsAmpereToSm86AndTuringToSm75()
-    {
-        var template = UpstreamIni("SM86");
-        Assert.Contains("Router=SM86", Dlssg2030UnlockDeploymentService.WriteRouter(template, "SM86"), StringComparison.Ordinal);
-        Assert.Contains("Router=SM75", Dlssg2030UnlockDeploymentService.WriteRouter(template, "SM75"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,7 +97,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public void SetPreferences_Rtx30RedirectsToUniversalMfg()
     {
         using var fixture = CreateGame("redirect-prefs", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x28), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x28), UpstreamIni()));
         var service = CreateService(fixture, http, new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json")));
 
         var result = service.SetPreferences(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx30, "version.dll");
@@ -122,7 +110,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Install_Rtx30IsBlockedBeforeNetworkAndRedirectsToUniversalMfg()
     {
         using var fixture = CreateGame("redirect-install", 0x8664, GraphicsApi.DirectX12);
-        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x29), UpstreamIni("SM86"));
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x29), UpstreamIni());
         using var http = new HttpClient(handler);
         var service = CreateService(fixture, http, new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json")));
 
@@ -138,7 +126,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task LegacyRtx30ManagedRecord_RemainsSafelyRemovable()
     {
         using var fixture = CreateGame("legacy-rtx30", 0x8664, GraphicsApi.DirectX12);
-        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x31), UpstreamIni("SM86"));
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x31), UpstreamIni());
         using var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
@@ -166,7 +154,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         // Refs #57: the preference save comes last; an unreadable file must stop the install up front.
         using var fixture = CreateGame("unreadable-prefs", 0x8664, GraphicsApi.DirectX12);
         File.WriteAllText(Path.Combine(fixture.Root, "prefs.json"), "{ not json");
-        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x32), UpstreamIni("SM75"));
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x32), UpstreamIni());
         using var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
@@ -183,47 +171,63 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Install_Rtx20_WritesSm75RouterAndMetadata()
+    public async Task Install_DeploysTheReleasePackage_TheNamesOwnBuild_AndRecordsEveryFile()
     {
         using var fixture = CreateGame("rtx20", 0x8664, GraphicsApi.DirectX12);
         var dll = CreatePe(0x8664, 320 * 1024, 0x32);
-        var ini = UpstreamIni("SM86");
-        using var http = new HttpClient(new DlssgHandler(dll, ini));
+        var ini = UpstreamIni();
+        var handler = new DlssgHandler(dll, ini);
+        using var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         var result = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll");
         Assert.True(result.Success, result.Message);
-        Assert.Contains("Router=SM75", File.ReadAllText(Path.Combine(fixture.Bin, Dlssg2030UnlockDeploymentService.IniFileName)), StringComparison.Ordinal);
+
+        // The winmm build from alternatives/, never version.dll renamed; the INI as the release ships it (no Router written).
+        Assert.Equal(handler.Build("winmm.dll"), File.ReadAllBytes(Path.Combine(fixture.Bin, "winmm.dll")));
+        Assert.NotEqual(handler.Build("version.dll"), handler.Build("winmm.dll"));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
+        Assert.Equal(ini, File.ReadAllText(Path.Combine(fixture.Bin, Dlssg2030UnlockDeploymentService.IniFileName)));
+        foreach (var (name, bytes) in handler.ModFiles)
+            Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(fixture.Bin, "dlssg_sm86", name)));
+        // Docs, readmes, the manifest and the other proxy builds stay out of the game folder.
+        Assert.Equal(["Game.exe", "dlssg_sm86.ini", "winmm.dll"], Directory.GetFiles(fixture.Bin).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(["dlssg_sm86"], Directory.GetDirectories(fixture.Bin).Select(Path.GetFileName));
+
         var record = records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock)!;
-        Assert.Equal("SM75", record.Metadata["FG2030.Router"]);
+        Assert.Equal(Tag, record.Version);
+        Assert.Equal(Tag, record.Metadata["FG2030.ReleaseTag"]);
         Assert.Equal(Dlssg2030UnlockDeploymentService.GpuGenRtx20, record.Metadata["FG2030.GpuGeneration"]);
         Assert.Equal("winmm.dll", record.Metadata["FG2030.ProxyName"]);
-        // Both files matched GitHub's git blob id at the commit (fail-closed), so both count as published-digest.
-        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(dll), VerifiedDownload.PublishedDigest);
-        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(System.Text.Encoding.UTF8.GetBytes(ini)), VerifiedDownload.PublishedDigest, "Ini");
+        Assert.False(record.Metadata.ContainsKey("FG2030.Router"));
+        Assert.Equal(2 + handler.ModFiles.Count, record.Files.Count);
+        Assert.All(record.Files, file => Assert.Equal(DownloadRecordAssert.Sha256Of(File.ReadAllBytes(file.Path)), file.Sha256, ignoreCase: true));
+        Assert.Equal([Dlssg2030UnlockDeploymentService.IniFileName], record.Files.Where(file => file.AllowUserChanges).Select(file => Path.GetFileName(file.Path)));
+        // The package matched the digest GitHub publishes for it.
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(handler.Package), VerifiedDownload.PublishedDigest);
+        Assert.StartsWith(Dlssg2030UnlockDeploymentService.InstalledPrefix + Tag + " (winmm.dll).", result.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Update_RecordsTheNewCommitsDownloads()
+    public async Task Update_RecordsTheNewReleasesDownload()
     {
         // Review w2-trust minor 6: after an update the record names the bytes it now deploys.
         using var fixture = CreateGame("update-download", 0x8664, GraphicsApi.DirectX12);
-        var ini = UpstreamIni("SM86");
-        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x33), ini);
+        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x33), UpstreamIni());
         using var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
 
-        var newer = CreatePe(0x8664, 320 * 1024, 0x34);
-        handler.CommitSha = "fedcba9876543210fedcba9876543210fedcba98";
-        handler.Dll = newer;
+        handler.Tag = NewerTag;
+        handler.Dll = CreatePe(0x8664, 320 * 1024, 0x34);
         var update = await service.UpdateAsync(fixture.Game);
 
         Assert.True(update.Success, update.Message);
         var record = records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock)!;
-        Assert.Equal(handler.CommitSha, record.Metadata["FG2030.CommitSha"]);
-        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(newer), VerifiedDownload.PublishedDigest);
+        Assert.Equal(NewerTag, record.Metadata["FG2030.ReleaseTag"]);
+        Assert.Equal(handler.Build("winmm.dll"), File.ReadAllBytes(Path.Combine(fixture.Bin, "winmm.dll")));
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(handler.Package), VerifiedDownload.PublishedDigest);
     }
 
     [Fact]
@@ -231,7 +235,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     {
         using var fixture = CreateGame("external", 0x8664, GraphicsApi.DirectX12);
         File.WriteAllText(Path.Combine(fixture.Bin, "dxgi.dll"), "foreign");
-        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x33), UpstreamIni("SM86"));
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x33), UpstreamIni());
         using var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
@@ -256,7 +260,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Install_BlocksAnotherRhiManagedProxyBeforeNetwork()
     {
         using var fixture = CreateGame("owned", 0x8664, GraphicsApi.DirectX12);
-        var target = Path.Combine(fixture.Bin, "winhttp.dll");
+        var target = Path.Combine(fixture.Bin, "dinput8.dll");
         File.WriteAllText(target, "owned");
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         records.Upsert(new LinuxDeploymentRecord
@@ -265,10 +269,10 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
             Component = ManagedComponentKind.ReShade, BinaryDirectory = fixture.Bin,
             Files = [new LinuxDeployedFile { Path = target, Sha256 = "deadbeef" }]
         });
-        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x34), UpstreamIni("SM86"));
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x34), UpstreamIni());
         using var http = new HttpClient(handler);
         var service = CreateService(fixture, http, records);
-        var result = await service.InstallAsync(fixture.Game, proxyName: "winhttp.dll");
+        var result = await service.InstallAsync(fixture.Game, proxyName: "dinput8.dll");
         Assert.False(result.Success);
         Assert.Contains("outro componente", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, handler.RequestCount);
@@ -278,7 +282,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Install_RejectsX86PayloadBeforeGameMutation()
     {
         using var fixture = CreateGame("badpayload", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x014c, 320 * 1024, 0x35), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x014c, 320 * 1024, 0x35), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         var result = await service.InstallAsync(fixture.Game);
@@ -293,7 +297,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Remove_ModifiedManagedProxyBlocksBeforeOverrideTeardown()
     {
         using var fixture = CreateGame("modified", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x36), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x36), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         Assert.True((await service.InstallAsync(fixture.Game)).Success);
@@ -309,7 +313,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Remove_UserModifiedIniPreservesConfigAndCleansProxyOverride()
     {
         using var fixture = CreateGame("ini-edit", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x37), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x37), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         Assert.True((await service.InstallAsync(fixture.Game)).Success);
@@ -331,7 +335,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Remove_WhileWineRunsInThePrefix_IsRefusedBeforeTeardown()
     {
         using var fixture = CreateGame("wine-running-remove", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x38), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x38), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         Assert.True((await CreateService(fixture, http, records).InstallAsync(fixture.Game)).Success);
         var proxy = Path.Combine(fixture.Bin, "version.dll");
@@ -354,7 +358,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Remove_FailingAfterTheOverrideWasRestored_PutsRhisOverrideBack()
     {
         using var fixture = CreateGame("remove-fails", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x39), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x39), UpstreamIni()));
         var ledger = Path.Combine(fixture.Root, "deployments.json");
         var records = new LinuxDeploymentRecordStore(ledger);
         var service = CreateService(fixture, http, records);
@@ -377,7 +381,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
     {
         using var fixture = CreateGame("cancel-install", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x34), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x34), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
 
@@ -395,7 +399,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Remove_EntersItsWritePhaseBeforeTheFirstChange_AndRunsToTheEnd()
     {
         using var fixture = CreateGame("cancel-remove", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x35), UpstreamIni("SM86")));
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x35), UpstreamIni()));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
@@ -427,18 +431,19 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         });
     }
 
-    private static string UpstreamIni(string router) => $"""
-        ; Native 0.2.4. Restart the game after changing this file.
-        [Compatibility]
-        Router={router}
-        KernelImage=PTX
-        HardwareBilinear=0
+    /// <summary>A 0.4.x template: no [Compatibility] Router any more (the mod picks the RTX 20 / 30 kernels itself).</summary>
+    private static string UpstreamIni() => """
+        ; DLSSG SM86 - frame generation for Ampere (RTX 30) and newer.
+        [General]
+        Enabled=1
 
         [FrameGeneration]
+        Engine=DLSS
         MaxGeneratedFrames=3
 
         [Logging]
         Level=1
+        Directory=dlssg_sm86\logs
         """;
 
     private static byte[] CreatePe(ushort machine, int size, byte marker)
@@ -456,37 +461,90 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     private sealed record GameFixture(string Root, string Bin, string Prefix, DetectedGame Game) : IDisposable
     { public void Dispose() { } }
 
-    private sealed class DlssgHandler(byte[] dll, string ini) : HttpMessageHandler
+    /// <summary>
+    /// GitHub for sdli1995/dlssg_for_sm86: the latest release (its tag and the dlssg-release-&lt;tag&gt;-x64.zip asset with its
+    /// digest) and the package, built like the real 0.4.2 one (version.dll, alternatives/, dlssg_sm86.ini, dlssg_sm86/, docs).
+    /// </summary>
+    internal sealed class DlssgHandler(byte[] dll, string ini) : HttpMessageHandler
     {
-        /// <summary>The newest upstream commit and its version.dll (an update moves both).</summary>
-        public string CommitSha { get; set; } = Commit;
+        public string Tag { get; set; } = "0.4.2";
         public byte[] Dll { get; set; } = dll;
+        public string Ini { get; set; } = ini;
+
+        /// <summary>The package's files under dlssg_sm86/ (path inside it → bytes); a test may change them for a newer release.</summary>
+        public Dictionary<string, byte[]> ModFiles { get; set; } = new(StringComparer.Ordinal)
+        {
+            ["backend/sm86_backend.dll"] = Bytes(0x51, 4096),
+            ["kernels/fg_kernels.dll"] = Bytes(0x52, 4096),
+            ["runtime/nvngx_dlssg.dll"] = Bytes(0x53, 4096),
+            ["sr/sr_kernels.dll"] = Bytes(0x54, 4096),
+        };
 
         public int RequestCount { get; private set; }
 
-        /// <summary>When set, GitHub reports a blob id that does not belong to the served version.dll.</summary>
-        public bool WrongDllBlob { get; init; }
+        /// <summary>When set, GitHub publishes a digest that does not belong to the served package.</summary>
+        public bool WrongDigest { get; init; }
+
+        public string AssetName => $"dlssg-release-{Tag}-x64.zip";
+        public string AssetUrl => $"https://github.com/sdli1995/dlssg_for_sm86/releases/download/{Tag}/{AssetName}";
+
+        /// <summary>The build the package ships for a proxy name: the root DLL for version.dll, a variant of it for the others.</summary>
+        public byte[] Build(string proxyName)
+        {
+            var bytes = (byte[])Dll.Clone();
+            var index = Array.IndexOf(Dlssg2030UnlockDeploymentService.ProxyNames.ToArray(), proxyName);
+            bytes[^1] = (byte)(bytes[^1] ^ (index + 1));
+            return bytes;
+        }
+
+        public byte[] Package
+        {
+            get
+            {
+                using var stream = new MemoryStream();
+                using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    void Add(string name, byte[] content)
+                    {
+                        var entry = zip.CreateEntry(name);
+                        entry.LastWriteTime = new DateTimeOffset(2026, 11, 14, 0, 0, 0, TimeSpan.Zero);
+                        using var s = entry.Open();
+                        s.Write(content);
+                    }
+                    Add("version.dll", Build("version.dll"));
+                    foreach (var name in Dlssg2030UnlockDeploymentService.ProxyNames.Skip(1)) Add("alternatives/" + name, Build(name));
+                    Add("alternatives/README.md", Encoding.UTF8.GetBytes("# alternatives"));
+                    Add(Dlssg2030UnlockDeploymentService.IniFileName, Encoding.UTF8.GetBytes(Ini));
+                    Add("README.md", Encoding.UTF8.GetBytes("# DLSSG"));
+                    Add("MANUAL.html", Encoding.UTF8.GetBytes("<html></html>"));
+                    Add("docs/INSTALL.md", Encoding.UTF8.GetBytes("# install"));
+                    Add("manifest.json", Encoding.UTF8.GetBytes("{}"));
+                    foreach (var (name, content) in ModFiles) Add("dlssg_sm86/" + name, content);
+                }
+                return stream.ToArray();
+            }
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
             var url = request.RequestUri!.ToString();
-            if (url == Dlssg2030UnlockDeploymentService.CommitsApiUrl)
-                return Task.FromResult(JsonResponse($"[{{\"sha\":\"{CommitSha}\"}}]"));
-            // GitHub's contents API reports each file's git blob id at the commit (#41).
-            if (url == Dlssg2030UnlockDeploymentService.ContentsApiUrl(CommitSha, Dlssg2030UnlockDeploymentService.DefaultProxyName))
-                return Task.FromResult(JsonResponse($"{{\"sha\":\"{(WrongDllBlob ? new string('b', 40) : GitBlob(Dll))}\"}}"));
-            if (url == Dlssg2030UnlockDeploymentService.ContentsApiUrl(CommitSha, Dlssg2030UnlockDeploymentService.IniFileName))
-                return Task.FromResult(JsonResponse($"{{\"sha\":\"{GitBlob(Encoding.UTF8.GetBytes(ini))}\"}}"));
-            if (url == Dlssg2030UnlockDeploymentService.RawUrl(CommitSha, Dlssg2030UnlockDeploymentService.DefaultProxyName))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Dll) });
-            if (url == Dlssg2030UnlockDeploymentService.RawUrl(CommitSha, Dlssg2030UnlockDeploymentService.IniFileName))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ini, Encoding.UTF8, "text/plain") });
+            if (url == Dlssg2030UnlockDeploymentService.LatestReleaseApiUrl)
+            {
+                var package = Package;
+                var digest = WrongDigest ? new string('b', 64) : DownloadRecordAssert.Sha256Of(package).ToLowerInvariant();
+                return Task.FromResult(JsonResponse(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    tag_name = Tag,
+                    assets = new[] { new { name = AssetName, size = package.Length, digest = "sha256:" + digest, browser_download_url = AssetUrl } }
+                })));
+            }
+            if (url == AssetUrl)
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Package) });
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
 
-        internal static string GitBlob(byte[] content)
-            => Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(
-                [.. Encoding.ASCII.GetBytes($"blob {content.Length}\0"), .. content])).ToLowerInvariant();
+        private static byte[] Bytes(byte marker, int size) => Enumerable.Repeat(marker, size).ToArray();
 
         private static HttpResponseMessage JsonResponse(string json)
             => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };

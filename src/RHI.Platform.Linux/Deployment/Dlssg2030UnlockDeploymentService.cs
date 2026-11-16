@@ -1,5 +1,4 @@
-using System.Security.Cryptography;
-using System.Text;
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core;
@@ -15,25 +14,25 @@ namespace RHI.Platform.Linux.Deployment;
 /// Legacy experimental Linux/Wine deployment for sdli1995/dlssg_for_sm86.
 /// New RTX 30 installs are retired in favor of Universal MFG; this service remains
 /// available for RTX 20 / SM75 and for safe removal/update of historical managed records.
-/// The payload is a Windows x64 proxy DLL plus dlssg_sm86.ini from the repository tree (no releases).
-/// As upstream RHI 2.8.5 (Dlssg20_30Service), the version is the newest commit that touched version.dll,
-/// resolved at install/update time — it is not pinned to a fixed commit, so an update follows upstream's
-/// pushes (#41). Unlike upstream (which reads <c>main</c>), both files are then fetched at that exact commit
-/// SHA, so the bytes are immutable for the recorded version, and each must match the git blob id GitHub
-/// reports for that path at that commit before it is cached (stamped) and deployed. PE/INI validation,
-/// per-game Wine native,builtin override and hash guards as for the other proxies.
+/// <para>#261 (upstream 2.8.9 <c>68856af</c>): since 0.4.0 the mod is a release package, <c>dlssg-release-X-x64.zip</c>, and a game
+/// needs, beside its rendering executable, exactly one proxy DLL, <c>dlssg_sm86.ini</c> and the whole <c>dlssg_sm86/</c> folder
+/// (backend, kernel packs, bundled DLSS-G runtime, XeSS-FG, SR). Each proxy name is its own build that forwards to the system
+/// DLL of that name (<c>version.dll</c> at the package root, the others in <c>alternatives/</c>), so a build is never renamed.
+/// The version is the release tag; the zip is checked against the digest GitHub publishes for it, cached and stamped like
+/// every release payload. Every package file RHI places is recorded and removed with the component. Installs made from the
+/// old single-DLL path (a commit of the repository tree) read as an update and are brought to the package by Update.</para>
 /// </summary>
-public sealed class Dlssg2030UnlockDeploymentService
+public sealed partial class Dlssg2030UnlockDeploymentService
 {
     public const string RepoOwner = "sdli1995";
     public const string RepoName = "dlssg_for_sm86";
     public const string RepositoryUrl = "https://github.com/sdli1995/dlssg_for_sm86";
-    public const string CommitsApiUrl = "https://api.github.com/repos/sdli1995/dlssg_for_sm86/commits?path=version.dll&per_page=1";
+    public const string LatestReleaseApiUrl = "https://api.github.com/repos/sdli1995/dlssg_for_sm86/releases/latest";
 
-    /// <summary>GitHub contents API for one file at one commit (its <c>sha</c> is the git blob id of the bytes).</summary>
-    internal static string ContentsApiUrl(string commitSha, string fileName)
-        => $"https://api.github.com/repos/{RepoOwner}/{RepoName}/contents/{fileName}?ref={commitSha}";
     public const string IniFileName = "dlssg_sm86.ini";
+
+    /// <summary>The mod's own folder beside the proxy (backend, kernels, runtime; the mod writes its log under <c>logs/</c>).</summary>
+    public const string ModFolderName = "dlssg_sm86";
 
     /// <summary>
     /// Install refused: an INI RHI does not manage is already there (e.g. one a Remove left because the user edited it).
@@ -46,18 +45,25 @@ public sealed class Dlssg2030UnlockDeploymentService
     public const string GpuGenRtx30 = "RTX 30 Series";
     public const string GpuGenRtx20 = "RTX 20 Series";
 
+    /// <summary>
+    /// The proxy names, in the order the mod's <c>alternatives/README.md</c> says to try them (#261): version.dll first, then
+    /// winmm, dbghelp, dinput8, and dxgi or d3d12 (render-path proxies, last resort). Each is its own build.
+    /// </summary>
     public static readonly IReadOnlyList<string> ProxyNames =
-        ["version.dll", "winmm.dll", "dinput8.dll", "winhttp.dll", "dxgi.dll"];
+        ["version.dll", "winmm.dll", "dbghelp.dll", "dinput8.dll", "dxgi.dll", "d3d12.dll"];
 
     public static readonly IReadOnlyList<string> GpuGenerations = [GpuGenRtx20];
 
+    /// <summary>Files under <see cref="ModFolderName"/> a package must hold for an install to work (upstream's list).</summary>
+    public static readonly IReadOnlyList<string> RequiredModFiles =
+        ["backend/sm86_backend.dll", "kernels/fg_kernels.dll", "runtime/nvngx_dlssg.dll"];
+
     private const string MetaProxyName = "FG2030.ProxyName";
     private const string MetaGpuGeneration = "FG2030.GpuGeneration";
-    private const string MetaRouter = "FG2030.Router";
-    private const string MetaCommitSha = "FG2030.CommitSha";
-    private const string MetaSourceDllSha = "FG2030.SourceDllSha256";
-    private const string MetaSourceIniSha = "FG2030.SourceIniSha256";
+    private const string MetaReleaseTag = "FG2030.ReleaseTag";
     private const string MetaExperimental = "FG2030.Experimental";
+    // The single-DLL path's keys (before #261): dropped when Update brings a record to the package.
+    private static readonly string[] RetiredMetadataKeys = ["FG2030.Router", "FG2030.CommitSha", "FG2030.SourceDllSha256", "FG2030.SourceIniSha256"];
     private const int MinimumDllSize = 256 * 1024;
 
     private readonly HttpClient _http;
@@ -135,6 +141,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             ? GpuGenRtx30
             : GpuGenRtx20;
 
+    /// <summary>A supported proxy name; anything else (also <c>winhttp.dll</c>, no longer offered since #261) is version.dll.</summary>
     public static string NormalizeProxyName(string? value)
     {
         var name = string.IsNullOrWhiteSpace(value) ? DefaultProxyName : Path.GetFileName(value.Trim());
@@ -142,10 +149,16 @@ public sealed class Dlssg2030UnlockDeploymentService
                ?? DefaultProxyName;
     }
 
-    public static string RouterFor(string? gpuGeneration)
-        => string.Equals(NormalizeGpuGeneration(gpuGeneration), GpuGenRtx20, StringComparison.OrdinalIgnoreCase)
-            ? "SM75"
-            : "SM86";
+    /// <summary>
+    /// #261: the package file that is the build for <paramref name="proxyName"/> — <c>version.dll</c> at the package root, every
+    /// other name in <c>alternatives/</c>, never another name renamed (each forwards to the system DLL of its own name).
+    /// Null for a name the mod does not ship (<c>winhttp.dll</c> and anything else).
+    /// </summary>
+    public static string? PackagePathFor(string? proxyName)
+    {
+        var name = ProxyNames.FirstOrDefault(candidate => candidate.Equals(proxyName?.Trim(), StringComparison.OrdinalIgnoreCase));
+        return name is null ? null : name == DefaultProxyName ? name : "alternatives/" + name;
+    }
 
     public static bool IsGameEligible(DetectedGame game)
         => !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
@@ -173,6 +186,49 @@ public sealed class Dlssg2030UnlockDeploymentService
             return "O diretório do executável alvo não pôde ser resolvido.";
         return "Compatível com o caminho experimental: Windows x64 + DirectX 12 + prefixo Wine/Proton inicializado.";
     }
+
+    // ── Messages (#261; English with PT-BR pairs) ───────────────────────────────────────────────────────────────
+
+    /// <summary>The release names its package <c>dlssg-release-&lt;tag&gt;-x64.zip</c>; none, or more than one, is refused. The tag follows.</summary>
+    public const string NoPackagePrefix = "The DLSSG 20/30 release publishes no single dlssg-release-<version>-x64.zip package, so nothing was installed: ";
+
+    /// <summary>A package missing a file a game needs; the package path follows.</summary>
+    public const string PackageFileMissingPrefix = "The DLSSG 20/30 release package is missing a file the mod needs, so nothing was installed: ";
+
+    /// <summary>A package file RHI would place where a file that is not RHI's already is; the path follows.</summary>
+    public const string PackageFileCollisionPrefix =
+        "A DLSSG 20/30 package file would replace a file RHI does not manage, so nothing was changed. Move or delete it, then try again: ";
+
+    /// <summary>The game's <c>dlssg_sm86</c> folder (or one inside it) is a link; RHI never writes through one. The path follows.</summary>
+    public const string ModFolderLinkPrefix = "The dlssg_sm86 folder beside the game is a link, and RHI does not write through links: ";
+
+    /// <summary>A package file RHI placed was changed outside RHI; an update never replaces it. The path follows.</summary>
+    public const string PackageFileChangedPrefix =
+        "Not updated: a DLSSG 20/30 package file was changed outside RHI, and an update never replaces it. Remove it, then Install it again: ";
+
+    /// <summary>Update of a <c>winhttp.dll</c> install (no longer offered) to version.dll refused: that name is taken. The path follows.</summary>
+    public const string RetiredProxyTargetTakenPrefix =
+        "winhttp.dll is no longer offered and RHI moves this install to version.dll, but that name is taken. Remove it, then Install it with another DLL name: ";
+
+    /// <summary>The install's result line: this fixed text, then "&lt;version&gt; (&lt;proxy name&gt;).", then <see cref="InstalledNote"/>.</summary>
+    public const string InstalledPrefix = "Legacy RTX 20 FG Unlock installed with dlssg_sm86.ini and the dlssg_sm86 folder: ";
+    public const string InstalledNote = " Support under VKD3D-Proton remains experimental and must be confirmed in a real game.";
+
+    /// <summary>The update's result line: this fixed text, then "&lt;version&gt;.", then the notes below.</summary>
+    public const string UpdatedPrefix = "Legacy RTX 20 FG Unlock updated to the release package ";
+    public const string UpdatedIniKeptNote = " Your dlssg_sm86.ini was kept.";
+    public const string UpdatedIniReplacedNote = " dlssg_sm86.ini now comes from the new release.";
+    public const string UpdatedProxyMovedNote = " winhttp.dll is no longer offered, so it now runs as version.dll.";
+
+    /// <summary>The check's lines; the version (or "old → new") follows.</summary>
+    public const string CurrentPrefix = "Legacy RTX 20 FG Unlock is on the latest release: ";
+    public const string LatestPrefix = "Latest DLSSG 20/30 release: ";
+    public const string UpdateAvailablePrefix = "DLSSG 20/30 update available: ";
+
+    /// <summary>What the check calls an install made from the old single-DLL path (no release tag in its record).</summary>
+    public const string OldLayoutSuffix = " (single DLL, before the release package)";
+
+    // ── Install ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     public async Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
@@ -217,28 +273,31 @@ public sealed class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail($"{selectedProxy} já existe e não pertence ao RTX 20 FG Unlock legado gerenciado pelo RHI. Escolha outro proxy; o RHI não sobrescreve uma DLL externa.");
         if (File.Exists(iniPath))
             return ComponentOperationResult.Fail(ExternalIniRefusal);
+        if (ModFolderLink(binaryDir) is { } link)
+            return ComponentOperationResult.Fail(ModFolderLinkPrefix + link);
 
         // The preference file is written last, after the download, the Wine override and the
         // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
         try { _preferences.EnsureWritable(); }
         catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
 
-        Dlssg2030SnapshotInfo snapshot;
-        Dlssg2030CachedPayload payload;
+        Dlssg2030Package package;
         try
         {
-            snapshot = await ResolveLatestSnapshotAsync(cancellationToken).ConfigureAwait(false);
-            payload = await EnsureCachedPayloadAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            var release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
+            package = await EnsureCachedPackageAsync(release, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado download/validation failed: {ex.Message}");
         }
+        if (package.ProxySource(selectedProxy) is not { } proxySource)
+            return ComponentOperationResult.Fail(PackageFileMissingPrefix + PackagePathFor(selectedProxy));
+        var modFiles = package.ModFiles.Select(rel => (Source: package.PathOf(ModFolderName + "/" + rel), Target: ModTarget(binaryDir, rel))).ToArray();
+        if (modFiles.FirstOrDefault(file => File.Exists(file.Target) || Directory.Exists(file.Target)) is { Target: not null } taken)
+            return ComponentOperationResult.Fail(PackageFileCollisionPrefix + taken.Target);
 
-        var router = RouterFor(selectedGpu);
-        var adjustedIni = WriteRouter(payload.IniText, router);
         string? proxyTemp = null;
-        string? iniTemp = null;
         WineOverrideRecord? wineOverride = null;
 
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
@@ -248,42 +307,41 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         var operation = scope.Operation;
+        var createdFolders = new List<string>();
         // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
 
-            // Verified, fsynced copies beside the targets (full re-read hash), placed without replacing anything.
-            var stagedProxy = await AtomicFile.StageCopyAsync(payload.DllPath, proxyPath, null, null, cancellationToken).ConfigureAwait(false);
+            // Verified, fsynced copy beside the target (full re-read hash), placed without replacing anything.
+            var stagedProxy = await AtomicFile.StageCopyAsync(proxySource, proxyPath, null, null, cancellationToken).ConfigureAwait(false);
             proxyTemp = stagedProxy.Path;
-            StagedFile stagedIni;
-            using (var iniContent = new MemoryStream(new UTF8Encoding(false).GetBytes(adjustedIni)))
+            ValidateCachedDll(proxyTemp);
+
+            // Tracked and declared first (#23): a crash before the record is saved removes every file at the next start.
+            await scope.PlaceStagedAsync(stagedProxy, proxyPath, cancellationToken, overwrite: false).ConfigureAwait(false);
+            var iniHash = await scope.PlaceCopyAsync(package.IniPath, iniPath, cancellationToken, overwrite: false).ConfigureAwait(false);
+            var files = new List<LinuxDeployedFile>
             {
-                stagedIni = await AtomicFile.StageStreamAsync(iniContent, iniPath, null, null, long.MaxValue, cancellationToken).ConfigureAwait(false);
-                iniTemp = stagedIni.Path;
+                new() { Path = proxyPath, ExistedBeforeInstall = false, Sha256 = stagedProxy.Sha256, AllowUserChanges = false },
+                new() { Path = iniPath, ExistedBeforeInstall = false, Sha256 = iniHash, AllowUserChanges = true },
+            };
+            foreach (var (source, target) in modFiles)
+            {
+                await EnsureFolderAsync(binaryDir, Path.GetDirectoryName(target)!, operation, createdFolders, cancellationToken).ConfigureAwait(false);
+                var hash = await scope.PlaceCopyAsync(source, target, cancellationToken, overwrite: false).ConfigureAwait(false);
+                files.Add(new LinuxDeployedFile { Path = target, ExistedBeforeInstall = false, Sha256 = hash, AllowUserChanges = false });
             }
 
-            ValidateCachedDll(proxyTemp);
-            ValidateIniText(adjustedIni);
-
-            // Tracked and declared first (#23): a crash before the record is saved removes both at the next start.
-            await scope.PlaceStagedAsync(stagedProxy, proxyPath, cancellationToken, overwrite: false).ConfigureAwait(false);
-            await scope.PlaceStagedAsync(stagedIni, iniPath, cancellationToken, overwrite: false).ConfigureAwait(false);
-
-            var proxyHash = stagedProxy.Sha256;
-            var iniHash = stagedIni.Sha256;
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 [MetaProxyName] = selectedProxy,
                 [MetaGpuGeneration] = selectedGpu,
-                [MetaRouter] = router,
-                [MetaCommitSha] = snapshot.CommitSha,
-                [MetaSourceDllSha] = payload.SourceDllSha256,
-                [MetaSourceIniSha] = payload.SourceIniSha256,
+                [MetaReleaseTag] = package.Tag,
                 [MetaExperimental] = "1",
             };
-            RecordDownloads(metadata, payload);
+            VerifiedDownload.Record(metadata, package.ArchiveSha256.ToUpperInvariant(), package.DigestVerified);
 
             // The preference is saved before the commit point (review w3-journal #3): a failure here still rolls back
             // before the record exists, and nothing after the record can throw into the rollback.
@@ -294,33 +352,32 @@ public sealed class Dlssg2030UnlockDeploymentService
                 GameName = game.Name,
                 Component = ManagedComponentKind.Dlssg2030Unlock,
                 BinaryDirectory = binaryDir,
-                SourceUrl = RepositoryUrl,
-                Version = payload.Version,
+                SourceUrl = package.SourceUrl,
+                Version = package.Version,
                 InstalledAtUtc = DateTime.UtcNow,
                 WineOverride = wineOverride,
-                Files =
-                [
-                    new LinuxDeployedFile { Path = proxyPath, ExistedBeforeInstall = false, Sha256 = proxyHash, AllowUserChanges = false },
-                    new LinuxDeployedFile { Path = iniPath, ExistedBeforeInstall = false, Sha256 = iniHash, AllowUserChanges = true },
-                ],
+                Files = files,
                 Metadata = metadata
             }));
         }
         catch (Exception ex)
         {
-            foreach (var leftover in FileCleanup.TryDeleteAll(new[] { proxyTemp, iniTemp }.OfType<string>()))
-                AppLog.Warn("fg2030", $"Install rollback could not remove {leftover}");
+            if (proxyTemp is not null) FileCleanup.TryDelete(proxyTemp);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado");
-            if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
+            if (rollback.RolledBack)
+            {
+                _overrides.TryRestore(game.PrefixPath, wineOverride);
+                RemoveEmptyFolders(createdFolders);
+            }
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: it is the commit point. Nothing after it rolls back.
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok(
-            $"RTX 20 FG Unlock legado {payload.Version} instalado como {selectedProxy} · {selectedGpu} / {router}. O suporte sob VKD3D-Proton permanece experimental e deve ser confirmado em jogo real.",
-            proxyPath, iniPath);
+        return ComponentOperationResult.Ok($"{InstalledPrefix}{package.Version} ({selectedProxy}).{InstalledNote}", proxyPath, iniPath);
     }
+
+    // ── Remove ──────────────────────────────────────────────────────────────────────────────────────────────────
 
     public async Task<ComponentOperationResult> RemoveAsync(
         DetectedGame game,
@@ -358,6 +415,13 @@ public sealed class Dlssg2030UnlockDeploymentService
             preserveIni = !string.Equals(currentIniHash, iniRecord.Sha256, StringComparison.OrdinalIgnoreCase);
         }
 
+        // #261: the package files under dlssg_sm86/ that still hold RHI's bytes go; one changed outside RHI stays and is named.
+        var modFolder = Path.Combine(record.BinaryDirectory, ModFolderName);
+        if (ModFolderLink(record.BinaryDirectory) is { } link)
+            return ComponentOperationResult.Fail(ModFolderLinkPrefix + link);
+        var (modDelete, modLeft) = await PlanModFilesAsync(record, cancellationToken).ConfigureAwait(false);
+        var logs = ModLogFiles(modFolder);
+
         // Journaled (#23): the record is stamped with the removal's id first; a crash before it is removed puts the
         // files and the override back as the record still describes them.
         var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
@@ -372,6 +436,8 @@ public sealed class Dlssg2030UnlockDeploymentService
         {
             await scope.DeleteAsync(proxyPath, cancellationToken).ConfigureAwait(false);
             if (!preserveIni) await scope.DeleteAsync(iniPath, cancellationToken).ConfigureAwait(false);
+            foreach (var path in modDelete.Concat(logs))
+                await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
             overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock);
         }
@@ -385,26 +451,31 @@ public sealed class Dlssg2030UnlockDeploymentService
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
-        // The record is gone: the commit point.
+        // The record is gone: the commit point. The journal's copies are gone with it, so the empty folders can go.
         await scope.CommitAsync().ConfigureAwait(false);
+        PruneModFolder(record.BinaryDirectory);
 
         return ComponentOperationResult.Ok((preserveIni
             ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
             : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
-            + WineDllOverrideService.KeptValueNotes(overrideRestore));
+            + WineDllOverrideService.KeptValueNotes(overrideRestore)
+            + (modLeft.Count == 0 ? "" : ProxylessRecordRemoval.NotDeletedPrefix + string.Join("; ", modLeft)));
     }
 
     /// <summary>
     /// w12 final review M1: Remove for a record without its proxy's name (<see cref="ProxylessRecordRemoval"/>): every
-    /// listed file (proxy, INI) that still holds RHI's bytes goes, the recorded override is restored, the record is
-    /// dropped, and the files left behind are named. Same journaled removal as <see cref="RemoveAsync"/>.
+    /// listed file (proxy, INI, the package files under dlssg_sm86/) that still holds RHI's bytes goes, the recorded override
+    /// is restored, the record is dropped, and the files left behind are named. Same journaled removal as <see cref="RemoveAsync"/>.
     /// </summary>
     private async Task<ComponentOperationResult> RemoveWithoutProxyNameAsync(
         DetectedGame game, LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
         if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.Dlssg2030Unlock).ConfigureAwait(false) is { } held)
             return ComponentOperationResult.Fail(held);
-        var plan = await ProxylessRecordRemoval.PlanAsync(record, cancellationToken).ConfigureAwait(false);
+        if (ModFolderLink(record.BinaryDirectory) is { } link)
+            return ComponentOperationResult.Fail(ModFolderLinkPrefix + link);
+        var plan = await ProxylessRecordRemoval.PlanAsync(record, cancellationToken, ModFolderName).ConfigureAwait(false);
+        var logs = ModLogFiles(Path.Combine(record.BinaryDirectory, ModFolderName));
 
         var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
             _journal, _records, "RTX 20 FG Unlock removal: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
@@ -414,7 +485,7 @@ public sealed class Dlssg2030UnlockDeploymentService
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            foreach (var path in plan.Delete)
+            foreach (var path in plan.Delete.Concat(logs))
                 await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
             overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock);
@@ -428,8 +499,11 @@ public sealed class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
+        PruneModFolder(record.BinaryDirectory);
         return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("RTX 20 FG Unlock", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
     }
+
+    // ── Update ──────────────────────────────────────────────────────────────────────────────────────────────────
 
     public async Task<Dlssg2030UpdateStatus> CheckLatestAsync(
         DetectedGame game,
@@ -437,16 +511,15 @@ public sealed class Dlssg2030UnlockDeploymentService
     {
         try
         {
-            var snapshot = await ResolveLatestSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            var release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
             var record = GetRecord(game);
-            var currentCommit = record?.Metadata.GetValueOrDefault(MetaCommitSha);
-            var hasUpdate = record is not null && !string.Equals(currentCommit, snapshot.CommitSha, StringComparison.OrdinalIgnoreCase);
-            return new(true, record?.Version, snapshot.Version, hasUpdate,
+            var hasUpdate = record is not null && NeedsPackageUpdate(record, release.Tag);
+            return new(true, record?.Version, release.Version, hasUpdate,
                 record is null
-                    ? $"Última versão upstream: {snapshot.Version} ({ShortSha(snapshot.CommitSha)})."
+                    ? LatestPrefix + release.Version
                     : hasUpdate
-                        ? $"Atualização disponível: {record.Version ?? ShortSha(currentCommit)} → {snapshot.Version} ({ShortSha(snapshot.CommitSha)})."
-                        : $"RTX 20 FG Unlock legado {record.Version ?? snapshot.Version} está no snapshot atual.");
+                        ? $"{UpdateAvailablePrefix}{InstalledLabel(record)} → {release.Version}"
+                        : CurrentPrefix + (record.Version ?? release.Version));
         }
         catch (Exception ex)
         {
@@ -455,8 +528,20 @@ public sealed class Dlssg2030UnlockDeploymentService
     }
 
     /// <summary>
+    /// #261: a record needs the package when it is not on <paramref name="latestTag"/>, came from the old single-DLL path (no
+    /// release tag), or runs under a proxy name the mod no longer ships (winhttp.dll).
+    /// </summary>
+    internal static bool NeedsPackageUpdate(LinuxDeploymentRecord record, string latestTag)
+        => !string.Equals(record.Metadata.GetValueOrDefault(MetaReleaseTag), latestTag, StringComparison.OrdinalIgnoreCase)
+           || PackagePathFor(record.Metadata.GetValueOrDefault(MetaProxyName)) is null;
+
+    private static string InstalledLabel(LinuxDeploymentRecord record)
+        => record.Metadata.ContainsKey(MetaReleaseTag) ? record.Version ?? "?" : (record.Version ?? "?") + OldLayoutSuffix;
+
+    /// <summary>
     /// #238: the Update All check. The proxy or the INI removed outside RHI is never put back (seen before any network call);
-    /// the update is planned only while the proxy still holds RHI's bytes (hashed only then); a failed lookup could not check.
+    /// the update is planned only while the proxy and every package file RHI placed still hold RHI's bytes (hashed only then);
+    /// a failed lookup could not check.
     /// </summary>
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(
         DetectedGame game,
@@ -479,7 +564,12 @@ public sealed class Dlssg2030UnlockDeploymentService
         var planned = new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, record.Version, status.LatestVersion,
             CouldNotCheck: !status.Success);
         var proxyRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
-        return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(proxyPath, proxyRecord?.Sha256)], cancellationToken).ConfigureAwait(false);
+        var guarded = await ManagedUpdateFileGuard.BeforePlanningAsync(planned, [(proxyPath, proxyRecord?.Sha256)], cancellationToken).ConfigureAwait(false);
+        if (!guarded.UpdateAvailable) return guarded;
+        var (_, changed) = await PlanModFilesAsync(record, cancellationToken).ConfigureAwait(false);
+        return changed.Count == 0
+            ? guarded
+            : guarded with { UpdateAvailable = false, CouldNotCheck = true, LocalReason = true, Message = PackageFileChangedPrefix + changed[0] };
     }
 
     public async Task<ComponentOperationResult> UpdateAsync(
@@ -496,9 +586,11 @@ public sealed class Dlssg2030UnlockDeploymentService
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
             return ComponentOperationResult.Fail(ManagedUpdateFileGuard.MissingProxyNameMessage);
-        var proxyPath = Path.Combine(record.BinaryDirectory, proxyName);
-        var iniPath = Path.Combine(record.BinaryDirectory, IniFileName);
+        var binaryDir = record.BinaryDirectory;
+        var proxyPath = Path.Combine(binaryDir, proxyName);
+        var iniPath = Path.Combine(binaryDir, IniFileName);
         var proxyRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, proxyPath));
+        var iniRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, iniPath));
         if (proxyRecord is null || string.IsNullOrWhiteSpace(proxyRecord.Sha256) || !File.Exists(proxyPath))
             return ComponentOperationResult.Fail("A DLL gerenciada do RTX 20 FG Unlock legado está ausente ou sem hash. Remova/reinstale para recuperar com segurança.");
         if (!File.Exists(iniPath))
@@ -507,208 +599,386 @@ public sealed class Dlssg2030UnlockDeploymentService
         var currentHash = await FileHash.Sha256HexAsync(proxyPath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(currentHash, proxyRecord.Sha256, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"A DLL gerenciada {proxyName} foi modificada fora do RHI. Atualização bloqueada.");
+        if (ModFolderLink(binaryDir) is { } link)
+            return ComponentOperationResult.Fail(ModFolderLinkPrefix + link);
+        var (ownedMod, changedMod) = await PlanModFilesAsync(record, cancellationToken).ConfigureAwait(false);
+        if (changedMod.Count > 0)
+            return ComponentOperationResult.Fail(PackageFileChangedPrefix + changedMod[0]);
 
-        Dlssg2030SnapshotInfo snapshot;
-        Dlssg2030CachedPayload payload;
+        // #261: winhttp.dll (or any name the mod no longer ships) moves to version.dll, the mod's first choice.
+        var newProxyName = PackagePathFor(proxyName) is null ? DefaultProxyName : NormalizeProxyName(proxyName);
+        var moveProxy = !newProxyName.Equals(proxyName, StringComparison.OrdinalIgnoreCase);
+        var newProxyPath = Path.Combine(binaryDir, newProxyName);
+        if (moveProxy && (File.Exists(newProxyPath) || IsRhiManagedPath(game, newProxyPath)))
+            return ComponentOperationResult.Fail(RetiredProxyTargetTakenPrefix + newProxyPath);
+        if (moveProxy && _overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
+
+        Dlssg2030Package package;
         try
         {
-            snapshot = await ResolveLatestSnapshotAsync(cancellationToken).ConfigureAwait(false);
-            if (string.Equals(record.Metadata.GetValueOrDefault(MetaCommitSha), snapshot.CommitSha, StringComparison.OrdinalIgnoreCase))
-                return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado {record.Version ?? snapshot.Version} já usa o snapshot upstream atual.");
-            payload = await EnsureCachedPayloadAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            var release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
+            if (!NeedsPackageUpdate(record, release.Tag))
+                return ComponentOperationResult.Ok(CurrentPrefix + (record.Version ?? release.Version));
+            package = await EnsureCachedPackageAsync(release, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update download/validation failed: {ex.Message}");
         }
+        if (package.ProxySource(newProxyName) is not { } proxySource)
+            return ComponentOperationResult.Fail(PackageFileMissingPrefix + PackagePathFor(newProxyName));
+
+        // The package's files under dlssg_sm86/: RHI's own are replaced, a new one must not land on a file that is not RHI's.
+        var owned = new HashSet<string>(ownedMod.Select(Path.GetFullPath), StringComparer.Ordinal);
+        var modFiles = package.ModFiles.Select(rel => (Source: package.PathOf(ModFolderName + "/" + rel), Target: ModTarget(binaryDir, rel))).ToArray();
+        if (modFiles.FirstOrDefault(file => !owned.Contains(file.Target) && (File.Exists(file.Target) || Directory.Exists(file.Target))) is { Target: not null } taken)
+            return ComponentOperationResult.Fail(PackageFileCollisionPrefix + taken.Target);
+        var dropped = owned.Except(modFiles.Select(file => file.Target), StringComparer.Ordinal).ToArray();
+
+        // The INI: still RHI's bytes → the new release's (an old single-DLL INI has keys 0.4 no longer reads); the user's → kept.
+        var replaceIni = iniRecord is not null && !string.IsNullOrWhiteSpace(iniRecord.Sha256)
+                         && string.Equals(await FileHash.Sha256HexAsync(iniPath, cancellationToken).ConfigureAwait(false), iniRecord.Sha256, StringComparison.OrdinalIgnoreCase);
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RTX 20 FG Unlock update: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         string? staged = null;
+        var createdFolders = new List<string>();
+        WineOverrideRestoreResult? oldOverrideRestore = null;
+        WineOverrideRecord? newOverride = null;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            var stagedCopy = await AtomicFile.StageCopyAsync(payload.DllPath, proxyPath, null, null, cancellationToken).ConfigureAwait(false);
+            var updated = LinuxDeploymentRecordStore.Clone(record);
+            var stagedCopy = await AtomicFile.StageCopyAsync(proxySource, newProxyPath, null, null, cancellationToken).ConfigureAwait(false);
             staged = stagedCopy.Path;
             ValidateCachedDll(staged);
-            var newHash = stagedCopy.Sha256;
-            // Tracked with a verified copy of the previous DLL first: a failure (or a crash before the record is saved)
-            // puts it back.
-            await scope.PlaceStagedAsync(stagedCopy, proxyPath, cancellationToken).ConfigureAwait(false);
+            if (moveProxy)
+            {
+                await scope.DeleteAsync(proxyPath, cancellationToken).ConfigureAwait(false);
+                oldOverrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
+                newOverride = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, game.PrefixPath!, newProxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+                // Tracked with a verified copy first: a failure (or a crash before the record is saved) removes it again.
+                await scope.PlaceStagedAsync(stagedCopy, newProxyPath, cancellationToken, overwrite: false).ConfigureAwait(false);
+                updated.WineOverride = newOverride;
+                updated.Metadata[MetaProxyName] = newProxyName;
+            }
+            else
+            {
+                // Tracked with a verified copy of the previous DLL first: a failure (or a crash before the record is saved)
+                // puts it back.
+                await scope.PlaceStagedAsync(stagedCopy, newProxyPath, cancellationToken).ConfigureAwait(false);
+            }
+            staged = null;
 
-            proxyRecord.Sha256 = newHash;
-            record.Version = payload.Version;
-            record.SourceUrl = RepositoryUrl;
-            record.InstalledAtUtc = DateTime.UtcNow;
-            record.Metadata[MetaCommitSha] = snapshot.CommitSha;
-            record.Metadata[MetaSourceDllSha] = payload.SourceDllSha256;
-            record.Metadata[MetaSourceIniSha] = payload.SourceIniSha256;
-            RecordDownloads(record.Metadata, payload);
-            _records.Upsert(scope.Stamp(record));
+            var files = new List<LinuxDeployedFile>
+            {
+                new() { Path = newProxyPath, ExistedBeforeInstall = false, Sha256 = stagedCopy.Sha256, AllowUserChanges = false },
+            };
+            if (replaceIni)
+                files.Add(new LinuxDeployedFile
+                {
+                    Path = iniPath, ExistedBeforeInstall = false, AllowUserChanges = true,
+                    Sha256 = await scope.PlaceCopyAsync(package.IniPath, iniPath, cancellationToken).ConfigureAwait(false)
+                });
+            else if (iniRecord is not null)
+                files.Add(iniRecord);
+            foreach (var (source, target) in modFiles)
+            {
+                await EnsureFolderAsync(binaryDir, Path.GetDirectoryName(target)!, scope.Operation, createdFolders, cancellationToken).ConfigureAwait(false);
+                var hash = await scope.PlaceCopyAsync(source, target, cancellationToken, overwrite: owned.Contains(target)).ConfigureAwait(false);
+                files.Add(new LinuxDeployedFile { Path = target, ExistedBeforeInstall = false, Sha256 = hash, AllowUserChanges = false });
+            }
+            foreach (var path in dropped)
+                await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+
+            updated.Files = files;
+            updated.Version = package.Version;
+            updated.SourceUrl = package.SourceUrl;
+            updated.InstalledAtUtc = DateTime.UtcNow;
+            updated.Metadata[MetaReleaseTag] = package.Tag;
+            foreach (var key in RetiredMetadataKeys) updated.Metadata.Remove(key);
+            VerifiedDownload.Forget(updated.Metadata, "Ini");
+            VerifiedDownload.Record(updated.Metadata, package.ArchiveSha256.ToUpperInvariant(), package.DigestVerified);
+            _records.Upsert(scope.Stamp(updated));
         }
         catch (Exception ex)
         {
             if (staged is not null) FileCleanup.TryDelete(staged);
-            // The previous DLL goes back from the scope's verified copy; a copy that cannot be put back is kept and named.
+            // Every file goes back from the scope's verified copies; a copy that cannot be put back is kept and named.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado");
+            if (rollback.RolledBack)
+            {
+                _overrides.TryRestore(game.PrefixPath, newOverride);
+                if (oldOverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored) _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+                RemoveEmptyFolders(createdFolders);
+            }
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado atualizado para {payload.Version} ({ShortSha(snapshot.CommitSha)}); {IniFileName} do usuário foi preservado.");
+        if (dropped.Length > 0) PruneModFolder(binaryDir);
+        return ComponentOperationResult.Ok(UpdatedPrefix + package.Version + "."
+            + (replaceIni ? UpdatedIniReplacedNote : UpdatedIniKeptNote)
+            + (moveProxy ? UpdatedProxyMovedNote + WineDllOverrideService.KeptValueNotes(oldOverrideRestore) : ""));
     }
 
-    internal async Task<Dlssg2030SnapshotInfo> ResolveLatestSnapshotAsync(CancellationToken cancellationToken)
+    // ── Release and package ─────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>GitHub's latest release: its tag and the one <c>dlssg-release-&lt;tag&gt;-x64.zip</c> package.</summary>
+    internal async Task<Dlssg2030ReleaseInfo> ResolveLatestReleaseAsync(CancellationToken cancellationToken)
     {
-        var json = await TrustedDownload.GetStringAsync(_http, CommitsApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, LatestReleaseApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(json);
-        var first = document.RootElement.EnumerateArray().FirstOrDefault();
-        if (first.ValueKind == JsonValueKind.Undefined || !first.TryGetProperty("sha", out var shaElement))
-            throw new InvalidDataException("Upstream dlssg_for_sm86 commit response did not contain a SHA.");
-        var sha = shaElement.GetString()?.Trim();
-        if (string.IsNullOrWhiteSpace(sha) || sha.Length < 7 || !sha.All(Uri.IsHexDigit))
-            throw new InvalidDataException("Upstream dlssg_for_sm86 returned an invalid commit SHA.");
-        return new Dlssg2030SnapshotInfo(sha, ShortSha(sha));
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("GitHub's latest-release answer for dlssg_for_sm86 is not an object.");
+        var tag = root.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString()?.Trim() : null;
+        if (string.IsNullOrWhiteSpace(tag) || tag.Length > 64 || !ReleaseTag().IsMatch(tag))
+            throw new InvalidDataException("GitHub's latest release of dlssg_for_sm86 has no usable tag.");
+        var assets = root.TryGetProperty("assets", out var assetsElement) && assetsElement.ValueKind == JsonValueKind.Array
+            ? assetsElement.EnumerateArray().Where(asset => asset.ValueKind == JsonValueKind.Object).ToArray()
+            : [];
+        var name = SelectPackageAssetName(assets.Select(asset => asset.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "").ToArray(), tag);
+        var selected = assets.First(asset => asset.TryGetProperty("name", out var n) && n.GetString() == name);
+        var url = selected.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url))
+            throw new InvalidDataException(NoPackagePrefix + tag);
+        var digest = TrustedDownload.NormalizeDigest(selected.TryGetProperty("digest", out var d) ? d.GetString() : null);
+        return new Dlssg2030ReleaseInfo(tag, VersionOf(tag), name, url, digest);
     }
 
-    internal async Task<Dlssg2030CachedPayload> EnsureCachedPayloadAsync(
-        Dlssg2030SnapshotInfo snapshot,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// #261: the release's package, <c>dlssg-release-&lt;version&gt;-x64.zip</c> for this tag (upstream takes the first
+    /// <c>dlssg-release-*-x64.zip</c>; a "-310.9" alternative-runtime build or any other second zip is never chosen). None, or
+    /// more than one, is refused.
+    /// </summary>
+    public static string SelectPackageAssetName(IReadOnlyList<string> assetNames, string tag)
     {
-        var versionDir = Path.Combine(_cacheRoot, snapshot.CommitSha);
-        var dllPath = Path.Combine(versionDir, DefaultProxyName);
-        var iniPath = Path.Combine(versionDir, IniFileName);
+        var expected = $"dlssg-release-{VersionOf(tag)}-x64.zip";
+        var matches = assetNames.Where(name => string.Equals(name, expected, StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.Ordinal).ToArray();
+        return matches.Length == 1 ? matches[0] : throw new InvalidDataException(NoPackagePrefix + tag);
+    }
+
+    private static string VersionOf(string tag) => tag.StartsWith('v') || tag.StartsWith('V') ? tag[1..] : tag;
+
+    /// <summary>
+    /// The package, downloaded under the DLSSG 20/30 host policy and checked against GitHub's digest when published, cached and
+    /// stamped (#26, #142), then extracted (only the files a game needs; checked extraction, never through a link, no
+    /// <c>..</c>) into a tree stamped with the archive's hash, so a tree from any other bytes is never deployed.
+    /// </summary>
+    internal async Task<Dlssg2030Package> EnsureCachedPackageAsync(Dlssg2030ReleaseInfo release, CancellationToken cancellationToken)
+    {
+        var versionDir = Path.Combine(_cacheRoot, Sanitize(release.Tag));
         Directory.CreateDirectory(versionDir);
+        var archive = Path.Combine(versionDir, release.AssetName);
+        var extractDir = Path.Combine(versionDir, "package");
+        var download = await TrustedDownload.EnsureVerifiedAsync(
+            _http, release.Url, archive, DownloadSources.Dlssg2030, release.Tag, release.Digest,
+            validate: (temp, _) =>
+            {
+                using var zip = ZipFile.OpenRead(temp);
+                PlanPackageEntries(zip);
+                return Task.CompletedTask;
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        var dllUrl = RawUrl(snapshot.CommitSha, DefaultProxyName);
-        var iniUrl = RawUrl(snapshot.CommitSha, IniFileName);
-        // Reuse the pair only when both files were stamped by this service's download of this commit
-        // (#142); a file that reached the cache any other way is downloaded again, never deployed.
-        // TryValidate hands back the hashes it just re-verified, so the pair is not hashed twice on reuse.
-        if (!CacheStamp.TryValidate(dllPath, dllUrl, snapshot.CommitSha, null, out var sourceDllHash) ||
-            !CacheStamp.TryValidate(iniPath, iniUrl, snapshot.CommitSha, null, out var sourceIniHash))
+        if (!CacheStamp.IsValidBoundTo(extractDir, release.Url, release.Tag, download.Sha256))
         {
-            CacheStamp.Invalidate(dllPath);
-            CacheStamp.Invalidate(iniPath);
-            var dllBlob = await ResolveBlobShaAsync(snapshot.CommitSha, DefaultProxyName, cancellationToken).ConfigureAwait(false);
-            var iniBlob = await ResolveBlobShaAsync(snapshot.CommitSha, IniFileName, cancellationToken).ConfigureAwait(false);
-            using var dll = await TrustedDownload.DownloadToTempAsync(_http, dllUrl, dllPath, DownloadSources.Dlssg2030, cancellationToken: cancellationToken).ConfigureAwait(false);
-            using var ini = await TrustedDownload.DownloadToTempAsync(_http, iniUrl, iniPath, DownloadSources.Dlssg2030, cancellationToken: cancellationToken).ConfigureAwait(false);
-            VerifyBlob(dll.Path, dllBlob, DefaultProxyName);
-            VerifyBlob(ini.Path, iniBlob, IniFileName);
-            ValidateCachedDll(dll.Path);
-            var iniText = await File.ReadAllTextAsync(ini.Path, cancellationToken).ConfigureAwait(false);
-            ValidateIniText(iniText);
-            dll.MoveTo(dllPath);
-            ini.MoveTo(iniPath);
-            sourceDllHash = CacheStamp.Write(dllPath, dllUrl, snapshot.CommitSha);
-            sourceIniHash = CacheStamp.Write(iniPath, iniUrl, snapshot.CommitSha);
+            CacheStamp.Invalidate(extractDir);
+            // RHI's own cache folder: a stale tree that cannot be removed must not be extracted over.
+            if (Directory.Exists(extractDir)) Directory.Delete(extractDir, recursive: true);
+            Directory.CreateDirectory(extractDir);
+            using (var zip = ZipFile.OpenRead(download.Path))
+            {
+                foreach (var (entry, relative) in PlanPackageEntries(zip))
+                {
+                    var target = Path.Combine(extractDir, relative.Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, target, DownloadSources.PayloadArchiveMaxBytes, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            ValidatePackage(extractDir);
+            CacheStamp.WriteBoundTo(extractDir, release.Url, release.Tag, download.Sha256);
         }
+        else ValidatePackage(extractDir);
 
-        ValidateCachedDll(dllPath);
-        var text = await File.ReadAllTextAsync(iniPath, cancellationToken).ConfigureAwait(false);
-        ValidateIniText(text);
-        var version = ParseVersionFromIni(text) ?? snapshot.Version;
-        return new Dlssg2030CachedPayload(dllPath, iniPath, text, sourceDllHash.ToLowerInvariant(), sourceIniHash.ToLowerInvariant(), version);
+        var modRoot = Path.Combine(extractDir, ModFolderName);
+        var modFiles = SafeFileEnumeration.Files(modRoot)
+            .Select(path => Path.GetRelativePath(modRoot, path).Replace(Path.DirectorySeparatorChar, '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return new Dlssg2030Package(release.Tag, release.Version, release.Url, extractDir, download.Sha256.ToLowerInvariant(),
+            download.DigestVerified, modFiles);
     }
 
     /// <summary>
-    /// The downloads the record comes from (#26): the DLL, and the template INI as part <c>Ini</c>. Both bytes were matched
-    /// against the git blob id GitHub publishes for them at the commit (fail-closed), so both count as published-digest.
+    /// The archive entries a game needs, with their package path: <c>version.dll</c>, <c>dlssg_sm86.ini</c>, the proxy builds in
+    /// <c>alternatives/</c> and everything under <c>dlssg_sm86/</c> except its logs and Markdown (upstream's runtime-file rule).
+    /// Docs, readmes, manuals and the configurator page stay out. A name with <c>..</c>, an empty part, a rooted path or a
+    /// duplicate refuses the whole package; a package without the required files is refused.
     /// </summary>
-    private static void RecordDownloads(IDictionary<string, string> metadata, Dlssg2030CachedPayload payload)
+    internal static IReadOnlyList<(ZipArchiveEntry Entry, string Relative)> PlanPackageEntries(ZipArchive zip)
     {
-        VerifiedDownload.Record(metadata, payload.SourceDllSha256.ToUpperInvariant(), digestVerified: true);
-        VerifiedDownload.Record(metadata, payload.SourceIniSha256.ToUpperInvariant(), digestVerified: true, part: "Ini");
+        var plan = new List<(ZipArchiveEntry, string)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in zip.Entries)
+        {
+            var name = entry.FullName.Replace('\\', '/');
+            if (name.EndsWith('/')) continue; // a folder entry
+            var parts = name.Split('/');
+            if (name.StartsWith('/') || name.Contains(':', StringComparison.Ordinal) || parts.Any(part => part.Length == 0 || part is "." or ".."))
+                throw new InvalidDataException(PackageFileMissingPrefix + "(invalid entry name) " + entry.FullName);
+            if (!IsRuntimeFile(name)) continue;
+            if (!seen.Add(name))
+                throw new InvalidDataException(PackageFileMissingPrefix + "(duplicate entry) " + entry.FullName);
+            plan.Add((entry, name));
+        }
+        foreach (var required in new[] { DefaultProxyName, IniFileName }.Concat(RequiredModFiles.Select(file => ModFolderName + "/" + file)))
+            if (!seen.Contains(required))
+                throw new InvalidDataException(PackageFileMissingPrefix + required);
+        return plan;
     }
 
-    /// <summary>Fixed start of the refusal of a file whose bytes are not the commit's blob (PT-BR pair); the file name follows.</summary>
-    public const string BlobMismatchPrefix = "Download refused: the file is not the git blob GitHub reports for this commit: ";
-
-    /// <summary>Fixed start of a missing blob id (PT-BR pair); file@commit follows.</summary>
-    public const string BlobMissingPrefix = "GitHub reported no git blob id for this file: ";
-
-    /// <summary>The git blob id GitHub reports for <paramref name="fileName"/> at <paramref name="commitSha"/> (contents API).</summary>
-    private async Task<string> ResolveBlobShaAsync(string commitSha, string fileName, CancellationToken cancellationToken)
+    internal static bool IsRuntimeFile(string path)
     {
-        var json = await TrustedDownload.GetStringAsync(_http, ContentsApiUrl(commitSha, fileName), DownloadSources.GitHubApi,
-            "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
-        using var document = JsonDocument.Parse(json);
-        var sha = document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("sha", out var shaElement)
-            ? shaElement.GetString()?.Trim()
-            : null;
-        if (string.IsNullOrWhiteSpace(sha) || sha.Length != 40 || !sha.All(Uri.IsHexDigit))
-            throw new InvalidDataException($"{BlobMissingPrefix}{fileName}@{ShortSha(commitSha)}");
-        return sha;
+        if (path.Equals(DefaultProxyName, StringComparison.OrdinalIgnoreCase) || path.Equals(IniFileName, StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.StartsWith("alternatives/", StringComparison.OrdinalIgnoreCase))
+            return ProxyNames.Any(name => path.Equals("alternatives/" + name, StringComparison.OrdinalIgnoreCase));
+        if (path.StartsWith(ModFolderName + "/", StringComparison.OrdinalIgnoreCase))
+            return !path.StartsWith(ModFolderName + "/logs/", StringComparison.OrdinalIgnoreCase)
+                   && !path.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
+        return false;
     }
 
-    private static void VerifyBlob(string path, string expectedBlobSha, string fileName)
+    private static void ValidatePackage(string root)
     {
-        if (!string.Equals(GitBlobSha1(path), expectedBlobSha, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException(BlobMismatchPrefix + fileName);
+        foreach (var name in ProxyNames)
+        {
+            var path = Path.Combine(root, PackagePathFor(name)!.Replace('/', Path.DirectorySeparatorChar));
+            if (name == DefaultProxyName || File.Exists(path)) ValidateCachedDll(path);
+        }
+        ValidateIniText(File.ReadAllText(Path.Combine(root, IniFileName)));
+        foreach (var file in RequiredModFiles)
+            if (!File.Exists(Path.Combine(root, ModFolderName, file.Replace('/', Path.DirectorySeparatorChar))))
+                throw new InvalidDataException(PackageFileMissingPrefix + ModFolderName + "/" + file);
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static string ModTarget(string binaryDir, string relative)
+        => Path.GetFullPath(Path.Combine(binaryDir, ModFolderName, relative.Replace('/', Path.DirectorySeparatorChar)));
+
+    private static bool IsUnderModFolder(string binaryDir, string path)
+    {
+        var folder = Path.GetFullPath(Path.Combine(binaryDir, ModFolderName)) + Path.DirectorySeparatorChar;
+        return Path.GetFullPath(path).StartsWith(folder, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// Git's object id for a file's bytes: SHA-1 over <c>"blob &lt;length&gt;\0"</c> followed by the content. Used only
-    /// to match a download against the id GitHub publishes for it, not as a security hash on its own.
+    /// The record's files under dlssg_sm86/: those that still hold RHI's bytes (or are already gone) and those changed outside
+    /// RHI (or recorded without a hash). A file already gone is neither deleted nor named.
     /// </summary>
-    internal static string GitBlobSha1(string path)
+    private static async Task<(IReadOnlyList<string> Owned, IReadOnlyList<string> Changed)> PlanModFilesAsync(
+        LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
-        using var stream = File.OpenRead(path);
-        using var sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-        sha1.AppendData(Encoding.ASCII.GetBytes($"blob {stream.Length}\0"));
-        var buffer = new byte[81920];
-        int read;
-        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0) sha1.AppendData(buffer, 0, read);
-        return Convert.ToHexString(sha1.GetHashAndReset()).ToLowerInvariant();
-    }
-
-    internal static string RawUrl(string commitSha, string fileName)
-        => $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{commitSha}/{fileName}";
-
-    internal static string? ParseVersionFromIni(string text)
-    {
-        var match = Regex.Match(text, @"(?im)^\s*;\s*Native\s+([0-9]+(?:\.[0-9A-Za-z-]+)+)");
-        return match.Success ? match.Groups[1].Value : null;
-    }
-
-    internal static string WriteRouter(string text, string router)
-    {
-        router = string.Equals(router, "SM75", StringComparison.OrdinalIgnoreCase) ? "SM75" : "SM86";
-        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n').ToList();
-        var compatibility = -1;
-        var sectionEnd = lines.Count;
-        for (var i = 0; i < lines.Count; i++)
+        var owned = new List<string>();
+        var changed = new List<string>();
+        foreach (var file in record.Files)
         {
-            var trimmed = lines[i].Trim();
-            if (!trimmed.StartsWith("[", StringComparison.Ordinal)) continue;
-            if (compatibility >= 0) { sectionEnd = i; break; }
-            if (trimmed.Equals("[Compatibility]", StringComparison.OrdinalIgnoreCase)) compatibility = i;
+            if (string.IsNullOrWhiteSpace(file.Path) || !IsUnderModFolder(record.BinaryDirectory, file.Path)) continue;
+            var path = Path.GetFullPath(file.Path);
+            if (!File.Exists(path)) continue;
+            var matches = !string.IsNullOrWhiteSpace(file.Sha256)
+                          && string.Equals(await FileHash.Sha256HexAsync(path, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase);
+            (matches ? owned : changed).Add(path);
         }
-        if (compatibility < 0)
-            throw new InvalidDataException($"{IniFileName} does not contain [Compatibility].");
-
-        for (var i = compatibility + 1; i < sectionEnd; i++)
-        {
-            if (!lines[i].TrimStart().StartsWith("Router=", StringComparison.OrdinalIgnoreCase)) continue;
-            lines[i] = $"Router={router}";
-            return string.Join(newline, lines);
-        }
-
-        lines.Insert(compatibility + 1, $"Router={router}");
-        return string.Join(newline, lines);
+        return (owned, changed);
     }
 
+    /// <summary>The mod's own log files (<c>dlssg_sm86/logs/*.log</c>, regular files): removed with the mod, as upstream does.</summary>
+    private static IReadOnlyList<string> ModLogFiles(string modFolder)
+    {
+        var logs = Path.Combine(modFolder, "logs");
+        var info = new DirectoryInfo(logs);
+        if (!info.Exists || info.LinkTarget is not null) return [];
+        return info.EnumerateFiles("*.log", SearchOption.TopDirectoryOnly)
+            .Where(file => file.LinkTarget is null)
+            .Select(file => file.FullName)
+            .ToArray();
+    }
+
+    /// <summary>The first of dlssg_sm86/ and the folders inside it that is a link (RHI never writes or deletes through one), or null.</summary>
+    private static string? ModFolderLink(string binaryDir)
+    {
+        var folder = new DirectoryInfo(Path.Combine(binaryDir, ModFolderName));
+        if (folder.LinkTarget is not null) return folder.FullName;
+        if (!folder.Exists) return null;
+        try
+        {
+            return SafeFileEnumeration.Entries(folder.FullName)
+                .FirstOrDefault(entry => entry.LinkTarget is not null && (entry is DirectoryInfo || Directory.Exists(entry.FullName)))?.FullName;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return folder.FullName;
+        }
+    }
+
+    /// <summary>
+    /// Creates <paramref name="folder"/> and the missing folders above it up to <paramref name="binaryDir"/>, outermost first;
+    /// journaled before each is made, so a rollback or a crash before the commit removes it again once its files are gone.
+    /// </summary>
+    private static async Task EnsureFolderAsync(string binaryDir, string folder, DeploymentOperation? operation, List<string> created, CancellationToken cancellationToken)
+    {
+        var root = Path.GetFullPath(binaryDir).TrimEnd(Path.DirectorySeparatorChar);
+        var missing = new Stack<string>();
+        for (var current = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
+             current.Length > root.Length && !Directory.Exists(current);
+             current = Path.GetDirectoryName(current)!)
+            missing.Push(current);
+        while (missing.TryPop(out var path))
+        {
+            if (operation is not null)
+                await operation.AddCompensationAsync(CreatedDirectoryCompensator.KindName, CreatedDirectoryCompensator.Describe(path), cancellationToken).ConfigureAwait(false);
+            AtomicFile.CreateDirectoryDurable(path);
+            created.Add(path);
+        }
+    }
+
+    private static void RemoveEmptyFolders(IEnumerable<string> folders)
+    {
+        foreach (var folder in folders.Distinct(StringComparer.Ordinal).OrderByDescending(path => path.Length))
+            if (new DirectoryInfo(folder) is { Exists: true, LinkTarget: null }) FileCleanup.TryDeleteEmptyDirectory(folder);
+    }
+
+    /// <summary>dlssg_sm86/ and the folders in it, deepest first, each only when empty; never through a link.</summary>
+    private static void PruneModFolder(string binaryDir)
+    {
+        var folder = new DirectoryInfo(Path.Combine(binaryDir, ModFolderName));
+        if (!folder.Exists || folder.LinkTarget is not null) return;
+        try
+        {
+            var all = SafeFileEnumeration.Directories(folder.FullName).Append(folder.FullName);
+            RemoveEmptyFolders(all.ToArray());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("fg2030", $"Could not tidy {folder.FullName}", ex);
+        }
+    }
+
+    /// <summary>
+    /// The mod's INI contract (0.4.x): frame generation keys. Before #261 the template also carried <c>[Compatibility] Router=</c>,
+    /// which 0.4 no longer needs (it picks the RTX 20 / 30 kernels itself).
+    /// </summary>
     internal static void ValidateIniText(string text)
     {
         if (string.IsNullOrWhiteSpace(text) || text.Length > 256 * 1024)
             throw new InvalidDataException($"{IniFileName} is empty or implausibly large.");
-        if (!text.Contains("[Compatibility]", StringComparison.OrdinalIgnoreCase) ||
-            !text.Contains("Router=", StringComparison.OrdinalIgnoreCase) ||
-            !text.Contains("[FrameGeneration]", StringComparison.OrdinalIgnoreCase) ||
+        if (!text.Contains("[FrameGeneration]", StringComparison.OrdinalIgnoreCase) ||
             !text.Contains("MaxGeneratedFrames=", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"{IniFileName} does not match the expected upstream contract.");
     }
@@ -752,19 +1022,34 @@ public sealed class Dlssg2030UnlockDeploymentService
         catch { return string.Equals(left, right, StringComparison.Ordinal); }
     }
 
-    private static string ShortSha(string? sha)
-        => string.IsNullOrWhiteSpace(sha) ? "unknown" : sha.Length > 7 ? sha[..7] : sha;
+    private static string Sanitize(string value)
+        => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_'));
+
+    [GeneratedRegex(@"^[vV]?[0-9]+(?:\.[0-9A-Za-z-]+)*$", RegexOptions.None, 1000)]
+    private static partial Regex ReleaseTag();
 }
 
-public sealed record Dlssg2030SnapshotInfo(string CommitSha, string Version);
+/// <summary>The latest dlssg_for_sm86 release: its tag, version (tag without a leading v) and package asset.</summary>
+public sealed record Dlssg2030ReleaseInfo(string Tag, string Version, string AssetName, string Url, string? Digest);
 
-internal sealed record Dlssg2030CachedPayload(
-    string DllPath,
-    string IniPath,
-    string IniText,
-    string SourceDllSha256,
-    string SourceIniSha256,
-    string Version);
+/// <summary>An extracted, validated package: paths are package-relative with '/' separators.</summary>
+internal sealed record Dlssg2030Package(
+    string Tag,
+    string Version,
+    string SourceUrl,
+    string Root,
+    string ArchiveSha256,
+    bool DigestVerified,
+    IReadOnlyList<string> ModFiles)
+{
+    public string PathOf(string relative) => Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+
+    public string IniPath => PathOf(Dlssg2030UnlockDeploymentService.IniFileName);
+
+    /// <summary>The build for <paramref name="proxyName"/> in this package, or null when the package does not ship it.</summary>
+    public string? ProxySource(string proxyName)
+        => Dlssg2030UnlockDeploymentService.PackagePathFor(proxyName) is { } relative && File.Exists(PathOf(relative)) ? PathOf(relative) : null;
+}
 
 public sealed record Dlssg2030UpdateStatus(
     bool Success,
