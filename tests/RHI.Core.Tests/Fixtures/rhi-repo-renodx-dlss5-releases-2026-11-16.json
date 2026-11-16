@@ -1,0 +1,272 @@
+[
+ {
+  "tag_name": "renodx-dlss-SF-26.1025.0009",
+  "name": "RenoDX DLSS SF 26.1025.0009",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-11-03T01:03:25Z",
+  "assets": [
+   {
+    "name": "renodx-dlss_SF_26.1025.0009.zip",
+    "size": 1385007,
+    "digest": "sha256:9851d9fb959076d94f9877d34dc7cee82ce6591ce0df9a54f9d2a92ccaaa6b9a",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss-SF-26.1025.0009/renodx-dlss_SF_26.1025.0009.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-10.8.0",
+  "name": "RenoDX DLSS5 10.8.0",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-10-27T18:10:14Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_10.8.0.zip",
+    "size": 2635198,
+    "digest": "sha256:faba7814fa90b6b21786c98a45732dbe80f01fa36745c46324472e14ac0f440d",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-10.8.0/renodx-dlss5_10.8.0.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss-SF-26.1016.1304",
+  "name": "RenoDX DLSS SF 26.1016.1304",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-10-26T13:18:41Z",
+  "assets": [
+   {
+    "name": "renodx-dlss_SF_26.1016.1304.zip",
+    "size": 1254012,
+    "digest": "sha256:bc4ec58d31565f6919c4e0c1aad8d8ea6443199e12b54f9e019b2ffd8afaaabf",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss-SF-26.1016.1304/renodx-dlss_SF_26.1016.1304.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-8.5.0-rc10",
+  "name": "RenoDX DLSS5 8.5.0-rc10",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-26T23:09:45Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_8.5.0-rc10.zip",
+    "size": 1129182,
+    "digest": "sha256:a745040cb2e93e3a1500a6c5a322972acc4c5c667108fcea31c748285d6364a9",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-8.5.0-rc10/renodx-dlss5_8.5.0-rc10.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-8.5.0-rc5",
+  "name": "RenoDX DLSS5 8.5.0-rc5",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-26T19:02:14Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_8.5.0-rc5.zip",
+    "size": 1100477,
+    "digest": "sha256:8b56eeb0be64e97b30120bee9da40117a77a41245d1d6d1ca0dc78c6b1f1e1eb",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-8.5.0-rc5/renodx-dlss5_8.5.0-rc5.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-8.5.0-rc4",
+  "name": "RenoDX DLSS5 8.5.0-rc4",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-26T15:58:39Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_8.5.0-rc4.zip",
+    "size": 1094817,
+    "digest": "sha256:5c4af85a93af81bb02d2c755fe4cef83ef7e420bb0d9cb7f65b475dccfc72980",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-8.5.0-rc4/renodx-dlss5_8.5.0-rc4.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-7.0.0-rc8",
+  "name": "RenoDX DLSS5 7.0.0-rc8",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-23T19:22:22Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_7.0.0-rc8.zip",
+    "size": 630308,
+    "digest": "sha256:c0821162ebcc24db29dfd1ad6e45214e9f118e40de510f05f0981e0c9ea70639",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-7.0.0-rc8/renodx-dlss5_7.0.0-rc8.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-7.0.0-rc1",
+  "name": "RenoDX DLSS5 7.0.0-rc1",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-23T06:09:27Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_7.0.0-rc1.zip",
+    "size": 474637,
+    "digest": "sha256:0d4d6d893a3868b9fc441ca3be31238105459038d819dcaa2c264d447c785ad0",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-7.0.0-rc1/renodx-dlss5_7.0.0-rc1.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-6.5.3",
+  "name": "RenoDX DLSS5 6.5.3",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-19T17:09:53Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_6.5.3.zip",
+    "size": 370292,
+    "digest": "sha256:553b1619b9e5ddfbcb4ebc7f2f3bffff9256a48a25b988f4817f5c63f4caa1de",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-6.5.3/renodx-dlss5_6.5.3.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-6.4.1",
+  "name": "RenoDX DLSS5 6.4.1",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-18T22:45:36Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_6.4.1.zip",
+    "size": 365084,
+    "digest": "sha256:d7f2a77e4df3298ebc5cae63910e3a60553e499b440a1f332da07caeb604bc9e",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-6.4.1/renodx-dlss5_6.4.1.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-5.2.1",
+  "name": "RenoDX DLSS5 5.2.1",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-11T18:57:49Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_5.2.1.zip",
+    "size": 288032,
+    "digest": "sha256:125506b22edd8e0d6f8117579fe2a516288440fc068a5310680065db5d027129",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-5.2.1/renodx-dlss5_5.2.1.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-4.70",
+  "name": "RenoDX DLSS5 4.70",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-01T14:10:18Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_4.70.zip",
+    "size": 632174,
+    "digest": "sha256:d6e356d01b429af6288f488a4926c44f1d779a7d4586ee8c79d04d3a09a536e6",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-4.70/renodx-dlss5_4.70.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-4.60",
+  "name": "RenoDX DLSS5 4.60",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-08-31T11:09:29Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_4.60.zip",
+    "size": 622241,
+    "digest": "sha256:ad30994ba898f3eed5a4c7953927db9759c680a71bc9d9855cac93e9ccc1e3c6",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-4.60/renodx-dlss5_4.60.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-4.55",
+  "name": "RenoDX DLSS5 4.55",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-08-30T12:46:40Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_4.55.zip",
+    "size": 619218,
+    "digest": "sha256:15481c492db76682e9a88917e7f78897351ecf088bfae9bca74a0c5b74ddd033",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-4.55/renodx-dlss5_4.55.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-4.5",
+  "name": "RenoDX DLSS5 4.5",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-08-29T22:55:19Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_4.5.zip",
+    "size": 256214,
+    "digest": "sha256:c6626cf227b07b31d417f45c43f072d754b8a85fd63ed8761ca817823fc539ca",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-4.5/renodx-dlss5_4.5.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-3.3.4",
+  "name": "RenoDX DLSS5 3.3.4",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-08-29T17:12:06Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_3.3.4.zip",
+    "size": 245424,
+    "digest": "sha256:9e23b4d4b896060ed989c92dff211ad8365892c3872cb41b219f3c600d6081d4",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-3.3.4/renodx-dlss5_3.3.4.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-3.3.1",
+  "name": "RenoDX DLSS5 3.3.1",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-08-29T15:39:32Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_3.3.1.zip",
+    "size": 245372,
+    "digest": "sha256:60900570846576fd621bf0b408e94a300ebacb2fad099ba9ea4f8aa706175589",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-3.3.1/renodx-dlss5_3.3.1.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "renodx-dlss5-2.5",
+  "name": "RenoDX DLSS5 2.5",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-08-28T15:04:38Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5_2.5.zip",
+    "size": 177857,
+    "digest": "sha256:8476f88b765683b31096d6650820c1adacb4792ccfa7f229c01e4218aa695f44",
+    "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-2.5/renodx-dlss5_2.5.zip"
+   }
+  ]
+ }
+]

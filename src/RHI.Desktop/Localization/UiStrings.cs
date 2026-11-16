@@ -1685,14 +1685,18 @@ internal static class UiStrings
         // #274 GITC Uplift: Settings card (upstream Settings › Components › GITC Uplift), Neural Rendering rows, results.
         ("Uplift.CardTitle", "GITC Uplift", "GITC Uplift"),
         ("Uplift.KeyLabel", "Tecla liga/desliga do NR", "NR on/off key"),
-        ("Uplift.KeyTip", "A tecla do GITC Uplift que liga e desliga o NR no jogo (Enable hotkey no painel do Uplift). Desde o Uplift 2.0, o NR começa desligado a cada vez que o jogo inicia. O RHI grava a tecla no ReShade.ini do jogo quando instala o Uplift. Nenhuma deixa a tecla que cada jogo já tem.", "GITC Uplift's key for turning NR on and off in game (Enable hotkey in Uplift's panel). From Uplift 2.0, NR starts off every time the game starts. RHI writes it into a game's ReShade.ini when it installs Uplift there. None leaves the key each game already has."),
+        ("Uplift.KeyTip", "A tecla do GITC Uplift que liga e desliga o NR no jogo (Enable hotkey no painel do Uplift). Clique na caixa e pressione uma tecla; Backspace ou o botão ↺ voltam para Nenhuma. Desde o Uplift 2.0, o NR começa desligado a cada vez que o jogo inicia. O RHI grava a tecla no ReShade.ini do jogo quando instala o Uplift. Nenhuma deixa a tecla que cada jogo já tem.", "GITC Uplift's key for turning NR on and off in game (Enable hotkey in Uplift's panel). Click the box and press a key; Backspace or the ↺ button sets it back to None. From Uplift 2.0, NR starts off every time the game starts. RHI writes it into a game's ReShade.ini when it installs Uplift there. None leaves the key each game already has."),
         ("Uplift.KeyNone", "Nenhuma", "None"),
+        ("Uplift.KeyPress", "Pressione uma tecla...", "Press a key..."),
+        ("Uplift.KeyClearTip", "Nenhuma (deixa a tecla do Uplift de cada jogo como está)", "None (leave each game's own Uplift key alone)"),
         ("Uplift.WriteAll", "Gravar a tecla em todos os jogos com Uplift", "Write key to all Uplift games"),
         ("Uplift.WriteAllTip", "Salva esta tecla e a grava no ReShade.ini de cada jogo com o GITC Uplift instalado pelo RHI. Jogos ocultos ficam de fora.", "Saves this key and writes it into the ReShade.ini of every game with GITC Uplift installed by RHI. Skips hidden games."),
         ("Uplift.KeyChooseFirst", "Escolha uma tecla primeiro. Nenhuma deixa a tecla do Uplift de cada jogo como está.", "Pick a key first. None leaves each game's own Uplift key alone."),
         ("Uplift.KeyWritten", "Tecla do Uplift definida como {0} em {1} jogo(s).", "Uplift key set to {0} in {1} game(s)."),
         ("Uplift.KeyFailed", " {0} ficaram como estavam; primeiro: {1} — {2}", " {0} were left as they were; first: {1} — {2}"),
         ("Uplift.KeyCancelled", "Gravação da tecla do Uplift cancelada.", "Writing the Uplift key was cancelled."),
+        ("Vm.Dlss5ToolSwitchingFoveated", "Trocando o DLSS5 Tool para a versão Foveated...", "Switching DLSS5 Tool to the Foveated build..."),
+        ("Vm.Dlss5ToolSwitchingStock", "Trocando o DLSS5 Tool para a versão padrão...", "Switching DLSS5 Tool to the stock build..."),
         ("Vm.GITCUpliftRecommended", "GITC Uplift · recomendado para jogos DX11/DX12/Vulkan de 64 bits sem DLSS", "GITC Uplift · recommended for 64-bit DX11/DX12/Vulkan games without DLSS"),
         // w14/extras-fg rows
         // #285: the closed-source notice (upstream ShowClosedSourceNoticeAsync) and the shared "Don't show this again" confirm.

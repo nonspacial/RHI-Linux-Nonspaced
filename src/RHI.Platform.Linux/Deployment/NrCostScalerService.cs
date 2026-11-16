@@ -31,7 +31,7 @@ public sealed class NrCostScalerService
     public const string DisplayName = "NR Cost Scaler";
 
     // Fixed messages, values last (PT-BR presentation pairs).
-    public const string NoOwnerMessage = "NR Cost Scaler needs a Neural Rendering method installed by RHI first (ShortFuse, DLSS5 Feeder, OptiScaler DLSS NR or OptiScaler F5 DLSSNR).";
+    public const string NoOwnerMessage = "NR Cost Scaler needs a Neural Rendering method installed by RHI first (ShortFuse, DLSS5 Feeder, DLSS5 Tool, OptiScaler DLSS NR or OptiScaler F5 DLSSNR).";
     public const string OwnerModifiedPrefix = "NR Cost Scaler not installed: nvngx_dlssnr.dll no longer matches what RHI installed for ";
     public const string AlreadyInstalledMessage = "NR Cost Scaler is already installed for this game.";
     public const string NotInstalledMessage = "NR Cost Scaler is not installed by RHI for this game.";

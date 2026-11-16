@@ -80,6 +80,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
         OnPropertyChanged(nameof(CanConfigureNeuralRenderingDllVersion));
         OnPropertyChanged(nameof(CanLoadNeuralVersionHistory));
         NotifyUplift(); // w14/nr (#274)
+        NotifyDlss5Tool(); // w14/nr-2 (#317)
     }
 
     /// <summary>The DLSS manifest's NR DLL versions, “Latest” first; the selected pin stays an option.</summary>
@@ -121,6 +122,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             ReplaceLatestLabel(ShortFuseVersionOptions, shortFusePin ?? LatestDisplay());
             ReplaceLatestLabel(NeuralRenderingDllVersionOptions, nrDllPin ?? LatestDisplay());
             RefreshUpliftLocalized(); // w14/nr (#274)
+            RefreshDlss5ToolLocalized(); // w14/nr-2 (#317)
             SelectedDlss5FeederVersion = feederPin ?? LatestDisplay();
             SelectedDlss5BridgeVersion = bridgePin ?? LatestDisplay();
             SelectedShortFuseVersion = shortFusePin ?? LatestDisplay();
@@ -498,6 +500,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
         SelectedShortFuseVersion = LatestDisplay();
         SelectedNeuralRenderingDllVersion = LatestDisplay();
         ResetUplift(); // w14/nr (#274)
+        ResetDlss5Tool(); // w14/nr-2 (#317)
     }
 
     private void LoadNeuralVersionPins(DetectedGame game)
@@ -516,6 +519,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
         SelectedShortFuseVersion = shortFuse;
         SelectedNeuralRenderingDllVersion = nrDll;
         LoadUplift(game); // w14/nr (#274)
+        LoadDlss5Tool(game); // w14/nr-2 (#317)
     }
 
     private void SaveNeuralVersionPin(ManagedComponentKind kind, string value)
@@ -552,7 +556,8 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             LoadNeuralVersionPins(game);
             return;
         }
-        if (_dlssPanel.OrchestratedDlssStackManaged || _managedComponents.GitcUplift?.GetRecord(game) is not null) // w14/nr (#274): Uplift's own DLL too
+        if (_dlssPanel.OrchestratedDlssStackManaged || _managedComponents.GitcUplift?.GetRecord(game) is not null // w14/nr (#274): Uplift's own DLL too
+            || _managedComponents.Dlss5Tool?.GetRecord(game) is { } tool && NeuralRenderingRuntimeOwnership.ListsRuntime(tool)) // w14/nr-2 (#317)
             UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind: null, previous), "SwapNeuralVersionInPlaceAsync");
     }
 
@@ -661,6 +666,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
             SelectedDlss5BridgeVersion = bridgeSelected ?? LatestDisplay();
             SelectedShortFuseVersion = shortFuseSelected ?? LatestDisplay();
             ApplyUpliftVersions(lists.GitcUplift); // w14/nr (#274)
+            ApplyDlss5ToolVersions(lists.Dlss5Tool); // w14/nr-2 (#317)
         }
         finally { _rebuildingOptionLists = false; }
     }

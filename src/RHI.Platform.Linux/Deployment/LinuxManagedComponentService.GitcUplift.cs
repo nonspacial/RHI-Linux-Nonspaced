@@ -68,15 +68,21 @@ public sealed partial class LinuxManagedComponentService
         return (written, failures);
     }
 
-    /// <summary>iMMERSE Launchpad back at the top of the preset in every listed game with Uplift and Launchpad (games not running only).</summary>
+    /// <summary>
+    /// iMMERSE Launchpad back at the top of the preset in every listed game with Uplift or HSF and Launchpad (games not running
+    /// only). w14/nr-2: HSF too (upstream keeps it first for both), after an older HSF record's Launchpad moved to the shared tree.
+    /// </summary>
     public async Task<int> KeepLaunchpadFirstAsync(IReadOnlyList<DetectedGame> games, CancellationToken cancellationToken = default)
     {
-        if (GitcUplift is null) return 0;
         var moved = 0;
         foreach (var game in games)
-            if (GitcUplift.GetRecord(game) is not null && game.HasConfirmedPatchTarget
-                && await GitcUplift.KeepLaunchpadFirstAsync(game, cancellationToken).ConfigureAwait(false))
+        {
+            if (!game.HasConfirmedPatchTarget) continue;
+            if (GitcUplift?.GetRecord(game) is not null && await GitcUplift.KeepLaunchpadFirstAsync(game, cancellationToken).ConfigureAwait(false))
                 moved++;
+            else if (Hsf?.GetRecord(game) is not null && await Hsf.KeepLaunchpadFirstWhenClosedAsync(game, cancellationToken).ConfigureAwait(false))
+                moved++;
+        }
         return moved;
     }
 }

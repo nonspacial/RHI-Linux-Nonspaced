@@ -2372,3 +2372,111 @@ them while it's open"), after the "not installed" / "no rtx-encore.jsonc yet" no
 in the same place, in EN and PT-BR. Linux deviation: "running" is RHI Linux's existing probe (the one Update All defers
 running games with: the game's executable in a `/proc/<pid>/cmdline`), read when the ⚙ opens, not upstream's tracked
 launch state; a game started outside RHI counts too. The per-row long tooltips are still not ported.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane nr-2)
+
+### #317 — DLSS5 Tool and DLSS5 Tool + DX11 Bridge as Neural Rendering methods
+
+Upstream RHI 2.9.4 (`Renodx5AddonService`, `DetailPanelBuilder.NeuralRendering.Install` / `.SectionUi`). This supersedes
+the "no standalone DLSS5 Tool" line of #10/#19 above. New component kind `Dlss5Tool` (25), `Dlss5ToolDeploymentService`,
+`LinuxManagedComponentService.Dlss5Tool`.
+
+- **Install** (the DLSS5 Tool row in Managed components; ReShade is installed first when missing): RenoDX's
+  `renodx-dlss5.addon64` in ReShade's add-on folder (the binary folder, or reshade.ini's `AddonPath`), and
+  `nvngx_dlssnr.dll` (the NR DLL list's version) beside the game when the game has none (upstream
+  `DeployNrDllIfAbsentAsync`); a DLL already there is the game's own and stays untouched and unowned. One journaled
+  operation; the record is the commit point. Removal takes out what the install placed while it still holds RHI's bytes.
+  Offered where upstream offers it: 64-bit games with native DLSS (the row says why not elsewhere). A `renodx-dlss5` or
+  ShortFuse `renodx-dlss` add-on RHI did not place refuses the install (upstream deletes the other one; Linux never
+  deletes a file it did not place).
+- **Downloads**: RankFTW/rhi-repo's `renodx-dlss5-*` releases (ShortFuse's `renodx-dlss-SF-*` share the repository and
+  are left out), the zip checked against GitHub's digest (the RHI-repository rule, fail-open without one), exactly one
+  `renodx-dlss5.addon64` taken out of it, a 64-bit PE, cached per version with a download stamp. Pinned in the tests:
+  the release listing (2026-11-16).
+- **Version list and in-place swap (#10/#19)**: "DLSS5 Tool Version" beside Feeder / DX11 Bridge / ShortFuse / Uplift
+  under NR versions, newest first (rc10 above rc5, a release above its rcs). Latest follows new releases through Update
+  All and the background pass; a picked version stays. Changing it while installed swaps only the add-on, in place
+  (journaled; a file changed outside RHI refuses and nothing changes).
+- **NR DLL ownership (#229–#231)**: the `nvngx_dlssnr.dll` DLSS5 Tool placed makes it the game's one NR runtime owner
+  (`NeuralRenderingRuntimeOwnership`): the NR DLL list swaps it in place, Update All moves a "Latest" one onto the DLL
+  made for the card, the NR Cost Scaler can wrap it (and holds its changes while it does), the DLSS section's batch
+  never touches it, and OptiScaler DLSS NR / F5 or RTX Encore's NR file refuse it (and it them) as for every owner.
+- **DLSS5 Tool + DX11 Bridge**: the DX11 Bridge row now installs upstream's "DLSS5 Tool + DX11 Bridge": the DLSS5 Tool
+  first (the bridge only mirrors the game's DLSS onto a DX12 session for it), then the bridge add-on; if the bridge
+  fails, the DLSS5 Tool this install added is taken out again. Removing the bridge removes a DLSS5 Tool it installed
+  with it. A bridge installed before this change (no DLSS5 Tool) says on its row that it needs DLSS5 Tool from its own
+  row.
+- **Method switch and defaults**: one method at a time, as upstream: installing DLSS5 Tool removes ShortFuse, DLSS5
+  Feeder or GITC Uplift first, and they remove DLSS5 Tool; DLSS5 Tool and the DX11 Bridge never remove each other. The
+  recommendation keeps upstream's rules next to GITC Uplift and the Feeder: games with DLSS on DX11 or Vulkan → DLSS5
+  Tool + DX11 Bridge (the DX11 Bridge row), DX12 with DLSS → ShortFuse, DLSS5 Tool alone is never the default.
+- **DLSS5 Feeder's consumer**: the Feeder keeps deploying its own `renodx-dlss5.addon64` as before. Its row tells them
+  apart: under the Feeder's record the file is the Feeder's ("DLSS5 Feeder's neural consumer"), never an external DLSS5
+  Tool, and installing DLSS5 Tool there switches the method.
+- **Check Neural Rendering (#234)**: DLSS5 Tool is listed among the methods in use (and opens the page), named as the NR
+  DLL's owner when it placed it, with the version picked in the NR DLL list; the fix hint points at the NR DLL list,
+  which swaps its DLL in place.
+- Linux deviations: upstream's DLSS5 Tool install also upgrades the game's DLSS SR / RR / FG DLLs to the newest (with
+  `.original` backups); on Linux those stay with the DLSS section (Follow newest DLSS, the swap rows), which already
+  owns them, so DLSS5 Tool does not take them over (the row's description says so). Upstream's per-game method dropdown
+  maps to the method rows in Managed components (until the Phase 2 restyle).
+
+### #276 — Foveated DLSS5 Tool switch (2.9.3), on the DLSS5 Tool methods
+
+Upstream 2.9.3 `77cd3f7` (`Renodx5AddonService` Foveated parts; the switch in `SectionUi`). This supersedes the "not
+ported yet" note of the nr lane above.
+
+- **Foveated** check box under NR versions (upstream: beside the Cost Scaler, for the two DLSS5 Tool methods), per game,
+  with upstream's tooltip and a link to FoveatedDLSS5. On: DLSS5 Tool installs FoveatedDLSS5 (maximedgoulet) instead of
+  the stock add-on, under the same name; the version list becomes "DLSS5 Tool Version (Foveated)" with FoveatedDLSS5's
+  releases (read when first needed). Every release so far is a pre-release, so pre-releases count.
+- **Each download is checked against the hash published with the release**: the `renodx-dlss5.addon64.sha256` beside the
+  add-on, read on every resolve, and GitHub's digest too when there is one; a release without the `.sha256` is not
+  offered, a mismatch refuses before anything changes (fail-closed; `DownloadSources.FoveatedDlss5`,
+  docs/download-trust.md). Pinned in the tests: the release listing and v0.4.0's `.sha256` (2026-11-16).
+- **Latest keeps it current, and stock updates never replace it**: the record says which build is in the folder; the
+  update check and Update All compare a Foveated install with the Foveated releases only (and a stock one with stock
+  only).
+- **Switching while it is installed swaps the add-on in place** (the other build's Latest; the pin starts again from
+  Latest, as upstream), journaled and logged in the update history. If the swap fails, nothing changes in the game and
+  the switch and the pin go back to what is installed. Not installed: the choice is saved for the install.
+
+### #274 follow-up — GITC Uplift's NR on/off key is captured by pressing it
+
+Upstream 2.9.3 `SettingsHandler.UpliftKey`: Settings' GITC Uplift card now has upstream's box — click it and press a
+key; Backspace or ↺ sets None — instead of the list the nr lane used. One key, no modifiers (Tab, Enter and Escape keep
+their job). The key is stored exactly as before (`UpliftEnableKey`, the Windows virtual-key code Uplift reads from
+`[Uplift] EnableKey`), so a key saved by the nr lane's list shows by name (F9, Numpad 0, Page Up…). Avalonia's key is
+mapped to the Windows code (letters, digits, F1–F24, the numpad, navigation and punctuation keys). This removes the nr
+lane's "key picked from a list" deviation. As before on Linux the key is saved by the Settings dialog's Save (upstream
+saves on the key press) until the Settings restyle (#296/#297).
+
+### #277 follow-up — one iMMERSE Launchpad for HSF and GITC Uplift
+
+The HSF lane's stand-in (`ILaunchpadStep` / `ImmerseLaunchpadStep`) is gone: HSF uses the shared
+`ImmerseLaunchpadService` GITC Uplift uses.
+
+- HSF's Launchpad goes in the shared tree (`reshade-shaders/RHI/iMMERSE-Launchpad`) with its search paths in
+  ReShade.ini, the same files GITC Uplift uses: one placed by the other is listed, never placed twice, so ReShade never
+  loads two Launchpads.
+- **Removal deletes a shared Launchpad file only when no other component's record lists it**, and Launchpad's search
+  paths go with the last component that lists Launchpad (HSF and GITC Uplift alike; before, Uplift's removal took out
+  search paths HSF still needed). A file changed since RHI placed it is kept and named.
+- **Kept at the top of the preset for both**: the start / background pass that keeps Launchpad first for GITC Uplift now
+  does it for HSF too (when HSF's Launchpad is on, only while the game is not running), besides the ⚙ and Update. This
+  removes the HSF lane's "not continuously" deviation.
+- **Existing HSF installs**: an HSF record from before this change lists HSF's own Launchpad copies under
+  `reshade-shaders/Shaders/iMMERSE` and `Textures/iMMERSE`. They are moved into the shared tree (a copy GITC Uplift
+  already placed is shared instead), the search paths are added and the record lists the shared files — at the next
+  start / background pass, ⚙, Update or Launchpad switch, journaled, never while the game runs. When one of the older
+  copies is missing or was changed since RHI placed it, nothing moves: they stay HSF's and are removed with it, as
+  before.
+- Linux deviation (unchanged from both lanes): Launchpad lives in RHI's shader tree rather than upstream's shared
+  `Shaders/iMMERSE` folder; a ReShade.ini that only Launchpad's search paths created is deleted with the last user while
+  ReShade has not written to it.
+
+### Component numbers (wave 14 check)
+
+`ManagedComponentKind` is persisted as a number. Checked across the wave: every member has its own value, the retired 11
+stays free; wave 14 adds `GitcUplift = 24` (nr), `Dlss5Tool = 25` (nr-2) and `Hsf = 30` (extras-addons, a deliberate
+gap). No clash, so nothing is renumbered; 26–29 are free and nothing reads them. A test pins every value.

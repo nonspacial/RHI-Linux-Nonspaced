@@ -60,6 +60,9 @@ public static class NeuralRenderingRuntimeOwnership
             && OptiScalerOwner(optiScalerRecord) is { } optiScaler) return (optiScaler, optiScalerRecord);
         if (requester != ManagedComponentKind.Dlss5Feeder && records.Find(game, ManagedComponentKind.Dlss5Feeder) is { } feeder) return ("DLSS5 Feeder", feeder);
         if (requester != ManagedComponentKind.ShortFuse && records.Find(game, ManagedComponentKind.ShortFuse) is { } shortFuse) return ("ShortFuse", shortFuse);
+        // w14/nr-2 (#317): DLSS5 Tool owns the runtime only when it placed it (a game's own DLL stays the game's).
+        if (requester != ManagedComponentKind.Dlss5Tool && records.Find(game, ManagedComponentKind.Dlss5Tool) is { } dlss5Tool
+            && ListsRuntime(dlss5Tool)) return (Dlss5ToolDeploymentService.DisplayName, dlss5Tool);
         if (requester != ManagedComponentKind.RtxEncore && records.Find(game, ManagedComponentKind.RtxEncore) is { } encore
             && ListsRuntime(encore)) return (RtxEncoreOwnerName, encore);
         return null;
@@ -75,6 +78,7 @@ public static class NeuralRenderingRuntimeOwnership
             ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder => true,
             ManagedComponentKind.OptiScaler => OptiScalerOwner(records, game) is not null,
             ManagedComponentKind.RtxEncore => records.Find(game, ManagedComponentKind.RtxEncore) is { } encore && ListsRuntime(encore),
+            ManagedComponentKind.Dlss5Tool => records.Find(game, ManagedComponentKind.Dlss5Tool) is { } tool && ListsRuntime(tool), // #317
             _ => false
         };
 
@@ -92,7 +96,8 @@ public static class NeuralRenderingRuntimeOwnership
             .ToArray();
 
     private static readonly ManagedComponentKind[] OwnerKinds =
-        [ManagedComponentKind.OptiScaler, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.ShortFuse, ManagedComponentKind.RtxEncore];
+        [ManagedComponentKind.OptiScaler, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.ShortFuse, ManagedComponentKind.RtxEncore,
+         ManagedComponentKind.Dlss5Tool]; // w14/nr-2 (#317)
 
     public static string RefusalFor(string owner) => OwnedByPrefix + owner;
 

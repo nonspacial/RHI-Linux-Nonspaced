@@ -249,7 +249,7 @@ public sealed partial class NeuralRenderingCheckDialogViewModel : ObservableObje
                 if (controls.HeldByScaler.Contains(owner)) return ("nr-cost-scaler-remove", T("Nrc.FixScalerFirst"));
                 return owner switch
                 {
-                    ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder when controls.NrDllListSwaps
+                    ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool when controls.NrDllListSwaps // #317
                         => ("nr-dll-list", latest is not null ? F("Nrc.FixNrDllList", latest) : T("Nrc.FixNrDllListAny")),
                     // An older add-on-only DLSS5 Feeder: the list only saves the choice, taken when the Feeder is added again.
                     ManagedComponentKind.Dlss5Feeder => Row(owner, "nr-dll-list+component-remove",

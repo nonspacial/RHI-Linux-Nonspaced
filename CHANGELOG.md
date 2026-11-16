@@ -196,6 +196,22 @@ Wave 14 — extras-fg-2
 - **RTX Encore ⚙ warns while the game is running** (upstream 2.9.0): changes apply the next time it starts, and RTX
   Encore's in-game menu may overwrite them while it's open (#280).
 
+- Wave 14 — nr-2
+  - DLSS5 Tool (#317): RenoDX's DLSS5 Tool is now a Neural Rendering method of its own, as in upstream RHI, for 64-bit
+    games with native DLSS. Install it from its row in Managed components; it brings NVIDIA's Neural Rendering file when
+    the game has none. DLSS5 Tool Version (under NR versions) follows the latest release or stays on one, and switching
+    version swaps the add-on in place. The DX11 Bridge row now installs "DLSS5 Tool + DX11 Bridge" (the bridge alone did
+    nothing); a bridge installed earlier says it needs DLSS5 Tool. Check Neural Rendering lists it.
+  - Foveated DLSS5 Tool (#276): a Foveated check box under NR versions installs FoveatedDLSS5 (by maximedgoulet) instead
+    of the stock add-on: full-resolution Neural Rendering in the middle of the screen, less around it, for a large
+    performance gain. Every download is checked against the hash published with it. Latest keeps it current, stock
+    updates never replace it, and switching while installed swaps the add-on in place.
+  - GITC Uplift's NR on/off key (Settings › DLSS/Streamline › GITC Uplift) is set by clicking the box and pressing the
+    key, as in upstream RHI; Backspace or ↺ sets None. Keys saved before stay as they were.
+  - HSF and GITC Uplift now share one iMMERSE Launchpad: a game with both never gets two, removing one leaves what the
+    other still uses, and Launchpad stays at the top of the game's ReShade effects for HSF too. Existing HSF installs
+    move their Launchpad into the shared place the next time RHI checks them (not while the game is running).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

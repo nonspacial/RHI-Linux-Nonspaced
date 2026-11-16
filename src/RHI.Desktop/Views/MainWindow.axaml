@@ -534,6 +534,14 @@
                                     IsEnabled="{Binding CanConfigureUpliftVersionPin}"
                                     ToolTip.Tip="{DynamicResource Ui.UpliftVersionTip}" ToolTip.ShowDelay="2000"/>
                         </Grid>
+                        <!-- w14/nr-2 (#317/#276): DLSS5 Tool's version (upstream "DLSS5 Tool Version"; the Foveated list while Foveated is on). -->
+                        <Grid ColumnDefinitions="Auto,220" ColumnSpacing="8" IsVisible="{Binding ShowDlss5Tool}">
+                          <TextBlock Text="{Binding Dlss5ToolVersionLabel}" Classes="muted" VerticalAlignment="Center" MinWidth="100"/>
+                          <ComboBox x:Name="Dlss5ToolVersion" Grid.Column="1" ItemsSource="{Binding Dlss5ToolVersionOptions}"
+                                    SelectedItem="{Binding SelectedDlss5ToolVersion, Mode=TwoWay}"
+                                    IsEnabled="{Binding CanConfigureDlss5ToolVersionPin}"
+                                    ToolTip.Tip="{DynamicResource Ui.Dlss5ToolVersionTip}" ToolTip.ShowDelay="2000"/>
+                        </Grid>
                       </WrapPanel>
                       <Grid ColumnDefinitions="120,220,*" ColumnSpacing="8">
                         <TextBlock Text="NR DLL" Classes="muted" VerticalAlignment="Center"/>
@@ -544,6 +552,14 @@
                         <TextBlock Grid.Column="2" Text="{DynamicResource Ui.NrDllVersionNote}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
                       </Grid>
                       <views:NrCostScalerRow/> <!-- w3/parity hook (#96) -->
+                      <!-- w14/nr-2 (#276): the Foveated build of the DLSS5 Tool (upstream: beside the Cost Scaler, DLSS5 Tool methods). -->
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="6" IsVisible="{Binding ShowDlss5Tool}">
+                        <CheckBox x:Name="Dlss5ToolFoveated" Content="{DynamicResource Ui.Dlss5ToolFoveated}" IsChecked="{Binding Dlss5ToolFoveated, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureDlss5ToolFoveated}"
+                                  ToolTip.Tip="{DynamicResource Ui.Dlss5ToolFoveatedTip}" ToolTip.ShowDelay="2000"/>
+                        <Button x:Name="FoveatedDlss5Link" Content="{DynamicResource Ui.Dlss5ToolFoveatedLink}" Command="{Binding OpenFoveatedDlss5LinkCommand}" Padding="12,4"
+                                ToolTip.Tip="{DynamicResource Ui.Dlss5ToolFoveatedLinkTip}" ToolTip.ShowDelay="2000"/>
+                      </WrapPanel>
                       <!-- w14/nr (#274): GITC Uplift's iMMERSE Launchpad toggle (motion vectors) and its link, upstream's NR section. -->
                       <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="6" IsVisible="{Binding ShowGitcUplift}">
                         <CheckBox x:Name="GitcUpliftLaunchpad" Content="{DynamicResource Ui.UpliftLaunchpad}" IsChecked="{Binding UpliftLaunchpad, Mode=TwoWay}"

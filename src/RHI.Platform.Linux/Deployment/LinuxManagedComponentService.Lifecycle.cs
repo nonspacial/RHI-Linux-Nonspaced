@@ -92,6 +92,10 @@ public sealed partial class LinuxManagedComponentService
             // w12/hdr-wsi rows
             // w14/nr rows
             ManagedComponentKind.GitcUplift when GitcUplift is not null => await GitcUplift.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.GitcUplift), cancellationToken).ConfigureAwait(false), // #274
+            // w14/nr-2 rows
+            // #317: the add-on on its installed build's releases, plus a "Latest" NR DLL not made for this card (#230).
+            ManagedComponentKind.Dlss5Tool when Dlss5Tool is not null => await WithNeuralRenderingMoveAsync(game, component,
+                await Dlss5Tool.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Tool), cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false),
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -175,6 +179,8 @@ public sealed partial class LinuxManagedComponentService
             // w12/hdr-wsi rows
             // w14/nr rows
             ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.UpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.GitcUplift), cancellationToken), // #274
+            // w14/nr-2 rows
+            ManagedComponentKind.Dlss5Tool when Dlss5Tool is not null => UpdateNeuralRenderingOwnerAsync(game, component, cancellationToken), // #317
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -250,6 +256,8 @@ public sealed partial class LinuxManagedComponentService
             // w12/hdr-wsi rows
             // w14/nr rows
             ManagedComponentKind.GitcUplift => InstallGitcUpliftCoreAsync(game, cancellationToken), // #274
+            // w14/nr-2 rows
+            ManagedComponentKind.Dlss5Tool => InstallDlss5ToolCoreAsync(game, withBridge: false, cancellationToken), // #317
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -307,7 +315,7 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.RtxEncore when _rtxEncore is not null => _rtxEncore.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.Dlss5Feeder => _dlss5Feeder.RemoveAsync(game, cancellationToken),
-            ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.RemoveAsync(game, cancellationToken),
+            ManagedComponentKind.Dlss5Dx11Bridge => RemoveBridgeWithDlss5ToolAsync(game, cancellationToken), // w14/nr-2 (#317): its DLSS5 Tool too
             ManagedComponentKind.ShortFuse => _shortFuse.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.DofFix => _dofFix.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.REFramework => _reFramework.RemoveAsync(game, cancellationToken),
@@ -340,6 +348,8 @@ public sealed partial class LinuxManagedComponentService
             // w12/hdr-wsi rows
             // w14/nr rows
             ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.RemoveAsync(game, cancellationToken), // #274
+            // w14/nr-2 rows
+            ManagedComponentKind.Dlss5Tool when Dlss5Tool is not null => Dlss5Tool.RemoveAsync(game, cancellationToken), // #317
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

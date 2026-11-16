@@ -102,6 +102,9 @@ public sealed partial class LinuxManagedComponentService
         if (IsDlss5FeederFullManaged(game))
             return TrackNeuralRenderingDll(game, ManagedComponentKind.Dlss5Feeder,
                 () => _dlss5Feeder.SwapNeuralRenderingDllAsync(game, version, cancellationToken));
+        if (Dlss5Tool?.GetRecord(game) is { } tool && NeuralRenderingRuntimeOwnership.ListsRuntime(tool)) // w14/nr-2 (#317)
+            return TrackNeuralRenderingDll(game, ManagedComponentKind.Dlss5Tool,
+                () => Dlss5Tool.SwapNeuralRenderingDllAsync(game, version, cancellationToken));
         if (GitcUplift?.GetRecord(game) is not null) // w14/nr (#274): the DLL in Uplift's GITC-Uplift folder
             return TrackNeuralRenderingDll(game, ManagedComponentKind.GitcUplift,
                 () => GitcUplift.SwapNeuralRenderingDllAsync(game, version, cancellationToken));
@@ -121,7 +124,8 @@ public sealed partial class LinuxManagedComponentService
         // No Addons has the add-on turned off; it is refused like an update, before any download.
         var guard = PatchTargetGuard(game) ?? AddonOffGuard(game, kind);
         if (guard is not null) return Task.FromResult(guard);
-        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.GitcUplift))
+        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.GitcUplift
+                or ManagedComponentKind.Dlss5Tool)) // w14/nr-2 (#317)
             return SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken);
         // Logged like Update All's NR updates (which reach the same core through UpdateManagedAsync).
         return Track(game, kind, ComponentUpdateAction.Update, () => SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken));
@@ -158,6 +162,8 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.ShortFuse => _shortFuse.SwapAddonVersionAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
             // w14/nr (#274): add-on, helper and effects to the picked version together (Latest goes back to following updates).
             ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.UpdateAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
+            // w14/nr-2 (#317/#276): the add-on only, on the installed build's releases (a Foveated install never takes a stock one).
+            ManagedComponentKind.Dlss5Tool when Dlss5Tool is not null => Dlss5Tool.UpdateAsync(game, GetDlss5ToolBuild(game), _neuralVersionPins.Get(game, kind), cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{kind} is not a Neural Rendering add-on."))
         };
 
@@ -170,6 +176,7 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.ListVersionsAsync(cancellationToken),
             ManagedComponentKind.ShortFuse => _shortFuse.ListVersionsAsync(cancellationToken),
             ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.ListVersionsAsync(cancellationToken), // w14/nr (#274)
+            ManagedComponentKind.Dlss5Tool when Dlss5Tool is not null => Dlss5Tool.ListVersionsAsync(Dlss5ToolBuild.Stock, cancellationToken), // #317 (Foveated: ListDlss5ToolVersionsAsync)
             _ => Task.FromException<IReadOnlyList<GitHubReleaseVersion>>(new ArgumentOutOfRangeException(nameof(kind)))
         };
 
@@ -257,7 +264,8 @@ public sealed partial class LinuxManagedComponentService
                 releaseTag: _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder),
                 neuralRenderingDllVersion: _neuralVersionPins.GetNeuralRenderingDllVersion(game),
                 cancellationToken: cancellationToken).ConfigureAwait(false),
-            ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.InstallAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken).ConfigureAwait(false),
+            // w14/nr-2 (#317): upstream's "DLSS5 Tool + DX11 Bridge" — the DLSS5 Tool, then the bridge add-on.
+            ManagedComponentKind.Dlss5Dx11Bridge => await InstallBridgeWithDlss5ToolAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ShortFuse => await _shortFuse.InstallAsync(game, _shortFuse.GetAutoConfigEnabled(game), _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse),
                 _neuralVersionPins.GetNeuralRenderingDllVersion(game), cancellationToken).ConfigureAwait(false),
             _ => ComponentOperationResult.Fail($"{target} is not a Neural Rendering method.")
@@ -280,6 +288,7 @@ public sealed partial class LinuxManagedComponentService
                 ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.RemoveAsync(game, cancellationToken).ConfigureAwait(false),
                 ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.RemoveAsync(game, cancellationToken).ConfigureAwait(false),
                 ManagedComponentKind.GitcUplift when GitcUplift is not null => await GitcUplift.RemoveAsync(game, cancellationToken).ConfigureAwait(false), // #274
+                ManagedComponentKind.Dlss5Tool when Dlss5Tool is not null => await Dlss5Tool.RemoveAsync(game, cancellationToken).ConfigureAwait(false), // #317
                 _ => ComponentOperationResult.Ok("No conflicting method.")
             };
 
@@ -325,10 +334,13 @@ public sealed partial class LinuxManagedComponentService
     internal static IReadOnlyList<ManagedComponentKind> NeuralRenderingConflictsFor(ManagedComponentKind target) => target switch
     {
         // w14/nr (#274): GITC Uplift is a fourth method; switching method removes the installed one first (upstream).
-        ManagedComponentKind.ShortFuse => new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift },
-        ManagedComponentKind.Dlss5Feeder => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift },
+        // w14/nr-2 (#317): DLSS5 Tool is a fifth; with the DX11 Bridge it is upstream's "DLSS5 Tool + DX11 Bridge", so those
+        // two never remove each other.
+        ManagedComponentKind.ShortFuse => new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift, ManagedComponentKind.Dlss5Tool },
+        ManagedComponentKind.Dlss5Feeder => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift, ManagedComponentKind.Dlss5Tool },
         ManagedComponentKind.Dlss5Dx11Bridge => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.GitcUplift },
-        ManagedComponentKind.GitcUplift => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge },
+        ManagedComponentKind.GitcUplift => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.Dlss5Tool },
+        ManagedComponentKind.Dlss5Tool => new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.GitcUplift },
         _ => Array.Empty<ManagedComponentKind>()
     };
 
@@ -359,6 +371,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.Dlss5Feeder => "DLSS5 Feeder",
         ManagedComponentKind.Dlss5Dx11Bridge => "DLSS5 DX11 Bridge",
         ManagedComponentKind.GitcUplift => GitcUpliftDeploymentService.DisplayName,
+        ManagedComponentKind.Dlss5Tool => Dlss5ToolDeploymentService.DisplayName, // #317
         _ => kind.ToString()
     };
 }

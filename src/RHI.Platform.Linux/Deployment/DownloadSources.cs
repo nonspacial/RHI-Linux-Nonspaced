@@ -204,6 +204,10 @@ public static class DownloadSources
     /// </summary>
     public static readonly TrustedDownloadPolicy IntelXess = new(
         "Intel XeSS", "raw.githubusercontent.com", ["raw.githubusercontent.com"], maxBytes: 128L * 1024 * 1024);
+    /// <summary>#276: FoveatedDLSS5 (maximedgoulet), a build of the DLSS5 Tool add-on; each download is checked against the
+    /// <c>renodx-dlss5.addon64.sha256</c> published beside it (fail-closed).</summary>
+    public static readonly TrustedDownloadPolicy FoveatedDlss5 = new(
+        "FoveatedDLSS5", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -242,5 +246,7 @@ public static class DownloadSources
         GitcUplift, ImmerseLaunchpad,
         // w14/extras-fg rows
         IntelXess,
+        // w14/nr-2 rows
+        FoveatedDlss5,
     ];
 }

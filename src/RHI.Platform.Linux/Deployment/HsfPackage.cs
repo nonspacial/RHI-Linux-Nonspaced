@@ -171,33 +171,8 @@ public static class HsfPackage
 
     /// <summary>
     /// iMMERSE Launchpad's technique (upstream <c>UpliftService.LaunchpadToken</c>): it must run before HSF (and GITC
-    /// Uplift), which read its motion in the same frame.
+    /// Uplift), which read its motion in the same frame. w14/nr-2: the shared service's (moving it first is
+    /// <see cref="ImmerseLaunchpadService.KeepFirst"/>).
     /// </summary>
-    public const string LaunchpadToken = "MartysMods_Launchpad@MartysMods_LAUNCHPAD.fx";
-
-    /// <summary>
-    /// Preset text with <paramref name="token"/> moved to the front of every <c>Techniques=</c> / <c>TechniqueSorting=</c>
-    /// line that lists it lower down (upstream <c>MoveTechniqueFirst</c>): only the order changes; a technique not listed is
-    /// never added.
-    /// </summary>
-    public static (string Text, bool Changed) MoveTechniqueFirst(string text, string token)
-    {
-        var nl = text.Contains("\r\n") ? "\r\n" : "\n";
-        var lines = text.Split(nl);
-        var changed = false;
-        for (var i = 0; i < lines.Length; i++)
-            foreach (var key in new[] { "Techniques", "TechniqueSorting" })
-            {
-                if (!lines[i].StartsWith(key + "=", StringComparison.Ordinal)) continue;
-                var items = lines[i][(key.Length + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-                var at = items.FindIndex(item => item.Equals(token, StringComparison.OrdinalIgnoreCase));
-                if (at <= 0) continue;
-                var found = items[at];
-                items.RemoveAt(at);
-                items.Insert(0, found);
-                lines[i] = key + "=" + string.Join(",", items);
-                changed = true;
-            }
-        return (string.Join(nl, lines), changed);
-    }
+    public const string LaunchpadToken = ImmerseLaunchpadService.Token;
 }

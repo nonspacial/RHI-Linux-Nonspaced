@@ -22,7 +22,8 @@ internal static class LinuxComponentDependencyPolicy
         ManagedComponentKind.ShortFuse,
         ManagedComponentKind.DofFix,
         ManagedComponentKind.LumaFramework,
-        ManagedComponentKind.GitcUplift // w14/nr (#274): a ReShade add-on
+        ManagedComponentKind.GitcUplift, // w14/nr (#274): a ReShade add-on
+        ManagedComponentKind.Dlss5Tool // w14/nr-2 (#317): a ReShade add-on
     };
 
     internal static IReadOnlyList<ManagedComponentKind> ManagedDependenciesFor(

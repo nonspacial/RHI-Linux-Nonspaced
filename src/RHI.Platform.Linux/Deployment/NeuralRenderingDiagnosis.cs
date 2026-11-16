@@ -437,7 +437,8 @@ public sealed partial class LinuxManagedComponentService
     {
         var inUse = new List<(ManagedComponentKind, string)>();
         foreach (var kind in new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge,
-                     ManagedComponentKind.GitcUplift }) // w14/nr (#274)
+                     ManagedComponentKind.GitcUplift, // w14/nr (#274)
+                     ManagedComponentKind.Dlss5Tool }) // w14/nr-2 (#317)
             if (_records.Find(game, kind) is not null) inUse.Add((kind, DisplayNeuralRenderingMethod(kind)));
         if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } optiScaler) inUse.Add((ManagedComponentKind.OptiScaler, optiScaler));
         if (NeuralRenderingRuntimeOwnership.RtxEncoreOwner(_records, game) is { } encore) inUse.Add((ManagedComponentKind.RtxEncore, encore));
@@ -477,13 +478,15 @@ public sealed partial class LinuxManagedComponentService
         // DlssPanelViewModel.OrchestratedDlssStackManaged (SelectionFacts reads these two): it locks the DLSS / Streamline
         // section, and it is when the NR DLL list swaps in place (ExtrasViewModel) instead of only saving the choice.
         var orchestrated = IsShortFuseManaged(game) || IsDlss5FeederFullManaged(game);
+        // w14/nr-2 (#317): the NR DLL list also swaps a DLSS5 Tool's own NR DLL in place (ExtrasViewModel's rule).
+        var toolOwnsDll = NeuralRenderingRuntimeOwnership.ComponentOwnsRuntime(_records, game, ManagedComponentKind.Dlss5Tool);
         // The DLSS line lists the analysis' NR DLLs (RHI-owned files left out); before an analysis it is not known (false:
         // the page then names no DLSS line).
         var detected = nrDllPaths is { Count: > 0 };
         var held = method.InUseKinds.Where(kind => NrCostScalerService.OwnerChangeRefusal(_records, game, kind) is not null).ToArray();
         return new NrCheckControls(
             DlssNrLineSwaps: confirmed && detected && !orchestrated,
-            NrDllListSwaps: orchestrated,
+            NrDllListSwaps: orchestrated || toolOwnsDll,
             HeldByScaler: held,
             Protontricks: confirmed && game.UsesProton,
             Winetricks: confirmed && D3DCompilerToolInstaller.CanInstallWithWinetricks(game));
@@ -531,7 +534,7 @@ public sealed partial class LinuxManagedComponentService
             : card == RtxGeneration.Unknown ? NrDllFit.CardUnknown
             : NeuralRenderingGpuPolicy.MadeForAnotherGeneration(installed.Version, card) ? NrDllFit.NotForThisCard
             : NrDllFit.Fits;
-        var picked = ownerRecord?.Record.Component is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder
+        var picked = ownerRecord?.Record.Component is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool // #317
             ? _neuralVersionPins.GetNeuralRenderingDllVersion(game)
             : null;
         var faults = installed.Version is { } version && OptiScalerF5DriverPolicy.IsFaultingNrDll(version)

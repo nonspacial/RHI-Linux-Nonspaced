@@ -271,6 +271,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.Hsf => HsfDeploymentService.DisplayName, // w14/extras-addons (#277)
 
         ManagedComponentKind.GitcUplift => GitcUpliftDeploymentService.DisplayName, // w14/nr (#274)
+        ManagedComponentKind.Dlss5Tool => Dlss5ToolDeploymentService.DisplayName, // w14/nr-2 (#317)
         // w10/dlss-presets rows
         // w10/archives rows
         // w10/journal-holds rows
