@@ -527,16 +527,18 @@ public sealed partial class GameLinkCatalogue
         return result;
     }
 
-    /// <summary>The HDR Gaming Database README: <c>* [Game](https://github.com/KoKlusz/HDR-Gaming-Database/discussions/N)</c>.</summary>
+    /// <summary>
+    /// The HDR Gaming Database README. Since November 2026 (upstream 2.9.3 <c>3d99906</c>) an HTML table,
+    /// <c>&lt;tr&gt;&lt;td&gt;&lt;a href="https://github.com/KoKlusz/HDR-Gaming-Database/discussions/N"&gt;Game&lt;/a&gt;…</c>; before, a
+    /// Markdown list, <c>* [Game](…/discussions/N)</c>, still read. Names are HTML-decoded, without ™/®/© and with straight quotes.
+    /// </summary>
     public static IReadOnlyList<GameLinkEntry> ParseHdrDatabase(string markdown)
     {
         var result = new List<GameLinkEntry>();
-        foreach (var raw in markdown.Split('\n'))
+        foreach (Match match in HdrDatabaseEntry().Matches(markdown))
         {
-            var match = HdrDatabaseEntry().Match(raw);
-            if (!match.Success) continue;
-            var name = StraightQuotes(StripTrademarks(match.Groups[1].Value.Trim()));
-            if (name.Length > 0) result.Add(new(name, match.Groups[2].Value.Trim()));
+            var name = StraightQuotes(StripTrademarks(WebUtility.HtmlDecode(match.Groups["name"].Value).Trim()));
+            if (name.Length > 0) result.Add(new(name, match.Groups["url"].Value.Trim()));
         }
         return result;
     }
@@ -576,6 +578,8 @@ public sealed partial class GameLinkCatalogue
     [GeneratedRegex(@"^##\s+\[([^\]]+)\]\((https://github\.com/p1xel8ted/UltrawideFixes/releases/tag/[^)]+)\)", RegexOptions.Multiline, PatternTimeoutMs)]
     private static partial Regex P1xelHeader();
 
-    [GeneratedRegex(@"^\s*\*\s*\[([^\]]+)\]\((https://github\.com/KoKlusz/HDR-Gaming-Database/discussions/\d+)\)", RegexOptions.None, PatternTimeoutMs)]
+    [GeneratedRegex(@"<a\s(?:[^>""]|""[^""]*"")*?\bhref=""(?<url>https://github\.com/KoKlusz/HDR-Gaming-Database/discussions/\d+)""[^>]*>(?<name>[^<]*)</a>"
+        + @"|^[ \t]*\*[ \t]*\[(?<name>[^\]\n]+)\]\((?<url>https://github\.com/KoKlusz/HDR-Gaming-Database/discussions/\d+)\)",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline, PatternTimeoutMs)]
     private static partial Regex HdrDatabaseEntry();
 }

@@ -1329,3 +1329,16 @@ saved HDR mode stays in `game-library.json` but is not applied at a direct launc
 desktop switch can apply (a game RHI starts, the desktop's tool installed) and switches the resolution around a direct
 start; gamescope-only cases (store hand-offs, no desktop tool) need the HDR row and hide with it. Provenance is only in the
 section label's 2 s tooltip (EN + PT-BR).
+
+## Parity notes (fixes from upstream 2.8.9–2.9.3 sources)
+
+### #262 — HDR Gaming Database links read the README's HTML table (#183 follow-up)
+
+Upstream 2.9.3 `3d99906`. KoKlusz's README moved its games index from a Markdown list to an HTML `<table>` in November
+2026, so the list (#183) parsed no game and the HDR Gaming Database link was gone from every card menu and ⓘ dialog.
+`GameLinkCatalogue.ParseHdrDatabase` now reads each `<a href="…/HDR-Gaming-Database/discussions/N">Game</a>` and still
+the old `* [Game](…/discussions/N)` lines. Names are HTML-decoded (`Ratchet &amp; Clank`), as upstream, then matched by
+#183's rule (no ™/®/©, straight quotes, ignoring case); only https discussion threads of that repository are taken. A
+non-empty README in which no game is recognised already kept the last good cached copy (and a loaded copy through Full
+Refresh); tests now pin that for this list, so a further format change leaves the links as they were instead of removing
+them. The README as served on 2026-11-16 (138 games) is a test fixture.
