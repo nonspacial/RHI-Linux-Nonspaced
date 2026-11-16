@@ -386,10 +386,10 @@ public sealed partial class OptiScalerCustomBuildTests : IDisposable
     private Task<OptiScalerCustomImportResult> Import(string source, string name)
         => _store.ImportAsync(source, name, null, new HttpClient(new LinkHandler()), new ZipExtractor());
 
-    private static string WriteBuild(string root, bool os10, bool forwarder = false, string marker = "v1", string iniExtra = "")
+    private static string WriteBuild(string root, bool os10, bool forwarder = false, string marker = "v1", string iniExtra = "", string dllText = "")
     {
         Directory.CreateDirectory(root);
-        WritePe(Path.Combine(root, "OptiScaler.dll"), "optiscaler/OptiScaler custom");
+        WritePe(Path.Combine(root, "OptiScaler.dll"), "optiscaler/OptiScaler custom " + dllText);
         File.WriteAllText(Path.Combine(root, "OptiScaler.ini"), "[Plugins]\nLoadReshade=auto\n" + iniExtra);
         File.WriteAllText(Path.Combine(root, "marker.dll"), marker);
         if (os10)

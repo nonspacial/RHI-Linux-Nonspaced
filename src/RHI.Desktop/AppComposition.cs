@@ -264,6 +264,7 @@ internal sealed class AppComposition
         var optiPackages = new OptiScalerPackageProvider(http, optiExtractor);
         var optiscaler = new OptiScalerDeploymentService(deployment, records, wineOverrides, optiPackages, dlss, dlssEnablerStandalone, journal,
             optiPatcher: new OptiPatcherProvider(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "optipatcher"))); // w3/dllnames hook (#98)
+        optiscaler.AnrFg = new AnrFgProvider(http, optiExtractor); // w14/optiscaler-2 hook (#272)
         var ultimateAsiLoader = new UltimateAsiLoaderDeploymentService(http, records, wineOverrides, journal: journal);
         var shortFuse = new ShortFuseDeploymentService(http, deployment, records, wineOverrides, ultimateAsiLoader, dlss, journal: journal);
         var dofFix = new DofFixDeploymentService(http, records, upstreamManifest, journal: journal);

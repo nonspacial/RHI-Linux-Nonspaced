@@ -209,6 +209,10 @@ Wave 14 — library-folders
 - **Save ini… / Load saved ini…** in OptiScaler's ⚙ (#272): keep any game's OptiScaler.ini under a name ("F5 super
   ini"), add one from a file, and use it for any game. The game remembers it and gets it back after a reinstall or a
   version switch.
+- **ANR FG preset** in OptiScaler's ⚙ (#272, upstream 2.9.3): Apex Neural Rendering frame generation in place of the
+  game's DLSS frame generation. It first says ANR FG is closed source (#285), checks that the game's OptiScaler build
+  can load it (Nightly from late October 2026, or a build based on it), then downloads the newest ANR FG release,
+  checked against its published hashes, into OptiScaler's custom folder. Your `nr_fg.ini` is kept.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

@@ -150,11 +150,12 @@ public sealed class OptiScalerPresetsTests : IDisposable
     }
 
     [Fact]
-    public async Task Recommended_AreUpstreamsPresets_WithoutAnrFgUntilRhiCanInstallIt()
+    public async Task Recommended_AreUpstreamsPresets_AnrFgIncluded()
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var presets = fx.Vm.OptiScalerPresets;
-        Assert.Equal(["Real DLSS FG", "DLSS Enabler FG", "UMFG XeFG"], presets.Recommended.Select(preset => preset.Name));
+        // #272 (w14/optiscaler-2): RHI installs ANR FG, so upstream's fourth preset is offered too.
+        Assert.Equal(["Real DLSS FG", "DLSS Enabler FG", "UMFG XeFG", "ANR FG"], presets.Recommended.Select(preset => preset.Name));
     }
 
     [Fact]
@@ -384,6 +385,30 @@ public sealed class OptiScalerPresetsTests : IDisposable
         if (fx.Managed.GetInstalledOptiScalerVariant(game) is not null)
             Assert.StartsWith("Preset \"Old\" applied", await presets.ApplyAsync(1), StringComparison.Ordinal);
         Assert.Equal(2, asked.Count);
+    }
+
+    // #272/#285: the ANR FG preset shows the closed-source notice first; declined, nothing is installed or applied. Accepted,
+    // the build is checked before anything is downloaded (this OptiScaler's DLL does not load custom providers).
+    [Fact]
+    public async Task AnrFgPreset_AsksTheClosedSourceNoticeFirst_ThenChecksTheBuild()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = await AddManagedOptiScalerGameAsync(fx, "Anr", "[FrameGen]\nFGInput=auto\nFGOutput=auto\nFGNvngxReplacement=auto\n");
+        File.WriteAllBytes(Path.Combine(game.BinaryDirectory!, "dxgi.dll"), [0x4D, 0x5A, 0, 0]);
+        var presets = fx.Vm.OptiScalerPresets;
+        var anr = presets.Recommended.Single(preset => preset.InstallAnrFg);
+        var notices = new List<DismissibleNotice>();
+        var accept = false;
+        fx.Vm.ConfirmDismissibleAsync = notice => { notices.Add(notice); return Task.FromResult(new DismissibleNoticeAnswer(accept, false)); };
+
+        Assert.Equal("Preset ANR FG was not applied.", await presets.ApplyRecommendedAsync(anr));
+        Assert.Equal("ANR FG is closed source", Assert.Single(notices).Title);
+        Assert.Equal(InstallNoticePresenter.AnrFgRepositoryUrl, notices[0].LinkUrl);
+
+        accept = true;
+        var line = await presets.ApplyRecommendedAsync(anr);
+        Assert.StartsWith(OptiScalerDeploymentService.AnrFgUnsupportedPrefix + "Nightly", line, StringComparison.Ordinal);
+        Assert.Contains("FGInput=auto", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
     }
 
     [Fact]

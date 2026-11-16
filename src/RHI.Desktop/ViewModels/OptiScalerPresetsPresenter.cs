@@ -63,15 +63,8 @@ public sealed class OptiScalerPresetsPresenter
     /// <summary>The recommended presets' source (upstream's optiscaler_presets.json; built-in copies until it is read).</summary>
     internal OptiScalerRecommendedPresets RecommendedSource { get; set; } = new(null);
 
-    /// <summary>
-    /// The recommended presets offered on Linux. ANR FG (upstream 2.9.3) needs RHI's ANR FG install, which this build has
-    /// not got yet (#272), so presets that install it are left out until then.
-    /// </summary>
-    public IReadOnlyList<OptiScalerRecommendedPreset> Recommended
-        => RecommendedSource.Presets.Where(preset => !preset.InstallAnrFg || AnrFgSupported).ToArray();
-
-    /// <summary>Set once RHI can install ANR FG (#272).</summary>
-    internal static bool AnrFgSupported { get; set; }
+    /// <summary>The recommended presets, all of them since RHI installs ANR FG (#272, w14/optiscaler-2).</summary>
+    public IReadOnlyList<OptiScalerRecommendedPreset> Recommended => RecommendedSource.Presets;
 
     /// <summary>
     /// The preset that matches the game's current settings is ticked (upstream <c>IsOsPresetActive</c>): every setting it
@@ -99,6 +92,14 @@ public sealed class OptiScalerPresetsPresenter
     /// </summary>
     public async Task<string> ApplyRecommendedAsync(OptiScalerRecommendedPreset preset)
     {
+        // #272 (upstream 2.9.3): ANR FG first, after its closed-source notice (#285): the preset names it as the FG provider.
+        if (preset.InstallAnrFg)
+        {
+            if (!await _shell.InstallNotices.ConfirmClosedSourceAsync(ClosedSourceMod.AnrFg))
+                return UiLocalizationService.Format("Osp.SwitchDeclined", preset.Name);
+            var anr = await _shell.EnsureAnrFgForPresetAsync();
+            if (!anr.Success) return UiLocalizationService.Present(anr.Message);
+        }
         var (changed, notOffered, failure) = await ApplySettingsAsync(preset.Settings);
         if (failure is not null)
             return UiLocalizationService.Format("Shell.PresetStopped", preset.Name, changed, failure);

@@ -1833,6 +1833,7 @@ internal static class UiStrings
         ("Osp.SwitchConfirm", "Trocar e aplicar", "Switch and apply"),
         ("Osp.SwitchDeclined", "A predefinição {0} não foi aplicada.", "Preset {0} was not applied."),
         ("Osp.Switching", "Trocando o OptiScaler para {0}...", "Switching OptiScaler to {0}..."),
+        ("Osp.AnrFgInstalling", "Instalando o ANR FG...", "Installing ANR FG..."),
         ("Osp.PresetVersionGone", "A versão do OptiScaler dela ({0}) não existe mais, então a versão não foi trocada.", "Its OptiScaler version ({0}) no longer exists, so the version was not changed."),
         // #272 All Settings (upstream 2.9.3 MainWindow.Events.Components.OptiScaler.AllSettings)
         ("Osa.Title", "Todas as configurações", "All Settings"),

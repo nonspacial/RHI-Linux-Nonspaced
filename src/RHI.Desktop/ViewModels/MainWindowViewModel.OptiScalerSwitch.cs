@@ -18,6 +18,21 @@ public sealed partial class MainWindowViewModel
     /// <summary>#272: the ⚙'s Save ini / Load saved ini for <paramref name="game"/>.</summary>
     internal OptiScalerIniLibraryPresenter NewOptiScalerIniLibrary(DetectedGame game) => new(_managedComponents, game);
 
+    /// <summary>
+    /// #272: ANR FG into the selected game's OptiScaler custom folder for the preset that asks for it (the newest release,
+    /// verified; the build's support checked in its DLL), as one operation.
+    /// </summary>
+    internal async Task<ComponentOperationResult> EnsureAnrFgForPresetAsync()
+    {
+        if (SelectedGame is not { } game) return ComponentOperationResult.Fail(OptiScalerDeploymentService.AnrFgNotManagedMessage);
+        using var op = BeginOperation("component");
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        StatusText = T("Osp.AnrFgInstalling");
+        var result = await _managedComponents.EnsureAnrFgAsync(game, op.Token);
+        if (result.Success) await ReprobeGameAsync(game);
+        return result;
+    }
+
     internal async Task<(bool Switched, string Line)> SwitchOptiScalerVersionForPresetAsync(OptiScalerVariant target, string presetName)
     {
         if (SelectedGame is not { } game) return (false, "");

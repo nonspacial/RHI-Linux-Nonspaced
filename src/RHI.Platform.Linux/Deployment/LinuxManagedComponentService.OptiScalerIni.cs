@@ -118,4 +118,8 @@ public sealed partial class LinuxManagedComponentService
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Remove, () => RemoveOptiScalerMovingUniversalMfgAsync(game, cancellationToken));
     }
+
+    /// <summary>#272: ANR FG for the OptiScaler preset that installs it (see <see cref="OptiScalerDeploymentService.EnsureAnrFgAsync"/>).</summary>
+    public Task<ComponentOperationResult> EnsureAnrFgAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => PatchTargetGuard(game) is { } guard ? Task.FromResult(guard) : _optiscaler.EnsureAnrFgAsync(game, cancellationToken);
 }
