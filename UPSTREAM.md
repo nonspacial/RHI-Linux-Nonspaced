@@ -1480,3 +1480,21 @@ makes the check could-not-check and the update refuse, as for the proxy (#238). 
 Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
 MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
 release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane extras-fg)
+
+### #285 — Closed-source notice for RTX Encore, 20/30 FG Unlock and ANR FG (2.9.3)
+
+- Before the first install of RTX Encore or 20/30 FG Unlock (the row's Install; never on update), RHI shows upstream's
+  notice: "<mod> is closed source: <author> publishes only the finished DLL, not its code …", Install / Cancel and
+  **Don't show this again**. As upstream, a tick is saved whatever the answer and is kept per mod (upstream's
+  `RtxEncoreClosedSourceDismissed`, `Dlssg2030ClosedSourceDismissed`, `AnrFgClosedSourceDismissed`).
+- The notice is a reusable confirm (`InstallNoticePresenter.ConfirmAsync`): the Universal MFG ReShade warning (#278)
+  uses it, and the OptiScaler lane calls `ConfirmClosedSourceAsync(ClosedSourceMod.AnrFg)` before an ANR FG preset
+  install; ANR FG has no row, so its notice carries its GitHub page as a link, as upstream.
+- The ⓘ button of the RTX Encore, 20/30 FG Unlock, Universal MFG Unlocker and MFG Unlock rows opens the mod's GitHub
+  page (upstream's Info buttons) instead of a notes dialog.
+- Linux deviations: the dismissals live in `~/.config/rhi-linux/dismissed-notices.json`, not in the main settings file,
+  so Settings → Reset does not bring the notices back. A dismissal that cannot be saved (an unreadable file) is reported
+  on the status line and the notice shows again next time. Without a window (tests, headless runs) every notice is
+  accepted.

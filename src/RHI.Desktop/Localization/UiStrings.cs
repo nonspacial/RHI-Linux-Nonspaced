@@ -1491,5 +1491,14 @@ internal static class UiStrings
         ("Hw.HdrTipMod", "HDR: um mod de HDR está instalado ({0}).", "HDR: an HDR mod is installed ({0})."),
         ("Hw.LegacyWsiNotUsed", "A marcação de WSI legado salva não é usada com este driver, que não precisa dela.", "The saved Legacy WSI tick is not used with this driver, which does not need it."),
         ("Hw.ResolutionRow", "Resolução", "Resolution"),
+        // w14/extras-fg rows
+        // #285: the closed-source notice (upstream ShowClosedSourceNoticeAsync) and the shared "Don't show this again" confirm.
+        ("Notice.ClosedSourceTitle", "{0} é de código fechado", "{0} is closed source"),
+        ("Notice.ClosedSourceWhat", "{0} é de código fechado: {1} publica só a DLL pronta, não o código, então ninguém de fora pode verificar o que ela faz.", "{0} is closed source: {1} publishes only the finished DLL, not its code, so nobody outside can check what it does."),
+        ("Notice.ClosedSourceRowInfo", "O RHI a baixa sem alterações das versões de {0} no GitHub. Só instale se você estiver de acordo com isso. O botão ⓘ na linha dele abre a página dele no GitHub.", "RHI downloads it unchanged from {0}'s GitHub releases. Only install it if you're OK with that. The ⓘ button on its row opens its GitHub page."),
+        ("Notice.ClosedSourceLink", "O RHI a baixa sem alterações das versões de {0} no GitHub. Só instale se você estiver de acordo com isso. A página dele no GitHub:", "RHI downloads it unchanged from {0}'s GitHub releases. Only install it if you're OK with that. Its GitHub page:"),
+        ("Notice.DontShowAgain", "Não mostrar novamente", "Don't show this again"),
+        ("Notice.DismissNotSaved", "Não foi possível salvar \"Não mostrar novamente\", então o aviso aparece de novo da próxima vez: {0}", "\"Don't show this again\" could not be saved, so the notice will show again next time: {0}"),
+        ("Notice.OpenGitHubTip", "Abre a página do {0} no GitHub", "Open the {0} GitHub page"),
     ];
 }

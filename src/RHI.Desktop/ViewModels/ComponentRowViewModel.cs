@@ -118,7 +118,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
         _ => null
     };
     // w5/catalogue-info rows
-    public bool HasInfo => ComponentInfoPresenter.HasInfo(component.Kind, component.Availability); // #184: ⓘ dialog
+    public bool HasInfo => ComponentInfoPresenter.HasInfo(component.Kind, component.Availability) || HasGitHubInfo; // #184: ⓘ dialog; #285: or the mod's GitHub page
     public string InfoTip => ComponentInfoPresenter.TipFor(Name); // #184
     // w5/ini-presets rows
     public bool HasIniSettings => IniPresetsPresenter.HasIniSettings(component); // #181: ReShade / ReLimiter / Display Commander INI ⚙
@@ -127,7 +127,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w5/reshade-core rows
     // w7 lane rows: component-row members (one member each)
     // w7/smalls rows
-    public ComponentInfoHighlightState InfoHighlight { get; } = new(component.DisplayName); // #210: ⓘ highlight, set by ComponentInfoPresenter.FollowRows
+    public ComponentInfoHighlightState InfoHighlight { get; } = new(component.DisplayName) { GeneralTip = GitHubInfoUrlFor(component.Kind) is null ? null : UiLocalizationService.Format("Notice.OpenGitHubTip", component.DisplayName) }; // #210: ⓘ highlight, set by ComponentInfoPresenter.FollowRows; #285: GitHub tip
     // w7/reshade rows
     // w7/shader-sets rows
     // w7/nvapi-launch rows
@@ -158,6 +158,27 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w12/nr-logs rows
     // w12/pins rows
     // w12/hdr-wsi rows
+    // w14 lane rows: component-row members (one member each)
+    // w14/extras-fg rows
+    public string? GitHubInfoUrl => component.Availability == ComponentAvailability.Unsupported ? null : GitHubInfoUrlFor(component.Kind); // #285: ⓘ opens the mod's GitHub page
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
+
+    /// <summary>
+    /// #285 (upstream rows' Info button): the frame-generation unlocks and closed-source mods whose ⓘ opens their GitHub
+    /// page (upstream has no notes dialog for them); null for every other row.
+    /// </summary>
+    public static string? GitHubInfoUrlFor(ManagedComponentKind kind) => kind switch
+    {
+        ManagedComponentKind.RtxEncore => RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.RepositoryUrl,
+        ManagedComponentKind.Dlssg2030Unlock => RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.RepositoryUrl,
+        ManagedComponentKind.Rtx40MfgStandalone => RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.RepositoryUrl,
+        ManagedComponentKind.MfgAdaUnlock => MfgUnlockRepositoryUrl,
+        _ => null
+    };
+
+    /// <summary>MFG Unlock's GitHub page (upstream's Info button).</summary>
+    public const string MfgUnlockRepositoryUrl = "https://github.com/mavismmg/MFGAdaUnlock-RenoDx";
+
+    public bool HasGitHubInfo => GitHubInfoUrl is not null;
 }

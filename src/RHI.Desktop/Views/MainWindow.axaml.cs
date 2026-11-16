@@ -69,6 +69,7 @@ public sealed partial class MainWindow : Window
         InitializeLinuxUx();
         InitializeResponsive();
         InitializeSectionSummaries();
+        AttachDismissibleNotices(); // w14/extras-fg (#285)
         // The full title and subtitle are only offered as a tooltip when the header had to trim them.
         foreach (var name in new[] { "SelectedTitleText", "SelectedSourceText" })
             if (this.FindControl<TextBlock>(name) is { } trimmed)
