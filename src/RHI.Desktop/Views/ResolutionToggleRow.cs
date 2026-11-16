@@ -27,7 +27,7 @@ public sealed class ResolutionToggleRow : ContentControl
 
     public ResolutionToggleRow()
     {
-        ToolTip.SetTip(_toggle, T("Shell.ResToggleTip"));
+        ToolTip.SetTip(_toggle, LaunchToggleTips.Resolution(false)); // #309: Sync shows the game's state
         ToolTip.SetShowDelay(_toggle, MiddleEllipsisText.TooltipDelay);
         _size.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<OptionItem>((item, _) => new TextBlock { Text = item?.Display });
         _toggle.IsCheckedChanged += (_, _) =>
@@ -77,7 +77,8 @@ public sealed class ResolutionToggleRow : ContentControl
     {
         if (e.PropertyName is nameof(RuntimePanelViewModel.ResolutionToggle) or nameof(RuntimePanelViewModel.SelectedResolution)
             or nameof(RuntimePanelViewModel.ResolutionHint) or nameof(RuntimePanelViewModel.CanEditHdrProfile)
-            or nameof(RuntimePanelViewModel.ResolutionOptions) or nameof(RuntimePanelViewModel.ShowResolutionToggle) or nameof(RuntimePanelViewModel.ShowResolutionRow))
+            or nameof(RuntimePanelViewModel.ResolutionOptions) or nameof(RuntimePanelViewModel.ShowResolutionToggle)
+            or nameof(RuntimePanelViewModel.ResolutionToggleTip) or nameof(RuntimePanelViewModel.ShowResolutionRow))
             Sync();
     }
 
@@ -91,6 +92,7 @@ public sealed class ResolutionToggleRow : ContentControl
             if (_vm is not null && !ReferenceEquals(_size.ItemsSource, _vm.ResolutionOptions)) _size.ItemsSource = _vm.ResolutionOptions;
             var on = _vm?.ResolutionToggle == true;
             _toggle.IsChecked = on;
+            ToolTip.SetTip(_toggle, _vm?.ResolutionToggleTip ?? LaunchToggleTips.Resolution(false)); // #309
             _toggle.IsEnabled = _size.IsEnabled = _vm?.CanEditHdrProfile == true;
             _size.IsVisible = on;
             if (_vm is not null) _size.SelectedItem = _vm.SelectedResolution;

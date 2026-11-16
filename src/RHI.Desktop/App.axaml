@@ -30,6 +30,11 @@
       <SolidColorBrush x:Key="RhiSuccessTextBrush">#5ECB7D</SolidColorBrush>
       <SolidColorBrush x:Key="RhiDisabledForegroundBrush">#626A75</SolidColorBrush>
       <SolidColorBrush x:Key="RhiDisabledBorderBrush">#292D34</SolidColorBrush>
+      <!-- w14/ui-settings (small) rows -->
+      <!-- #309 (upstream 2.8.9): "Favourited" in amber; library names bright with ReShade, dimmed without (upstream's colours). -->
+      <SolidColorBrush x:Key="RhiFavouriteBrush">#D4A856</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiLibraryNameBrush">#E2E8FF</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiLibraryNameDimBrush">#5A6880</SolidColorBrush>
     </ResourceDictionary>
   </Application.Resources>
 
@@ -493,6 +498,66 @@
     <Style Selector="Button.rhi.secondary:disabled">
       <Setter Property="Foreground" Value="{DynamicResource RhiDisabledForegroundBrush}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource RhiDisabledBorderBrush}"/>
+    </Style>
+    <!-- w14/ui-settings (small) rows -->
+    <!-- #309 (upstream 2.8.9 ApplyFavouriteButtonStyle): a quiet Favourite button, amber text once favourited. -->
+    <Style Selector="Button.rhi.favourite">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.rhi.favourite.on">
+      <Setter Property="Foreground" Value="{DynamicResource RhiFavouriteBrush}"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): a greyed library name means ReShade isn't installed for that game. -->
+    <Style Selector="TextBlock.libraryName">
+      <Setter Property="Foreground" Value="{DynamicResource RhiLibraryNameBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.libraryName.noReShade">
+      <Setter Property="Foreground" Value="{DynamicResource RhiLibraryNameDimBrush}"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): the store badge opens the game's Steam Community page when its app id is known. -->
+    <Style Selector="Border.storeLink">
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <!-- #309 (upstream 2.9.0): a link inside the message of the day's text. -->
+    <Style Selector="Button.motdLink">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.motdLink:pointerover">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): the Quick Start's step badges and tip boxes. -->
+    <Style Selector="Border.quickStartBadge">
+      <Setter Property="Background" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.quickStartBadge">
+      <Setter Property="Foreground" Value="{DynamicResource RhiBackgroundBrush}"/>
+    </Style>
+    <Style Selector="Border.quickStartTip">
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
+    <!-- #309 (upstream 2.9.2): What's New's version list. -->
+    <Style Selector="Button.whatsNewItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Padding" Value="10,6"/>
+    </Style>
+    <Style Selector="Button.whatsNewItem.selected">
+      <Setter Property="Background" Value="{DynamicResource RhiControlHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
   </Application.Styles>
 </Application>

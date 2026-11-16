@@ -82,7 +82,7 @@ public sealed partial class Dlss5ToolDeploymentService
     public const string GameNrDllKeptNote = " The game's own nvngx_dlssnr.dll was kept.";
     public const string NoNrDllNote = " NVIDIA's Neural Rendering file could not be fetched; the add-on needs nvngx_dlssnr.dll beside the game.";
     public const string FoveatedNote = " Foveated build: turn on foveation and set the zones in the add-on's settings in the ReShade overlay (Add-ons > DLSS 5 Neural Rendering).";
-    public const string AvailableNote = "DLSS5 Tool (RenoDX): Neural Rendering on the game's own DLSS. For DX12 games with native DLSS; with the DX11 Bridge for DX11 and Vulkan games. RHI installs the add-on and, when the game has none, nvngx_dlssnr.dll. For the newest DLSS use the DLSS section.";
+    public const string AvailableNote = "DLSS5 Tool (RenoDX): Neural Rendering on the game's own DLSS. For DX12 games with native DLSS; with the DX11 Bridge for DX11 and Vulkan games. RHI installs the add-on and, when the game has none, nvngx_dlssnr.dll, and brings the game's DLSS SR, RR and FG files to the newest through the DLSS section (originals kept there).";
     public const string SwitchMethodNote = " Installing it removes the Neural Rendering method RHI installed here first.";
     public const string FeederOwnsNote = "renodx-dlss5.addon64 here is DLSS5 Feeder's neural consumer (part of the Feeder install).";
 

@@ -310,6 +310,23 @@ public sealed class SettingsLayoutParityTests
         Assert.Equal(UiLocalizationService.Text("Tip.FilterFavourites"), ToolTip.GetTip(bare));
     }
 
+    [Fact]
+    public async Task SaveOnChange_KeepsSettingsTheFormDoesNotShow_WhatsNewsChoices()
+    {
+        // Merge of #309 into #296: Settings writes the whole settings file, so What's New's own choices must survive it.
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var seeded = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+        seeded.WhatsNewNavHidden = true;
+        seeded.WhatsNewFontSize = 17;
+        fx.Vm.Settings.SaveLinuxSettings(seeded);
+        var dialog = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
+        dialog.VerboseLogging = !dialog.VerboseLogging;
+        dialog.FlushSave();
+        Assert.True(Saved(fx).WhatsNewNavHidden);
+        Assert.Equal(17, Saved(fx).WhatsNewFontSize);
+    }
+
     private static LinuxAppSettings Saved(ViewModelFixture fx) => new LinuxSettingsStore(fx.Settings.SettingsPath).Load();
 
     private sealed class TempDir : IDisposable

@@ -269,6 +269,8 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
             ShowResLaunchButton = ShowResLaunchButton,
             SettingsLastSection = LastSection, // #296
             SettingsTabbed = Tabbed,
+            WhatsNewNavHidden = Settings.WhatsNewNavHidden, // #309: What's New's own choices, kept as they are
+            WhatsNewFontSize = Settings.WhatsNewFontSize,
             CacheAllShaders = CacheAllShaders,
             VerboseLogging = VerboseLogging,
             AutoUpdateComponents = AutoUpdateComponents,

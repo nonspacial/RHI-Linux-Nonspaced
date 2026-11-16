@@ -119,8 +119,9 @@ public sealed class ModAuthorCreditTests : IDisposable
 
         UiLocalizationService.Apply("en-US");
         var rows = components.Select(c => new ComponentRowViewModel(c, new NoOpCommand())).ToArray();
-        Assert.Equal("renodx-prey-dlss.addon64 · by Musa", rows[0].Credit);
-        Assert.Equal("Luma-Prey.addon · by Pumbo", rows[1].Credit);
+        // w14/ui-settings (small), upstream 2.8.9: the badge says which mod the author made ("RenoDX: Marat").
+        Assert.Equal("renodx-prey-dlss.addon64 · RenoDX: Musa", rows[0].Credit);
+        Assert.Equal("Luma-Prey.addon · Luma: Pumbo", rows[1].Credit);
         Assert.False(rows[2].HasCredit);
     }
 

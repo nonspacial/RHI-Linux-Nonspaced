@@ -199,6 +199,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     // One pass: the component updates (when that setting is on), then, with the gate released, Follow newest (#177).
     private async Task RunBackgroundUpdatePassAsync(CancellationToken cancellationToken)
     {
+        using var activity = Shell.BeginActivity("Sb.ActCheckingUpdates"); // #298
         await RunBackgroundComponentPassAsync(cancellationToken);
         await FollowNewestAsync(cancellationToken);
         await KeepLaunchpadFirstAsync(cancellationToken); // w14/nr (#274)
@@ -354,11 +355,14 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     {
         if (Shell.UpdatePolicy is not { } policy) return;
         var choice = UpdatePolicyFeatures.ChoiceFrom(Host.Settings);
-        var check = await Task.Run(() => policy.Follow.CheckAsync(choice, cancellationToken), cancellationToken);
+        DlssFollowCheck check;
+        using (choice.Any ? Shell.BeginActivity("Sb.ActCheckingDlss") : null) // #298
+            check = await Task.Run(() => policy.Follow.CheckAsync(choice, cancellationToken), cancellationToken);
         if (!check.NeedsApply) return;
         await Host.Operations.WhenIdleAsync(cancellationToken);
         using var op = Host.Operations.TryBegin("dlss-follow", linkedToken: cancellationToken);
         if (op is null) return;
+        using var applying = Shell.BeginActivity("Sb.ActUpdatingDlss"); // #298
         var games = Host.UnattendedGames.ToArray(); // #291: hidden games left out
         // File indexes the selection analysis already built; the service builds the rest itself, off the UI thread.
         var cached = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);

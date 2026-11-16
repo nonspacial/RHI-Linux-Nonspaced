@@ -175,6 +175,8 @@ public sealed class SettingsViewModel : PanelViewModel
             SettingsTabbed = Host.Settings.SettingsTabbed, // #296
             ShowHdrLaunchButton = Host.Settings.ShowHdrLaunchButton, // #312
             ShowResLaunchButton = Host.Settings.ShowResLaunchButton, // #312
+            WhatsNewNavHidden = Host.Settings.WhatsNewNavHidden, // #309
+            WhatsNewFontSize = Host.Settings.WhatsNewFontSize, // #309
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

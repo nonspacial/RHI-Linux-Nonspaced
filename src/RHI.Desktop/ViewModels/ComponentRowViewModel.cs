@@ -56,19 +56,28 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     }
 
     /// <summary>Secondary line under the row: installed add-on file name(s) and the mod author, e.g.
-    /// "renodx-hogwartslegacy.addon64 · by Marat". Empty when neither is known.</summary>
+    /// "renodx-hogwartslegacy.addon64 · RenoDX: Marat" (upstream 2.8.9: the badge says which mod the author made). Empty when
+    /// neither is known.</summary>
     public string Credit
     {
         get
         {
             var parts = new List<string>(2);
             if (component.InstalledAddonFiles.Count > 0) parts.Add(string.Join(", ", component.InstalledAddonFiles));
-            if (!string.IsNullOrWhiteSpace(component.Author)) parts.Add(UiLocalizationService.Format("Ui.ModAuthorBy", component.Author));
+            if (!string.IsNullOrWhiteSpace(component.Author)) parts.Add(UiLocalizationService.Format("Vm.Symbol", ModLabel(component), component.Author));
             return string.Join(" · ", parts);
         }
     }
 
     public bool HasCredit => Credit.Length > 0;
+
+    // Upstream's author badge prefixes: "RenoDX: …" and "Luma: …"; any other credited row by its own name.
+    private static string ModLabel(ManagedComponent component) => component.Kind switch
+    {
+        ManagedComponentKind.RenoDX => "RenoDX",
+        ManagedComponentKind.LumaFramework => "Luma",
+        _ => component.DisplayName
+    };
 
     public bool HasAction => component.Kind is not (ManagedComponentKind.Dlss or ManagedComponentKind.Streamline);
     public string Action => !HasAction

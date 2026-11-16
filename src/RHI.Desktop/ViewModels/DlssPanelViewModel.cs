@@ -26,6 +26,9 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         _dlssDefaults = dlssDefaults;
     }
 
+    /// <summary>#317: this section's swap service (Quick Apply), which a DLSS5 Tool install asks for the newest DLSS.</summary>
+    internal LinuxDlssDefaultsService DefaultsService => _dlssDefaults;
+
     /// <summary>#211: the per-game NVIDIA settings shown in this section (owned and saved by the runtime panel's launch profile).</summary>
     public NvidiaSettingsPresenter Nvidia => Shell.Runtime.Nvidia;
 

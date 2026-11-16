@@ -184,11 +184,67 @@ public sealed class DonationAuthorsTests
     [InlineData("https://ko-fi.com/shortfuse", "Ko-fi")]
     [InlineData("https://www.ko-fi.com/shortfuse", "Ko-fi")]
     [InlineData("https://KO-FI.COM/shortfuse", "Ko-fi")]
-    [InlineData("https://www.patreon.com/someone", "patreon.com")]
+    [InlineData("https://www.patreon.com/someone", "Patreon")] // #309 (upstream 2.9.2 DonationLinkLabel)
+    [InlineData("https://patreon.com/Lazorr", "Patreon")]
     [InlineData("https://github.com/sponsors/someone", "github.com")]
     [InlineData("https://notko-fi.com/x", "notko-fi.com")]
     public void LinkLabelNamesTheSiteActuallyLinked(string url, string expected)
         => Assert.Equal(expected, UpstreamRhiManifestService.DonationLinkLabel(new Uri(url)));
+
+    // #309 (upstream 2.9.2 "Support the Mod Authors can show both Ko-fi and Patreon buttons"): the manifest's patreonUrls,
+    // pinned from upstream's manifest.json at RHI-2.9.4 (Lazorr, SammiLucia; RoseTheFlower's donation link is a Patreon).
+    private const string Upstream294DonationEntries = """
+    {
+      "version": 3,
+      "donationUrls": {
+        "Lazorr": "https://ko-fi.com/lazorr",
+        "RoseTheFlower": "https://www.patreon.com/rozzi",
+        "SammiLucia": "https://ko-fi.com/sammilucia"
+      },
+      "patreonUrls": {
+        "Lazorr": "https://patreon.com/Lazorr",
+        "SammiLucia": "https://www.patreon.com/SammiLucia"
+      }
+    }
+    """;
+
+    [Fact]
+    public async Task AnAuthorWithKoFiAndPatreon_GetsBothButtons_KoFiFirst()
+    {
+        var authors = (await Fetch(Upstream294DonationEntries)).Authors.ToDictionary(a => a.Name);
+
+        Assert.Equal([("Ko-fi", "https://ko-fi.com/lazorr"), ("Patreon", "https://patreon.com/Lazorr")],
+            authors["Lazorr"].Links.Select(link => (link.Label, link.Url.AbsoluteUri)));
+        Assert.Equal([("Ko-fi", "https://ko-fi.com/sammilucia"), ("Patreon", "https://www.patreon.com/SammiLucia")],
+            authors["SammiLucia"].Links.Select(link => (link.Label, link.Url.AbsoluteUri)));
+        // A donation link that is a Patreon already: one Patreon button, as upstream.
+        Assert.Equal([("Patreon", "https://www.patreon.com/rozzi")], authors["RoseTheFlower"].Links.Select(link => (link.Label, link.Url.AbsoluteUri)));
+        Assert.Equal([("Ko-fi", "https://ko-fi.com/shortfuse")], authors["ShortFuse"].Links.Select(link => (link.Label, link.Url.AbsoluteUri)));
+    }
+
+    [Fact]
+    public void AnAuthorWithOnlyAPatreon_IsListed_AndABadPatreonLinkIsLeftOut()
+    {
+        var authors = UpstreamRhiManifestService.BuildDonationAuthors(
+            [new("Musa", "https://ko-fi.com/musaqh")],
+            null,
+            null,
+            new Dictionary<string, string> { ["Only Patreon"] = "https://www.patreon.com/only", ["musa"] = "http://patreon.com/musa" });
+
+        Assert.Equal(["Musa", "Only Patreon"], authors.Select(a => a.Name));
+        Assert.Equal([("Patreon", "https://www.patreon.com/only")], authors[1].Links.Select(link => (link.Label, link.Url.AbsoluteUri)));
+        Assert.Equal([("Ko-fi", "https://ko-fi.com/musaqh")], authors[0].Links.Select(link => (link.Label, link.Url.AbsoluteUri))); // http: dropped
+    }
+
+    [Fact]
+    public void ADonationLinkThatIsAPatreon_IsNotJoinedByASecondPatreonButton()
+    {
+        var authors = UpstreamRhiManifestService.BuildDonationAuthors(
+            [], new Dictionary<string, string> { ["RoseTheFlower"] = "https://www.patreon.com/rozzi" }, null,
+            new Dictionary<string, string> { ["RoseTheFlower"] = "https://www.patreon.com/rozzi-other" });
+
+        Assert.Equal([("Patreon", "https://www.patreon.com/rozzi")], Assert.Single(authors).Links.Select(link => (link.Label, link.Url.AbsoluteUri)));
+    }
 
     [Theory]
     [InlineData("en-US", 0, "0 authors")]
