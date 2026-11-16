@@ -252,14 +252,19 @@ public static class FgSettingsBuilder
         ];
     }
 
-    /// <summary>#280: the RTX Encore ⚙'s notes: what the settings are, why they are greyed out, the XeSS files, the recommended name.</summary>
-    public static IReadOnlyList<ComponentDialogLine> RtxEncoreLines(bool installed, bool configExists, RtxEncoreXessStatus? xess, string? recommendedName)
+    /// <summary>
+    /// #280: the RTX Encore ⚙'s notes: what the settings are, why they are greyed out, a warning while the game runs
+    /// (w14/extras-fg-2, upstream's order: after the file notes), the XeSS files, the recommended name.
+    /// </summary>
+    public static IReadOnlyList<ComponentDialogLine> RtxEncoreLines(bool installed, bool configExists, RtxEncoreXessStatus? xess, string? recommendedName,
+        bool gameRunning)
     {
         var lines = new List<ComponentDialogLine>();
         if (recommendedName is not null) lines.Add(ComponentDialogLine.Plain(TF("Enc.Recommended", recommendedName)));
         lines.Add(ComponentDialogLine.Plain(T("Enc.SettingsIntro")));
         if (!installed) lines.Add(ComponentDialogLine.Warning(T("Enc.NotInstalled")));
         else if (!configExists) lines.Add(ComponentDialogLine.Plain(T("Enc.NoFile")));
+        if (gameRunning) lines.Add(ComponentDialogLine.Warning(T("Enc.GameRunning")));
         if (xess is { Installed: true }) lines.Add(ComponentDialogLine.Plain(TF("Enc.XessInstalled", xess.ReplacedGameCopies)));
         else if (xess is { Installed: false }) lines.Add(ComponentDialogLine.Warning(T("Enc.XessMissing")));
         return lines;

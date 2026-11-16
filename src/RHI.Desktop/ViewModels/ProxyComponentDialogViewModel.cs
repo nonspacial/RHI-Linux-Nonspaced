@@ -140,7 +140,8 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 var configPath = shell.RtxEncoreConfigPath();
                 Sections = FgSettingsBuilder.RtxEncore(configPath);
                 Lines = FgSettingsBuilder.RtxEncoreLines(record is not null, configPath is not null && File.Exists(configPath),
-                    shell.RtxEncoreXessStatus(), shell.SelectedGame is { } encoreGame ? RtxEncoreDeploymentService.RecommendedName(encoreGame) : null);
+                    shell.RtxEncoreXessStatus(), shell.SelectedGame is { } encoreGame ? RtxEncoreDeploymentService.RecommendedName(encoreGame) : null,
+                    shell.SelectedGameRunning()); // w14/extras-fg-2 (#280)
                 FileButtons = configPath is null ? [] : [new ComponentFileButton(TF("Fg.OpenFile", RtxEncoreConfig.FileName), configPath, ShowMessage)];
                 CheckLabel = T("Ui.RtxEncoreCheck");
                 UpdateLabel = T("Vm.Update");

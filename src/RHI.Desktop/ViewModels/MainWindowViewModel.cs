@@ -279,6 +279,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public string? RtxEncoreConfigPath() => SelectedGame is null ? null : _managedComponents.RtxEncoreConfigPath(SelectedGame);
     /// <summary>#280: whether RTX Encore's Intel XeSS files are in place (null when it is not installed).</summary>
     public RtxEncoreXessStatus? RtxEncoreXessStatus() => SelectedGame is null ? null : _managedComponents.RtxEncoreXessStatus(SelectedGame);
+    // w14/extras-fg-2 rows
+    /// <summary>#280: whether the selected game runs now, by the probe Update All defers running games with.</summary>
+    public bool SelectedGameRunning() => SelectedGame is { } game && Updates.UpdateAll.IsRunning(game);
     /// <summary>#281: the installed dlssg_sm86.ini's lines (null when 20/30 FG Unlock is not installed or the file is gone).</summary>
     public IReadOnlyList<string>? GetDlssg2030IniLines() => SelectedGame is null ? null : _managedComponents.Dlssg2030IniLines(SelectedGame);
     /// <summary>#281: writes one ⚙ setting; the refusal (or null) and the INI as written.</summary>

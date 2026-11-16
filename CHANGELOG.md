@@ -179,6 +179,8 @@ Wave 14 — extras-fg-2
   FG Unlock installs on RTX 20 and 30 alike, and the mod finds the card itself. Both rows are offered on every card, as
   upstream's are. Their notes now give upstream's description instead of a "legacy RTX 20" path or a card generation
   you never picked, and every message calls the mod 20/30 FG Unlock (#281).
+- **RTX Encore ⚙ warns while the game is running** (upstream 2.9.0): changes apply the next time it starts, and RTX
+  Encore's in-game menu may overwrite them while it's open (#280).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
