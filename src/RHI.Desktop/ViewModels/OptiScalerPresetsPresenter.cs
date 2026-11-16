@@ -1,3 +1,4 @@
+using RHI.Core.Models;
 using System.Runtime.CompilerServices;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
@@ -51,9 +52,76 @@ public sealed class OptiScalerPresetsPresenter
 
     private OptiScalerPresetSlots Slots => _slots ??= Store.Load();
 
-    /// <summary>Presets show in the OptiScaler ⚙ where upstream shows them: the Nightly, DLSS NR and F5 channels (their ⚙ has the Streamline row).</summary>
+    /// <summary>#269 (upstream 2.8.9): the Presets panel shows on every OptiScaler version RHI manages, Stable included.</summary>
     public static bool AppliesTo(OptiScalerAdvancedSnapshot snapshot)
-        => snapshot.ManagedByRhi && snapshot.Settings.Any(setting => setting.Id == OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId);
+        => snapshot.ManagedByRhi && snapshot.Settings.Count > 0;
+
+    // #269 recommended presets ─────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The recommended presets' source (upstream's optiscaler_presets.json; built-in copies until it is read).</summary>
+    internal OptiScalerRecommendedPresets RecommendedSource { get; set; } = new(null);
+
+    /// <summary>
+    /// The recommended presets offered on Linux. ANR FG (upstream 2.9.3) needs RHI's ANR FG install, which this build has
+    /// not got yet (#272), so presets that install it are left out until then.
+    /// </summary>
+    public IReadOnlyList<OptiScalerRecommendedPreset> Recommended
+        => RecommendedSource.Presets.Where(preset => !preset.InstallAnrFg || AnrFgSupported).ToArray();
+
+    /// <summary>Set once RHI can install ANR FG (#272).</summary>
+    internal static bool AnrFgSupported { get; set; }
+
+    /// <summary>
+    /// The preset that matches the game's current settings is ticked (upstream <c>IsOsPresetActive</c>): every setting it
+    /// sets that this ⚙ offers has that value ("latest" Streamline matches the newest offered), and Universal MFG Unlocker
+    /// is installed when it installs it.
+    /// </summary>
+    public bool IsActive(OptiScalerRecommendedPreset preset)
+    {
+        var settings = _shell.GetOptiScalerAdvancedSettings();
+        if (!settings.ManagedByRhi || settings.Settings.Count == 0) return false;
+        foreach (var (id, value) in preset.Settings)
+        {
+            var setting = settings.Settings.FirstOrDefault(s => s.Id == id);
+            if (setting is null) continue;
+            var wanted = Resolve(setting, value);
+            if (wanted is null || !setting.CurrentValue.Equals(wanted, StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        return !preset.InstallUniversalMfg || _shell.SelectedGame is { } game && _managed.IsManaged(game, ManagedComponentKind.Rtx40MfgStandalone);
+    }
+
+    /// <summary>
+    /// Applies a recommended preset through the ⚙'s setting path (the Streamline / DLSS Enabler stack first, "latest" as the
+    /// newest Streamline offered), then installs Universal MFG Unlocker when the preset asks for it and it is missing
+    /// (the component's own install, #278's service unchanged). The line to show.
+    /// </summary>
+    public async Task<string> ApplyRecommendedAsync(OptiScalerRecommendedPreset preset)
+    {
+        var (changed, notOffered, failure) = await ApplySettingsAsync(preset.Settings);
+        if (failure is not null)
+            return UiLocalizationService.Format("Shell.PresetStopped", preset.Name, changed, failure);
+        var line = UiLocalizationService.Format("Shell.PresetApplied", preset.Name, changed);
+        if (notOffered > 0) line += UiLocalizationService.Format("Shell.PresetNotOffered", notOffered);
+        if (preset.InstallUniversalMfg && _shell.SelectedGame is { } game && !_managed.IsManaged(game, ManagedComponentKind.Rtx40MfgStandalone))
+            line += " " + await _shell.InstallComponentForPresetAsync(ManagedComponentKind.Rtx40MfgStandalone);
+        return line;
+    }
+
+    /// <summary>The option value <paramref name="value"/> stands for in <paramref name="setting"/> (null when not offered).</summary>
+    private static string? Resolve(OptiScalerAdvancedSetting setting, string value)
+    {
+        if (setting.Id == "StreamlineVersion" && value.Equals(OptiScalerRecommendedPresets.LatestStreamline, StringComparison.OrdinalIgnoreCase))
+            return setting.Options.Select(option => option.Value)
+                .OrderByDescending(v => Version.TryParse(v, out var parsed) ? parsed : new Version(0, 0))
+                .FirstOrDefault();
+        return setting.Options.FirstOrDefault(option => option.Value.Equals(value, StringComparison.OrdinalIgnoreCase))?.Value;
+    }
+
+    /// <summary>#269: the "…" button's Clear: empties the slot.</summary>
+    public string? Clear(int index) => Persist(index, null);
+
+    /// <summary>#269: the slot dropdown's labels ("Slot n" or the slot's name).</summary>
+    public IReadOnlyList<string> SlotLabels => Enumerable.Range(0, SlotCount).Select(Label).ToArray();
 
     /// <summary>The slot's preset, or null when nothing was saved into it.</summary>
     public OptiScalerPreset? Slot(int index) => Slots.Slots[index];
@@ -90,25 +158,34 @@ public sealed class OptiScalerPresetsPresenter
     public async Task<string> ApplyAsync(int index)
     {
         if (Slot(index) is not { } preset) return UiLocalizationService.Text("Shell.PresetEmpty");
+        var (changed, notOffered, failure) = await ApplySettingsAsync(ApplyOrder(preset));
+        if (failure is not null)
+            return UiLocalizationService.Format("Shell.PresetStopped", Label(index), changed, failure);
+        var line = UiLocalizationService.Format("Shell.PresetApplied", Label(index), changed);
+        return notOffered == 0 ? line : line + UiLocalizationService.Format("Shell.PresetNotOffered", notOffered);
+    }
+
+    // One setting at a time through the ⚙'s own path; stops at the first that fails (those before it stay applied).
+    private async Task<(int Changed, int NotOffered, string? Failure)> ApplySettingsAsync(IEnumerable<KeyValuePair<string, string>> settings)
+    {
         var changed = 0;
         var notOffered = 0;
-        foreach (var (id, value) in ApplyOrder(preset))
+        foreach (var (id, raw) in settings)
         {
             // Read again after every change: the Streamline row changes which settings the ⚙ offers.
             var setting = _shell.GetOptiScalerAdvancedSettings().Settings.FirstOrDefault(s => s.Id == id);
-            if (setting is null || !setting.Options.Any(option => option.Value.Equals(value, StringComparison.OrdinalIgnoreCase)))
+            var value = setting is null ? null : Resolve(setting, raw);
+            if (setting is null || value is null)
             {
                 notOffered++;
                 continue;
             }
             if (setting.CurrentValue.Equals(value, StringComparison.OrdinalIgnoreCase)) continue;
             var result = await _shell.SetOptiScalerAdvancedSettingAsync(id, value);
-            if (!result.Success)
-                return UiLocalizationService.Format("Shell.PresetStopped", Label(index), changed, UiLocalizationService.Present(result.Message));
+            if (!result.Success) return (changed, notOffered, UiLocalizationService.Present(result.Message));
             changed++;
         }
-        var line = UiLocalizationService.Format("Shell.PresetApplied", Label(index), changed);
-        return notOffered == 0 ? line : line + UiLocalizationService.Format("Shell.PresetNotOffered", notOffered);
+        return (changed, notOffered, null);
     }
 
     /// <summary>
@@ -142,7 +219,7 @@ public sealed class OptiScalerPresetsPresenter
             .OrderBy(pair => Array.IndexOf(FirstSettings, pair.Key) is var at && at >= 0 ? at : FirstSettings.Length)
             .ToArray();
 
-    private string? Persist(int index, OptiScalerPreset preset)
+    private string? Persist(int index, OptiScalerPreset? preset)
     {
         var next = new OptiScalerPresetSlots { Slots = [.. Slots.Slots] };
         next.Slots[index] = preset;

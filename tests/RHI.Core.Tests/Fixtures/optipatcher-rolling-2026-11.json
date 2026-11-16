@@ -1,0 +1,18 @@
+{
+  "tag_name": "rolling",
+  "name": "Rolling Release",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-05-14T18:26:56Z",
+  "body": "## Rolling Release\r\n\r\n**Base version:** v0.42  \r\n**Build commit:** ^Gc49dee353d303d423226a0073a03bbd4814bf46  \r\n**Build date:** 2026-11-11 12:02\r\n\r\n### Changes since last release\r\n\r\n- Added Enshrouded support (ac49dee)\r\n- Updated Gothic 1 Remake support (e5d6042)\r\n- Updated Hogwarts Legacy support (7bfa0f6)\r\n- Added Phantom Blade Zero support (c39c29e)\r\n- Updated notes (c128807)\r\n- Added Borderlands 4 support (dc56585)\r\n- Added FINAL FANTASY XIV Online support (ff78943)\r\n- Added MechWarrior 5: Mercenaries support (7498cb9)\r\n- Added Rivage support (f95a44a)\r\n- Add version string to the dll (b3f8c1b)\r\n- Updated The Last Caretaker support (44b8106)\r\n- Updated Quarantine Zone: The Last Check support (863e0af)\r\n- Rework RDR2 patches (47b8afc)\r\n- More Nixxes (61b21ea)\r\n- More Nixxes games support (65a3b95)\r\n- Added more Nixxes games support (6202373)\r\n- Merge pull request #58 from LorenzoKy/spiderman2 (6e26765)\r\n- Slight adjustment to Valor Mortis patterns (ea53145)\r\n- Add Marvel's Spider-Man 2 (spider-man2.exe) DLSS vendor check (30fff6d)\r\n- Updated Gears note (1e261cc)\r\n- Merge pull request #57 from LorenzoKy/goweday-gdk-pr (0e48cee)\r\n- Add Gears of War: E-Day Xbox / Game Pass support (470897c)\r\n- Updated Gears of War: E-Day support (ffa9448)\r\n",
+  "assets": [
+    {
+      "name": "OptiPatcher.asi",
+      "size": 119808,
+      "digest": "sha256:f0c2bcd6804429b19235abd6c6d0f7fc0841397e64ba833c948f14e6b878490e",
+      "updated_at": "2026-11-11T12:02:15Z",
+      "browser_download_url": "https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi",
+      "content_type": "raw"
+    }
+  ]
+}

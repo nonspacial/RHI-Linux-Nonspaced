@@ -1870,3 +1870,155 @@ Deviations and partial items:
   so a Streamline 1.x game gets `InGameDlssg=2` (HSF's value 2 lets HSF fall back by itself).
 - The ManagedComponentKind value is 30 (a gap, not the next free number) so another wave-14 lane's new kind cannot take it
   unnoticed; it may be renumbered at the merge before release.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane optiscaler)
+
+### #264 — OptiPatcher reads its build commit again (2.9.3)
+
+Upstream 2.9.3 `487b4fc`. Since November 2026 the OptiPatcher rolling release notes read `**Build commit:** ^G<sha>`
+(a literal caret and G before the commit). RHI's pattern wanted the commit right after the label, found none and fell
+back to the asset digest (`sha256-…`), so the card and the update log showed a digest instead of a build. Updates were
+still detected (the digest changes with every build), but each build was cached and named by digest. RHI now takes
+upstream's pattern: after `Build commit:` and its bold markers, a `^` and any one character are skipped, then anything
+that is not hex or a line break, and the commit is 7–40 hex digits (`OptiPatcherProvider.ParseBuildCommit`). A real
+control character (BEL) before the commit is read too. A release that names no commit still falls back to the asset
+digest; upstream keeps the previous version string. The release as served on 2026-11-16 is a test fixture
+(`optipatcher-rolling-2026-11.json`), with upstream's `OptiPatcherVersionTests` cases.
+
+### #273 — OptiScaler fixes from 2.8.9–2.9.3
+
+Each upstream fix was checked against the fork. One was a real bug here; the others never existed on Linux and are
+pinned by tests.
+
+- **OptiPatcher where OptiScaler 10 builds read it (2.8.9), fixed.** RHI put `OptiPatcher.asi` in `<game>/plugins`,
+  which only the 0.9 stable build reads. Nightly, DLSS NR, F5 and the forks bring an `OptiScaler/` folder and read
+  `OptiScaler/plugins`, so OptiPatcher never loaded with them. As upstream's `GetPluginsDir`, OptiPatcher now goes to
+  `OptiScaler/plugins` when the package has that folder, else to `<game>/plugins`. Installs made before this are
+  repaired through the update check: an OptiPatcher RHI recorded in `<game>/plugins` beside an `OptiScaler/` folder
+  reads as an update ("OptiPatcher is in the game's plugins folder …"), and Update moves it, journaled, with the newest
+  build or, when that cannot be downloaded now, with its own bytes. The old `plugins` folder is removed only when RHI
+  created it and it is empty; a game's own plugins stay. Linux deviation: upstream moves the file for every game at
+  start-up; RHI does it through Update and Update All, like every other repair of a game folder. When a file RHI does
+  not own already sits at the new place, OptiPatcher stays where it is.
+- **Updates keep `plugins/` and the custom provider folder (2.8.9, 2.9.3), never existed.** Upstream's update emptied
+  the `OptiScaler/` folder except `plugins` and `custom`. RHI's update replaces only the files its record owns and never
+  deletes a folder, so `OptiScaler/plugins`, `OptiScaler/custom` (custom upscalers and FG providers such as ANR FG) and
+  `<game>/plugins` keep their files. Pinned by a test.
+- **FG Nvngx Override greyed with "DLSSG via Nvngx" (2.9.3), never existed.** The Linux ⚙ greys no row; the override
+  is offered, written and read back with that FG input. Pinned.
+- **Upscaler API changing the upscaler (2.8.9), not applicable.** The Linux ⚙ has no Upscaler API selector: DirectX
+  11, DirectX 12 and Vulkan each have their own upscaler row. A test pins that changing one leaves the others alone.
+  The ⚙ restyle to upstream's layout (phase 2) brings the selector; this test then covers it.
+- **F5 showing the Stable version (2.9.2), never existed.** The version shown is the record's, which is the F5 release
+  installed. Pinned in the F5 install test.
+- **Vulkan DLL-name reset to winmm.dll (2.8.9), not applicable.** RHI Linux does not install OptiScaler on Vulkan
+  games (only DirectX 11/12 are offered), so the name never resets there.
+- **A preset saved on F5 switching the game to F5 (2.8.9), Linux deviation kept.** Presets on Linux do not carry the
+  channel (#187): changing it reinstalls OptiScaler, which the ⚙ does not do while it is installed. Applying a preset
+  never changes the channel. Revisited with the presets panel (#269).
+- **Replace OptiScaler.ini using the NVIDIA template (2.8.9)** is part of "Replace with a fresh copy" (#269).
+
+### #270 — OptiScaler versions: Default version, DXGI Spoofing, installed vs latest, Release pin, Remove old Nightly builds (2.9.0–2.9.3)
+
+- **Default version (2.9.0).** Settings, beside OptiScaler's GPU Type and DLSS Inputs: Stable, Nightly, DLSS NR or F5
+  DLSSNR. A game with no version chosen in its ⚙ takes it; a game with OptiScaler installed shows the version it has.
+  The per-game choice now stores Stable too (it used to remove the entry), so Stable picked by hand is never replaced
+  by the default. Linux deviation: a game whose Stable choice was saved before this build has no entry and takes the
+  default. Forks and custom builds join the list with #271.
+- **DXGI Spoofing (2.9.0).** In the ⚙ on every version, after the frame-rate limit: Auto (Default), True or False,
+  written to `[Spoofing] Dxgi`. Presets capture it like every other ⚙ setting.
+- **Installed vs latest, Check now, Update (2.9.2).** A line at the top of the ⚙: "Installed: x · Latest: y (state)".
+  Installed games use the same check as Update All (a pinned build or release reads "pinned to …, so it isn't updated");
+  a game without OptiScaler shows the newest release the install would take, or its pin. Check now asks GitHub again
+  (RHI's GitHub answers are revalidated with their ETag on every request, so there is no cache to clear); Update shows
+  only when an update applies and runs the component row's update, journaled as always. When GitHub cannot be asked the
+  line says so and points to the GitHub token, as upstream.
+- **Release (2.9.2).** A Release row in the ⚙ for Stable, DLSS NR and F5: "Latest (auto-update)" or one of the
+  channel's releases (GitHub's newest 30, newest first; Stable without prereleases; only releases that publish a package
+  RHI installs, so the display-filter tool in the DLSS NR repository and F5 v0.1.28's double package are not offered).
+  As upstream, it can be changed only while RHI's OptiScaler is not installed; the next install takes that release by
+  its tag (never "latest"), records it, and Update / Update All leave the game on it. Nightly keeps its own Nightly
+  build row (#156/#232). Linux deviations: upstream stores one per-game value for the Nightly build and the release; RHI
+  keeps the one per-game slot but saves a release with its channel (`F5+v0.1.29`), so a pin made for one channel never
+  applies to another. Tags are limited to letters, digits and `. _ + -` before RHI asks GitHub for them. Pinned
+  releases come from the same GitHub release hosts, digests and size checks as the latest ones.
+- **Remove old Nightly builds (2.9.2).** Settings, beside the Default version; off by default. After a Nightly
+  download RHI deletes the cached Nightly builds except the newest, the one just downloaded and every build a game uses
+  (installed Nightly pins and saved Nightly build choices). Only RHI's own `~/.cache/rhi-linux/optiscaler/nightly/
+  nightly-YYYYMMDD` folders are touched; a folder that cannot be deleted is logged and kept. Linux deviation: upstream
+  skips folders still unpacking; RHI's cache entries are stamped, and a deleted build is downloaded again when needed.
+- **Newer release before a cached copy (2.9.2), never existed.** RHI asks GitHub for the newest release on every
+  install and update and keeps each release in its own stamped cache folder, so an older cached build is never taken for
+  the latest. Pinned by a provider test.
+- The release lists of Stable, DLSS NR and F5 as served on 2026-11-16 are test fixtures.
+
+### #269 — OptiScaler ⚙ Presets panel: recommended presets, slots dropdown, Replace with a fresh copy (2.8.9)
+
+- **Every version.** The Presets panel shows for every OptiScaler RHI manages, Stable included, and now sits near the top
+  of the ⚙, above the OptiScaler.ini settings (upstream opens the ⚙ on it). A preset setting the ⚙ does not offer on
+  that version (Stable has no Streamline row) is counted as not offered, as before.
+- **Recommended presets.** One button per preset with its description as the tooltip; the one matching the game's
+  current settings is ticked (every setting it sets that the ⚙ offers has that value, and Universal MFG Unlocker is
+  installed when the preset installs it). The list is upstream's `optiscaler_presets.json` (RankFTW/RHI `main`), read
+  in the background at start from raw.githubusercontent.com (64 KiB cap, `docs/download-trust.md`), cached at
+  `~/.cache/rhi-linux/optiscaler_presets.json`; until it is read once, and whenever it cannot be read, upstream's
+  built-in copies are used, so new presets arrive without an app update. Upstream field names map to the Linux ⚙
+  setting ids (`deployStreamline`/`deployDlssEnabler` → the Streamline / DLSS Enabler row, `streamlineVersion: latest`
+  → the newest Streamline the row offers, `fgEnabled`, `fgInput`, `fgOutput`, `fgNvngxReplacement`, `hudFix`,
+  `forceReflex`, `useGamesReflexMarkers`, `dxgiSpoofing`); unknown fields are ignored. A preset applies through the ⚙'s
+  own setting path, the stack first, and stops at the first setting that fails. UMFG XeFG then installs Universal MFG
+  Unlocker when the game lacks it, through that component's own install (its service is unchanged here). Linux
+  deviation: the ANR FG preset (2.9.3) is left out until RHI installs ANR FG (#272).
+- **Your presets.** The four slots are one dropdown with Apply, Save current (Overwrite for a slot in use) and a "…"
+  button to rename or clear the slot. Presets still carry no channel (#187, #273).
+- **Replace with a fresh copy….** At the bottom of the ⚙; asks first. The game's OptiScaler.ini becomes the template a
+  fresh install of its version takes (the user's template for its channel, GPU type and DLSS Inputs, #97), which is
+  upstream's 2.8.9 fix, then LoadAsiPlugins is turned on and, while RHI's ReShade is chained as ReShade64.dll,
+  LoadReshade, as the install does. Journaled; the record takes the new file's hash. Linux addition: the previous file
+  is copied to `~/.local/share/rhi-linux/optiscaler-ini-backups/` first. Upstream's mass "Deploy OptiScaler.ini" to
+  every game has no Linux counterpart and is not added.
+- Upstream's `optiscaler_presets.json` as published with RHI 2.9.4 is a test fixture.
+
+### #271 — OptiScaler forks (manifest `osForks`); custom builds deferred (2.9.2/2.9.3)
+
+**Forks, ported.** Venom, NR PreSR MFG, Feeder NR and OpenNR sit after Stable, Nightly, DLSS NR and F5 DLSSNR in the
+⚙ version list and in the Default version setting, each with its manifest description as its tooltip and line. Each is
+installed, updated, pinned (#270 Release row) and removed like the built-ins:
+
+- Releases come from the fork's own GitHub repository only: newest by publish date with prereleases (upstream lists
+  them for forks, so Venom's dated nightlies count as its newest), drafts skipped; the asset is the best by upstream's
+  `ScoreAsset` (.7z or .zip; not "Optional-…", forwarder, troubleshooting, source, symbol or checksum files;
+  "optiscaler" in the name and .7z win), ties to the newest upload. The asset link must lie under
+  `https://github.com/<repo>/releases/download/`, else the release is refused. Downloads use the OptiScaler host policy,
+  GitHub's published digest and the per-tag stamped cache (`docs/download-trust.md`).
+- Every fork is an OptiScaler 10 build: the ⚙ gets the Streamline / DLSS Enabler and Reflex rows, OptiPatcher goes
+  to `OptiScaler/plugins` (#273) and a new install takes the Nightly INI template, as upstream.
+- NR PreSR MFG and Feeder NR are marked `needsNrDll` in the manifest: NVIDIA's `nvngx_dlssnr.dll` from the DLSS
+  manifest goes beside them under the one-owner rule (#157), like DLSS NR and F5. They do not need F5's forwarder.
+  OpenNR ships its own NR runtime and gets none.
+- Linux deviation: the fork list is upstream's manifest `osForks` as of RHI 2.9.4, built in, because the version list,
+  the per-game choice and the install records name each version by a fixed value. A fork upstream adds to its manifest
+  later needs an RHI Linux update; a fork removed upstream stays installable here. Upstream's `assetPattern`,
+  `includePrereleases` and `disabled` fields are unused (no current fork sets them).
+- The release lists of the four repositories as served on 2026-11-16 are test fixtures, with upstream's
+  `OsForkTests` asset cases.
+
+**Custom OptiScaler builds: deferred.** Settings › Components › Custom OptiScaler builds (add from a link, a zip, 7z
+or rar, a folder or an OptiScaler.dll, also by drag and drop; Replace, Rename, Remove; the "DLSS NR DLL" tick; never
+auto-updated; Replace offers to redeploy the games using it) is not in this wave. It needs version values that are not
+fixed at build time (the version list, per-game choice, Default version and install records), an import path through
+the archive checks for user-supplied files and links (a trust warning for links outside the download policy), and new
+Settings rows. Tracked on #271.
+
+### #272 — OptiScaler custom FG providers in FG Nvngx Override (2.9.3); All Settings, saved inis and ANR FG deferred
+
+- **Custom FG providers, ported.** FG Nvngx Override (the ⚙'s FG Nvngx Replacement row) lists, after OptiScaler's own
+  choices, every custom frame generation provider in OptiScaler's custom folder by name: a folder in
+  `OptiScaler/custom` (OptiScaler 10 builds, else `custom` beside OptiScaler) holding a `dlssg` folder with a DLL, as
+  upstream's `FindCustomFgProviders`. The name is written as `FGNvngxReplacement`. Linux addition: a folder name with a
+  line break, `=`, `[` or `]` is not offered, so it cannot break the INI. Updates keep that folder (#273).
+- **Deferred to a later wave (tracked on #272):** the All Settings section (every OptiScaler.ini setting with the
+  options the installed build's own ini lists, search, Apply with a backup, changes re-applied after reinstall, update or
+  version switch); Save ini / Load saved ini; and the ANR FG preset (Apex Compute's closed-source DLL, verified against
+  its published hashes, `nr_fg.ini` kept, the closed-source notice first; #285's shared notice is in the extras lane).
+  Until RHI installs ANR FG, the recommended presets leave the ANR FG preset out (#269).

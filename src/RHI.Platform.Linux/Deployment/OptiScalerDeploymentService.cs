@@ -48,6 +48,12 @@ public sealed partial class OptiScalerDeploymentService
     public const string NightlyPinnedCurrentPrefix = "OptiScaler Nightly is pinned and current: ";
     public const string NightlyPinnedNotUpdatedPrefix = "OptiScaler Nightly is pinned, so it was not updated: ";
     public const string NightlyPinWrongChannelMessage = "A nightly build can be pinned only for the OptiScaler Nightly channel.";
+    /// <summary>#270: the release a Stable / DLSS NR / F5 install is pinned to (upstream 2.9.2 Release setting).</summary>
+    internal const string ReleaseTagMetadataKey = "OptiScaler.ReleaseTag";
+    public const string ReleasePinnedCurrentPrefix = "OptiScaler is pinned to a release, so it is not updated: ";
+    public const string ReleasePinnedNotUpdatedPrefix = "OptiScaler is pinned to a release, so it was not updated: ";
+    public const string ReleasePinWrongChannelMessage = "A release can be pinned only for OptiScaler Stable, DLSS NR and F5 DLSSNR; Nightly has its own build setting.";
+    public const string ReleaseTagInvalidPrefix = "Not an OptiScaler release tag RHI can ask for: ";
     public const string NightlyBuildInvalidPrefix = "Not an OptiScaler nightly build date: ";
     /// <summary>Appended to the OptiScaler row note while DLSS5 Feeder owns nvngx_dlssnr.dll (#157).</summary>
     public const string FeederBlocksNrVariantsNote = " DLSS NR and F5 DLSSNR are blocked while DLSS5 Feeder is managed because both would own nvngx_dlssnr.dll; Stable/Nightly remain available.";
@@ -69,12 +75,12 @@ public sealed partial class OptiScalerDeploymentService
     /// <summary>The OptiPatcher build deployed with this install (#98); absent = none (older installs, or it was unavailable).</summary>
     internal const string OptiPatcherVersionMetadataKey = "OptiScaler.OptiPatcherVersion";
     internal const string OptiPatcherDownloadPart = "OptiPatcher";
-    /// <summary>Where OptiScaler loads ASI plugins from (relative to the game's binary folder), as upstream.</summary>
-    internal const string OptiPatcherRelativePath = "plugins/" + OptiPatcherProvider.FileName;
-    public const string OptiPatcherDeployedPrefix = " OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ";
+    public const string OptiPatcherDeployedPrefix = " OptiPatcher deployed to OptiScaler's plugins folder (OptiScaler LoadAsiPlugins on). Build: ";
     public const string OptiPatcherSkippedPrefix = " OptiPatcher was not deployed; OptiScaler works without it: ";
     public const string OptiPatcherUpdatePrefix = "OptiPatcher update available: ";
-    public const string OptiPatcherForeignMessage = "a plugins/OptiPatcher.asi RHI does not own is already there; it was left as it is.";
+    public const string OptiPatcherForeignMessage = "an OptiPatcher.asi RHI does not own is already in OptiScaler's plugins folder; it was left as it is.";
+    /// <summary>#273 (upstream 2.8.9): an older RHI put OptiPatcher in &lt;game&gt;/plugins, which OptiScaler 10 builds never read.</summary>
+    public const string OptiPatcherMoveMessage = "OptiPatcher is in the game's plugins folder, which this OptiScaler build does not read; Update moves it to OptiScaler/plugins.";
 
     /// <param name="optiPatcher">OptiPatcher source (#98); null = OptiScaler alone (tests, tools).</param>
     public OptiScalerDeploymentService(
@@ -116,6 +122,8 @@ public sealed partial class OptiScalerDeploymentService
         // A pinned nightly stays on its build (upstream 2.8.6): current, never an update and never "could not check".
         if (GetPinnedNightlyBuild(record) is { } pinned)
             return new ManagedUpdateCheck(true, false, NightlyPinnedCurrentPrefix + pinned, record.Version, pinned);
+        if (GetPinnedRelease(record) is { } pinnedRelease)
+            return new ManagedUpdateCheck(true, false, ReleasePinnedCurrentPrefix + pinnedRelease, record.Version, record.Version);
         try
         {
             var variant = GetInstalledVariant(record);
@@ -131,6 +139,8 @@ public sealed partial class OptiScalerDeploymentService
                     update = true;
             }
             var label = VariantLabel(variant);
+            if (!update && MisplacedOptiPatcher(record) is not null)
+                return new ManagedUpdateCheck(true, true, OptiPatcherMoveMessage, record.Version, latest.Version);
             if (!update && record.Metadata.GetValueOrDefault(OptiPatcherVersionMetadataKey) is { Length: > 0 } patcher
                 && await TryResolveLatestOptiPatcherAsync(cancellationToken).ConfigureAwait(false) is { } latestPatcher
                 && !string.Equals(patcher, latestPatcher.Version, StringComparison.OrdinalIgnoreCase))
@@ -153,6 +163,8 @@ public sealed partial class OptiScalerDeploymentService
         // A pinned Nightly stays on its build (#156): Update All never moves it; only the ⚙ dialog's Apply does (#232).
         if (GetPinnedNightlyBuild(record) is { } pinned)
             return ComponentOperationResult.Ok(NightlyPinnedNotUpdatedPrefix + pinned);
+        if (GetPinnedRelease(record) is { } pinnedRelease)
+            return ComponentOperationResult.Ok(ReleasePinnedNotUpdatedPrefix + pinnedRelease);
         return await UpdateCoreAsync(game, record, nightly: null, cancellationToken).ConfigureAwait(false);
     }
 
@@ -208,16 +220,28 @@ public sealed partial class OptiScalerDeploymentService
         var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
         var proxyTarget = Path.Combine(binaryDirectory, GetProxyName(record));
         var requested = new List<(string Source, string Target)>();
+        // #273: OptiPatcher goes where this package's build reads plugins; one an older RHI left in <game>/plugins moves
+        // there (its own bytes when no newer build can be had now). A file RHI does not own at the new place keeps it where it is.
+        var recordedPatcher = record.Files.FirstOrDefault(IsOptiPatcherFile);
+        var patcherTarget = OptiPatcherTarget(binaryDirectory, HasOptiScalerFolder(package.RootDirectory));
+        LinuxDeployedFile? movedPatcher = null;
+        if (recordedPatcher is not null && !Path.GetFullPath(recordedPatcher.Path).Equals(patcherTarget, StringComparison.Ordinal))
+        {
+            if (File.Exists(patcherTarget)) patcherTarget = Path.GetFullPath(recordedPatcher.Path);
+            else movedPatcher = recordedPatcher;
+        }
+        var patcherSource = optiPatcher?.Download.Path ?? movedPatcher?.Path;
         try
         {
             BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested);
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
-            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory)));
+            if (patcherSource is not null) requested.Add((patcherSource, patcherTarget));
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"OptiScaler update package layout is invalid: {ex.Message}"); }
 
         var byPath = record.Files.ToDictionary(file => Path.GetFullPath(file.Path), StringComparer.Ordinal);
         var createdDirs = new List<string>();
+        string? emptiedPatcherDir = null;
 
         // Journaled (#23, #31): every replaced file is tracked with a verified copy and every new one declared before it
         // is placed; the record (stamped with the operation id) is the commit point. A failure, or a crash before the
@@ -256,6 +280,11 @@ public sealed partial class OptiScalerDeploymentService
                 record.Files.Add(added);
                 byPath[target] = added;
             }
+            if (movedPatcher is not null)
+            {
+                await scope.DeleteAsync(Path.GetFullPath(movedPatcher.Path), cancellationToken).ConfigureAwait(false);
+                record.Files.Remove(movedPatcher);
+            }
 
             record.SourceUrl = package.SourceUrl;
             record.Version = package.Version;
@@ -274,6 +303,14 @@ public sealed partial class OptiScalerDeploymentService
             }
             foreach (var dir in createdDirs)
                 if (!record.DirectoriesCreatedByRhi.Contains(dir, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(dir);
+            // The old plugins folder RHI made for OptiPatcher goes once empty (after the commit point); a game's own stays.
+            emptiedPatcherDir = movedPatcher is null ? null : Path.GetDirectoryName(Path.GetFullPath(movedPatcher.Path));
+            if (emptiedPatcherDir is not null
+                && record.DirectoriesCreatedByRhi.Any(dir => Path.GetFullPath(dir).Equals(emptiedPatcherDir, StringComparison.Ordinal))
+                // Only the journal's rollback copy of the moved file is left until the commit point drops it.
+                && Directory.EnumerateFileSystemEntries(emptiedPatcherDir).All(entry => Path.GetFileName(entry).Contains(OwnedFileSet.SnapshotMarker, StringComparison.Ordinal)))
+                record.DirectoriesCreatedByRhi.RemoveAll(dir => Path.GetFullPath(dir).Equals(emptiedPatcherDir, StringComparison.Ordinal));
+            else emptiedPatcherDir = null;
             // #232: the switched build's pin, and the saved choice written tracked + declared BEFORE the commit point.
             if (nightly is not null) await nightly.BeforeCommitAsync(record, scope, cancellationToken).ConfigureAwait(false);
             _records.Upsert(scope.Stamp(record));
@@ -288,6 +325,7 @@ public sealed partial class OptiScalerDeploymentService
         }
         // The record carries the operation id: it is the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
+        if (emptiedPatcherDir is not null) CleanupDirectories([emptiedPatcherDir]);
         return ComponentOperationResult.Ok(nightly?.SuccessMessage(package)
             ?? $"OptiScaler {VariantLabel(variant)} updated to {package.Version}; OptiScaler.ini, ReShade coexistence and Wine override ownership were preserved.",
             requested.Select(item => item.Target).Where(path => !Path.GetFileName(path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)).ToArray());
@@ -319,16 +357,33 @@ public sealed partial class OptiScalerDeploymentService
         CancellationToken cancellationToken = default)
         => InstallAsync(game, variant, nightlyBuild, proxyName: null, cancellationToken);
 
-    /// <param name="nightlyBuild">Nightly only: the build date to pin (<c>20261004</c>); null = Latest, which auto-updates.</param>
-    /// <param name="proxyName">The DLL name to install OptiScaler under (<see cref="ProxyNames"/>; Control UE frame
-    /// generation uses <c>winmm.dll</c>, #136); null = <see cref="DefaultProxyName"/>. Recorded: update and removal use it.</param>
-    public async Task<ComponentOperationResult> InstallAsync(
+    public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         OptiScalerVariant variant,
         string? nightlyBuild,
         string? proxyName,
         CancellationToken cancellationToken = default)
+        => InstallAsync(game, variant, nightlyBuild, proxyName, releaseTag: null, cancellationToken);
+
+    /// <param name="nightlyBuild">Nightly only: the build date to pin (<c>20261004</c>); null = Latest, which auto-updates.</param>
+    /// <param name="proxyName">The DLL name to install OptiScaler under (<see cref="ProxyNames"/>; Control UE frame
+    /// generation uses <c>winmm.dll</c>, #136); null = <see cref="DefaultProxyName"/>. Recorded: update and removal use it.</param>
+    /// <param name="releaseTag">#270: Stable, DLSS NR or F5 only: the release to pin (its GitHub tag); null = Latest. Recorded:
+    /// the update check reports it current and Update leaves it.</param>
+    public async Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        OptiScalerVariant variant,
+        string? nightlyBuild,
+        string? proxyName,
+        string? releaseTag,
+        CancellationToken cancellationToken = default)
     {
+        if (releaseTag is not null)
+        {
+            if (nightlyBuild is not null || OptiScalerPackageProvider.ReleaseRepository(variant) is null)
+                return ComponentOperationResult.Fail(ReleasePinWrongChannelMessage);
+            if (!OptiScalerPackageProvider.IsSafeReleaseTag(releaseTag)) return ComponentOperationResult.Fail(ReleaseTagInvalidPrefix + releaseTag);
+        }
         var chosenName = ProxyNames.FirstOrDefault(name => name.Equals(proxyName ?? DefaultProxyName, StringComparison.OrdinalIgnoreCase));
         if (chosenName is null) return ComponentOperationResult.Fail(ProxyNameNotOfferedPrefix + proxyName);
         proxyName = chosenName;
@@ -386,9 +441,11 @@ public sealed partial class OptiScalerDeploymentService
         string? nrRuntimeVersion = null;
         try
         {
-            package = nightlyBuild is null
-                ? await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false)
-                : await _packages.GetNightlyBuildAsync(nightlyBuild, cancellationToken).ConfigureAwait(false);
+            package = nightlyBuild is not null
+                ? await _packages.GetNightlyBuildAsync(nightlyBuild, cancellationToken).ConfigureAwait(false)
+                : releaseTag is not null
+                    ? await _packages.GetReleaseAsync(variant, releaseTag, cancellationToken).ConfigureAwait(false)
+                    : await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false);
             (nrRuntime, nrRuntimeVersion) = await PrepareDlssNrRuntimeAsync(variant, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
@@ -419,7 +476,7 @@ public sealed partial class OptiScalerDeploymentService
             {
                 optiPatcherNote = OptiPatcherSkippedPrefix + ex.Message;
             }
-            if (optiPatcher is not null && File.Exists(OptiPatcherTarget(game.BinaryDirectory)))
+            if (optiPatcher is not null && File.Exists(OptiPatcherTarget(game.BinaryDirectory, HasOptiScalerFolder(package.RootDirectory))))
             {
                 optiPatcherNote = OptiPatcherSkippedPrefix + OptiPatcherForeignMessage;
                 optiPatcher = null;
@@ -479,7 +536,7 @@ public sealed partial class OptiScalerDeploymentService
                 if (at >= 0) requested[at] = (iniTemplate, requested[at].Target);
             }
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
-            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory)));
+            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory, HasOptiScalerFolder(package.RootDirectory))));
             foreach (var (_, target) in requested)
             {
                 existedBefore[target] = File.Exists(target);
@@ -524,6 +581,7 @@ public sealed partial class OptiScalerDeploymentService
                 }
             };
             if (nightlyBuild is not null) record.Metadata[NightlyBuildMetadataKey] = nightlyBuild;
+            if (releaseTag is not null) record.Metadata[ReleaseTagMetadataKey] = releaseTag;
             record.Metadata[ProxyNameMetadataKey] = proxyName;
             package.Download?.RecordIn(record.Metadata);
             if (optiPatcher is not null)
@@ -581,6 +639,14 @@ public sealed partial class OptiScalerDeploymentService
             ? build
             : null;
 
+    /// <summary>#270: the release an installed Stable / DLSS NR / F5 is pinned to, or null (Latest, Nightly, no valid pin).</summary>
+    public static string? GetPinnedRelease(LinuxDeploymentRecord record)
+        => OptiScalerPackageProvider.ReleaseRepository(GetInstalledVariant(record)) is not null
+           && record.Metadata.TryGetValue(ReleaseTagMetadataKey, out var tag)
+           && OptiScalerPackageProvider.IsSafeReleaseTag(tag)
+            ? tag
+            : null;
+
     /// <summary>The DLL name an installed OptiScaler sits under (records before #136: <see cref="DefaultProxyName"/>).</summary>
     public static string GetProxyName(LinuxDeploymentRecord record)
         => record.Metadata.TryGetValue(ProxyNameMetadataKey, out var name)
@@ -604,8 +670,40 @@ public sealed partial class OptiScalerDeploymentService
         return null;
     }
 
-    private static string OptiPatcherTarget(string binaryDirectory)
-        => Path.GetFullPath(Path.Combine(binaryDirectory, "plugins", OptiPatcherProvider.FileName));
+    /// <summary>
+    /// Where OptiPatcher goes (#273, upstream 2.8.9 <c>GetPluginsDir</c>): OptiScaler 10 builds (Nightly, DLSS NR, F5 and
+    /// the forks) bring an <c>OptiScaler/</c> folder and read <c>OptiScaler/plugins</c>; the 0.9 stable build has none and
+    /// reads <c>&lt;game&gt;/plugins</c>.
+    /// </summary>
+    internal static string OptiPatcherTarget(string binaryDirectory, bool optiScalerFolder)
+        => Path.GetFullPath(optiScalerFolder
+            ? Path.Combine(binaryDirectory, OptiScalerFolderName, "plugins", OptiPatcherProvider.FileName)
+            : Path.Combine(binaryDirectory, "plugins", OptiPatcherProvider.FileName));
+
+    /// <summary>The OptiScaler 10 helper folder in a package (or, as <see cref="RecordHasOptiScalerFolder"/>, a game).</summary>
+    internal const string OptiScalerFolderName = "OptiScaler";
+
+    internal static bool HasOptiScalerFolder(string packageRoot)
+        => Directory.Exists(Path.Combine(packageRoot, OptiScalerFolderName));
+
+    /// <summary>The install carries OptiScaler 10's helper folder: a recorded file other than OptiPatcher lies in it.</summary>
+    internal static bool RecordHasOptiScalerFolder(LinuxDeploymentRecord record)
+    {
+        var folder = Path.GetFullPath(Path.Combine(record.BinaryDirectory, OptiScalerFolderName)) + Path.DirectorySeparatorChar;
+        return record.Files.Any(file => !IsOptiPatcherFile(file) && Path.GetFullPath(file.Path).StartsWith(folder, StringComparison.Ordinal));
+    }
+
+    private static bool IsOptiPatcherFile(LinuxDeployedFile file)
+        => Path.GetFileName(file.Path).Equals(OptiPatcherProvider.FileName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>RHI's OptiPatcher when it lies where the installed build does not read it (#273), else null.</summary>
+    internal static LinuxDeployedFile? MisplacedOptiPatcher(LinuxDeploymentRecord record)
+    {
+        var recorded = record.Files.FirstOrDefault(IsOptiPatcherFile);
+        if (recorded is null) return null;
+        var expected = OptiPatcherTarget(Path.GetFullPath(record.BinaryDirectory), RecordHasOptiScalerFolder(record));
+        return Path.GetFullPath(recorded.Path).Equals(expected, StringComparison.Ordinal) || File.Exists(expected) ? null : recorded;
+    }
 
     private static async Task<OptiPatcherBuild> FetchLatestOptiPatcherAsync(IOptiPatcherProvider provider, CancellationToken cancellationToken)
         => await provider.FetchAsync(await provider.ResolveLatestAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
@@ -641,12 +739,17 @@ public sealed partial class OptiScalerDeploymentService
     public Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
         => _packages.ListNightlyBuildsAsync(cancellationToken);
 
+    /// <summary>#270: the releases of Stable, DLSS NR or F5 a game can be pinned to (newest first; metadata only).</summary>
+    public Task<IReadOnlyList<OptiScalerRelease>> ListReleasesAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
+        => _packages.ListReleasesAsync(variant, cancellationToken);
+
     internal static string VariantLabel(OptiScalerVariant variant) => variant switch
     {
         OptiScalerVariant.Stable => "Stable",
         OptiScalerVariant.Nightly => "Nightly",
         OptiScalerVariant.DlssNr => "DLSS NR",
         OptiScalerVariant.F5 => "F5 DLSSNR",
+        _ when OptiScalerForks.Get(variant) is { } fork => fork.Label, // #271
         _ => variant.ToString()
     };
 

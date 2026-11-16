@@ -32,7 +32,7 @@ public static class NeuralRenderingRuntimeOwnership
 
     /// <summary>OptiScaler variants that deploy <c>nvngx_dlssnr.dll</c> (and its forwarder): DLSS NR and F5 DLSSNR.</summary>
     public static bool OptiScalerVariantOwnsRuntime(OptiScalerVariant variant)
-        => variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5;
+        => variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5 || OptiScalerForks.Get(variant)?.NeedsNrDll == true; // #271 NR forks
 
     /// <summary>\"OptiScaler DLSS NR\" / \"OptiScaler F5 DLSSNR\" when <paramref name="optiScaler"/> owns the runtime, else null.</summary>
     public static string? OptiScalerOwner(LinuxDeploymentRecord? optiScaler)

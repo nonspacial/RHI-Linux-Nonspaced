@@ -77,6 +77,10 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Equal(OptiScalerVariant.F5, OptiScalerDeploymentService.GetInstalledVariant(record));
         Assert.Equal("310.8.2", record.Metadata[OptiScalerDeploymentService.DlssNrRuntimeVersionMetadataKey]);
         Assert.Contains("F5 DLSSNR", installed.Message, StringComparison.Ordinal);
+        // #273 (upstream 2.9.2): F5 showed the Stable version number on some games. The version shown is the record's,
+        // which is the F5 release that was installed.
+        Assert.Equal("0.1.30", record.Version);
+        Assert.Equal("OptiScaler F5 DLSSNR 0.1.30 is current.", (await service.CheckUpdateAsync(game)).Message);
 
         var removed = await service.RemoveAsync(game);
         Assert.True(removed.Success, removed.Message);

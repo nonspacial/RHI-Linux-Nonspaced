@@ -25,15 +25,17 @@ public sealed class OptiScalerVariantPreferenceStore : IGameStateStore
         _file = new JsonFileStore<Dictionary<string, OptiScalerVariant>>(_path, JsonOptions);
     }
 
-    public OptiScalerVariant Get(DetectedGame game)
+    public OptiScalerVariant Get(DetectedGame game) => Get(game, OptiScalerVariant.Stable);
+
+    /// <summary>The game's choice, or <paramref name="fallback"/> (#270: the Default version) when it has none.</summary>
+    public OptiScalerVariant Get(DetectedGame game, OptiScalerVariant fallback)
+        => TryGet(game, out var variant) ? variant : fallback;
+
+    /// <summary>#270: whether the game has a choice of its own (Stable picked in the ⚙ counts, so the default never overrides it).</summary>
+    public bool TryGet(DetectedGame game, out OptiScalerVariant variant)
     {
         lock (_gate)
-        {
-            var entries = LoadUnsafe();
-            return GameRecordIdentity.TryGet(entries, game, out var variant)
-                ? variant
-                : OptiScalerVariant.Stable;
-        }
+            return GameRecordIdentity.TryGet(LoadUnsafe(), game, out variant);
     }
 
     public void Set(DetectedGame game, OptiScalerVariant variant)
@@ -41,8 +43,8 @@ public sealed class OptiScalerVariantPreferenceStore : IGameStateStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            if (variant == OptiScalerVariant.Stable) GameRecordIdentity.Remove(entries, game);
-            else GameRecordIdentity.Set(entries, game, variant);
+            // #270: Stable is stored too; before the Default version setting, Stable removed the entry.
+            GameRecordIdentity.Set(entries, game, variant);
             SaveUnsafe(entries);
         }
     }

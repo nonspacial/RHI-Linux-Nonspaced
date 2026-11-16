@@ -34,6 +34,16 @@ public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
         }
     }
 
+    /// <summary>#270: every game's saved pin for <paramref name="kind"/> (the Nightly cache cleanup keeps those builds).</summary>
+    public IReadOnlyList<string> All(ManagedComponentKind kind)
+    {
+        EnsureSupported(kind);
+        var suffix = KindSuffix(kind);
+        lock (_gate)
+            return LoadUnsafe().Where(entry => entry.Key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && IsSafeTag(entry.Value))
+                .Select(entry => entry.Value).ToArray();
+    }
+
     public void Set(DetectedGame game, ManagedComponentKind kind, string? releaseTag)
     {
         EnsureSupported(kind);

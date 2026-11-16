@@ -19,6 +19,8 @@ internal sealed class OptiScalerTemplateSettingsRows
     private readonly ComboBox _gpu;
     private readonly ComboBox _dlss;
     private readonly StackPanel _dlssPanel;
+    private readonly ComboBox _defaultVersion;
+    private readonly CheckBox _removeOldNightlies;
 
     public OptiScalerTemplateSettingsRows(LinuxAppSettings settings, string templatesFolder, Func<string, string?> openFolder, Action<string> showStatus)
     {
@@ -40,6 +42,25 @@ internal sealed class OptiScalerTemplateSettingsRows
         _gpu.SelectionChanged += (_, _) => SyncDlssVisibility();
         SyncDlssVisibility();
 
+        // #270 (upstream 2.9.0/2.9.2): Default version, and Remove old Nightly builds (off by default).
+        _defaultVersion = new ComboBox
+        {
+            Name = "OptiScalerDefaultVersion",
+            ItemsSource = OptionLists.OptiScalerVariant.Items,
+            SelectedItem = DefaultVersionDisplay(settings.OptiScalerDefaultVersion),
+            MinWidth = 230
+        };
+        ToolTip.SetTip(_defaultVersion, UiLocalizationService.Text("Osv.DefaultVersionTip"));
+        ToolTip.SetShowDelay(_defaultVersion, 2000);
+        _removeOldNightlies = new CheckBox
+        {
+            Name = "OptiScalerRemoveOldNightlies",
+            Content = UiLocalizationService.Text("Osv.RemoveOldNightlies"),
+            IsChecked = settings.OptiScalerRemoveOldNightlyBuilds
+        };
+        ToolTip.SetTip(_removeOldNightlies, UiLocalizationService.Text("Osv.RemoveOldNightliesTip"));
+        ToolTip.SetShowDelay(_removeOldNightlies, 2000);
+
         var open = new Button { Content = UiLocalizationService.Text("Names.OpenOptiScalerTemplates"), Padding = new Thickness(12, 6) };
         open.Click += (_, _) =>
         {
@@ -56,6 +77,9 @@ internal sealed class OptiScalerTemplateSettingsRows
         };
 
         var choices = new WrapPanel { Orientation = Orientation.Horizontal };
+        var defaultPanel = Labeled(UiLocalizationService.Text("Osv.DefaultVersion"), _defaultVersion);
+        defaultPanel.Margin = new Thickness(0, 0, 16, 8);
+        choices.Children.Add(defaultPanel);
         var gpuPanel = Labeled(UiLocalizationService.Text("Names.OptiScalerGpuType"), _gpu);
         gpuPanel.Margin = new Thickness(0, 0, 16, 8);
         _dlssPanel.Margin = new Thickness(0, 0, 16, 8);
@@ -65,6 +89,7 @@ internal sealed class OptiScalerTemplateSettingsRows
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Names.OptiScalerTemplateHeading"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(choices);
+        panel.Children.Add(_removeOldNightlies);
         panel.Children.Add(open);
         panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Names.OptiScalerTemplateNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
         Control = panel;
@@ -76,10 +101,20 @@ internal sealed class OptiScalerTemplateSettingsRows
 
     public bool DlssInputs => OptionLists.OptiScalerDlssInputs.Value(_dlss.SelectedItem?.ToString());
 
+    /// <summary>#270: the Default version as saved (the channel's name: Stable, Nightly, DlssNr, F5).</summary>
+    public string DefaultVersion => OptionLists.OptiScalerVariant.Value(_defaultVersion.SelectedItem?.ToString()).ToString();
+
+    public bool RemoveOldNightlyBuilds => _removeOldNightlies.IsChecked == true;
+
+    private static string DefaultVersionDisplay(string saved)
+        => OptionLists.OptiScalerVariant.Display(Enum.TryParse<OptiScalerVariant>(saved, true, out var variant) ? variant : OptiScalerVariant.Stable);
+
     public void Reset(LinuxAppSettings defaults)
     {
         _gpu.SelectedItem = OptionLists.OptiScalerGpuType.Display(defaults.OptiScalerGpuType);
         _dlss.SelectedItem = OptionLists.OptiScalerDlssInputs.Display(defaults.OptiScalerDlssInputs);
+        _defaultVersion.SelectedItem = DefaultVersionDisplay(defaults.OptiScalerDefaultVersion);
+        _removeOldNightlies.IsChecked = defaults.OptiScalerRemoveOldNightlyBuilds;
         SyncDlssVisibility();
     }
 

@@ -409,6 +409,7 @@ public sealed partial class MainWindow : Window
         // #187: after a preset is applied the dialog reopens, so every dropdown shows the applied values.
         model.ReopenRequested += () => { dialog.Close(); OptiScalerSettings_Click(sender, e); };
         dialog.Closed += (_, _) => model.Dispose();
+        dialog.Opened += (_, _) => RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(model.LoadVersionsAsync(), "optiscaler-versions"); // #270
         await ShowFittedDialogAsync(dialog);
     });
 

@@ -150,6 +150,90 @@ public sealed class OptiScalerAdvancedSettingsTests : IDisposable
         Assert.Contains("LoadReshade=true", text, StringComparison.OrdinalIgnoreCase);
     }
 
+    // #273 (upstream 2.9.3): FG Nvngx Override was greyed out and not saved while FG Input was "DLSSG via Nvngx", where
+    // OptiScaler uses it. Linux never greys a row; this pins that it is offered, written and read back with that input.
+    [Fact]
+    public void FgNvngxReplacement_WithDlssgViaNvngxInput_IsOfferedAndSaved()
+    {
+        var (game, store, ini) = CreateGame("nvngx-input", managed: true);
+        File.WriteAllText(ini, "[FrameGen]\nFGInput=nvngxfg\nFGNvngxReplacement=None\n");
+        var service = NewService(store);
+
+        Assert.Contains(service.GetAdvancedSettings(game).Settings, setting => setting.Id == "FGNvngxReplacement");
+        Assert.True(service.SetAdvancedSetting(game, "FGNvngxReplacement", "Arturs").Success);
+
+        var settings = service.GetAdvancedSettings(game).Settings;
+        Assert.Equal("nvngxfg", settings.Single(setting => setting.Id == "FGInput").CurrentValue);
+        Assert.Equal("Arturs", settings.Single(setting => setting.Id == "FGNvngxReplacement").CurrentValue);
+    }
+
+    // #273 (upstream 2.8.9): changing the Upscaler API also changed the game's upscaler. Linux has no API selector: each
+    // API has its own upscaler row, so a change to one never touches another.
+    [Fact]
+    public void UpscalerRows_ChangingOneApi_LeavesTheOthersAsTheyWere()
+    {
+        var (game, store, ini) = CreateGame("upscaler-api", managed: true);
+        File.WriteAllText(ini, "[Upscalers]\nDx11Upscaler=xess\nDx12Upscaler=dlss\nVulkanUpscaler=fsr22\n");
+        var service = NewService(store);
+
+        Assert.True(service.SetAdvancedSetting(game, "Dx11Upscaler", "fsr22").Success);
+
+        var settings = service.GetAdvancedSettings(game).Settings;
+        Assert.Equal("fsr22", settings.Single(setting => setting.Id == "Dx11Upscaler").CurrentValue);
+        Assert.Equal("dlss", settings.Single(setting => setting.Id == "Dx12Upscaler").CurrentValue);
+        Assert.Equal("fsr22", settings.Single(setting => setting.Id == "VulkanUpscaler").CurrentValue);
+    }
+
+    // #270 (upstream 2.9.0): DXGI Spoofing ([Spoofing] Dxgi) on every version, Auto / True / False, after the frame-rate limit.
+    [Theory]
+    [InlineData(OptiScalerVariant.Stable)]
+    [InlineData(OptiScalerVariant.Nightly)]
+    [InlineData(OptiScalerVariant.F5)]
+    public void DxgiSpoofing_IsOfferedOnEveryVersion_AndWritesSpoofingDxgi(OptiScalerVariant variant)
+    {
+        var (game, store, ini) = CreateGame("dxgi-" + variant, managed: true, variant);
+        File.WriteAllText(ini, "[Spoofing]\nDxgi=auto\nVulkan=auto\n");
+        var service = NewService(store);
+
+        var rows = service.GetAdvancedSettings(game).Settings;
+        var dxgi = rows.Single(setting => setting.Id == OptiScalerDeploymentService.DxgiSpoofingSettingId);
+        Assert.Equal(["auto", "true", "false"], dxgi.Options.Select(option => option.Value));
+        Assert.Equal("auto", dxgi.CurrentValue);
+        Assert.Equal(rows.ToList().FindIndex(setting => setting.Id == "FramerateLimit") + 1, rows.ToList().IndexOf(dxgi));
+
+        Assert.True(service.SetAdvancedSetting(game, OptiScalerDeploymentService.DxgiSpoofingSettingId, "false").Success);
+        Assert.Contains("Dxgi=false", File.ReadAllText(ini));
+        Assert.Contains("Vulkan=auto", File.ReadAllText(ini));
+        Assert.Equal("false", service.GetAdvancedSettings(game).Settings.Single(setting => setting.Id == OptiScalerDeploymentService.DxgiSpoofingSettingId).CurrentValue);
+        Assert.False(service.SetAdvancedSetting(game, OptiScalerDeploymentService.DxgiSpoofingSettingId, "yes").Success);
+    }
+
+    // #272 (upstream 2.9.3 FindCustomFgProviders): FG Nvngx Override lists the custom frame generation providers in
+    // OptiScaler's custom folder (a folder with a dlssg folder holding a DLL) by name, and saves one.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FgNvngxReplacement_ListsCustomFgProvidersByName_AndSavesOne(bool optiScalerFolder)
+    {
+        var (game, store, ini) = CreateGame("custom-fg-" + optiScalerFolder, managed: true, OptiScalerVariant.Nightly);
+        File.WriteAllText(ini, "[FrameGen]\nFGInput=nvngxfg\nFGNvngxReplacement=None\n");
+        var bin = Path.GetDirectoryName(ini)!;
+        var custom = optiScalerFolder ? Path.Combine(bin, "OptiScaler", "custom") : Path.Combine(bin, "custom");
+        Directory.CreateDirectory(Path.Combine(custom, "Apex Neural Rendering FG", "dlssg"));
+        File.WriteAllText(Path.Combine(custom, "Apex Neural Rendering FG", "dlssg", "nr_fg.dll"), "MZ");
+        Directory.CreateDirectory(Path.Combine(custom, "Empty", "dlssg")); // no DLL: not a provider
+        Directory.CreateDirectory(Path.Combine(custom, "Upscaler", "fsr")); // not a frame generation provider
+        var service = NewService(store);
+
+        var row = service.GetAdvancedSettings(game).Settings.Single(setting => setting.Id == "FGNvngxReplacement");
+        Assert.Equal(["None", "Nukems", "Arturs", "FFX", "Combo", "Apex Neural Rendering FG"], row.Options.Select(option => option.Value));
+        Assert.Equal("Apex Neural Rendering FG", row.Options[^1].Name);
+
+        Assert.True(service.SetAdvancedSetting(game, "FGNvngxReplacement", "Apex Neural Rendering FG").Success);
+        Assert.Contains("FGNvngxReplacement=Apex Neural Rendering FG", File.ReadAllText(ini));
+        Assert.False(service.SetAdvancedSetting(game, "FGNvngxReplacement", "Empty").Success);
+    }
+
     [Fact]
     public void SetAdvancedSetting_InvalidChoiceIsRejectedWithoutChangingIni()
     {

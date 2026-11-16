@@ -81,6 +81,35 @@ Not on `main` yet:
     your HSF settings; the ⚙ sets the DirectX 12 mode and Launchpad; RTX 20/30/40 cards are offered Universal MFG
     Unlocker. HSF needs RHI's ReShade installed first (#277).
 
+### Wave 14 — optiscaler
+
+- OptiPatcher shows its real build again and its cache is named by build: since November 2026 its release notes put a
+  `^G` before the commit, which RHI did not read (#264, upstream 2.9.3).
+- OptiPatcher now loads with OptiScaler Nightly, DLSS NR, F5 and the forks: it goes to `OptiScaler/plugins`, where
+  those builds look, instead of the game's `plugins` folder, which only Stable reads. Games that already have it show
+  an update; Update moves it (#273, upstream 2.8.9).
+- OptiScaler versions (#270, upstream 2.9.0–2.9.2):
+  - New **Default version** setting next to OptiScaler's GPU Type: the version a game installs when you haven't picked
+    one in its ⚙. Games that already have OptiScaler keep theirs.
+  - New **DXGI Spoofing** setting in OptiScaler's ⚙ on every version (Auto, True, False). Presets save it.
+  - The ⚙ shows the installed and the newest version, with **Check now**, and **Update** when there is one.
+  - New **Release** setting in the ⚙: keep a game on an older release of Stable, DLSS NR or F5 DLSSNR. Pinned games are
+    not updated.
+  - New **Remove old Nightly builds** setting (off by default): deletes old downloaded Nightly builds, keeping the
+    newest and any a game uses.
+- OptiScaler's ⚙ opens with a Presets panel on every version, Stable included (#269, upstream 2.8.9):
+  - Recommended presets in one click: Real DLSS FG, DLSS Enabler FG and UMFG XeFG (which installs Universal MFG
+    Unlocker if it's missing). The one matching the game is ticked. New ones can arrive without an app update.
+  - Your four preset slots are one dropdown with Apply, Save current (Overwrite) and a … button to rename or clear.
+  - New **Replace with a fresh copy…** at the bottom: asks first, then gives the game the same OptiScaler.ini as a
+    fresh install (your GPU, DLSS Inputs and its version). The old file is kept in RHI's data folder.
+- More OptiScaler versions: the recommended forks Venom, NR PreSR MFG, Feeder NR and OpenNR sit beside Stable,
+  Nightly, DLSS NR and F5 DLSSNR. RHI downloads them from their GitHub releases and keeps them up to date like the
+  others; the Neural Rendering forks get NVIDIA's Neural Rendering file (#271, upstream 2.9.2/2.9.3). Custom OptiScaler
+  builds are not in this build yet.
+- OptiScaler ⚙: FG Nvngx Override lists custom frame generation providers found in OptiScaler's custom folder by name
+  (#272, upstream 2.9.3).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

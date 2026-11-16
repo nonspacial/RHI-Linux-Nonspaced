@@ -160,6 +160,72 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
     public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
     public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
+
+    // w14/optiscaler rows
+    /// <summary>#270: the OptiScaler ⚙ Release row for the selected game and channel (null without a selected game).</summary>
+    internal OptiScalerReleasePresenter? OptiScalerReleaseFor(OptiScalerVariant variant)
+        => SelectedGame is { } game ? new OptiScalerReleasePresenter(this, _managedComponents, game, variant, TryPersist) : null;
+
+    /// <summary>#270: the OptiScaler ⚙ version line for the selected game; Update runs the component row's update.</summary>
+    internal OptiScalerVersionLinePresenter? OptiScalerVersionLineFor(Func<OptiScalerVariant> variant)
+        => SelectedGame is { } game ? new OptiScalerVersionLinePresenter(_managedComponents, game, variant, token => UpdateOptiScalerAsync(game, token)) : null;
+
+    /// <summary>
+    /// #269: a recommended preset's extra (UMFG XeFG installs Universal MFG Unlocker): the component's own install as a
+    /// shell operation on the selected game; the line to add to the preset's result.
+    /// </summary>
+    internal async Task<string> InstallComponentForPresetAsync(ManagedComponentKind kind)
+    {
+        if (SelectedGame is not { } game) return "";
+        using var op = BeginOperation("component");
+        if (op is null) return T("Vm.AnotherRHIOperationAlreadyRunning");
+        try
+        {
+            var result = await _managedComponents.InstallAsync(game, kind, ProbedFiles(game) ?? [], op.Token);
+            if (result.Success) await ReprobeGameAsync(game);
+            return OutcomeText(op, result.Success, result.Message);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            return OperationCancelledText();
+        }
+    }
+
+    /// <summary>#269: "Replace with a fresh copy…" on the selected game (asked first by the ⚙); the line to show.</summary>
+    internal async Task<(bool Replaced, string Line)> ReplaceOptiScalerIniWithFreshCopyAsync()
+    {
+        if (SelectedGame is not { } game) return (false, "");
+        using var op = BeginOperation("optiscaler-fresh-ini");
+        if (op is null) return (false, T("Vm.AnotherRHIOperationAlreadyRunning"));
+        try
+        {
+            var result = await _managedComponents.ReplaceOptiScalerIniWithFreshCopyAsync(game, op.Token);
+            return (result.Success, OutcomeText(op, result.Success, result.Message));
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            return (false, OperationCancelledText());
+        }
+    }
+
+    private async Task<bool> UpdateOptiScalerAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        using var op = BeginOperation("component", linkedToken: cancellationToken);
+        if (op is null) return false;
+        try
+        {
+            StatusText = TF("Vm.Installing", "OptiScaler");
+            var result = await _managedComponents.UpdateManagedAsync(game, ManagedComponentKind.OptiScaler, [], op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
+            if (result.Success) await ReprobeGameAsync(game);
+            return result.Success;
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+            return false;
+        }
+    }
     public ResolutionLaunchPresenter Resolution => ResolutionLaunchPresenter.For(this); // #191 resolution auto-toggle
     // w5/reshade-core rows
     public ReShadeLegacyPresenter ReShadeLegacy => ReShadeLegacyPresenter.For(this, _managedComponents); // #186

@@ -35,6 +35,33 @@ public sealed class OptiPatcherProviderTests : IDisposable
         Assert.Equal("sha256:226e8db4cc7a30d4988ae200ac6cbc98afeff1e2e69bd07c6fbe2282fb545648", digest);
     }
 
+    // #264 (upstream 2.9.3 487b4fc): since Nov 2026 the rolling notes put a literal "^G" before the commit.
+    [Fact]
+    public void ParseRelease_TheNovember2026RollingRelease_ReadsTheCommitPastTheCaretG()
+    {
+        var json = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "optipatcher-rolling-2026-11.json"));
+        var (version, _, digest) = OptiPatcherProvider.ParseRelease(json);
+
+        Assert.Equal("c49dee353d303d423226a0073a03bbd4814bf46", version);
+        Assert.Equal("sha256:f0c2bcd6804429b19235abd6c6d0f7fc0841397e64ba833c948f14e6b878490e", digest);
+    }
+
+    // Upstream's OptiPatcherVersionTests cases, plus the real BEL control character the ticket names.
+    [Theory]
+    [InlineData("## Rolling Release\r\n\r\n**Base version:** v0.42 \r\n**Build commit:** ^Gc49dee353d303d423226a0073a03bbd4814bf46 \r\n**Build date:** 2026-11-11", "c49dee353d303d423226a0073a03bbd4814bf46")]
+    [InlineData("**Build commit:** \u0007c49dee3\r\n", "c49dee3")]
+    [InlineData("**Build commit:** C49DEE3\r\n", "c49dee3")]
+    [InlineData("Build commit: abc1234", "abc1234")]
+    public void ParseBuildCommit_ReadsTheCommit(string body, string expected)
+        => Assert.Equal(expected, OptiPatcherProvider.ParseBuildCommit(body));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("## Rolling Release\r\n**Base version:** v0.42")]
+    [InlineData("**Build commit:**\r\n**Build date:** 2026-11-11")]
+    public void ParseBuildCommit_WithoutACommit_IsNull(string body)
+        => Assert.Null(OptiPatcherProvider.ParseBuildCommit(body));
+
     [Fact]
     public void ParseRelease_WithoutABuildCommit_UsesTheAssetDigest_AndWithoutTheAssetRefuses()
     {

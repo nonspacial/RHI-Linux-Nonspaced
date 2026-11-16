@@ -111,11 +111,65 @@ public sealed class OptiScalerPresetsTests : IDisposable
     }
 
     [Fact]
-    public async Task PresetsAreOfferedOnlyWhereUpstreamOffersThem_TheNightlyFamily()
+    public async Task PresetsAreOfferedOnEveryVersion_StableIncluded_ButNotWithoutRhisOptiScaler()
     {
+        // #269 (upstream 2.8.9): the ⚙ opens on the Presets panel on every OptiScaler version, Stable included.
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddManagedOptiScalerGameAsync(fx, "Stable", "[FrameGen]\nFGInput=auto\n", OptiScalerVariant.Stable);
-        Assert.False(OptiScalerPresetsPresenter.AppliesTo(fx.Vm.GetOptiScalerAdvancedSettings()));
+        Assert.True(OptiScalerPresetsPresenter.AppliesTo(fx.Vm.GetOptiScalerAdvancedSettings()));
+        Assert.False(OptiScalerPresetsPresenter.AppliesTo(new OptiScalerAdvancedSnapshot(null, false, [])));
+    }
+
+    // ---- #269 recommended presets ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Recommended_AppliesTheMappedSettings_LatestStreamlineAsTheNewest_AndTicksTheMatchingOne()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddManagedOptiScalerGameAsync(fx, "Recommended", "[FrameGen]\nEnabled=auto\nFGInput=auto\nFGOutput=auto\nFGNvngxReplacement=None\n[OptiFG]\nHUDFix=auto\n");
+        var presets = fx.Vm.OptiScalerPresets;
+        var writes = new List<(string Id, string Value)>();
+        var offered = fx.Vm.GetOptiScalerAdvancedSettings();
+        var preset = new OptiScalerRecommendedPreset("Test", "Test FG", "desc",
+        [
+            new("FrameGenEnabled", "true"), new("FGInput", "upscaler"), new("FGOutput", "dlssg"), new("HUDFix", "true"),
+            new("NotALinuxSetting", "x")
+        ]);
+        Assert.False(presets.IsActive(preset));
+
+        var line = await presets.ApplyRecommendedAsync(preset);
+
+        Assert.Contains("Test FG", line);
+        Assert.Contains(UiLocalizationService.Format("Shell.PresetNotOffered", 1), line);
+        var now = fx.Vm.GetOptiScalerAdvancedSettings().Settings.ToDictionary(s => s.Id, s => s.CurrentValue);
+        Assert.Equal(("true", "upscaler", "dlssg", "true"), (now["FrameGenEnabled"], now["FGInput"], now["FGOutput"], now["HUDFix"]));
+        Assert.True(presets.IsActive(preset));
+        Assert.False(presets.IsActive(preset with { Settings = [new("FGOutput", "xefg")] }));
+        // Without the Universal MFG Unlocker it installs, the preset is not ticked.
+        Assert.False(presets.IsActive(preset with { InstallUniversalMfg = true }));
+    }
+
+    [Fact]
+    public async Task Recommended_AreUpstreamsPresets_WithoutAnrFgUntilRhiCanInstallIt()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var presets = fx.Vm.OptiScalerPresets;
+        Assert.Equal(["Real DLSS FG", "DLSS Enabler FG", "UMFG XeFG"], presets.Recommended.Select(preset => preset.Name));
+    }
+
+    [Fact]
+    public async Task Clear_EmptiesTheSlot_AndTheLabelsFollow()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var presets = fx.Vm.OptiScalerPresets;
+        presets.Store = new OptiScalerPresetStore(Path.Combine(_root, "clear.json"));
+        Assert.Equal(["DLSS Enabler", "Slot 2", "Slot 3", "Slot 4"], presets.SlotLabels);
+
+        Assert.Null(presets.Clear(0));
+
+        Assert.Null(presets.Slot(0));
+        Assert.Equal("Slot 1", presets.SlotLabels[0]);
+        Assert.Null(new OptiScalerPresetStore(Path.Combine(_root, "clear.json")).Load().Slots[0]);
     }
 
     // ---- global overlay key ----------------------------------------------------------------------------------------

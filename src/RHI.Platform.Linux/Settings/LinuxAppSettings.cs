@@ -39,6 +39,10 @@ public sealed class LinuxAppSettings
     // "DLSS Inputs"; defaults NVIDIA / on, as upstream). Set by the Settings dialog's controls.
     public string OptiScalerGpuType { get; set; } = "NVIDIA";
     public bool OptiScalerDlssInputs { get; set; } = true;
+    // #270 (upstream 2.9.0/2.9.2, Settings › Components › OptiScaler): the version a game without a choice of its own installs
+    // (Stable, Nightly, DlssNr, F5), and "Remove old Nightly builds" (off by default; the newest and pinned builds stay).
+    public string OptiScalerDefaultVersion { get; set; } = "Stable";
+    public bool OptiScalerRemoveOldNightlyBuilds { get; set; }
     // w5/update-policy rows
     // #177 (upstream AutoUpdateDlss / AutoUpdateStreamline, both off by default): files on the previous newest version
     // follow the manifest's newest. The baselines live in dlss-follow.json, never here.
@@ -128,6 +132,10 @@ public sealed class LinuxAppSettings
         DefaultDlssnrVersion = DefaultDlssnrVersion?.Trim() ?? "";
         DefaultStreamlineVersion = DefaultStreamlineVersion?.Trim() ?? "";
         if (UpdateCheckIntervalHours is < 1 or > 24) UpdateCheckIntervalHours = 4;
+        OptiScalerDefaultVersion = Enum.TryParse<RHI.Platform.Linux.Deployment.OptiScalerVariant>(OptiScalerDefaultVersion?.Trim(), true, out var defaultVersion)
+                                   && Enum.IsDefined(defaultVersion)
+            ? defaultVersion.ToString()
+            : "Stable"; // #270
         OptiScalerGpuType = OptiScalerGpuType?.Trim().ToUpperInvariant() switch // w3/dllnames (#97)
         {
             "AMD" => "AMD",

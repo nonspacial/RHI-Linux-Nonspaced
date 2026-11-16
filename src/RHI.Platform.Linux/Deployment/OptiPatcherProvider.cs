@@ -41,7 +41,9 @@ public sealed class OptiPatcherProvider : IOptiPatcherProvider
     public const string ReleaseIncompleteMessage = "The OptiPatcher rolling release lists no OptiPatcher.asi download.";
     public const string NotWindowsDllMessage = "The downloaded OptiPatcher.asi is not a 64-bit Windows DLL.";
 
-    private static readonly Regex BuildCommit = new(@"\*{0,2}Build commit:\*{0,2}\s*([0-9a-f]{7,40})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    // Upstream 2.9.3 (487b4fc): since Nov 2026 the notes read "**Build commit:** ^G<sha>" (a literal caret-G; a real
+    // control character is skipped too). Anything that is not hex or a line break may sit between the label and the commit.
+    private static readonly Regex BuildCommit = new(@"Build commit:\**[ \t]*(?:\^.)?[^0-9a-f\r\n]*([0-9a-f]{7,40})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private readonly HttpClient _http;
     private readonly string _cacheDir;
@@ -77,6 +79,14 @@ public sealed class OptiPatcherProvider : IOptiPatcherProvider
     public async Task<OptiPatcherBuild> GetLatestAsync(CancellationToken cancellationToken = default)
         => await FetchAsync(await ResolveLatestAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
+    /// <summary>The lower-case "Build commit" of rolling release notes, or null when the notes name none (#264).</summary>
+    internal static string? ParseBuildCommit(string? body)
+    {
+        if (string.IsNullOrEmpty(body)) return null;
+        var match = BuildCommit.Match(body);
+        return match.Success ? match.Groups[1].Value.ToLowerInvariant() : null;
+    }
+
     /// <summary>The build (lower-case commit, else the asset digest's first 12 hex), the asset link and its digest.</summary>
     internal static (string Version, string Url, string? Digest) ParseRelease(string json)
     {
@@ -96,10 +106,10 @@ public sealed class OptiPatcherProvider : IOptiPatcherProvider
         if (string.IsNullOrWhiteSpace(url)) throw new InvalidDataException(ReleaseIncompleteMessage);
 
         var body = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
-        var commit = BuildCommit.Match(body);
+        var commit = ParseBuildCommit(body);
         var hex = digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true ? digest[7..] : digest;
-        var version = commit.Success
-            ? commit.Groups[1].Value.ToLowerInvariant()
+        var version = commit is not null
+            ? commit
             : hex is { Length: >= 12 } && hex.All(Uri.IsHexDigit) ? "sha256-" + hex[..12].ToLowerInvariant()
             : throw new InvalidDataException(ReleaseIncompleteMessage);
         return (version, url, digest);
