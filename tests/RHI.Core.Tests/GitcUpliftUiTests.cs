@@ -37,21 +37,63 @@ public sealed class GitcUpliftUiTests : IDisposable
     }
 
     [Fact]
-    public void SettingsCard_ShowsTheSavedKey_ByName_AndSaveTakesTheChoice()
+    public void SettingsCard_ShowsTheSavedKey_ByName_AndTakesTheKeyPressedInTheBox()
     {
+        // w14/nr-2: the key is captured as upstream does (click the box, press a key; Backspace or ↺ = None), stored as the
+        // same virtual-key code the nr lane saved (0x78 = F9).
         var presenter = (GitcUpliftPresenter)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GitcUpliftPresenter));
         var card = new GitcUpliftSettingsCard(new LinuxAppSettings { UpliftEnableKey = 0x78 }, presenter, null!, _ => { });
 
         var panel = Assert.IsType<StackPanel>(card.Control);
-        var key = panel.GetLogicalDescendants().OfType<ComboBox>().Single(c => c.Name == "GitcUpliftEnableKey");
-        Assert.Equal("F9", key.SelectedItem);
+        var key = panel.GetLogicalDescendants().OfType<TextBox>().Single(c => c.Name == "GitcUpliftEnableKey");
+        Assert.True(key.IsReadOnly);
+        Assert.Equal("F9", key.Text);
         Assert.Equal(0x78, card.Key);
         Assert.Contains(panel.GetLogicalDescendants().OfType<Button>(), b => b.Name == "GitcUpliftWriteAll");
 
-        key.SelectedItem = GitcUpliftPresenter.KeyName(0);
+        Assert.True(Press(key, Avalonia.Input.Key.F10));
+        Assert.Equal(0x79, card.Key);
+        Assert.Equal("F10", key.Text);
+        Assert.True(Press(key, Avalonia.Input.Key.NumPad5));
+        Assert.Equal(0x65, card.Key);
+        Assert.True(Press(key, Avalonia.Input.Key.K));
+        Assert.Equal(0x4B, card.Key);
+        Assert.False(Press(key, Avalonia.Input.Key.LeftCtrl)); // a modifier alone is not a key
+        Assert.False(Press(key, Avalonia.Input.Key.Tab)); // Tab keeps moving the focus
+        Assert.Equal(0x4B, card.Key);
+
+        Assert.True(Press(key, Avalonia.Input.Key.Back));
         Assert.Equal(0, card.Key); // None: each game keeps its own key
+        Assert.Equal("", key.Text);
         card.Reset(new LinuxAppSettings { UpliftEnableKey = 0x2D });
         Assert.Equal(0x2D, card.Key);
+        Assert.Equal("Insert", key.Text);
+        panel.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "GitcUpliftKeyClear")
+            .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal(0, card.Key);
+    }
+
+    private static bool Press(TextBox box, Avalonia.Input.Key key)
+    {
+        var args = new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = key, Source = box };
+        box.RaiseEvent(args);
+        return args.Handled;
+    }
+
+    [Theory]
+    [InlineData(Avalonia.Input.Key.F1, 0x70, "F1")]
+    [InlineData(Avalonia.Input.Key.F12, 0x7B, "F12")]
+    [InlineData(Avalonia.Input.Key.NumPad0, 0x60, "Numpad 0")]
+    [InlineData(Avalonia.Input.Key.Insert, 0x2D, "Insert")]
+    [InlineData(Avalonia.Input.Key.PageDown, 0x22, "Page Down")]
+    [InlineData(Avalonia.Input.Key.Scroll, 0x91, "Scroll Lock")]
+    [InlineData(Avalonia.Input.Key.A, 0x41, "A")]
+    [InlineData(Avalonia.Input.Key.D7, 0x37, "7")]
+    [InlineData(Avalonia.Input.Key.OemTilde, 0xC0, "`")]
+    public void PressedKeys_MapToTheWindowsVirtualKeyCodesUpliftReads(Avalonia.Input.Key key, int vk, string name)
+    {
+        Assert.Equal(vk, GitcUpliftPresenter.VirtualKey(key));
+        Assert.Equal(name, GitcUpliftPresenter.KeyName(vk));
     }
 
     [Fact]

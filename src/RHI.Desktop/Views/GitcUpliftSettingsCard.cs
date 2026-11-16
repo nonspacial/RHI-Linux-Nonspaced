@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using RHI.Desktop.Diagnostics;
@@ -12,24 +14,40 @@ namespace RHI.Desktop.Views;
 /// <summary>
 /// w14/nr (#274): the "GITC Uplift" settings card (upstream 2.9.3 Settings › Components, right after the OptiScaler key):
 /// the NR on/off key list and "Write key to all Uplift games". The dialog's Save stores the key (<see cref="Key"/>); the
-/// button saves it too, then writes it into every Uplift game (<see cref="GitcUpliftPresenter"/>). Linux deviation: the key
-/// is picked from a list (as the OptiScaler key here) instead of pressed into the box.
+/// button saves it too, then writes it into every Uplift game (<see cref="GitcUpliftPresenter"/>). w14/nr-2: the key is
+/// captured as upstream does — click the box and press a key (Backspace or ↺ sets None) — and stored as before (the virtual-
+/// key code).
 /// </summary>
 internal sealed class GitcUpliftSettingsCard
 {
-    private readonly ComboBox _key;
+    private readonly TextBox _key;
+    private int _vk;
 
     public GitcUpliftSettingsCard(LinuxAppSettings settings, GitcUpliftPresenter presenter, SettingsViewModel settingsVm, Action<string> showStatus)
     {
-        _key = new ComboBox
+        _key = new TextBox
         {
             Name = "GitcUpliftEnableKey",
-            ItemsSource = GitcUpliftPresenter.Keys.Select(k => GitcUpliftPresenter.KeyName(k.Vk)).ToArray(),
-            SelectedItem = GitcUpliftPresenter.KeyName(settings.UpliftEnableKey),
-            MinWidth = 230
+            IsReadOnly = true,
+            PlaceholderText = UiLocalizationService.Text("Uplift.KeyPress"),
+            FontFamily = new FontFamily("monospace"),
+            MinWidth = 180
         };
         ToolTip.SetTip(_key, UiLocalizationService.Text("Uplift.KeyTip"));
         ToolTip.SetShowDelay(_key, MiddleEllipsisText.TooltipDelay);
+        // Tunnel: the key is the card's before the box handles it (Tab / Enter / Escape keep their normal job).
+        _key.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+        {
+            if (e.KeyModifiers is not (KeyModifiers.None or KeyModifiers.Shift) && e.Key != Avalonia.Input.Key.Back) return;
+            if (GitcUpliftPresenter.VirtualKey(e.Key) is not { } vk) return;
+            SetKey(vk);
+            e.Handled = true;
+        }, RoutingStrategies.Tunnel);
+        var clear = new Button { Content = "↺", Padding = new Thickness(10, 6), Name = "GitcUpliftKeyClear" };
+        ToolTip.SetTip(clear, UiLocalizationService.Text("Uplift.KeyClearTip"));
+        ToolTip.SetShowDelay(clear, MiddleEllipsisText.TooltipDelay);
+        clear.Click += (_, _) => SetKey(0);
+        SetKey(settings.UpliftEnableKey);
         var write = new Button { Content = UiLocalizationService.Text("Uplift.WriteAll"), Padding = new Thickness(12, 6), Name = "GitcUpliftWriteAll" };
         ToolTip.SetTip(write, UiLocalizationService.Text("Uplift.WriteAllTip"));
         ToolTip.SetShowDelay(write, MiddleEllipsisText.TooltipDelay);
@@ -47,6 +65,7 @@ internal sealed class GitcUpliftSettingsCard
         ToolTip.SetShowDelay(label, MiddleEllipsisText.TooltipDelay);
         var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
         row.Children.Add(_key);
+        row.Children.Add(clear);
         row.Children.Add(write);
         var panel = new StackPanel { Spacing = 6, Name = "GitcUpliftCard" };
         panel.Children.Add(title);
@@ -58,7 +77,14 @@ internal sealed class GitcUpliftSettingsCard
     public Control Control { get; }
 
     /// <summary>The chosen key's virtual-key code (0 = None).</summary>
-    public int Key => GitcUpliftPresenter.Keys.FirstOrDefault(k => GitcUpliftPresenter.KeyName(k.Vk) == _key.SelectedItem as string).Vk;
+    public int Key => _vk;
 
-    public void Reset(LinuxAppSettings defaults) => _key.SelectedItem = GitcUpliftPresenter.KeyName(defaults.UpliftEnableKey);
+    public void Reset(LinuxAppSettings defaults) => SetKey(defaults.UpliftEnableKey);
+
+    /// <summary>Takes <paramref name="vk"/> (0 = None) and shows its name; None shows the "Press a key…" prompt.</summary>
+    internal void SetKey(int vk)
+    {
+        _vk = vk is > 0 and <= 255 ? vk : 0;
+        _key.Text = _vk == 0 ? "" : GitcUpliftPresenter.KeyName(_vk);
+    }
 }

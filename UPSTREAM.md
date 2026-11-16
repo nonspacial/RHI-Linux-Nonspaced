@@ -2204,3 +2204,13 @@ ported yet" note of the nr lane above.
   Latest, as upstream), journaled and logged in the update history. If the swap fails, nothing changes in the game and
   the switch and the pin go back to what is installed. Not installed: the choice is saved for the install.
 
+### #274 follow-up — GITC Uplift's NR on/off key is captured by pressing it
+
+Upstream 2.9.3 `SettingsHandler.UpliftKey`: Settings' GITC Uplift card now has upstream's box — click it and press a
+key; Backspace or ↺ sets None — instead of the list the nr lane used. One key, no modifiers (Tab, Enter and Escape keep
+their job). The key is stored exactly as before (`UpliftEnableKey`, the Windows virtual-key code Uplift reads from
+`[Uplift] EnableKey`), so a key saved by the nr lane's list shows by name (F9, Numpad 0, Page Up…). Avalonia's key is
+mapped to the Windows code (letters, digits, F1–F24, the numpad, navigation and punctuation keys). This removes the nr
+lane's "key picked from a list" deviation. As before on Linux the key is saved by the Settings dialog's Save (upstream
+saves on the key press) until the Settings restyle (#296/#297).
+

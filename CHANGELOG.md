@@ -137,6 +137,8 @@ Not on `main` yet:
     of the stock add-on: full-resolution Neural Rendering in the middle of the screen, less around it, for a large
     performance gain. Every download is checked against the hash published with it. Latest keeps it current, stock
     updates never replace it, and switching while installed swaps the add-on in place.
+  - GITC Uplift's NR on/off key (Settings › DLSS/Streamline › GITC Uplift) is set by clicking the box and pressing the
+    key, as in upstream RHI; Backspace or ↺ sets None. Keys saved before stay as they were.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
