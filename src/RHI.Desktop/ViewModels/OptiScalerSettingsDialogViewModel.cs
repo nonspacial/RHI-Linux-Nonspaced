@@ -127,6 +127,7 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
         Runtime = shell.Runtime;
         WindowTitle = TF("Win.OptiScalerAdvancedTitle", shell.SelectedGame?.Name ?? T("Win.Game"));
         CanChooseVariant = !snapshot.ManagedByRhi;
+        Runtime.RefreshOptiScalerVersions(); // #271: forks from the manifest and custom builds as they stand now
         selectedVariant = Runtime.SelectedOptiScalerVariant;
         VariantNote = snapshot.ManagedByRhi
             ? T("Win.InstalledVariantSelectorStaysLockedUntil")
@@ -168,10 +169,25 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
             IniItems = items;
             // #187: the four global presets (upstream shows them for the Nightly, DLSS NR and F5 channels).
             if (OptiScalerPresetsPresenter.AppliesTo(snapshot)) Presets = shell.OptiScalerPresets;
+            // #272: All Settings and the saved inis, while RHI manages OptiScaler on the game.
+            if (snapshot.ManagedByRhi && shell.SelectedGame is { } game)
+            {
+                AllSettings = shell.NewOptiScalerAllSettings(game);
+                AllSettings.Applied += line => { Message = line; RequestReopen(); };
+                IniLibrary = shell.NewOptiScalerIniLibrary(game);
+                IniLibrary.Loaded += line => { Message = line; RequestReopen(); };
+            }
         }
     }
 
     public string WindowTitle { get; }
+
+    /// <summary>#272: All Settings (null when RHI does not manage OptiScaler on the game).</summary>
+    public OptiScalerAllSettingsPresenter? AllSettings { get; }
+
+    /// <summary>#272: Save ini / Load saved ini (null when RHI does not manage OptiScaler on the game).</summary>
+    public OptiScalerIniLibraryPresenter? IniLibrary { get; }
+
     public OptiScalerAdvancedSnapshot Snapshot { get; }
     public OperationCoordinator Operations { get; }
     public RuntimePanelViewModel Runtime { get; }

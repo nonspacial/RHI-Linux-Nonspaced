@@ -68,6 +68,47 @@ internal static class OptiScalerIniEditor
         AtomicFile.ReplaceUserFile(path, new System.Text.UTF8Encoding(false).GetBytes(string.Join(newline, lines)), readOnly: readOnly);
     }
 
+    /// <summary>Every <c>key=value</c> of an INI text with its section, in file order (comments and keys outside a section skipped).</summary>
+    public static IReadOnlyList<(string Section, string Key, string Value)> ReadEntries(string text)
+    {
+        var entries = new List<(string, string, string)>();
+        string? section = null;
+        foreach (var raw in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith(';') || line.StartsWith('#')) continue;
+            if (line.StartsWith('[') && line.EndsWith(']'))
+            {
+                section = line[1..^1].Trim();
+                continue;
+            }
+            var eq = line.IndexOf('=');
+            if (section is null || eq <= 0) continue;
+            entries.Add((section, line[..eq].Trim(), line[(eq + 1)..].Trim()));
+        }
+        return entries;
+    }
+
+    /// <summary>
+    /// #273/#272: puts the values of <paramref name="previousText"/> (the game's OptiScaler.ini before a reinstall) into the
+    /// INI at <paramref name="path"/> for every key both have, so a version switch keeps the user's settings; keys the new
+    /// build does not have are left out (they belong to the old build). The keys whose value changed.
+    /// </summary>
+    public static IReadOnlyList<(string Section, string Key, string Value)> CarryOver(string previousText, string path, ReadOnlyUserFile readOnly = ReadOnlyUserFile.Refuse)
+    {
+        var current = ReadEntries(File.ReadAllText(path));
+        var changes = new List<(string Section, string Key, string Value)>();
+        foreach (var (section, key, value) in ReadEntries(previousText))
+        {
+            var now = current.FirstOrDefault(entry => entry.Section.Equals(section, StringComparison.OrdinalIgnoreCase) && entry.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+            if (now.Key is null || now.Value.Equals(value, StringComparison.Ordinal)) continue;
+            if (changes.Any(change => change.Section.Equals(section, StringComparison.OrdinalIgnoreCase) && change.Key.Equals(key, StringComparison.OrdinalIgnoreCase))) continue;
+            changes.Add((now.Section, now.Key, value));
+        }
+        SetValuesInFile(path, changes, readOnly);
+        return changes;
+    }
+
     private static string? GetValueFromLines(IReadOnlyList<string> lines, string section, string key)
     {
         var inSection = false;

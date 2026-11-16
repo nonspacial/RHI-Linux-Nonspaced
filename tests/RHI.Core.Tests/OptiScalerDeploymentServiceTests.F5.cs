@@ -102,8 +102,8 @@ public sealed partial class OptiScalerDeploymentServiceTests
     }
 
     [Theory]
-    [InlineData(OptiScalerVariant.F5)]
-    [InlineData(OptiScalerVariant.DlssNr)]
+    [InlineData("F5")]
+    [InlineData("DlssNr")]
     public async Task Install_NrVariant_IsRefusedWhileFeederOwnsTheRuntime_BeforeRequestingPackage(OptiScalerVariant variant)
     {
         var (game, store) = CreateGame("feeder-owns-" + variant, GraphicsApi.DirectX12);
@@ -125,9 +125,9 @@ public sealed partial class OptiScalerDeploymentServiceTests
     // w4/encore review minor 2: RTX Encore with its Neural Rendering file owns the runtime (#158); OptiScaler's NR variants
     // are refused at their own entry point, before the package is requested. Without that file RTX Encore owns nothing.
     [Theory]
-    [InlineData(OptiScalerVariant.F5, true)]
-    [InlineData(OptiScalerVariant.DlssNr, true)]
-    [InlineData(OptiScalerVariant.F5, false)]
+    [InlineData("F5", true)]
+    [InlineData("DlssNr", true)]
+    [InlineData("F5", false)]
     public async Task Install_NrVariant_IsRefusedOnlyWhileRtxEncoreOwnsTheRuntime(OptiScalerVariant variant, bool encoreListsRuntime)
     {
         var (game, store) = CreateGame($"encore-owns-{variant}-{encoreListsRuntime}", GraphicsApi.DirectX12);
@@ -159,8 +159,8 @@ public sealed partial class OptiScalerDeploymentServiceTests
     }
 
     [Theory]
-    [InlineData(OptiScalerVariant.Stable)]
-    [InlineData(OptiScalerVariant.Nightly)]
+    [InlineData("Stable")]
+    [InlineData("Nightly")]
     public async Task Install_StableOrNightly_StaysAvailableBesideFeeder(OptiScalerVariant variant)
     {
         var (game, store) = CreateGame("feeder-beside-" + variant, GraphicsApi.DirectX12);

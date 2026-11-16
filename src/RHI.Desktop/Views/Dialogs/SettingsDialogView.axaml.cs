@@ -137,6 +137,8 @@ public sealed partial class SettingsDialogView : UserControl
         var gitcUplift = new GitcUpliftSettingsCard(settings, vm.GitcUplift, vm.Settings, Show); // #274 NR on/off key
         Fill("GitcUpliftSlot", gitcUplift.Control);
         model.Host(new(current => current.UpliftEnableKey = gitcUplift.Key, gitcUplift.Reset));
+        // w14/optiscaler-2 rows
+        Fill("OptiScalerCustomBuildsSlot", new OptiScalerCustomBuildsSettingsRows(vm.OptiScalerCustomBuilds).Control); // #271 (applies at once, not on Save)
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;

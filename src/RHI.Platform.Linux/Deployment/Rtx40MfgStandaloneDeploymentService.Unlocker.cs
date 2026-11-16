@@ -57,7 +57,8 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     /// <summary>Whether <paramref name="optiScaler"/> (RHI's record) is an OptiScaler build that loads plugins from its own folder.</summary>
     public static bool IsPluginHost(LinuxDeploymentRecord? optiScaler)
         => optiScaler is not null
-           && OptiScalerDeploymentService.GetInstalledVariant(optiScaler) is OptiScalerVariant.Nightly or OptiScalerVariant.DlssNr or OptiScalerVariant.F5
+           && OptiScalerDeploymentService.GetInstalledVariant(optiScaler) is var variant // w14/optiscaler-2 merge: versions are ids, not enum constants
+           && (variant == OptiScalerVariant.Nightly || variant == OptiScalerVariant.DlssNr || variant == OptiScalerVariant.F5)
            && Directory.Exists(Path.Combine(optiScaler.BinaryDirectory, "OptiScaler"));
 
     /// <summary>Whether an install of the mod now would go in OptiScaler's plugins folder.</summary>

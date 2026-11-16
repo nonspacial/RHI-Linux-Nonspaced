@@ -156,7 +156,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
     {
         var nightly = CreateFixture("reflex-rows");
         var ids = nightly.Service.GetAdvancedSettings(nightly.Game).Settings.Select(setting => setting.Id).ToList();
-        var stable = CreateFixture("reflex-stable", variant: OptiScalerVariant.Stable);
+        var stable = CreateFixture("reflex-stable", variantOrNightly: OptiScalerVariant.Stable);
         var stableIds = stable.Service.GetAdvancedSettings(stable.Game).Settings.Select(setting => setting.Id).ToList();
 
         Assert.Equal(ids.IndexOf("FGNvngxReplacement") + 1, ids.IndexOf(OptiScalerDeploymentService.ForceReflexSettingId));
@@ -194,9 +194,10 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
 
     private const string DlssEnablerFile = "dlss-enabler-headless.dll";
 
-    private Fixture CreateFixture(string name, bool withDlssg = true, OptiScalerVariant variant = OptiScalerVariant.Nightly, bool journaled = false,
+    private Fixture CreateFixture(string name, bool withDlssg = true, OptiScalerVariant? variantOrNightly = null, bool journaled = false,
         IOptiScalerPackageProvider? packages = null, bool seedOptiScaler = true)
     {
+        var variant = variantOrNightly ?? OptiScalerVariant.Nightly;
         var root = Path.Combine(_root, name);
         var bin = Path.Combine(root, "game", "bin");
         var prefix = Path.Combine(root, "pfx");

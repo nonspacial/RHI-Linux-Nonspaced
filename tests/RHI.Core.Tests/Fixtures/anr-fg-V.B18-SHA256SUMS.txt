@@ -1,0 +1,5 @@
+ed70eef1dc92ba71685daad59f1d9ef1d9897b46df009f04b1dc51c4933cd300  anr-fg-V.B18-full.zip
+6dfce1ce2240f6ce8d820a7eb66b4d7d349655e9238c30df820297d70b9963f3  anr-fg-V.B18-addon.zip
+fdc230865b27b7b855bbf13259ec0d253e81a74a8c1c51f78a6b3593abc443bc  anr-fg-V.B18-kit-windows.zip
+7105d286c973258012c15bd9186cf1167e9665ad254c76a7ee11785aedfe62f0  anr-fg-V.B18-kit-linux.tar.gz
+5d87e34b8d4e34cd45d8f08761886d08c68733a744c4a690cb36ba1c7a091690  anr-fg-V.B18-full-optiscaler-source.zip

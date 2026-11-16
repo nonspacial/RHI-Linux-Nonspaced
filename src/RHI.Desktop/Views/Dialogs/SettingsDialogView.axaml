@@ -129,6 +129,7 @@
             <Panel x:Name="FollowNewestSlot" IsVisible="False"/>
             <Panel x:Name="OptiScalerMenuKeySlot" IsVisible="False"/>
             <Panel x:Name="GitcUpliftSlot" IsVisible="False"/> <!-- w14/nr (#274): upstream's GITC Uplift card, after the OptiScaler key -->
+            <Panel x:Name="OptiScalerCustomBuildsSlot" IsVisible="False"/> <!-- w14/optiscaler-2 (#271): upstream's card at the end of Components -->
           </StackPanel>
         </ScrollViewer>
       </TabItem>

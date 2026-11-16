@@ -135,10 +135,11 @@ public sealed class LinuxAppSettings
         DefaultDlssnrVersion = DefaultDlssnrVersion?.Trim() ?? "";
         DefaultStreamlineVersion = DefaultStreamlineVersion?.Trim() ?? "";
         if (UpdateCheckIntervalHours is < 1 or > 24) UpdateCheckIntervalHours = 4;
-        OptiScalerDefaultVersion = Enum.TryParse<RHI.Platform.Linux.Deployment.OptiScalerVariant>(OptiScalerDefaultVersion?.Trim(), true, out var defaultVersion)
-                                   && Enum.IsDefined(defaultVersion)
-            ? defaultVersion.ToString()
-            : "Stable"; // #270
+        // #270/#271: any version id (a custom build that is gone later falls back to Stable where the default is used);
+        // the old fork enum names are rewritten as their manifest ids.
+        OptiScalerDefaultVersion = RHI.Platform.Linux.Deployment.OptiScalerVariant.TryParse(OptiScalerDefaultVersion, out var defaultVersion)
+            ? defaultVersion.Id
+            : "Stable";
         OptiScalerGpuType = OptiScalerGpuType?.Trim().ToUpperInvariant() switch // w3/dllnames (#97)
         {
             "AMD" => "AMD",

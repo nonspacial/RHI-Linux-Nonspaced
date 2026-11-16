@@ -32,8 +32,8 @@ public sealed partial class OptiScalerDeploymentServiceTests
     }
 
     [Theory]
-    [InlineData(OptiScalerVariant.Stable, "v0.9.3", "0.9.3")]
-    [InlineData(OptiScalerVariant.F5, "v0.1.29", "0.1.29")]
+    [InlineData("Stable", "v0.9.3", "0.9.3")]
+    [InlineData("F5", "v0.1.29", "0.1.29")]
     public async Task InstallPinnedRelease_InstallsThatRelease_IsCurrent_AndUpdateLeavesIt(OptiScalerVariant variant, string tag, string version)
     {
         var (game, store) = CreateGame("release-pin-" + variant, GraphicsApi.DirectX12);

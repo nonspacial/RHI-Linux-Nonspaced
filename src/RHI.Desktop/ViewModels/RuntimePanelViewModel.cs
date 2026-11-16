@@ -196,23 +196,58 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     public OptionItems<GraphicsApi?> GraphicsApiOverrideOptions { get; } = OptionLists.GraphicsApiOverride.Options();
 
-    public OptionItems<OptiScalerVariant> OptiScalerVariantOptions { get; } = OptionLists.OptiScalerVariant.Options();
+    /// <summary>
+    /// #271: the OptiScaler versions (built-ins, manifest forks, custom builds). Rebuilt by <see cref="RefreshOptiScalerVersions"/>
+    /// when a game is shown and when the ⚙ opens, because the manifest and Settings › Components change the list.
+    /// </summary>
+    [ObservableProperty] private OptionItems<OptiScalerVariant> optiScalerVariantOptions = OptionLists.OptiScalerVariant.Options();
+
+    /// <summary>The same versions under the same labels keep the same items (a bound selection stays the same instance).</summary>
+    private void UseOptiScalerVersions(OptionList<OptiScalerVariant> list)
+    {
+        if (list.Values.SequenceEqual(OptiScalerVariantOptions.Select(item => item.Value))
+            && list.Items.SequenceEqual(OptiScalerVariantOptions.Select(item => item.Display), StringComparer.Ordinal)) return;
+        OptiScalerVariantOptions = list.Options();
+    }
+
+    /// <summary>#271: rebuilds the version list, keeping the selected version (also one that is no longer listed).</summary>
+    internal void RefreshOptiScalerVersions()
+    {
+        var selected = SelectedOptiScalerVariant?.Value ?? OptiScalerVariant.Stable;
+        var wasLoading = _loadingOptiScalerVariant;
+        _loadingOptiScalerVariant = true;
+        try
+        {
+            UseOptiScalerVersions(OptionLists.OptiScalerVariantsWith(selected));
+            SelectedOptiScalerVariant = OptiScalerVariantOptions.For(selected);
+        }
+        finally { _loadingOptiScalerVariant = wasLoading; }
+    }
 
     /// <summary>
     /// What an OptiScaler channel is, in plain words (#174): the dropdown's per-channel 2 s tooltip and the line under it
     /// that names the chosen channel, so F5 DLSSNR (and the others) are visible without opening the list.
     /// </summary>
-    public static string OptiScalerChannelText(OptiScalerVariant variant) => UiLocalizationService.Text(variant switch
+    public static string OptiScalerChannelText(OptiScalerVariant variant)
     {
-        OptiScalerVariant.Nightly => "Win.OptiScalerChannelNightly",
-        OptiScalerVariant.DlssNr => "Win.OptiScalerChannelDlssNr",
-        OptiScalerVariant.F5 => "Win.OptiScalerChannelF5",
-        OptiScalerVariant.Venom => "Osf.Venom", // #271 forks
-        OptiScalerVariant.NrPreSrMfg => "Osf.NrPreSrMfg",
-        OptiScalerVariant.FeederNr => "Osf.FeederNr",
-        OptiScalerVariant.OpenNr => "Osf.OpenNr",
-        _ => "Win.OptiScalerChannelStable",
-    });
+        if (variant == OptiScalerVariant.Nightly) return UiLocalizationService.Text("Win.OptiScalerChannelNightly");
+        if (variant == OptiScalerVariant.DlssNr) return UiLocalizationService.Text("Win.OptiScalerChannelDlssNr");
+        if (variant == OptiScalerVariant.F5) return UiLocalizationService.Text("Win.OptiScalerChannelF5");
+        if (variant.IsFork)
+        {
+            // #271: the four forks RHI knew before the manifest list keep their translated text; others show the manifest's.
+            var key = variant.Key switch { "venom" => "Osf.Venom", "nr-presr-mfg" => "Osf.NrPreSrMfg", "feeder-nr" => "Osf.FeederNr", "opennr" => "Osf.OpenNr", _ => null };
+            if (key is not null) return UiLocalizationService.Text(key);
+            return OptiScalerForks.Get(variant) is { } fork
+                ? UiLocalizationService.Format("Osf.ManifestFork", fork.Label, fork.Description)
+                : UiLocalizationService.Text("Osf.RemovedFork");
+        }
+        if (variant.IsCustom)
+            return OptiScalerCustomBuilds.Get(variant) is { } build
+                ? UiLocalizationService.Format("Osc.CustomTip", build.Name, build.Origin)
+                : UiLocalizationService.Text("Osc.CustomRemovedTip");
+        return UiLocalizationService.Text("Win.OptiScalerChannelStable");
+    }
 
     public OptionItems<LumaModePreference> LumaModeOptions { get; } = OptionLists.LumaMode.Options();
 
@@ -774,9 +809,17 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         {
             // #270: a game with no choice of its own takes Settings › Components › OptiScaler › Default version.
             var variant = _managedComponents.GetInstalledOptiScalerVariant(game) ?? _optiScalerVariantStore.Get(game, DefaultOptiScalerVariant(Host.Settings));
+            UseOptiScalerVersions(OptionLists.OptiScalerVariantsWith(variant)); // #271: the list as it stands now
             SelectedOptiScalerVariant = FormatOptiScalerVariant(variant);
         }
         finally { _loadingOptiScalerVariant = false; }
+    }
+
+    /// <summary>#273: after a version switch the game's choice is that version, and the ⚙ dropdown shows it.</summary>
+    internal void RememberOptiScalerVariant(DetectedGame game, OptiScalerVariant variant)
+    {
+        TryPersist(() => _optiScalerVariantStore.Set(game, variant), "Ui.WhatGamePreferences", sessionOnly: false);
+        if (ReferenceEquals(SelectedGame, game)) LoadOptiScalerVariant(game);
     }
 
     private void ResetOptiScalerVariant()
@@ -788,7 +831,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     /// <summary>#270: the Default version setting as a channel (Stable when unset or unknown).</summary>
     internal static OptiScalerVariant DefaultOptiScalerVariant(LinuxAppSettings settings)
-        => Enum.TryParse<OptiScalerVariant>(settings.OptiScalerDefaultVersion, true, out var variant) && Enum.IsDefined(variant) ? variant : OptiScalerVariant.Stable;
+        // #271: a custom build that was removed (or a fork RHI does not know) is no default any more.
+        => OptiScalerVariant.TryParse(settings.OptiScalerDefaultVersion, out var variant) && OptiScalerVersions.IsKnown(variant) ? variant : OptiScalerVariant.Stable;
 
     private static OptiScalerVariant ParseOptiScalerVariant(OptionItem<OptiScalerVariant>? item) => item?.Value ?? OptionLists.OptiScalerVariant.Fallback;
 

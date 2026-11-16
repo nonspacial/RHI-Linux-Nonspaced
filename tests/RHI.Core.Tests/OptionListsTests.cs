@@ -93,7 +93,7 @@ public sealed class OptionListsTests
         Assert.Equal(["Stable", "Nightly", "Legacy", "Custom", "NoAddons"], OptionLists.ReShadeChannel.Values);
         Assert.Equal(["pt-BR", "en-US"], OptionLists.UiLanguage.Values);
         Assert.Equal(["Detail", "Compact"], OptionLists.ViewMode.Values);
-        Assert.Equal(Enum.GetValues<OptiScalerVariant>(), OptionLists.OptiScalerVariant.Values);
+        Assert.Equal(OptiScalerVersions.All(), OptionLists.OptiScalerVariant.Values); // #271: built-ins, forks, custom builds
         Assert.Equal(Enum.GetValues<LumaModePreference>(), OptionLists.LumaMode.Values);
         Assert.Equal([RHI.Platform.Linux.Hdr.LinuxHdrModes.Off, RHI.Platform.Linux.Hdr.LinuxHdrModes.NativeWayland, RHI.Platform.Linux.Hdr.LinuxHdrModes.Gamescope],
             OptionLists.HdrMode.Values);

@@ -134,9 +134,9 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
     }
 
     [Theory]
-    [InlineData(OptiScalerVariant.Nightly)]
-    [InlineData(OptiScalerVariant.F5)]
-    [InlineData(OptiScalerVariant.DlssNr)]
+    [InlineData("Nightly")]
+    [InlineData("F5")]
+    [InlineData("DlssNr")]
     public async Task WithOptiScalerNightlyF5OrDlssNr_ItInstallsAsAPlugin(OptiScalerVariant variant)
     {
         using var fixture = CreateGame("plugin-" + variant, 0x8664, GraphicsApi.DirectX12);

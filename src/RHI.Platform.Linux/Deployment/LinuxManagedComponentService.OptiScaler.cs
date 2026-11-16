@@ -106,7 +106,7 @@ public sealed partial class LinuxManagedComponentService
     {
         var saved = _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler);
         var at = saved?.IndexOf(ReleasePinSeparator) ?? -1;
-        return at > 0 && saved![..at] == variant.ToString() && OptiScalerPackageProvider.IsSafeReleaseTag(saved[(at + 1)..])
+        return at > 0 && PinChannel(saved![..at]) == variant && OptiScalerPackageProvider.IsSafeReleaseTag(saved[(at + 1)..])
             ? saved[(at + 1)..]
             : null;
     }
@@ -122,8 +122,23 @@ public sealed partial class LinuxManagedComponentService
         if (tag is not null && !OptiScalerPackageProvider.IsSafeReleaseTag(tag))
             throw new ArgumentException(OptiScalerDeploymentService.ReleaseTagInvalidPrefix + tag, nameof(tag));
         if (tag is null && GetOptiScalerReleasePin(game, variant) is null) return; // Latest already; another channel's pin stays
-        _neuralVersionPins.Set(game, ManagedComponentKind.OptiScaler, tag is null ? null : $"{variant}{ReleasePinSeparator}{tag}");
+        _neuralVersionPins.Set(game, ManagedComponentKind.OptiScaler, tag is null ? null : $"{PinToken(variant)}{ReleasePinSeparator}{tag}");
     }
+
+    /// <summary>
+    /// #271: a version as the pin store writes it (letters, digits and <c>. _ + -</c> only): a built-in by its id, a fork as
+    /// <c>fork.&lt;id&gt;</c> (a custom build has no releases, so no pin).
+    /// </summary>
+    private static string PinToken(OptiScalerVariant variant) => variant.IsFork ? "fork." + variant.Key : variant.Id;
+
+    /// <summary>
+    /// #271: the version a pin's channel part names: <c>fork.&lt;id&gt;</c>, a built-in, or a fork enum name the first
+    /// wave-14 lane saved ("Venom+tag"), which still applies to that fork. Null when it names nothing.
+    /// </summary>
+    private static OptiScalerVariant? PinChannel(string token)
+        => token.StartsWith("fork.", StringComparison.Ordinal)
+            ? OptiScalerVariant.IsSafeKey(token[5..]) ? OptiScalerVariant.Fork(token[5..]) : null
+            : OptiScalerVariant.TryParse(token, out var parsed) && !parsed.IsCustom ? parsed : null;
 
     /// <summary>#269: "Replace with a fresh copy…" — the game's OptiScaler.ini becomes its fresh-install template.</summary>
     public async Task<ComponentOperationResult> ReplaceOptiScalerIniWithFreshCopyAsync(DetectedGame game, CancellationToken cancellationToken = default)

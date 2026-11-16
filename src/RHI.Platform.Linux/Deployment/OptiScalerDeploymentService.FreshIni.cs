@@ -16,6 +16,24 @@ public sealed partial class OptiScalerDeploymentService
     /// <summary>Where the previous OptiScaler.ini goes before a fresh copy replaces it (RHI's data folder, never the game's).</summary>
     public string FreshIniBackupDirectory { get; set; } = Path.Combine(LinuxPaths.DataHome, "rhi-linux", "optiscaler-ini-backups");
 
+    /// <summary>The game's folder of OptiScaler.ini copies under <see cref="FreshIniBackupDirectory"/>.</summary>
+    public string IniBackupFolder(DetectedGame game)
+        => Path.Combine(FreshIniBackupDirectory, string.Concat(LinuxDeploymentRecordStore.GameKey(game).Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_')));
+
+    /// <summary>
+    /// A copy of the game's OptiScaler.ini in RHI's data folder (<see cref="FreshIniBackupDirectory"/>, one folder per game,
+    /// a dated name, never overwritten): before a fresh copy (#269), a version switch (#273) or Load saved ini (#272). Its path.
+    /// </summary>
+    public async Task<string> BackUpIniAsync(DetectedGame game, string ini, CancellationToken cancellationToken = default)
+    {
+        var folder = IniBackupFolder(game);
+        Directory.CreateDirectory(folder);
+        var backup = Path.Combine(folder, $"OptiScaler-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}.ini");
+        for (var i = 2; File.Exists(backup); i++) backup = Path.Combine(folder, $"OptiScaler-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{i}.ini");
+        await AtomicFile.CopyAsync(ini, backup, await FileHash.Sha256HexAsync(ini, cancellationToken).ConfigureAwait(false), cancellationToken, overwrite: false).ConfigureAwait(false);
+        return backup;
+    }
+
     /// <summary>
     /// #269 (upstream 2.8.9 "Replace with a fresh copy…", fixed there to use the fresh-install template): replaces the game's
     /// OptiScaler.ini with the template a fresh install of its version would take — the user's template for the channel,
@@ -27,10 +45,6 @@ public sealed partial class OptiScalerDeploymentService
     {
         var record = GetRecord(game);
         if (record is null) return ComponentOperationResult.Fail(FreshIniNotManagedMessage);
-        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.OptiScaler).ConfigureAwait(false) is { } held)
-            return ComponentOperationResult.Fail(held);
-        var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
-        var ini = Path.Combine(binaryDirectory, "OptiScaler.ini");
         string template;
         try
         {
@@ -40,16 +54,30 @@ public sealed partial class OptiScalerDeploymentService
         {
             return ComponentOperationResult.Fail(ex.Message == FreshIniNoTemplateMessage ? FreshIniNoTemplateMessage : FreshIniNoTemplateMessage + " " + ex.Message);
         }
+        return await ReplaceIniAsync(game, record, template, FreshIniReplacedPrefix + template, cancellationToken, writeMenuKey: false).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The game's OptiScaler.ini becomes a copy of <paramref name="source"/> (a template, #269, or a saved INI, #272): the
+    /// previous file goes to RHI's data folder first, the copy is journaled, then RHI's own settings are set (LoadAsiPlugins
+    /// on; LoadReshade while RHI's ReShade is chained as ReShade64.dll; with <paramref name="writeMenuKey"/> the global
+    /// overlay key, which a template already carries). The record keeps the new file's hash.
+    /// </summary>
+    private async Task<ComponentOperationResult> ReplaceIniAsync(DetectedGame game, LinuxDeploymentRecord record, string source, string doneMessage,
+        CancellationToken cancellationToken, bool writeMenuKey)
+    {
+        if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.OptiScaler).ConfigureAwait(false) is { } held)
+            return ComponentOperationResult.Fail(held);
+        var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
+        var ini = Path.Combine(binaryDirectory, "OptiScaler.ini");
+        var template = source;
 
         string? backup = null;
         if (File.Exists(ini))
         {
             try
             {
-                var folder = Path.Combine(FreshIniBackupDirectory, string.Concat(LinuxDeploymentRecordStore.GameKey(game).Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_')));
-                Directory.CreateDirectory(folder);
-                backup = Path.Combine(folder, $"OptiScaler-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}.ini");
-                await AtomicFile.CopyAsync(ini, backup, await FileHash.Sha256HexAsync(ini, cancellationToken).ConfigureAwait(false), cancellationToken, overwrite: false).ConfigureAwait(false);
+                backup = await BackUpIniAsync(game, ini, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -65,6 +93,8 @@ public sealed partial class OptiScalerDeploymentService
         {
             var hash = await scope.PlaceCopyAsync(template, ini, cancellationToken).ConfigureAwait(false);
             OptiScalerIniEditor.SetValue(binaryDirectory, "Plugins", "LoadAsiPlugins", "true");
+            if (writeMenuKey && IniTemplates?.CurrentChoice.MenuKey is { Length: > 0 } menuKey)
+                OptiScalerIniEditor.SetValue(binaryDirectory, "Menu", "ShortcutKey", menuKey);
             if (_records.Find(game, ManagedComponentKind.ReShade)?.Files.Any(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase)) == true)
                 OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true);
             await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
@@ -82,6 +112,6 @@ public sealed partial class OptiScalerDeploymentService
             return ComponentOperationResult.Fail(FreshIniFailedPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok(FreshIniReplacedPrefix + template + (backup is null ? "" : FreshIniBackupPrefix + backup), ini);
+        return ComponentOperationResult.Ok(doneMessage + (backup is null ? "" : FreshIniBackupPrefix + backup), ini);
     }
 }

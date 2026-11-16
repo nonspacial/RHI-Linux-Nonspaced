@@ -160,6 +160,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
     public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
     public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
+    /// <summary>#271: Settings › Custom OptiScaler builds (w14/optiscaler-2).</summary>
+    public OptiScalerCustomBuildsPresenter OptiScalerCustomBuilds => OptiScalerCustomBuildsPresenter.For(this, _managedComponents);
 
     // w14/optiscaler rows
     /// <summary>#270: the OptiScaler ⚙ Release row for the selected game and channel (null without a selected game).</summary>
@@ -2062,7 +2064,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         => TF("Vm.FolderMissingRemoveOrEdit", game.Name, game.LibraryIdentityPath ?? game.InstallPath);
 
     /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
-    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
+    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore, _managedComponents.OptiScalerIniChoices]; // #272
 
     /// <summary>
     /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only

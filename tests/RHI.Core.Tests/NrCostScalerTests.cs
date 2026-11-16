@@ -213,8 +213,8 @@ public sealed partial class NrCostScalerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(OptiScalerVariant.DlssNr, "OptiScaler DLSS NR")]
-    [InlineData(OptiScalerVariant.F5, "OptiScaler F5 DLSSNR")]
+    [InlineData("DlssNr", "OptiScaler DLSS NR")]
+    [InlineData("F5", "OptiScaler F5 DLSSNR")]
     public async Task OptiScalerOwningVariants_AreOwners_AndHeldWhileTheScalerIsInstalled(OptiScalerVariant variant, string ownerName)
     {
         InstallOwner(ManagedComponentKind.OptiScaler);

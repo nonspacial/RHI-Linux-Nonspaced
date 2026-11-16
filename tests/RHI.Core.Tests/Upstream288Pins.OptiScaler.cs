@@ -13,9 +13,9 @@ namespace RHI.Core.Tests;
 public sealed partial class OptiScalerDeploymentServiceTests
 {
     [Theory]
-    [InlineData(OptiScalerVariant.Stable)]
-    [InlineData(OptiScalerVariant.DlssNr)]
-    [InlineData(OptiScalerVariant.F5)]
+    [InlineData("Stable")]
+    [InlineData("DlssNr")]
+    [InlineData("F5")]
     public async Task Pin288_Update_KeepsTheVariant_ReportsTheNewVersion_AndLogsOneHistoryRow(OptiScalerVariant variant)
     {
         var name = "pin288-update-" + variant;

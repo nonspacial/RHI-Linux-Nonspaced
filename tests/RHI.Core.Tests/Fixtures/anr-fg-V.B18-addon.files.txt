@@ -1,0 +1,27 @@
+Apex Neural Rendering FG/dlssg/adapters/pack.nrx
+Apex Neural Rendering FG/dlssg/kernels/pack.nrx
+Apex Neural Rendering FG/dlssg/kernels-portable/pack.nrx
+Apex Neural Rendering FG/dlssg/nr_fg.ini
+Apex Neural Rendering FG/dlssg/nvngx_dlssg.dll
+Apex Neural Rendering FG/dlssg/path_table.json
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-coopmat-pq10/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-coopmat-srgb8/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-dp4a-pq10/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-dp4a-srgb8/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-packed-pq10/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-packed-srgb8/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-portable-linalg-pq10/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-portable-linalg-srgb8/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-portable-pq10/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-portable-srgb8/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-portable-xmx-pq10/pack.nrx
+Apex Neural Rendering FG/dlssg/programs/fg-lite-any-portable-xmx-srgb8/pack.nrx
+Apex Neural Rendering FG/dlssg/size_table.json
+README.txt
+install.cmd
+install.ps1
+install.sh
+nr_fg_package.json
+uninstall.cmd
+uninstall.ps1
+uninstall.sh

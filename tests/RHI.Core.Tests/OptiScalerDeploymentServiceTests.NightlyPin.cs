@@ -94,10 +94,10 @@ public sealed partial class OptiScalerDeploymentServiceTests
     }
 
     [Theory]
-    [InlineData(OptiScalerVariant.Stable, "20261004")]
-    [InlineData(OptiScalerVariant.DlssNr, "20261004")]
-    [InlineData(OptiScalerVariant.Nightly, "2026-10-04")]
-    [InlineData(OptiScalerVariant.Nightly, "../x")]
+    [InlineData("Stable", "20261004")]
+    [InlineData("DlssNr", "20261004")]
+    [InlineData("Nightly", "2026-10-04")]
+    [InlineData("Nightly", "../x")]
     public async Task Install_RefusesAPinThatIsNotANightlyBuild_BeforeAnyChange(OptiScalerVariant variant, string build)
     {
         var (game, store) = CreateGame("bad-pin-" + variant + build.GetHashCode().ToString("x"), GraphicsApi.DirectX12);

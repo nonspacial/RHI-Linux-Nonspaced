@@ -110,6 +110,9 @@ internal sealed class AppComposition
     public OptiScalerRecommendedPresets? OptiScalerRecommendedPresets { get; init; }
     /// <summary>#293: PCGamingWiki's data, whose page titles name the games found in custom game folders.</summary>
     public PcgwCentralDataService? PcgwData { get; init; }
+    // w14/optiscaler-2 rows
+    /// <summary>#271: the app's download client, for custom OptiScaler builds added from a link.</summary>
+    public HttpClient? Http { get; init; }
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -125,6 +128,9 @@ internal sealed class AppComposition
             RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => presets.RefreshAsync()), "optiscaler-presets");
         }
         if (PcgwData is { } pcgw) vm.CustomFolderTitleLookup = name => pcgw.Current?.TryLookup(name, null)?.PageTitle; // #293
+        vm.OptiScalerCustomBuilds.Http = Http; // w14/optiscaler-2 hook (#271): custom builds added from a link
+        // w14/optiscaler-2 hook (#271): the manifest's OptiScaler forks replace the built-in four once it is read.
+        RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => UpstreamManifest.RefreshOsForksAsync()), "optiscaler-forks");
         return vm;
     }
 
@@ -258,6 +264,7 @@ internal sealed class AppComposition
         var optiPackages = new OptiScalerPackageProvider(http, optiExtractor);
         var optiscaler = new OptiScalerDeploymentService(deployment, records, wineOverrides, optiPackages, dlss, dlssEnablerStandalone, journal,
             optiPatcher: new OptiPatcherProvider(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "optipatcher"))); // w3/dllnames hook (#98)
+        optiscaler.AnrFg = new AnrFgProvider(http, optiExtractor); // w14/optiscaler-2 hook (#272)
         var ultimateAsiLoader = new UltimateAsiLoaderDeploymentService(http, records, wineOverrides, journal: journal);
         var shortFuse = new ShortFuseDeploymentService(http, deployment, records, wineOverrides, ultimateAsiLoader, dlss, journal: journal);
         var dofFix = new DofFixDeploymentService(http, records, upstreamManifest, journal: journal);
@@ -476,6 +483,7 @@ internal sealed class AppComposition
             ApiOverrideStore = apiOverrideStore,
             OptiScalerVariantStore = optiScalerVariantStore,
             OptiScalerRecommendedPresets = new OptiScalerRecommendedPresets(http), // w14/optiscaler (#269)
+            Http = http, // w14/optiscaler-2 (#271)
             SettingsStore = settingsStore,
             UpdateAll = new LinuxUpdateAllService(records, managedComponents),
             DlssDefaults = new LinuxDlssDefaultsService(dlss, records) { History = new ComponentHistory(updateLog) }, // #289

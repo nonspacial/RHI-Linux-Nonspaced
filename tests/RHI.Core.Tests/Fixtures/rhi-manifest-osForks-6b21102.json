@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "osForks": {
+    "venom": {
+      "label": "Venom",
+      "repo": "LorenzoKy/Optiscaler-Venom",
+      "description": "Daily OptiScaler 10 builds by LorenzoKy with extra fixes on top of the official nightly."
+    },
+    "nr-presr-mfg": {
+      "label": "NR PreSR MFG",
+      "repo": "ShyVortex/OptiScaler-NR-PreSR-MFG",
+      "needsNrDll": true,
+      "description": "ShyVortex's Neural Rendering fork with pre-upscale NR, multi frame generation and an RTX 30 DLSS-FG backend."
+    },
+    "feeder-nr": {
+      "label": "Feeder NR",
+      "repo": "jlrouzies-fr/OptiScaler-DLSSNR-PreSR-Multipass",
+      "needsNrDll": true,
+      "description": "DLSS5 Feeder author's Neural Rendering fork (wilsjo2's PreSR Multipass plus Feeder fixes). From v0.8.93 the Feeder menu (Alt+C) changes its settings live."
+    },
+    "opennr": {
+      "label": "OpenNR",
+      "repo": "MatheusFerreiraS/OpenNR-OptiScaler",
+      "description": "Neural Rendering fork by MatheusFerreiraS that ships its own NR runtime."
+    }
+  }
+}

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Persistence;
@@ -15,8 +14,8 @@ public sealed class OptiScalerVariantPreferenceStore : IGameStateStore
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
-        Converters = { new JsonStringEnumConverter() }
+        // #271: versions are written as their ids; the old enum names and numbers read through OptiScalerVariantJsonConverter.
+        WriteIndented = true
     };
 
     public OptiScalerVariantPreferenceStore(string? path = null)

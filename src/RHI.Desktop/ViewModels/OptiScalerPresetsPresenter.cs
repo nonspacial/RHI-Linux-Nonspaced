@@ -12,7 +12,9 @@ namespace RHI.Desktop.ViewModels;
 /// settings (every ⚙ setting but the overlay key, which the global key row owns), <see cref="ApplyAsync"/> applies a slot to
 /// the selected game through the ⚙'s own setting path, one setting at a time (the Streamline / DLSS Enabler stack and its
 /// version first). A captured setting this game's ⚙ does not offer, or a value it does not list, is left out and counted.
-/// The channel is not part of a preset on Linux (changing it reinstalls OptiScaler). Store writes go through
+/// A slot also keeps the OptiScaler version it was saved on (upstream <c>OsPreset.OsVariant</c>): applying it switches the
+/// game to that version first, after asking, because that reinstalls OptiScaler (#273; the user's OptiScaler.ini settings
+/// are carried over). Store writes go through
 /// <see cref="ParityPersistence"/>.
 /// </summary>
 public sealed class OptiScalerPresetsPresenter
@@ -61,15 +63,8 @@ public sealed class OptiScalerPresetsPresenter
     /// <summary>The recommended presets' source (upstream's optiscaler_presets.json; built-in copies until it is read).</summary>
     internal OptiScalerRecommendedPresets RecommendedSource { get; set; } = new(null);
 
-    /// <summary>
-    /// The recommended presets offered on Linux. ANR FG (upstream 2.9.3) needs RHI's ANR FG install, which this build has
-    /// not got yet (#272), so presets that install it are left out until then.
-    /// </summary>
-    public IReadOnlyList<OptiScalerRecommendedPreset> Recommended
-        => RecommendedSource.Presets.Where(preset => !preset.InstallAnrFg || AnrFgSupported).ToArray();
-
-    /// <summary>Set once RHI can install ANR FG (#272).</summary>
-    internal static bool AnrFgSupported { get; set; }
+    /// <summary>The recommended presets, all of them since RHI installs ANR FG (#272, w14/optiscaler-2).</summary>
+    public IReadOnlyList<OptiScalerRecommendedPreset> Recommended => RecommendedSource.Presets;
 
     /// <summary>
     /// The preset that matches the game's current settings is ticked (upstream <c>IsOsPresetActive</c>): every setting it
@@ -97,6 +92,14 @@ public sealed class OptiScalerPresetsPresenter
     /// </summary>
     public async Task<string> ApplyRecommendedAsync(OptiScalerRecommendedPreset preset)
     {
+        // #272 (upstream 2.9.3): ANR FG first, after its closed-source notice (#285): the preset names it as the FG provider.
+        if (preset.InstallAnrFg)
+        {
+            if (!await _shell.InstallNotices.ConfirmClosedSourceAsync(ClosedSourceMod.AnrFg))
+                return UiLocalizationService.Format("Osp.SwitchDeclined", preset.Name);
+            var anr = await _shell.EnsureAnrFgForPresetAsync();
+            if (!anr.Success) return UiLocalizationService.Present(anr.Message);
+        }
         var (changed, notOffered, failure) = await ApplySettingsAsync(preset.Settings);
         if (failure is not null)
             return UiLocalizationService.Format("Shell.PresetStopped", preset.Name, changed, failure);
@@ -139,7 +142,8 @@ public sealed class OptiScalerPresetsPresenter
             .Where(setting => setting.Id != OptiScalerDeploymentService.MenuShortcutKeySettingId)
             .ToDictionary(setting => setting.Id, setting => setting.CurrentValue, StringComparer.Ordinal);
         var name = Slot(index)?.Name;
-        return Persist(index, new OptiScalerPreset { Name = name, Settings = captured })
+        var variant = _shell.SelectedGame is { } game ? _managed.GetInstalledOptiScalerVariant(game) : null; // #273: the slot keeps its version
+        return Persist(index, new OptiScalerPreset { Name = name, Variant = variant?.Id, Settings = captured })
                ?? UiLocalizationService.Format("Shell.PresetSaved", Label(index), captured.Count);
     }
 
@@ -147,7 +151,7 @@ public sealed class OptiScalerPresetsPresenter
     public string? Rename(int index, string? name)
     {
         var current = Slot(index) ?? new OptiScalerPreset();
-        var renamed = new OptiScalerPreset { Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(), Settings = new(current.Settings, StringComparer.Ordinal) };
+        var renamed = new OptiScalerPreset { Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(), Variant = current.Variant, Settings = new(current.Settings, StringComparer.Ordinal) };
         return Persist(index, renamed);
     }
 
@@ -158,11 +162,25 @@ public sealed class OptiScalerPresetsPresenter
     public async Task<string> ApplyAsync(int index)
     {
         if (Slot(index) is not { } preset) return UiLocalizationService.Text("Shell.PresetEmpty");
+        // #273 (upstream: a preset changes the version when it has one): switch first, after asking, keeping the INI values.
+        var versionLine = "";
+        if (OptiScalerVariant.TryParse(preset.Variant, out var version) && _shell.SelectedGame is { } game
+            && _managed.GetInstalledOptiScalerVariant(game) is { } installed && installed != version)
+        {
+            if (!OptiScalerVersions.IsKnown(version))
+                versionLine = " " + UiLocalizationService.Format("Osp.PresetVersionGone", OptiScalerVersions.Label(version));
+            else
+            {
+                var (switched, line) = await _shell.SwitchOptiScalerVersionForPresetAsync(version, Label(index));
+                if (!switched) return line;
+                versionLine = " " + line;
+            }
+        }
         var (changed, notOffered, failure) = await ApplySettingsAsync(ApplyOrder(preset));
         if (failure is not null)
-            return UiLocalizationService.Format("Shell.PresetStopped", Label(index), changed, failure);
-        var line = UiLocalizationService.Format("Shell.PresetApplied", Label(index), changed);
-        return notOffered == 0 ? line : line + UiLocalizationService.Format("Shell.PresetNotOffered", notOffered);
+            return UiLocalizationService.Format("Shell.PresetStopped", Label(index), changed, failure) + versionLine;
+        var applied = UiLocalizationService.Format("Shell.PresetApplied", Label(index), changed);
+        return (notOffered == 0 ? applied : applied + UiLocalizationService.Format("Shell.PresetNotOffered", notOffered)) + versionLine;
     }
 
     // One setting at a time through the ⚙'s own path; stops at the first that fails (those before it stay applied).
