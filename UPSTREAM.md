@@ -1815,7 +1815,8 @@ library-updates lane's #293 section above.
 - **Automatic move** (ported): when the manifest moved the game's folder (`installPathOverrides`, or the new
   `installPathMigrations`, which wins over it, pinned with upstream's Phantom Blade Zero entry) and the user picked none,
   installs RHI made in another folder of the game move there on their own after the game's analysis (at start, on
-  Refresh or on selection), with "Moved <game>'s mods to <folder>". Never while the game runs: the status line says the
+  Refresh or on selection), with "Moved <game>'s mods to <folder>". A `splitGames` child is left alone (it shares
+  its store's record key and root with its siblings, whose installs are not its own). Never while the game runs: the status line says the
   mods stay until the game is closed, and the next analysis tries again.
 - **What moves** (Linux): what the deployment records list, not an inventory rebuilt per component. Every record whose
   binary directory is the old folder moves with its files under it, its folders RHI created and the ReShade presets its
