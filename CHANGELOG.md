@@ -25,6 +25,10 @@ Not on `main` yet:
   - Display Commander's ⚙ has its main settings (upstream 2.8.9): FPS Limit (VRR presets or your own value), FPS Limiter
     Mode, Inject Reflex, Window Mode, the four Reflex options and Win+Up grace time, saved to the game's
     `DisplayCommander.ini`, and Open DisplayCommander.ini (#282).
+  - HSF frame generation (upstream 2.9.3, HSF 0.9.8) in Extras: one click installs HSF's add-on, Streamline and frame
+    generation files, HSF.ini, HSF.fx and iMMERSE Launchpad; DirectX 12 games work from the first launch; updates keep
+    your HSF settings; the ⚙ sets the DirectX 12 mode and Launchpad; RTX 20/30/40 cards are offered Universal MFG
+    Unlocker. HSF needs RHI's ReShade installed first (#277).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

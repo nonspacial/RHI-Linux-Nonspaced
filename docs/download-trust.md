@@ -34,6 +34,8 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | Luma Framework | `Luma` | GitHub release hosts (Filoppi namespace checked separately) | GitHub asset `digest` | fail-open; catalogue links without a version are fetched every time |
 | REFramework | `REFramework` | GitHub release hosts | GitHub asset `digest` | fail-open |
 | Ultimate ASI Loader | `UltimateAsiLoader` | GitHub release hosts | GitHub asset `digest` | fail-open |
+| HSF (#277, Capt-Hunter/HSF) | `Hsf` | GitHub release hosts, 128 MiB | GitHub asset `digest` (published for every release since 0.9.8); the zip must hold the add-ons, HSF.ini, HSF.fx and HSF_streamline's Streamline, DLSS-G and helper files | fail-open |
+| iMMERSE Launchpad for HSF (#277) | `ShaderPacks` | GitHub, codeload.github.com | none (branch archive); only Launchpad's effect, includes and texture are taken from it | fail-open |
 | ShortFuse, DLSS Enabler, RenoDX DLSS5 consumer (RankFTW/rhi-repo) | `RhiRepository` | GitHub release hosts | GitHub asset `digest` | fail-open |
 | Universal MFG (RTX40MFG-Unlock) | `UniversalMfg` | GitHub release hosts | GitHub asset `digest` and/or `SHA256SUMS.txt` | **fail-closed** (release refused) |
 | RTX Encore (#158) | `RtxEncore` | GitHub release hosts, 512 MiB | GitHub asset `digest` and/or `SHA256SUMS`; the DLL must carry RTX Encore's version resource. Its optional `nvngx_dlssnr.dll` (record part `NeuralRendering`) comes from the DLSS manifest and must match a pinned SHA-256 (NVIDIA 310.8.0) | **fail-closed** (release refused) |

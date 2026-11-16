@@ -1550,3 +1550,48 @@ Fresh install: upstream 2.9.3 fixed a Windows packaging bug (the template was lo
 the single-file build). RHI Linux was not affected: a new Display Commander install already creates `DisplayCommander.ini`
 from the user's template, or RHI's shipped one (`[DisplayCommander]`, the same as upstream's file at `RHI-2.9.4`), when
 absent; `GitHubReShadeAddonDeploymentServiceTests` pins it.
+
+### #277 — HSF frame generation (2.9.3; HSF 0.9.8)
+
+Upstream 2.9.3 `e5075bd` / `7211cc9` (`HsfService`, `DetailPanelBuilder.Extras.Hsf`, `GpuInfoService`), unlocked for
+everyone in 2.9.4. HSF (Hunter's Sloppy Frames, Capt-Hunter/HSF) is a ReShade add-on that adds DLSS frame generation,
+up to 6x, to DirectX 9, 11, 12 and Vulkan games (Vulkan: 64-bit). One click installs the add-on for the game's bitness,
+`HSF_streamline/` (Streamline, `nvngx_dlssg.dll`, the 64-bit helper, with `LICENSE.txt`, `README.txt` and `licenses/`
+inside it), `HSF.ini` beside the add-on (ReShade's AddonPath honoured), `HSF.fx` in the game's `reshade-shaders/Shaders`
+and iMMERSE Launchpad (unless its box is unticked). The release list is read (pre-releases included, drafts skipped);
+the zip goes through the trusted-download policy (`DownloadSources.Hsf`, GitHub hosts, 128 MiB) and GitHub's published
+digest; a release without the files RHI knows is refused before anything changes. DirectX 12 games get HSF's D3D12 route
+in HSF.ini before the first launch (`InGameDlssg=2` with the game's own Streamline, else `SlBringIn=2`), following the
+Rendering API override; a route HSF or the player set is never changed. Update brings the release's clean HSF.ini with
+the player's settings carried over (upstream's merge: `Dx9ExRun`, `Presenter`, `Generated`, `Pacing` dropped, other
+sections kept) and is part of Update All. The ⚙ shows the installed version, the DirectX 12 mode (HSF decides, the
+game's own Streamline, HSF's own; "HSF decides" is remembered so RHI never pre-sets it) and turns Launchpad off for
+LumeniteFX or the game's own motion; opening it moves Launchpad to the top of the game's ReShade preset where HSF listed
+it lower down (only the order changes). On RTX 20/30/40 cards the row offers Universal MFG Unlocker after the install
+(from RHI's existing NVIDIA probe, `/proc/driver/nvidia` model names; not on RTX 50 or an unknown card). For Vulkan games
+the row warns when a DirectX ReShade (`dxgi.dll`) in the game folder keeps the Vulkan layer out. The row shows the
+anti-cheat warning before an install. Real data pinned in the tests: the release list (2026-11-16), the HSF-0.9.8.8.zip
+entry list and its HSF.ini.
+
+Linux adaptation: every install, update, removal and ⚙ change is journaled on HSF's record. Files RHI did not place are
+never overwritten: a hand-installed `hsf.addon64/32`, an `HSF_streamline` folder or an `HSF.fx` already there refuses the
+install; an `HSF.ini` already there is kept as it is (and not pre-set); a Launchpad file a user's own iMMERSE pack placed is
+left and never recorded. Removal takes RHI's files and the logs HSF writes (beside the add-on and in `HSF_streamline`);
+HSF's camera profiles (`HSF_profiles/`) and anything else stay and are named (upstream deletes the folders whole). A file
+RHI placed that changed since refuses update and removal.
+
+Deviations and partial items:
+- Placement: Linux lists Universal MFG and the other unlocks as component rows, so there is no "MFG Unlocks" group yet; HSF
+  is a row in Extras (below ShortFuse) until the Phase 2 lanes restyle the page (#296/#297).
+- ReShade: HSF needs RHI's ReShade installed first (the row says so); it does not install ReShade as a dependency.
+- iMMERSE Launchpad: the nr lane's reusable Launchpad service (#274) was not on `forge/w14/nr` yet, so a minimal step
+  (`ILaunchpadStep` / `ImmerseLaunchpadStep`) takes Launchpad's effect, includes and blue-noise texture from the iMMERSE
+  branch archive (`DownloadSources.ShaderPacks`, no digest published) and HSF records them. To unify at the merge.
+  Upstream moves Launchpad first whenever the game is not running; Linux does it when the ⚙ opens and after an update.
+- Universal MFG with HSF: the offer calls Universal MFG's own install unchanged (#278 owns it); upstream's 32-bit
+  placement in HSF's folder and the install without the RTXMFG-XeSS folder are not done here (64-bit games only), for
+  #278 to add.
+- D3D12 route: a game's Streamline is found by `sl.interposer.dll` under its folder (8 levels); its version is not read,
+  so a Streamline 1.x game gets `InGameDlssg=2` (HSF's value 2 lets HSF fall back by itself).
+- The ManagedComponentKind value is 30 (a gap, not the next free number) so another wave-14 lane's new kind cannot take it
+  unnoticed; it may be renumbered at the merge before release.

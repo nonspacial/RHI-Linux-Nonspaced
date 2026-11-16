@@ -112,6 +112,10 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy NexusFiles = new(
         "Nexus Mods file", "Nexus Mods' file servers (nexus-cdn.com)", [], ["nexus-cdn.com"], maxBytes: 1024L * 1024 * 1024);
 
+    /// <summary>HSF (#277): Capt-Hunter/HSF GitHub releases (a ~6 MB zip; GitHub's published digest is checked).</summary>
+    public static readonly TrustedDownloadPolicy Hsf = new(
+        "HSF", "GitHub", GitHubReleaseHosts, maxBytes: 128L * 1024 * 1024);
+
     /// <summary>NR Cost Scaler (#96): xenmods/DLSSNR-Cost-Scaler GitHub releases (a small zip; its published digest is checked).</summary>
     public static readonly TrustedDownloadPolicy NrCostScaler = new(
         "NR Cost Scaler", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
@@ -217,5 +221,7 @@ public static class DownloadSources
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         DxvkHdr,
+        // w14/extras-addons rows
+        Hsf,
     ];
 }

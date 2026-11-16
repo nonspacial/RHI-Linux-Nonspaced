@@ -17,6 +17,8 @@ public sealed class ParityFeatures
     public required GameLinksPresenter GameLinks { get; init; }
     public required ShaderProfilePresenter ShaderProfiles { get; init; }
     public required NrCostScalerPresenter NrCostScaler { get; init; }
+    /// <summary>w14/extras-addons (#277): HSF's row in Extras; null = no HSF row wired.</summary>
+    public HsfPresenter? Hsf { get; set; }
     /// <summary>w5/catalogue-info (#184): the component rows' ⓘ dialogs; null = no ⓘ dialog wired.</summary>
     public ComponentInfoPresenter? ComponentInfo { get; set; }
 
