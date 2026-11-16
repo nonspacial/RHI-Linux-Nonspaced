@@ -33,7 +33,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.DataTemplates>
                   <DataTemplate DataType="vm:CatalogHeading">
-                    <TextBlock Text="{Binding Text}" FontWeight="SemiBold" Foreground="#4DC9E6" Margin="0,8,0,2"/>
+                    <TextBlock Text="{Binding Text}" FontWeight="SemiBold" Foreground="{DynamicResource RhiAccentBrush}" Margin="0,8,0,2"/>
                   </DataTemplate>
                   <DataTemplate DataType="vm:ShaderPackRow">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">

@@ -20,7 +20,11 @@ namespace RHI.Desktop;
 
 public sealed class App : Application
 {
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        Theming.ThemeResources.Apply(Resources, RHI.Core.Services.ThemePalette.Default); // #301: the colour brushes, default look
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -44,7 +48,9 @@ public sealed class App : Application
             var recovery = RunDeploymentStartup(desktop, journal, records);
             var services = AppComposition.Create(http, records, wineOverrides, journal,
                 displayModes: new RHI.Platform.Linux.Hdr.DisplayModeSwitcher()); // w5/shell-launch (#191): only the app touches the display
-            UiLocalizationService.Apply(services.SettingsStore.Load().UiLanguage);
+            var startupSettings = services.SettingsStore.Load();
+            UiLocalizationService.Apply(startupSettings.UiLanguage);
+            Theming.ThemeResources.Apply(Resources, ThemePresets.Resolve(startupSettings.ColourTheme, startupSettings.CustomThemeColours)); // #301
             var vm = services.CreateViewModel();
             vm.Parity = services.Parity; // w3/parity hook
             vm.Updates.CheckStamps = new UpdateCheckStampStore(); // #292: the update cadence counts across restarts

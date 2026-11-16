@@ -17,7 +17,7 @@ public sealed class HsfRow : ContentControl
 {
     private static string T(string key) => UiLocalizationService.Text(key);
 
-    private readonly TextBlock _status = new() { Foreground = new SolidColorBrush(Color.Parse("#5ECB7D")), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _status = new() { Classes = { "installedText" }, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _warning = new() { Classes = { "muted" }, TextWrapping = TextWrapping.Wrap };
     private readonly CheckBox _launchpad = new() { Name = "HsfLaunchpad", Content = "iMMERSE Launchpad", IsChecked = true, VerticalAlignment = VerticalAlignment.Center };
     private readonly Button _install = new() { Name = "HsfInstall", Classes = { "rhi" }, Content = T("Vm.Install"), Padding = new Thickness(12, 6) };
@@ -32,7 +32,7 @@ public sealed class HsfRow : ContentControl
     {
         IsVisible = false;
         var name = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
-        name.Children.Add(new TextBlock { Text = "HSF", Foreground = new SolidColorBrush(Color.Parse("#E8ECF2")), FontWeight = FontWeight.SemiBold });
+        name.Children.Add(new TextBlock { Text = "HSF", FontWeight = FontWeight.SemiBold });
         name.Children.Add(new TextBlock { Text = T("Hsf.Subtitle"), Classes = { "muted" }, FontSize = 10 });
         ToolTip.SetTip(name, T("Hsf.Tip"));
         ToolTip.SetShowDelay(name, MiddleEllipsisText.TooltipDelay);
@@ -48,7 +48,7 @@ public sealed class HsfRow : ContentControl
         grid.Children.Add(buttons);
         Grid.SetColumn(buttons, 2);
         var panel = new StackPanel { Spacing = 6 };
-        panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#2A3038")), Margin = new Thickness(0, 4) });
+        panel.Children.Add(new Border { Height = 1, Classes = { "dividerStrong" }, Margin = new Thickness(0, 4) });
         panel.Children.Add(grid);
         panel.Children.Add(_warning);
         Content = panel;

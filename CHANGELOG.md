@@ -239,6 +239,33 @@ Wave 14 — extras-fg-2
   can load it (Nightly from late October 2026, or a build based on it), then downloads the newest ANR FG release,
   checked against its published hashes, into OptiScaler's custom folder. Your `nr_fg.ini` is kept.
 
+### Wave 14 — ui-logic
+
+- **Game search like Steam's** (upstream 2.9.3): punctuation and spaces are ignored (fear finds F.E.A.R.), words can
+  come in any order (batman lego), initials work (gta, rdr2, ff7, hl2, mw3), Roman numerals match numbers (gta 3 finds
+  Grand Theft Auto III) and small typos are fine (resident eviaa). When a name or a whole word matches, near misses
+  are hidden (sifu shows only Sifu), and the best match comes first (resident evil 4 puts Resident Evil 4 on top).
+  Stores, runners, engines, graphics APIs, authors and folders match whole words only: st no longer lists every Steam
+  game; type steam, unreal, dx12 or vulkan to list those games.
+- **Game collections** (upstream 2.9.2): make your own lists of games, like Racing or Souls-likes. Right-click a game
+  and choose **Add to collection** (tick a collection, or New collection…); a game can be in as many as you like.
+  Your collections show as buttons under the filter tabs: click one to show only its games, click it again to show
+  everything. Right-click one to rename, move or delete it; deleting a collection never removes any games. Picking a
+  filter tab leaves the collection, and RHI remembers the one you had open.
+- **Colour themes** (upstream 2.9.3): Settings › UX › **Colour theme** — Default, OLED Black, Midnight Blue,
+  Ember, Forest, Kiro, Slate, High Contrast or Colour-blind Friendly. RHI changes colour straight away, no restart.
+  - **Custom** lets you choose your own colours: background, panels, text, accent, buttons and the status colours
+    (installed, update available, warning, error). It starts from the theme you had; Start from a theme… and Reset
+    to default are there too. RHI warns you if text would be hard to read.
+  - **Share theme** copies your colours as one line of text (`RHI-THEME:…`) and **Import theme** takes a code someone
+    shared. Codes from RHI on Windows work here and the other way round.
+- **Per-game FPS limit** (upstream 2.8.9): the DLSS section of each Wine/Proton game has an **FPS Limit**, so you can
+  cap one game without capping them all. Global follows the new FPS Limit in Settings › DLSS/Streamline, Off turns
+  the limit off for that game, and Custom… takes 20 to 1000; upstream's VRR caps (59 FPS for 60 Hz up to 416 FPS for
+  480 Hz) are in the list. On Linux RHI hands the cap to DXVK (`DXVK_FRAME_RATE`, Direct3D 8–11) and VKD3D-Proton
+  (`VKD3D_FRAME_RATE`, Direct3D 12) when it starts the game; for Steam, Heroic and Lutris it shows the launch options to
+  paste. As upstream, Global does not cap games with ReLimiter or Display Commander, so the two limiters don't fight.
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

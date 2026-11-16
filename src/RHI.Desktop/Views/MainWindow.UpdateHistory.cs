@@ -39,7 +39,7 @@ public sealed partial class MainWindow
                 entries = [];
                 corrupt = null;
                 notSaved = null;
-                list.Children.Add(new TextBlock { Text = ErrorLineText.Of(ex), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.OrangeRed });
+                list.Children.Add(new TextBlock { Text = ErrorLineText.Of(ex), TextWrapping = TextWrapping.Wrap, Classes = { "alertText" } });
             }
 
             if (notSaved is not null)
@@ -48,7 +48,7 @@ public sealed partial class MainWindow
                 {
                     Text = notSaved,
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brushes.OrangeRed,
+                    Classes = { "alertText" },
                     Margin = new Thickness(0, 8, 0, 0)
                 });
             }
@@ -59,7 +59,7 @@ public sealed partial class MainWindow
                 {
                     Text = TF("Win.UpdateHistoryCouldNotReadWas", corrupt),
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brushes.OrangeRed,
+                    Classes = { "alertText" },
                     Margin = new Thickness(0, 8, 0, 0)
                 });
             }
@@ -92,7 +92,7 @@ public sealed partial class MainWindow
                     Opacity = 0.7,
                     Margin = new Thickness(0, 16, 0, 4)
                 });
-                list.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")) });
+                list.Children.Add(new Border { Height = 1, Classes = { "divider" } });
                 foreach (var entry in group.Entries)
                     list.Children.Add(BuildUpdateHistoryRow(entry));
             }
@@ -155,7 +155,7 @@ public sealed partial class MainWindow
             Text = ComponentUpdateHistoryPresenter.ActionText(entry),
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = entry.Success ? Brushes.LightSkyBlue : Brushes.OrangeRed
+            Classes = { entry.Success ? "headingText" : "alertText" }
         };
         if (!string.IsNullOrWhiteSpace(entry.Message))
             ToolTip.SetTip(row, UiLocalizationService.Present(entry.Message));

@@ -99,6 +99,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         NotifyUxSettings();
         if (restartLoop) Updates.RestartBackgroundUpdateLoop(runImmediate);
         NotifyDlssDefaults();
+        AdoptTheme(); // #301
     }
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
@@ -158,6 +159,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public IniPresetsPresenter IniPresets => new(this, _managedComponents, _deploymentRecords, _settingsStore.ConfigRoot); // #181: INI ⚙, templates, apply to all
     // w5/shell-launch rows
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
+    public CollectionsPresenter Collections => CollectionsPresenter.For(this, ApplyFilter); // #300 game collections
     public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
     public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
     /// <summary>#271: Settings › Custom OptiScaler builds (w14/optiscaler-2).</summary>
@@ -303,7 +305,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     private static string LibraryFilterDisplay(string value) => OptionLists.LibraryFilter.Display(value);
 
-    public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}"
+    public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {Collections.ActiveName ?? LibraryFilterDisplay(LibraryFilterMode)}" // #300
                                    + (CustomFilters.ActiveName is { } custom ? $" · {custom}" : ""); // #193
     public bool IsCompactView => string.Equals(ViewMode, "Compact", StringComparison.OrdinalIgnoreCase);
     public string ViewToggleText => IsCompactView ? UiLocalizationService.Text("Ui.ViewDetail") : UiLocalizationService.Text("Ui.ViewCompact");
@@ -1699,6 +1701,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             items.Add(new("show-in-owning-app", showLabel, new AsyncRelayCommand(() => ShowInOwningAppAsync(game))));
         items.Add(new("favourite", FavouriteActionText, ToggleFavouriteCommand));
         items.Add(new("hide", HideActionText, ToggleHiddenCommand));
+        items.Add(Collections.MenuFor(game)); // #300: Add to collection, under Hide as upstream
         if (SelectedGameHasNotes) items.Add(new("notes", T("Card.ViewNotes"), ViewNotesCommand, SeparatorBefore: true));
         // w3/parity card menu slot: Create shortcut (#162; only from this explicit choice, owner decision) and the game's
         // Nexus Mods page (#99, #174; only for a game Nexus has a page for). Both are left out where they do not apply.
@@ -1797,7 +1800,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         var mode = ParseLibraryFilterMode(LibraryFilterMode);
         var needsManagedFacts = mode is GameLibraryFilterMode.Installed or GameLibraryFilterMode.RenoDX or GameLibraryFilterMode.Luma;
         CustomFilters.Sync(_libraryState); // #193: the saved filters' chips, and the active one's search
-        _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null, CustomFilters.ActiveQuery);
+        Collections.Sync(_libraryState); // #300: the collection chips, and the active one's games
+        _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null, CustomFilters.ActiveQuery, Collections.Membership);
+        Collections.UpdateEmptyText(Games.Count, !string.IsNullOrWhiteSpace(SearchText) || CustomFilters.ActiveQuery is not null);
         OnPropertyChanged(nameof(GameCountText));
         if (selected is not null && _library.IsShown(selected))
         {
@@ -1872,6 +1877,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     [RelayCommand]
     private void SetLibraryFilter(string? mode)
     {
+        Collections.Leave(); // #300: a filter tab replaces the active collection (upstream SetFilter)
         LibraryFilterMode = LinuxGameLibraryStore.NormalizeFilterMode(mode);
     }
 
@@ -2297,7 +2303,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     RHI.Platform.Linux.Persistence.StagedFileWrite ILibraryEditHost.StageLibrary(LinuxGameLibraryState state) => _libraryStore.StageSave(state);
     bool ILibraryEditHost.FolderChangeRunning { get => FolderChangeRunning; set => FolderChangeRunning = value; }
     void ILibraryEditHost.RaiseNotice(string message) => StatusText = _statusNotice.Raise(message);
-    void ILibraryEditHost.ShowAllGames() => LibraryFilterMode = "All Games";
+    void ILibraryEditHost.ShowAllGames()
+    {
+        Collections.Leave(); // #300: an added game shows even when it is in no collection
+        LibraryFilterMode = "All Games";
+    }
     void ILibraryEditHost.Select(DetectedGame game) => SelectedGame = game;
     string? IPanelHost.PersistLibraryState(string whatKey) => TryPersist(() => _libraryStore.Save(_libraryState), whatKey);
     void IPanelHost.ForgetFilterFacts(DetectedGame game) => _filterFacts.Remove(game);

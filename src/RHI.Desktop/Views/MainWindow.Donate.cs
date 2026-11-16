@@ -34,7 +34,7 @@ public sealed partial class MainWindow
         {
             Text = T("Win.ImportantReceiveEarlyAccessRenoDXMods"),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#D7B65A")),
+            Classes = { "warningText" },
             Margin = new Thickness(0, 0, 0, 10)
         };
         var status = new TextBlock { FontSize = 11, Opacity = 0.6, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Text = T("Win.Loading") };
@@ -43,7 +43,7 @@ public sealed partial class MainWindow
         var top = new StackPanel();
         top.Children.Add(intro);
         top.Children.Add(warning);
-        top.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")), Margin = new Thickness(0, 0, 0, 4) });
+        top.Children.Add(new Border { Height = 1, Classes = { "divider" }, Margin = new Thickness(0, 0, 0, 4) });
         // Right margin keeps the overlay scroll bar off the Ko-fi buttons.
         var list = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
         Grid.SetIsSharedSizeScope(list, true);
@@ -95,7 +95,7 @@ public sealed partial class MainWindow
                 {
                     Text = TF("Win.CouldNotLoadAuthorList", UiLocalizationService.Present(ex.Message)),
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brushes.OrangeRed,
+                    Classes = { "alertText" },
                     Margin = new Thickness(0, 8, 0, 0)
                 });
                 return;
@@ -109,7 +109,7 @@ public sealed partial class MainWindow
                     Text = TF("Win.CouldNotLoadCurrentAuthorList", manifestError),
                     TextWrapping = TextWrapping.Wrap,
                     FontSize = 12,
-                    Foreground = new SolidColorBrush(Color.Parse("#D7B65A")),
+                    Classes = { "warningText" },
                     Margin = new Thickness(0, 8, 0, 6)
                 });
             }
@@ -130,7 +130,7 @@ public sealed partial class MainWindow
             foreach (var author in authors)
             {
                 if (list.Children.Count > 0)
-                    list.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")), Opacity = 0.6 });
+                    list.Children.Add(new Border { Height = 1, Classes = { "divider" }, Opacity = 0.6 });
                 list.Children.Add(BuildDonationRow(author, status));
             }
             status.Text = DonateText.AuthorCount(UiLocalizationService.CurrentLanguage, authors.Count);

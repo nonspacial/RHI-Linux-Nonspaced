@@ -129,7 +129,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     /// when HDR is Off.
     /// </summary>
     internal string ProfileLaunchLine(DetectedGame game, LinuxHdrLaunchPlan plan)
-        => plan.Enabled ? TF("Vm.LaunchingHDRProfile", game.Name, SelectedHdrMode.Display) : NvidiaLaunchText.Launching(game);
+        => plan.Enabled ? TF("Vm.LaunchingHDRProfile", game.Name, SelectedHdrMode.Display)
+            : plan.Nvidia.HasVariables ? NvidiaLaunchText.Launching(game) : FrameRateLimitText.Launching(game, plan.FrameRate.Limit); // #310
 
     /// <summary>#211: a status line from the NVIDIA settings (Copy launch options).</summary>
     internal void ReportNvidiaStatus(string text) => StatusText = text;
@@ -612,7 +613,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
         ? LinuxHdrLaunchPlan.NoGame
-        : _hdrProfiles.BuildPlan(SelectedGame, PlannedProfile(), HdrHost, NvidiaFamilies());
+        : _hdrProfiles.BuildPlan(SelectedGame, PlannedProfile(), HdrHost, NvidiaFamilies(),
+            (Host as MainWindowViewModel)?.FrameRateLimitFor(SelectedGame)); // w14/ui-logic hook (#310)
 
     /// <summary>
     /// The HDR host the plan is built for: the selected game's analysis probed it off the UI thread; before the first

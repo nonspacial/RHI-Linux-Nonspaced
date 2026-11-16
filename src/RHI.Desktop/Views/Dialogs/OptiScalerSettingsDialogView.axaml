@@ -51,7 +51,7 @@
     </Grid>
     <!-- #269 (upstream 2.8.9): the ⚙ opens on the Presets panel, on every version. -->
     <Panel x:Name="PresetsSlot" IsVisible="False"/>
-    <Border Height="1" Background="#1E2630" Margin="0,4"/>
+    <Border Height="1" Background="{DynamicResource RhiBorderBrush}" Margin="0,4"/>
     <TextBlock Text="OptiScaler.ini" FontSize="14" FontWeight="SemiBold"/>
     <TextBlock Text="{l:T Win.ControlsBelowEditOnlyOptiScalerIni}" TextWrapping="Wrap" Opacity="0.72"/>
     <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Opacity="0.72" IsVisible="{Binding HasWarning}"/>
@@ -63,7 +63,7 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.DataTemplates>
         <DataTemplate DataType="vm:OptiScalerIniDivider">
-          <Border Height="1" Background="#1E2630" Margin="0,4"/>
+          <Border Height="1" Background="{DynamicResource RhiBorderBrush}" Margin="0,4"/>
         </DataTemplate>
         <DataTemplate DataType="vm:OptiScalerIniGroup">
           <TextBlock Text="{Binding Text}" FontSize="14" FontWeight="SemiBold" Margin="0,4,0,0"/>

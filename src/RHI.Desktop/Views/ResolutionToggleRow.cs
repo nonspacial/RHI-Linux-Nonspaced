@@ -21,7 +21,7 @@ public sealed class ResolutionToggleRow : ContentControl
 
     private readonly CheckBox _toggle = new() { Content = T("Shell.ResToggle"), Name = "ResolutionToggle" };
     private readonly ComboBox _size = new() { MinWidth = 150, Name = "ResolutionSize" };
-    private readonly TextBlock _hint = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#6B7A8E")) };
+    private readonly TextBlock _hint = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11, Classes = { "mutedText" } };
     private RuntimePanelViewModel? _vm;
     private bool _syncing;
 

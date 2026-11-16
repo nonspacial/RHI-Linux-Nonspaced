@@ -106,6 +106,16 @@ public sealed class LinuxAppSettings
     // w12/nr-logs rows
     // w12/pins rows
     // w12/hdr-wsi rows
+    // w14/ui-logic rows
+    /// <summary>#301 (upstream 2.9.3 <c>ColorTheme</c>): the colour theme's id (a built-in theme or "Custom").</summary>
+    public string ColourTheme { get; set; } = RHI.Core.Services.ThemePresets.DefaultId;
+    /// <summary>#301 (upstream <c>CustomThemeColors</c>): Custom's colours, "Background=#RRGGBB;Panel=#RRGGBB;…"; null = none picked yet.</summary>
+    public string? CustomThemeColours { get; set; }
+    /// <summary>
+    /// #310 (upstream 2.8.9 Settings FPS Limit): the FPS cap RHI gives every game it launches through DXVK_FRAME_RATE /
+    /// VKD3D_FRAME_RATE, unless the game has its own (or ReLimiter / Display Commander). 0 = Off, else 20–1000.
+    /// </summary>
+    public uint GlobalFpsLimit { get; set; }
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -184,9 +194,19 @@ public sealed class LinuxAppSettings
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        // w14/ui-logic rows
+        ColourTheme = NormalizeColourTheme(ColourTheme); // #301
+        CustomThemeColours = string.IsNullOrWhiteSpace(CustomThemeColours) ? null : CustomThemeColours.Trim();
+        GlobalFpsLimit = RHI.Platform.Linux.Hdr.FrameRateLimit.Valid(GlobalFpsLimit) ?? 0; // #310
         return this;
     }
 
+
+    /// <summary>#301: a known theme id in its own spelling ("Violet" opens as Kiro, upstream's rename), Custom, else Default.</summary>
+    public static string NormalizeColourTheme(string? value)
+        => string.Equals(value?.Trim(), RHI.Core.Services.ThemePresets.CustomId, StringComparison.OrdinalIgnoreCase)
+            ? RHI.Core.Services.ThemePresets.CustomId
+            : RHI.Core.Services.ThemePresets.Find(value?.Trim())?.Id ?? RHI.Core.Services.ThemePresets.DefaultId;
 
     /// <summary>An OptiScaler overlay key as stored: auto, -1 or a virtual-key code 0x01–0xFE (upper-case hex); anything else = none.</summary>
     public static string NormalizeOptiScalerMenuKey(string? value)

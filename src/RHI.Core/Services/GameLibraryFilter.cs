@@ -32,16 +32,23 @@ public static class GameLibraryFilter
     /// The active saved custom filter's search (Refs #193, upstream <c>CustomFilter</c>): a second search pass on top of
     /// the search box and the filter tab, independent of both. Null or blank = none.
     /// </param>
+    /// <param name="inCollection">
+    /// #300 (upstream 2.9.2): the active game collection's membership test, or null. It replaces the filter tab: the
+    /// collection's games are shown, hidden ones excepted (upstream <c>MatchesCollection</c>); the search and the custom
+    /// filter still narrow it.
+    /// </param>
     public static bool Matches(
         DetectedGame game,
         GameLibraryFilterMode mode,
         string? search,
         GameLibraryFilterFacts facts,
-        string? customQuery = null)
+        string? customQuery = null,
+        Func<DetectedGame, bool>? inCollection = null)
     {
         ArgumentNullException.ThrowIfNull(game);
         if (!MatchesSearch(game, search)) return false;
         if (!MatchesSearch(game, customQuery)) return false;
+        if (inCollection is not null) return !game.IsHidden && inCollection(game);
 
         if (mode == GameLibraryFilterMode.Hidden) return game.IsHidden;
         if (mode == GameLibraryFilterMode.Favourites) return game.IsFavourite; // upstream intentionally includes hidden favourites
@@ -60,32 +67,74 @@ public static class GameLibraryFilter
         };
     }
 
+    /// <summary>
+    /// #299 (upstream 2.9.3, search "like Steam's"): the game's names (Edit game's display name, the detected name and
+    /// the manifest's name, Refs #190) match as typed or loosely (<see cref="GameSearch"/>: punctuation, Roman numerals,
+    /// initials, any word order, typos); everything else (store, runner, engine, graphics API, bitness, author, notes,
+    /// folders) matches whole words only, so "st" is not every Steam game and "un" not every Unreal one.
+    /// </summary>
     public static bool MatchesSearch(DetectedGame game, string? search)
     {
         if (string.IsNullOrWhiteSpace(search)) return true;
         var q = search.Trim();
-        bool Has(string? value) => !string.IsNullOrWhiteSpace(value) && value.Contains(q, StringComparison.OrdinalIgnoreCase);
+        return Names(game).Any(name => GameSearch.NameMatches(name, q)) || MatchesSearchOutsideName(game, q);
+    }
 
-        // The Edit game display name and the detected name both find the card (Refs #190).
-        return Has(game.DisplayName())
-            || Has(game.Name)
-            || Has(game.Source)
-            || Has(game.Runner)
-            || Has(game.CompatibilityTool)
-            || Has(game.CompatibilityLayerType)
-            || Has(game.EngineHint)
-            || Has(game.CanonicalManifestName)
-            || Has(game.AuthorOverride)
-            || Has(game.WikiStatusOverride)
-            || Has(game.ManifestGameNote)
-            || Has(game.InstallPath)
-            || Has(game.ExecutablePath)
-            || Has(game.PrefixPath)
-            || game.EffectiveGraphicsApis.Any(api => Has(FormatApi(api)))
-            || (DeclaredArchitecture(game) is PeArchitecture.X86 && Has("32-bit"))
-            || (DeclaredArchitecture(game) is PeArchitecture.X64 && Has("64-bit"))
-            || (game.NativeHdrByManifest && Has("HDR"))
-            || (game.IsManuallyAdded && Has("Manual"));
+    /// <summary>
+    /// #299: the games matching <paramref name="mode"/>, the search and the custom filter, best match first: A to Z by the
+    /// shown name, then (with a search) by how well the name matches (<see cref="GameSearch.NameRank"/>; stable, so A to Z
+    /// within each rank). When a shown game's name matches the search properly (the whole name or whole words), games
+    /// that matched only by a near miss or part of a word are dropped; games found through something other than the name
+    /// (store, engine…) stay.
+    /// </summary>
+    public static IReadOnlyList<DetectedGame> Filter(
+        IEnumerable<DetectedGame> games,
+        GameLibraryFilterMode mode,
+        string? search,
+        Func<DetectedGame, GameLibraryFilterFacts>? facts,
+        string? customQuery = null,
+        Func<DetectedGame, bool>? inCollection = null)
+    {
+        ArgumentNullException.ThrowIfNull(games);
+        var shown = games
+            .Where(game => Matches(game, mode, search, inCollection is null ? facts?.Invoke(game) ?? default : default, customQuery, inCollection))
+            .OrderBy(game => game.DisplayName(), StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        if (string.IsNullOrWhiteSpace(search)) return shown;
+        var q = search.Trim();
+        bool Proper(DetectedGame game) => Names(game).Any(name => GameSearch.NameMatchesWholeWords(name, q));
+        if (shown.Any(Proper)) shown = shown.Where(game => Proper(game) || MatchesSearchOutsideName(game, q)).ToList();
+        return shown.OrderBy(game => Names(game).Select(name => GameSearch.NameRank(name, q)).DefaultIfEmpty(GameSearch.NotTheName).Min()).ToList();
+    }
+
+    /// <summary>The names a card is found by: the shown (display) name, the detected name and the manifest's name.</summary>
+    private static IEnumerable<string> Names(DetectedGame game)
+        => new[] { game.DisplayName(), game.Name, game.CanonicalManifestName }
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)!;
+
+    /// <summary>#299: the search against everything except the game's names, as whole words (<see cref="GameSearch.TagMatches"/>).</summary>
+    private static bool MatchesSearchOutsideName(DetectedGame game, string search)
+    {
+        var q = GameSearch.LettersAndDigits(search);
+        if (q.Length == 0) return false;
+        bool Tag(string? value) => GameSearch.TagMatches(value, q);
+        return Tag(game.Source)
+            || Tag(game.Runner)
+            || Tag(game.CompatibilityTool)
+            || Tag(game.CompatibilityLayerType)
+            || Tag(game.EngineHint)
+            || Tag(game.AuthorOverride)
+            || Tag(game.WikiStatusOverride)
+            || Tag(game.ManifestGameNote)
+            || Tag(game.InstallPath)
+            || Tag(game.ExecutablePath)
+            || Tag(game.PrefixPath)
+            || game.EffectiveGraphicsApis.Any(api => Tag(FormatApi(api)))
+            || (DeclaredArchitecture(game) is PeArchitecture.X86 && Tag("32-bit"))
+            || (DeclaredArchitecture(game) is PeArchitecture.X64 && Tag("64-bit"))
+            || (game.NativeHdrByManifest && Tag("HDR"))
+            || (game.IsManuallyAdded && Tag("Manual"));
     }
 
     // Search reads only declared bitness (Edit game, then the manifest), never the exe header: a keystroke must not read files.

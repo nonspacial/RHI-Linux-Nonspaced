@@ -152,10 +152,30 @@ public sealed record LinuxHdrLaunchPlan(
     public NvidiaLaunchPlan Nvidia { get; init; } = NvidiaLaunchPlan.Hidden(NvidiaPlanReason.NoGame);
 
     /// <summary>
-    /// RHI applies this profile itself when it launches the game (not a store hand-off): an enabled, valid HDR profile,
-    /// or (#211) NVIDIA settings with HDR Off.
+    /// #310: the game's FPS limit (DXVK / VKD3D-Proton frame-rate variables); its variables are already part of
+    /// <see cref="Environment"/> and <see cref="LaunchOptions"/>, as the NVIDIA settings'.
     /// </summary>
-    public bool AppliesAtLaunch => Handoff == LaunchHandoff.None && (Enabled ? CanApply : Nvidia.HasVariables);
+    public FrameRateLimitPlan FrameRate { get; init; } = FrameRateLimitPlan.Hidden(FrameRateLimitReason.NoGame);
+
+    /// <summary>The variables RHI adds with HDR Off: the NVIDIA settings' (when they apply) and the FPS limit's.</summary>
+    public IReadOnlyDictionary<string, string> LaunchVariables
+    {
+        get
+        {
+            var env = new Dictionary<string, string>(Nvidia.Environment, StringComparer.Ordinal);
+            foreach (var pair in FrameRate.Environment) env[pair.Key] = pair.Value;
+            return env;
+        }
+    }
+
+    /// <summary>NVIDIA settings (#211) or an FPS limit (#310) to apply at launch.</summary>
+    public bool HasLaunchVariables => Nvidia.HasVariables || FrameRate.HasVariables;
+
+    /// <summary>
+    /// RHI applies this profile itself when it launches the game (not a store hand-off): an enabled, valid HDR profile,
+    /// or (#211, #310) NVIDIA settings or an FPS limit with HDR Off.
+    /// </summary>
+    public bool AppliesAtLaunch => Handoff == LaunchHandoff.None && (Enabled ? CanApply : HasLaunchVariables);
 }
 
 /// <summary>
@@ -216,7 +236,9 @@ public sealed partial class LinuxHdrLaunchProfileService
     /// The plan with the game's NVIDIA settings merged in (#211): <paramref name="dlss"/> = the DLSS features the game
     /// ships (null while its files are not known: a saved choice then applies as it is).
     /// </summary>
-    public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile, LinuxHdrHostSnapshot host, NvidiaDlssFamilies? dlss)
+    /// <param name="frameRateLimit">#310: the FPS cap in effect for this launch (<see cref="FrameRateLimit.Effective"/>); null = none.</param>
+    public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile, LinuxHdrHostSnapshot host, NvidiaDlssFamilies? dlss,
+        uint? frameRateLimit = null)
     {
         ArgumentNullException.ThrowIfNull(game);
         ArgumentNullException.ThrowIfNull(host);
@@ -233,7 +255,8 @@ public sealed partial class LinuxHdrLaunchProfileService
             plan = profile.Mode == LinuxHdrModes.NativeWayland
                 ? BuildNativeWayland(game, profile, host)
                 : BuildGamescope(game, profile, host);
-        plan = WithNvidia(plan, nvidia) with { Handoff = handoff };
+        plan = WithNvidia(plan, nvidia);
+        plan = WithFrameRate(plan, FrameRateLimit.Plan(game, frameRateLimit)) with { Handoff = handoff };
         return handoff == LaunchHandoff.None ? KeepingInheritedDrsSettings(plan) : plan;
     }
 
@@ -266,6 +289,23 @@ public sealed partial class LinuxHdrLaunchProfileService
         var applies = plan.Enabled && plan.CanApply;
         var options = BuildLaunchOptions(applies ? env : nvidia.Environment, applies ? plan.CommandPrefix : null);
         return plan with { Environment = env, LaunchOptions = options, Nvidia = nvidia };
+    }
+
+    /// <summary>
+    /// #310: adds the FPS limit's variables to the plan's environment and launch options, as <see cref="WithNvidia"/>
+    /// does; HDR's and the NVIDIA settings' variables win a clash (there is none today).
+    /// </summary>
+    private static LinuxHdrLaunchPlan WithFrameRate(LinuxHdrLaunchPlan plan, FrameRateLimitPlan frameRate)
+    {
+        if (!frameRate.HasVariables) return plan with { FrameRate = frameRate };
+        var env = new Dictionary<string, string>(frameRate.Environment, StringComparer.Ordinal);
+        foreach (var pair in plan.Environment) env[pair.Key] = pair.Value;
+        var applies = plan.Enabled && plan.CanApply;
+        var withHdrOff = new Dictionary<string, string>(frameRate.Environment, StringComparer.Ordinal);
+        if (plan.Nvidia.HasVariables)
+            foreach (var pair in plan.Nvidia.Environment) withHdrOff[pair.Key] = pair.Value;
+        var options = BuildLaunchOptions(applies ? env : withHdrOff, applies ? plan.CommandPrefix : null);
+        return plan with { Environment = env, LaunchOptions = options, FrameRate = frameRate };
     }
 
     private LinuxHdrLaunchPlan BuildNativeWayland(DetectedGame game, LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host)

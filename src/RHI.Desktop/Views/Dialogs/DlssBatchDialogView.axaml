@@ -37,7 +37,7 @@
             </ItemsControl>
           </ScrollViewer>
         </StackPanel>
-        <Border x:Name="Divider" Grid.Column="1" Width="1" Background="#2A3038"/>
+        <Border x:Name="Divider" Grid.Column="1" Width="1" Background="{DynamicResource RhiDividerBrush}"/>
         <StackPanel x:Name="VersionsColumn" Grid.Column="2" Spacing="11" MinWidth="270">
           <TextBlock Text="{l:T Win.Versions}" FontSize="16" FontWeight="SemiBold"/>
           <TextBlock Text="{l:T Win.FilledFromSettingsDoNotChange}" TextWrapping="Wrap" Opacity="0.68" FontSize="11"/>
@@ -62,7 +62,7 @@
             <ComboBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220"/>
           </StackPanel>
           <!-- #215 (upstream MassDlssDeployDialog): the presets under the versions, after a 1 px divider. -->
-          <Border x:Name="PresetsDivider" Height="1" Background="#2A3038" Margin="0,4"/>
+          <Border x:Name="PresetsDivider" Height="1" Background="{DynamicResource RhiDividerBrush}" Margin="0,4"/>
           <TextBlock Text="{l:T Dp.BatchPresetsHeading}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
           <StackPanel Spacing="4" DataContext="{Binding SuperResolutionPreset}" x:DataType="vm:PresetChoice">
             <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" TextWrapping="Wrap"

@@ -2501,3 +2501,140 @@ gap). No clash, so nothing is renumbered; 26–29 are free and nothing reads the
 ### #272 — ANR FG preset (2.9.3)
 
 - Upstream's recommended "ANR FG" preset (`installAnrFg`, `optiscaler_presets.json` `presetsV2`) is offered now. Applying it shows the closed-source notice first (#285, the extras-fg lane's `InstallNoticePresenter`, with ANR FG's GitHub page as its link and "Don't show this again"); declined, nothing is installed or applied. Then the game's OptiScaler DLL (RHI's install, under its DLL name) must contain OptiScaler's "Custom DLSSG" text, as upstream checks, so Nightly from 29 Oct 2026 and forks or custom builds based on it count; otherwise the line says to choose such a version. ANR FG's newest release (apex-compute/ANR `releases/latest`) gives its one `*-addon.zip`; the `Apex Neural Rendering FG` folder goes to `OptiScaler/custom/` (or `custom/` beside a flat build), where OptiScaler loads custom providers, and the preset's `FGInput=nvngxfg`, `FGNvngxReplacement=Apex Neural Rendering FG` are applied after it. A `nr_fg.ini` already there (ANR's own settings) is kept, as upstream. Linux deviations: the zip must be vouched for by GitHub's published digest or the release's `SHA256SUMS.txt` (upstream accepts a release without the checksum file) and the two must agree; every asset link must be under apex-compute/ANR's releases; the files are journaled and recorded on OptiScaler's record, so removing OptiScaler removes them and an update leaves them; a file in that folder RHI did not put there refuses the install (nothing changes); the user's `nr_fg.ini` is never recorded, so it is never removed; the zip's scripts (`install.cmd`, `install.sh`…) are not used. Upstream keeps one staged copy for all games and logs a "Frame Generation" history entry when it changes; RHI caches per tag in `~/.cache/rhi-linux/anr-fg/` and installs per game.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane ui-logic)
+
+### #299 — Game search like Steam's (2.9.3)
+
+- Ported from upstream's `FilterViewModel` (2.9.4) into `GameSearch` (Core): punctuation and spaces ignored, any word
+  order, initials and partial initials (three or more characters anywhere in them), capital Roman numerals I–XXXIX as
+  numbers (a lone "I" only at the end of a name), typos by word length (5+ letters: 2 off, 4 letters: 1 off, shorter:
+  none; a word being typed is compared with the start of longer words), near misses hidden when a name or whole words
+  match, and best match first (whole name, starts with, whole words, part of the name, initials, near miss, then games
+  found by a tag), A to Z within each rank. Upstream's test table is pinned in `GameSearchTests`.
+- Tags match whole words only (`GameSearch.TagMatches`), as upstream: store, engine, graphics API, bitness and author.
+- Linux deviations: a card is found by its Edit game display name, its detected name and its manifest name (#190); the
+  rank is the best of the three. Linux's extra search fields (runner, compatibility tool and layer, wiki status, the
+  manifest's game note, the install, executable and prefix folders, HDR, Manual) are tags too, so they also match whole
+  words only (a folder by any of its path's words). Upstream also finds a game by its RenoDX/Luma mod's name and author
+  and by DLSS, UW Fix and Ultra+ badges; Linux searched none of these before and does not now (the author tag is the
+  manifest's author override).
+- Upstream's rules give the same near misses: "steam" also shows Stellar Blade ("stell" is two letters off), ranked
+  above the Steam games found by their store.
+
+### #300 — Game collections (2.9.2)
+
+- Ported from upstream's `GameCollectionStore`, `MainViewModel.Collections` and `MainWindow.Collections`: create (with
+  the game when made from its menu), rename (the active collection stays active), move left/right, delete (the games
+  stay; the list goes back to all games), membership ticks in the game menu's **Add to collection** (under Hide, as
+  upstream) with **New collection…**, and upstream's name rules (trimmed, 1–40 characters, no control characters, not
+  a built-in filter's name, unique in any case). A chip shows only the collection's games, hidden ones excepted, and
+  puts the filter tab back to All underneath; the search and a custom filter still narrow it; any filter tab leaves the
+  collection; the active one is remembered across launches; an empty collection says why (no games yet, none match
+  the search, or hidden / no longer detected).
+- Storage: in the library file (`~/.local/share/rhi-linux/game-library.json`, `GameCollections` and
+  `ActiveCollection`) through its store: atomic, verified writes, an unreadable file copied aside and never overwritten;
+  each change saves a copy and adopts it once on disk, and nothing is written during Repair after move. Not written
+  while there are none, so the file keeps its older shape.
+- Linux deviations: members are kept by the game's library key (the key favourites and hidden use), not upstream's
+  "GameName|Store", so an Edit game display name change needs no migration and the collections follow the game when an
+  older key is adopted or Repair after move gives it a new one. The built-in names refused also cover the Linux filter
+  tabs (Unreal, Unity, Other, RenoDX, Luma) and their PT-BR words. Classic layout only for now: Spotlight's placement
+  beside the search box and the controller's right-stick switching come with the phase-2 layouts (#305, #308). The chip
+  row is the Avalonia `CollectionsRow` under the filter tabs, above #193's saved custom filters.
+
+### #301 — Colour themes, custom colours, share/import codes (2.9.3)
+
+- Ported from upstream's `ThemePalette`, `ThemePresets`, `ThemeColorMapper` (Core `ThemePalette.cs`; upstream's
+  `ThemePaletteTests` and `ThemeShareCodeTests` run against it unchanged but for the colour type) and its Settings card:
+  the nine themes in upstream's order with its colours, applied live; Custom's nine colours (Look and Status colours),
+  first use starting from the theme that was showing, Start from a theme…, Reset to default, the contrast warning
+  (text under 4.5:1 on the background or the panels), Share theme / Import theme with upstream's `RHI-THEME:` code
+  (nine colours in a fixed order; a pasted message around it, case, `#` and spaces are fine), "Violet" opening as Kiro.
+  Settings keep `ColourTheme` and `CustomThemeColours` (upstream's format), saved when they change.
+- Linux mechanism: every colour the Avalonia views use is now a named brush resource (`Theming/ThemeResources`, one
+  list with the default look's colours; AXAML uses `{DynamicResource Rhi…Brush}`, code-built views use style classes
+  in App.axaml or `ThemeResources.Bind`). A theme puts each brush, recoloured by upstream's mapper, into the app's
+  resources, so open windows repaint at once. A test checks that no AXAML holds a literal colour and that every
+  `Rhi…Brush` used exists, so the phase-2 layouts take their colours from the same keys.
+- Linux deviations: the card is in Settings › UX (the Linux tab for upstream's General until the phase-2
+  Settings layout, #296). Custom colours are typed as `#RRGGBB` beside a live swatch: Avalonia's colour picker is a
+  separate package this build does not ship (owner decision whether to add it). Import is a row under the buttons
+  rather than a dialog. Fluent's own control templates (scroll bars, drop-down surfaces) keep Avalonia's dark colours,
+  as upstream leaves WinUI's own resources alone. Upstream 2.9.5's theme polish is not ported: 2.9.5 is still in
+  beta (latest release RHI-2.9.4 on 2026-11-16).
+
+### #310 — Per-game FPS limit (2.8.9; owner decision 2026-11-16 for the Linux equivalent)
+
+- Upstream sets the NVIDIA driver profile's FPS Limiter V3 (`0x10835002`) per game, with a global value on the base
+  profile. There is no driver profile under Wine/Proton, so RHI sets `DXVK_FRAME_RATE` (DXVK, Direct3D 8–11) and
+  `VKD3D_FRAME_RATE` (VKD3D-Proton, Direct3D 12) in the game's launch variables, both at once (each layer reads its
+  own), the way #211 hands the NVIDIA settings over: in the environment of a direct launch, or in the launch options
+  shown for Steam / Heroic / Lutris. Nothing is written to disk, the prefix or the game. Unlike the NVIDIA settings, it
+  does not need an NVIDIA GPU or a DLSS file; it is not offered for native Linux games or for store clients and the Xbox
+  app, which take no launch variables.
+- Choices as upstream: Global (named with the global value), Off, upstream's VRR presets, a game's own custom value just
+  above Custom…, and Custom… (20–1000; any other value is refused and nothing changes). Settings › DLSS/Streamline has
+  the global FPS Limit (Off, the presets, Custom…), written on Save.
+- Upstream's rule that a cap turns off the ReLimiter / Display Commander per-game limit: upstream writes the driver
+  limit Off into those games (on their install and whenever the global cap is set) and clears it on uninstall. Linux
+  applies the same outcome when the plan is built: a game on Global with ReLimiter or Display Commander installed by RHI
+  gets no cap; a value chosen for the game itself still applies, as upstream lets the user set one afterwards.
+  Deviation: an explicit per-game value is never overwritten by an install or a global change (upstream's writes would
+  reset it to Off).
+- Storage: the per-game choice is in the library file (`FpsLimits`, by library key, following key changes and Repair
+  after move; Global = no entry), the global one in settings.json (`GlobalFpsLimit`, 0 = Off).
+- Placement: the FPS Limit row is in the DLSS section beside NVIDIA settings… for now; the phase-2 layouts move it into
+  Driver Settings with upstream's other driver rows. Launch and hand-off lines say "FPS limit" when it is the only thing
+  applied, and use the NVIDIA settings' wording (the pasted line then carries both) when NVIDIA settings are chosen too.
+
+### #313 — Not applicable: Windows-only changes in upstream 2.8.9–2.9.4
+
+These upstream changes have no Linux counterpart and are not ported. Each reason is why the feature cannot work, or has
+nothing to fix, under Linux + Wine/Proton.
+
+- **Remove NVIDIA App override limits** (2.8.9): patches the Windows NVIDIA App's files and restarts its Windows
+  services. There is no NVIDIA App on Linux; DLSS overrides go through #211's launch variables.
+- **Compile shaders now** (2.9.3): runs NVIDIA's Windows shader compiler (the NVIDIA App's Compile now). Linux shader
+  caches belong to the driver, DXVK/VKD3D-Proton and Steam's shader pre-caching; RHI does not manage them.
+- **ReBAR helper and Low Latency admin fixes** (2.8.9–2.9.3): NVIDIA driver profile settings written with admin rights
+  through NVAPI. Linux has no driver profile; resizable BAR is a firmware/kernel matter and low latency belongs to the
+  game, dxvk-nvapi (Reflex) and the compositor.
+- **Xbox / Game Pass achievements and Game Pass folders** (2.9.2/2.9.3): read from the Windows Xbox app and its
+  `XboxGames` / `WindowsApps` folders. Linux Game Pass titles come through the installer apps (#90), which keep neither.
+  Steam achievements from Steam's local files are #307 (phase 2).
+- **Windows App Runtime, installer and `%TEMP%` clean-up** (2.8.9/2.9.0): the Windows installer, the Windows App SDK
+  runtime it installs and the .NET single-file extraction folder. RHI Linux ships as .deb, .rpm and .tar.gz builds with
+  no runtime installer and nothing extracted to a temp folder.
+- **Antivirus deletion handling** (2.9.0): explains Windows Defender removing freshly downloaded DLLs. Linux has no
+  on-access antivirus in the default install; a missing download is already reported by the trusted-download checks.
+- **DXVK / Universal MFG Unlocker downloaded only when used** (2.9.0): upstream downloads DXVK itself for its DX9 path.
+  Here DXVK comes from the selected Wine/Proton runner (never downloaded by RHI), and Universal MFG Unlocker is
+  downloaded only by its install, so there was nothing downloaded up front to stop.
+- **Epic client launch fixes** (2.9.0/2.9.2): start the Windows Epic Games Launcher before a direct exe launch and pass
+  its `namespace:item:app` id. Linux Epic games launch through Heroic, Legendary or Lutris;
+  revisit `18088a3` only if RHI Linux ever launches Epic URIs itself.
+- **Sign in with GitHub removal** (2.9.0): the browser sign-in was never ported; RHI Linux has always used a GitHub
+  token file (`github_api.txt`), the method upstream now recommends.
+- **Output colour / admin messages** (2.9.0): Windows' display colour-depth and digital vibrance settings through
+  NVAPI with admin rights. Linux display colour belongs to the compositor; HDR output is #251's launch section.
+- **Admin Mode cursor** (2.9.0): the busy cursor while Windows elevates RHI. RHI Linux never runs elevated.
+- **Windows animation hover flash** (2.8.9/2.9.3): a WinUI hover-animation glitch with Windows' "Animation effects" off.
+  Avalonia has no such animation path.
+- **Light-mode headings** (2.9.2): unreadable headings with Windows' light app mode. RHI Linux is always dark
+  (`RequestedThemeVariant="Dark"`); since #301 the colour themes are all dark too, as upstream's.
+- **Freeze diagnostics / auto-restart while a game runs** (2.9.2/2.9.3): upstream's UI-thread watchdog takes dumps and
+  restarts RHI when Windows pages it out for a memory-hungry game. RHI Linux has no watchdog, dump writer or
+  self-restart, so it has nothing to hold back while a game runs.
+- **RHI-Stats** (upstream's Windows usage statistics tool): not part of RHI Linux; RHI Linux sends no statistics.
+- **Upstream beta channel** (`RankFTW/rhi-beta`): Linux releases follow this fork's own release policy and its own
+  update check, not upstream's beta feed.
+- **UE3 CPU/RAM after launch** (upstream 2.9.5 Beta 2, `539cf2f`, verified here): upstream watched a launched game by
+  searching for processes under the game's folders, and for Remember Me (UE3, no project folder) its Unreal rule made
+  that folder `steamapps\common`, so every Steam app counted as the game; its exit wait (`WaitForExitAsync` on
+  processes RHI could not wait on) then failed at once and spun, writing hundreds of crash reports a second. Neither can
+  happen here: RHI Linux waits only for the process it started itself (`LinuxGameLauncher.RunAndWatchAsync`, one
+  `WaitForExitAsync` on its own child), the display-mode recovery checks one recorded PID and its start time every
+  5 s (`DisplayModeSwitcher.RecoverAsync`), and Update All's running check matches the game's exact executable path in
+  `/proc` (`LinuxUpdateAllService.IsRunning`), never a folder; none of them searches a store library folder or loops
+  without a delay.

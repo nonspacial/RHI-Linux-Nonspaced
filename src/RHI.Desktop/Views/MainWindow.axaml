@@ -2,34 +2,35 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RHI.Desktop.ViewModels"
         xmlns:views="using:RHI.Desktop.Views"
+        xmlns:l="using:RHI.Desktop.Localization"
         x:Class="RHI.Desktop.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel" x:CompileBindings="True"
         Width="1450" Height="900" MinWidth="640" MinHeight="480"
         Title="{DynamicResource Ui.WindowTitle}"
-        Background="#121518"
+        Background="{DynamicResource RhiBackgroundBrush}"
         DragDrop.AllowDrop="True" DragDrop.DragOver="GameFiles_DragOver" DragDrop.Drop="GameFiles_Drop">
   <Window.Styles>
     <!-- One dim for the whole library-overlay backdrop: over the main content and over the status bar. -->
     <Style Selector="Border.libraryBackdrop">
-      <Setter Property="Background" Value="#0D1015"/>
+      <Setter Property="Background" Value="{DynamicResource RhiStatusBarBrush}"/>
       <Setter Property="Opacity" Value="0.75"/>
     </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- Toolbar: deliberately mirrors the upstream RHI layout. Always one row (ToolbarPanel): the brand subtitle hides
          first, then buttons move from the right end into the '…' menu; Settings stays pinned at the far right. -->
-    <Border Grid.Row="0" Padding="16,10" Background="#0F1318" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
+    <Border Grid.Row="0" Padding="16,10" Background="{DynamicResource RhiToolbarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,0,1">
       <views:ToolbarPanel x:Name="ToolbarRow" Spacing="8" LeadingSpacing="10" MinGap="16">
         <!-- Below 900 px the library column becomes a slide-out overlay opened from here. -->
         <Button x:Name="LibraryToggleButton" views:ToolbarPanel.Slot="Leading" Classes="rhi" Content="{DynamicResource Ui.LibraryToggle}"
                 Click="LibraryToggle_Click" ToolTip.Tip="{DynamicResource Ui.LibraryToggleTip}" IsVisible="False"/>
         <StackPanel views:ToolbarPanel.Slot="Leading" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-          <Border Width="36" Height="36" CornerRadius="8" Background="#122830" BorderBrush="#1E4858" BorderThickness="1">
-            <TextBlock Text="R" FontWeight="Bold" FontSize="20" Foreground="#4DC9E6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          <Border Width="36" Height="36" CornerRadius="8" Background="{DynamicResource RhiAccentTintBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1">
+            <TextBlock Text="R" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource RhiAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="RHI" FontSize="15" FontWeight="Bold" Foreground="#4DC9E6"/>
-            <TextBlock views:ToolbarPanel.Collapsible="True" Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="#2A7A90"/>
+            <TextBlock Text="RHI" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource RhiAccentBrush}"/>
+            <TextBlock views:ToolbarPanel.Collapsible="True" Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="{DynamicResource RhiTaglineBrush}"/>
           </StackPanel>
         </StackPanel>
 
@@ -37,20 +38,20 @@
                 views:ToolbarPanel.IsAbsent="{Binding NewMods.IsHidden, FallbackValue=True}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.AvailableMods}" Click="AvailableMods_Click" ToolTip.Tip="{DynamicResource Ui.AvailableModsTip}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.Refresh}" Command="{Binding RefreshCommand}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.ShadersAddons}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding Updates.UpdateAllCommand}" IsEnabled="{Binding Updates.CanUpdateAll}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.BatchDlss}" Click="BatchDlss_Click" IsEnabled="{Binding CanOpenDlssBatch}"
                 ToolTip.Tip="{DynamicResource Ui.BatchDlssTip}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.Links}" Click="Links_Click"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.Motd}" Click="Motd_Click" ToolTip.Tip="{DynamicResource Ui.MotdTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.UpdateHistory}" Click="UpdateHistory_Click" ToolTip.Tip="{DynamicResource Ui.UpdateHistoryTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.Donate}" Click="Donate_Click" ToolTip.Tip="{DynamicResource Ui.DonateTip}"/>
-        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="{DynamicResource RhiBorderBrush}" Margin="4,0"/>
         <Button Classes="rhi" Content="{Binding ViewToggleText}" Click="ViewMode_Click" ToolTip.Tip="{DynamicResource Ui.ViewModeTip}"/>
         <Button x:Name="ToolbarOverflowButton" views:ToolbarPanel.Slot="Overflow" Classes="rhi" Content="…"
                 ToolTip.Tip="{DynamicResource Ui.MoreActions}" AutomationProperties.Name="{DynamicResource Ui.MoreActions}">
@@ -67,14 +68,14 @@
       <Border x:Name="LibraryBackdrop" Classes="libraryBackdrop" Grid.ColumnSpan="2" IsVisible="False" ZIndex="10"
               PointerPressed="LibraryBackdrop_PointerPressed"/>
       <!-- Sidebar -->
-      <Border x:Name="LibrarySidebar" Grid.Column="0" Background="#101419" BorderBrush="#1E2630" BorderThickness="0,0,1,0" ClipToBounds="True">
+      <Border x:Name="LibrarySidebar" Grid.Column="0" Background="{DynamicResource RhiSidebarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,1,0" ClipToBounds="True">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
-          <Border Grid.Row="0" Padding="10,8,10,4" Background="#131820">
+          <Border Grid.Row="0" Padding="10,8,10,4" Background="{DynamicResource RhiFilterBarBrush}">
             <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     PlaceholderText="{DynamicResource Ui.SearchGames}" Background="#151A22" Foreground="#A0AABB"
-                     BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
+                     PlaceholderText="{DynamicResource Ui.SearchGames}" Background="{DynamicResource RhiControlBrush}" Foreground="{DynamicResource RhiSecondaryTextBrush}"
+                     BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
           </Border>
-          <Border x:Name="LibraryFilterBar" Grid.Row="1" Padding="10,8" Background="#131820" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
+          <Border x:Name="LibraryFilterBar" Grid.Row="1" Padding="10,8" Background="{DynamicResource RhiFilterBarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,0,1">
             <StackPanel>
             <WrapPanel Orientation="Horizontal">
               <Button Classes="chip" Content="{DynamicResource Ui.All}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="All Games"/>
@@ -87,13 +88,15 @@
               <Button Classes="chip" Content="Luma" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Luma"/>
               <Button Classes="chip" Content="{DynamicResource Ui.Hidden}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Hidden"/>
             </WrapPanel>
+            <!-- #300 game collections: one chip per collection, then "+ Collection" (upstream 2.9.2, under the filter switch). -->
+            <views:CollectionsRow x:Name="CollectionsRow"/>
             <!-- #193 saved custom filters: "Save as filter" and one chip per saved filter (hidden while there is neither). -->
             <views:CustomFilterRow/>
             </StackPanel>
           </Border>
           <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="12,8">
-            <TextBlock Text="{DynamicResource Ui.Library}" Foreground="#6B7A8E" FontSize="10" FontWeight="SemiBold"/>
-            <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="#6B7A8E" FontSize="10"/>
+            <TextBlock Text="{DynamicResource Ui.Library}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10"/>
           </Grid>
           <ListBox x:Name="GameLibraryList" Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGameRow}"
                    SelectionChanged="GameLibrary_SelectionChanged" Tapped="GameLibrary_Tapped" ClipToBounds="True"
@@ -102,25 +105,29 @@
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:GameRowViewModel">
-                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="#151C28" BorderBrush="#1E2C40" BorderThickness="1">
+                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="{DynamicResource RhiGameRowBrush}" BorderBrush="{DynamicResource RhiGameRowBorderBrush}" BorderThickness="1">
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                     <StackPanel>
-                      <TextBlock Text="{Binding Name}" Foreground="#E2E8FF" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                      <TextBlock Text="{Binding Source}" Foreground="#6B7A8E" FontSize="9"/>
+                      <TextBlock Text="{Binding Name}" Foreground="{DynamicResource RhiGameRowTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="{Binding Source}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="9"/>
                     </StackPanel>
-                    <TextBlock Grid.Column="1" Text="{Binding LibraryBadge}" Foreground="#D4A856" VerticalAlignment="Center" FontSize="12"/>
-                    <Border Grid.Column="2" Width="8" Height="8" CornerRadius="4" Background="#5ECB7D" VerticalAlignment="Center"
+                    <TextBlock Grid.Column="1" Text="{Binding LibraryBadge}" Foreground="{DynamicResource RhiWarningBrush}" VerticalAlignment="Center" FontSize="12"/>
+                    <Border Grid.Column="2" Width="8" Height="8" CornerRadius="4" Background="{DynamicResource RhiInstalledBrush}" VerticalAlignment="Center"
                             ToolTip.Tip="{DynamicResource Ui.DetectedLinuxTip}"/>
                   </Grid>
                 </Border>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
+          <!-- #300: why a shown collection's list is empty (upstream's empty-list message). -->
+          <TextBlock x:Name="CollectionEmptyText" Grid.Row="3" Margin="16,12,16,0" VerticalAlignment="Top" TextWrapping="Wrap"
+                     FontSize="12" Foreground="{DynamicResource RhiMutedTextBrush}" IsHitTestVisible="False"
+                     Text="{Binding Collections.EmptyText}" IsVisible="{Binding Collections.HasEmptyText}"/>
         </Grid>
       </Border>
 
       <!-- Detail panel -->
-      <ScrollViewer x:Name="DetailScroller" Grid.Column="1" Background="#121518">
+      <ScrollViewer x:Name="DetailScroller" Grid.Column="1" Background="{DynamicResource RhiBackgroundBrush}">
         <Grid x:Name="DetailRoot" Margin="24" RowDefinitions="Auto,Auto" RowSpacing="14">
           <!-- Responsive header: steps typography down, then moves the actions below the title, then trims (DetailHeaderPanel). -->
           <views:DetailHeaderPanel Grid.Row="0" RowSpacing="8">
@@ -133,19 +140,19 @@
                     <Binding Path="ShowLaunchProviderBadge"/>
                   </MultiBinding>
                 </StackPanel.IsVisible>
-                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
+                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="{DynamicResource RhiControlBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1"
                         Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding LibraryProviderToolTip}">
                   <Image Source="{Binding SelectedLibraryProviderIcon}" Stretch="Uniform"/>
                 </Border>
-                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
+                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="{DynamicResource RhiControlBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1"
                         Padding="5" IsVisible="{Binding ShowLaunchProviderBadge}" ToolTip.Tip="{Binding LaunchProviderToolTip}">
                   <Image Source="{Binding SelectedLaunchProviderIcon}" Stretch="Uniform"/>
                 </Border>
               </StackPanel>
               <StackPanel VerticalAlignment="Center">
-                <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"
+                <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"
                            TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}"/>
-                <TextBlock x:Name="SelectedSourceText" views:DetailHeaderPanel.Role="Subtitle" Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"
+                <TextBlock x:Name="SelectedSourceText" views:DetailHeaderPanel.Role="Subtitle" Text="{Binding SelectedSource}" FontSize="12" Foreground="{DynamicResource RhiAccentBrush}" Margin="0,4,0,0"
                            TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedSource}"/>
               </StackPanel>
             </DockPanel>
@@ -170,7 +177,7 @@
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
               <Button views:DetailHeaderPanel.Role="Action" Content="{DynamicResource Ui.Play}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
                       ToolTip.Tip="{Binding LaunchToolTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"
-                      Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1"
+                      Background="{DynamicResource RhiButtonBrush}" Foreground="{DynamicResource RhiButtonTextBrush}" BorderBrush="{DynamicResource RhiButtonBorderBrush}" BorderThickness="1"
                       CornerRadius="8" Padding="16,8"/>
             </WrapPanel>
           </views:DetailHeaderPanel>
@@ -181,11 +188,11 @@
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel>
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                  <TextBlock Grid.Column="0" Text="≡" Tag="Runtime" FontSize="18" Foreground="#6B7A8E"
+                  <TextBlock Grid.Column="0" Text="≡" Tag="Runtime" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.ExecutionGame}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.ExecutionGame}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{DynamicResource Ui.ExecutionGameNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="RuntimeSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
@@ -196,25 +203,25 @@
                 <!-- Label/value form; labels move above their values below ~760 px of detail width. -->
                 <views:LabelValuePanel x:Name="RuntimeSectionBody" Margin="0,10,0,0" ColumnSpacing="18" RowSpacing="8" StackBelow="678">
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource Ui.Launcher}" Classes="muted"/>
-                  <views:MiddleEllipsisText Grid.Row="0" Grid.Column="1" FullText="{Binding SelectedLaunchExecutable}" Foreground="#A0AABB"/>
+                  <views:MiddleEllipsisText Grid.Row="0" Grid.Column="1" FullText="{Binding SelectedLaunchExecutable}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
 
                   <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource Ui.TargetSafety}" Classes="muted"/>
-                  <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PatchTargetStatusText}" Foreground="#4DC9E6" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PatchTargetStatusText}" Foreground="{DynamicResource RhiAccentBrush}" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource Ui.GameRoot}" Classes="muted"/>
-                  <views:MiddleEllipsisText Grid.Row="2" Grid.Column="1" FullText="{Binding SelectedInstallPath}" Foreground="#A0AABB"/>
+                  <views:MiddleEllipsisText Grid.Row="2" Grid.Column="1" FullText="{Binding SelectedInstallPath}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
 
                   <TextBlock Grid.Row="3" Grid.Column="0" Text="{DynamicResource Ui.Prefix}" Classes="muted"/>
-                  <views:MiddleEllipsisText Grid.Row="3" Grid.Column="1" FullText="{Binding SelectedPrefix}" Foreground="#A0AABB"/>
+                  <views:MiddleEllipsisText Grid.Row="3" Grid.Column="1" FullText="{Binding SelectedPrefix}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
 
                   <TextBlock Grid.Row="4" Grid.Column="0" Text="{DynamicResource Ui.TargetExe}" Classes="muted"/>
-                  <views:MiddleEllipsisText Grid.Row="4" Grid.Column="1" FullText="{Binding SelectedExecutable}" Foreground="#A0AABB"/>
+                  <views:MiddleEllipsisText Grid.Row="4" Grid.Column="1" FullText="{Binding SelectedExecutable}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
 
                   <TextBlock Grid.Row="5" Grid.Column="0" Text="{DynamicResource Ui.PatchDirectory}" Classes="muted"/>
-                  <views:MiddleEllipsisText Grid.Row="5" Grid.Column="1" FullText="{Binding SelectedBinaryDirectory}" Foreground="#A0AABB"/>
+                  <views:MiddleEllipsisText Grid.Row="5" Grid.Column="1" FullText="{Binding SelectedBinaryDirectory}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
 
                   <TextBlock Grid.Row="6" Grid.Column="0" Text="{DynamicResource Ui.GraphicsApi}" Classes="muted"/>
-                  <TextBlock Grid.Row="6" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApi}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="6" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApi}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="7" Grid.Column="0" Text="{DynamicResource Ui.ForceApi}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
                   <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
@@ -226,7 +233,7 @@
                                 <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
                               </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <TextBlock Text="{Binding GraphicsApiOverrideHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding GraphicsApiOverrideHint}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="8" Grid.Column="0" Text="{DynamicResource Ui.LumaMode}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
@@ -239,8 +246,8 @@
                                 <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
                               </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <TextBlock Text="{Binding LumaPolicyText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding LumaCoexistenceText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding LumaPolicyText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding LumaCoexistenceText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
                   </StackPanel>
 
                   <!-- #251: the HDR section only for games that can use HDR; why it shows lives in the label's 2 s tooltip. -->
@@ -258,8 +265,8 @@
                       <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}"
                               IsVisible="{Binding ShowHdrLaunchProfile}" Padding="10,5"/>
                     </WrapPanel>
-                    <TextBlock Text="{Binding HdrProfileHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap" IsVisible="{Binding ShowHdrLaunchProfile}"/>
+                    <TextBlock Text="{Binding HdrProfileHint}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="{DynamicResource RhiAccentBrush}" FontSize="10" TextWrapping="Wrap" IsVisible="{Binding ShowHdrLaunchProfile}"/>
                   </StackPanel>
 
                   <!-- #191 resolution auto-toggle (saved with the HDR profile). w12/hdr-wsi (#251 correction): its own row, so it stays
@@ -272,35 +279,35 @@
                   <!-- w11/nr-check (#234, owner pick A'): "Check…" right after the recommendation text, wrapping under it when the
                        line is too narrow; hidden where the page would have nothing to show. -->
                   <WrapPanel Grid.Row="11" Grid.Column="1" Orientation="Horizontal" ItemSpacing="12" LineSpacing="6">
-                    <TextBlock DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <TextBlock DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="{DynamicResource RhiButtonTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                     <Button x:Name="NeuralRenderingCheckButton" Classes="rhi" Padding="12,4" VerticalAlignment="Center"
                             Content="{Binding NrCheck.ButtonText}" Command="{Binding NrCheck.OpenCommand}" IsVisible="{Binding NrCheck.IsAvailable}"
                             ToolTip.Tip="{Binding NrCheck.ButtonTip}" ToolTip.ShowDelay="2000"/>
                   </WrapPanel>
 
                   <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
-                  <TextBlock Grid.Row="12" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="12" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
-                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="#6B7A8E" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="{DynamicResource RhiMutedTextBrush}" TextWrapping="Wrap"/>
                 </views:LabelValuePanel>
               </StackPanel>
             </Border>
 
-            <Border x:Name="DlssStreamlineSection" Tag="DlssStreamline" Classes="card" BorderBrush="#1E4858"
+            <Border x:Name="DlssStreamlineSection" Tag="DlssStreamline" Classes="card" BorderBrush="{DynamicResource RhiAccentBorderBrush}"
                     DataContext="{Binding Dlss}" x:DataType="vm:DlssPanelViewModel"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
-                  <TextBlock Grid.Column="0" Text="≡" Tag="DlssStreamline" FontSize="18" Foreground="#6B7A8E"
+                  <TextBlock Grid.Column="0" Text="≡" Tag="DlssStreamline" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.DlssStreamline}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.DlssStreamline}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{Binding DlssStatusSummary}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                   </StackPanel>
-                  <Border Grid.Column="2" Background="#122830" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="8" Padding="10,5" MaxHeight="40">
-                    <TextBlock Text="{DynamicResource Ui.GameDlls}" Foreground="#4DC9E6" FontSize="11"/>
+                  <Border Grid.Column="2" Background="{DynamicResource RhiAccentTintBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,5" MaxHeight="40">
+                    <TextBlock Text="{DynamicResource Ui.GameDlls}" Foreground="{DynamicResource RhiAccentBrush}" FontSize="11"/>
                   </Border>
                   <Button x:Name="DlssStreamlineSectionToggle" Grid.Column="3" Tag="DlssStreamline" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
@@ -312,51 +319,51 @@
                        grow to a longer selected label: a closed ComboBox clips a long label with no ellipsis. -->
                   <StackPanel Spacing="7">
                     <views:ResponsiveRow Columns="170,*,145,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.SuperResolution}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                      <TextBlock Text="{DynamicResource Ui.SuperResolution}" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssSrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
-                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                        <TextBlock Text="{Binding DlssSrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="{DynamicResource RhiBadgeBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssSrDeploymentState}" Foreground="{DynamicResource RhiButtonTextBrush}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
                       <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding CanSwapDlssSr}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding CanSwapDlssSr}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.RayReconstruction}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                      <TextBlock Text="{DynamicResource Ui.RayReconstruction}" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssRrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
-                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                        <TextBlock Text="{Binding DlssRrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="{DynamicResource RhiBadgeBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssRrDeploymentState}" Foreground="{DynamicResource RhiButtonTextBrush}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
                       <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding CanSwapDlssRr}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding CanSwapDlssRr}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.FrameGeneration}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                      <TextBlock Text="{DynamicResource Ui.FrameGeneration}" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssFgPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
-                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                        <TextBlock Text="{Binding DlssFgDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="{DynamicResource RhiBadgeBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssFgDeploymentState}" Foreground="{DynamicResource RhiButtonTextBrush}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
                       <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding CanSwapDlssFg}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding CanSwapDlssFg}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.NeuralRendering}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                      <TextBlock Text="{DynamicResource Ui.NeuralRendering}" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssNrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
-                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                        <TextBlock Text="{Binding DlssNrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="{DynamicResource RhiBadgeBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssNrDeploymentState}" Foreground="{DynamicResource RhiButtonTextBrush}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
                       <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding CanSwapDlssNr}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding CanSwapDlssNr}"/>
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.StreamlineUpdate}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
+                      <TextBlock Text="{DynamicResource Ui.StreamlineUpdate}" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
                                  ToolTip.Tip="{DynamicResource Ui.StreamlineUpdateNote}"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding StreamlinePath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
-                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                        <TextBlock Text="{Binding StreamlineDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="{DynamicResource RhiBadgeBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding StreamlineDeploymentState}" Foreground="{DynamicResource RhiButtonTextBrush}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                       </Border>
                       <ComboBox Grid.Column="3" MinWidth="190" ItemsSource="{Binding StreamlineVersions}" SelectedItem="{Binding SelectedStreamlineVersion}" IsEnabled="{Binding CanSwapStreamline}"/>
                       <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapStreamlineCommand}" IsEnabled="{Binding CanSwapStreamline}"/>
@@ -380,20 +387,32 @@
                             ToolTip.Tip="{Binding Nvidia.ButtonTip}" ToolTip.ShowDelay="2000"/>
                   </views:ResponsiveRow>
 
+                  <!-- w14/ui-logic (#310): the game's FPS Limit (upstream Driver Settings › FPS Limit), set through DXVK /
+                       VKD3D-Proton launch variables; shown for Wine/Proton games whose launcher takes them. -->
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding FrameRateLimit.IsShown}">
+                    <TextBlock Text="{l:T Fps.Label}" VerticalAlignment="Center" Classes="muted"/>
+                    <ComboBox x:Name="FpsLimitCombo" ItemsSource="{Binding FrameRateLimit.Choices}" SelectedItem="{Binding FrameRateLimit.Selected}"
+                              MinWidth="220" MaxDropDownHeight="300" ToolTip.Tip="{Binding FrameRateLimit.Tip}" ToolTip.ShowDelay="2000"/>
+                    <TextBox x:Name="FpsLimitCustom" Text="{Binding FrameRateLimit.CustomText}" PlaceholderText="20–1000" Width="90"
+                             IsVisible="{Binding FrameRateLimit.IsCustomEntry}"/>
+                    <Button Classes="rhi" Content="{l:T Fps.Set}" Command="{Binding FrameRateLimit.ApplyCustomCommand}"
+                            IsVisible="{Binding FrameRateLimit.IsCustomEntry}"/>
+                  </StackPanel>
+
                   <TextBlock Text="{DynamicResource Ui.DlssNote}" Classes="muted" TextWrapping="Wrap"/>
                 </StackPanel>
               </StackPanel>
             </Border>
 
-            <Border x:Name="ReShadeProfileSection" Tag="ReShadeProfile" Classes="card" BorderBrush="#2A4468"
+            <Border x:Name="ReShadeProfileSection" Tag="ReShadeProfile" Classes="card" BorderBrush="{DynamicResource RhiButtonBorderBrush}"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                  <TextBlock Grid.Column="0" Text="≡" Tag="ReShadeProfile" FontSize="18" Foreground="#6B7A8E"
+                  <TextBlock Grid.Column="0" Text="≡" Tag="ReShadeProfile" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.ReShadeProfile}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.ReShadeProfile}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{DynamicResource Ui.ReShadeProfileNote}"
                                Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                   </StackPanel>
@@ -407,7 +426,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                       <Button Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}" Command="{Binding ReShadeProfile.CheckReShadeUpdateCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
                       <Button Content="{DynamicResource Ui.ApplyUpdate}" Command="{Binding ReShadeProfile.ApplyReShadeProfileCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"
-                              Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1" CornerRadius="8" Padding="14,7"/>
+                              Background="{DynamicResource RhiButtonBrush}" Foreground="{DynamicResource RhiButtonTextBrush}" BorderBrush="{DynamicResource RhiButtonBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,7"/>
                     </StackPanel>
                   </Grid>
 
@@ -498,7 +517,7 @@
                     </StackPanel>
                   </Grid>
 
-                  <Border Background="#0D141C" BorderBrush="#223247" BorderThickness="1" CornerRadius="7" Padding="10"
+                  <Border Background="{DynamicResource RhiPanelInsetBrush}" BorderBrush="{DynamicResource RhiPanelInsetBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="10"
                           DataContext="{Binding Extras}" x:DataType="vm:ExtrasViewModel">
                     <StackPanel Spacing="7">
                       <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
@@ -590,18 +609,18 @@
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
-                  <TextBlock Grid.Column="0" Text="≡" Tag="ManagedComponents" FontSize="18" Foreground="#6B7A8E"
+                  <TextBlock Grid.Column="0" Text="≡" Tag="ManagedComponents" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.ManagedComponents}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.ManagedComponents}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{DynamicResource Ui.ManagedComponentsNote}"
                                Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ManagedComponentsSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
-                  <Border Grid.Column="2" Background="#122818" BorderBrush="#1E4028" BorderThickness="1" CornerRadius="8" Padding="10,5" MaxHeight="40">
-                    <TextBlock Text="{DynamicResource Ui.LinuxBackendActive}" Foreground="#5ECB7D" FontSize="11"/>
+                  <Border Grid.Column="2" Background="{DynamicResource RhiInstalledTintBrush}" BorderBrush="{DynamicResource RhiInstalledBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,5" MaxHeight="40">
+                    <TextBlock Text="{DynamicResource Ui.LinuxBackendActive}" Foreground="{DynamicResource RhiInstalledBrush}" FontSize="11"/>
                   </Border>
                   <Button x:Name="ManagedComponentsSectionToggle" Grid.Column="3" Tag="ManagedComponents" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
@@ -610,16 +629,16 @@
                 <ItemsControl x:Name="ManagedComponentsSectionBody" ItemsSource="{Binding Components}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:ComponentRowViewModel">
-                      <Border Background="#101820" BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="14,11">
+                      <Border Background="{DynamicResource RhiRowBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="14,11">
                         <StackPanel Spacing="6">
                           <!-- w12/luma (#245 correction 2): Nexus → ⚙ → Install/Remove → ⓘ, each in its own column. The ⚙ → Install/Remove → ⓘ
                                order and columns are the ones every row had before; only the Nexus column (3) is new, and it takes no
                                spacing when its button is hidden, so every row without it lays out exactly as before. -->
                           <views:ResponsiveRow Columns="220,180,*,Auto,Auto,Auto,Auto" ColumnSpacing="12" LineSpacing="8" HeadColumns="2" MinStarWidth="160" SkipEmptyColumns="3">
                             <!-- Names wider than the 220 px column end in a word ellipsis; the full name is in a 2 s tooltip. -->
-                            <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
+                            <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold" VerticalAlignment="Center"
                                        TextTrimming="WordEllipsis" ToolTip.Tip="{Binding Name}" ToolTip.ShowDelay="2000"/>
-                            <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="#5ECB7D" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource RhiInstalledBrush}" FontSize="12" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="2" Text="{Binding Note}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
                             <Button Grid.Column="3" Classes="rhi" Content="{Binding LumaNexus.Label}" IsVisible="{Binding LumaNexus.IsVisible}" Command="{Binding LumaNexus.Command}" CommandParameter="{Binding LumaNexus.Url}" ToolTip.Tip="{Binding LumaNexus.Tip}" ToolTip.ShowDelay="2000" Padding="10,6"/><!-- w12/luma (#245): Nexus-only Luma mod; opens its Nexus page, downloads nothing -->
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasRenoDxSettings}"
@@ -673,16 +692,16 @@
               </StackPanel>
             </Border>
 
-            <Border x:Name="ExtrasSection" Tag="Extras" Classes="card" BorderBrush="#3A3348"
+            <Border x:Name="ExtrasSection" Tag="Extras" Classes="card" BorderBrush="{DynamicResource RhiExtrasBorderBrush}"
                     DataContext="{Binding Extras}" x:DataType="vm:ExtrasViewModel"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                  <TextBlock Grid.Column="0" Text="≡" Tag="Extras" FontSize="18" Foreground="#6B7A8E"
+                  <TextBlock Grid.Column="0" Text="≡" Tag="Extras" FontSize="18" Foreground="{DynamicResource RhiMutedTextBrush}"
                              VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="{DynamicResource Ui.Extras}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.Extras}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"/>
                     <TextBlock Text="{DynamicResource Ui.ExtrasNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ExtrasSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
@@ -693,11 +712,11 @@
                 <StackPanel x:Name="ExtrasSectionBody" Spacing="10">
                   <views:ResponsiveRow Columns="150,150,190,Auto,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                      <TextBlock Text="Ultimate ASI Loader" Foreground="#E8ECF2" FontWeight="SemiBold"/>
+                      <TextBlock Text="Ultimate ASI Loader" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold"/>
                       <TextBlock Text="{DynamicResource Ui.WineProtonProxy}" Classes="muted" FontSize="10"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Column="1" Text="{Binding UalStatusText}" Foreground="#5ECB7D"
+                    <TextBlock Grid.Column="1" Text="{Binding UalStatusText}" Foreground="{DynamicResource RhiInstalledBrush}"
                                VerticalAlignment="Center" TextWrapping="Wrap"/>
 
                     <ComboBox Grid.Column="2"
@@ -725,13 +744,13 @@
                   <TextBlock Text="{Binding UalProxyHint}" Classes="muted" TextWrapping="Wrap"/>
                   <TextBlock Text="{Binding UalLatestVersionText}" Classes="muted" TextWrapping="Wrap"/>
 
-                  <Border Height="1" Background="#2A3038" Margin="0,4"/>
+                  <Border Height="1" Background="{DynamicResource RhiDividerBrush}" Margin="0,4"/>
                   <views:ResponsiveRow Columns="150,180,190,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                      <TextBlock Text="ShortFuse / DLSS FG" Foreground="#E8ECF2" FontWeight="SemiBold"/>
+                      <TextBlock Text="ShortFuse / DLSS FG" Foreground="{DynamicResource RhiTextBrush}" FontWeight="SemiBold"/>
                       <TextBlock Text="{DynamicResource Ui.PerGameOrchestration}" Classes="muted" FontSize="10"/>
                     </StackPanel>
-                    <TextBlock Grid.Column="1" Text="{Binding ShortFuseStatusText}" Foreground="#5ECB7D" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Column="1" Text="{Binding ShortFuseStatusText}" Foreground="{DynamicResource RhiInstalledBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     <CheckBox Grid.Column="2" Content="{DynamicResource Ui.AutoAsiConfig}" IsChecked="{Binding ShortFuseAutoConfigEnabled}"
                               IsEnabled="{Binding CanConfigureShortFuse}" VerticalAlignment="Center"
                               ToolTip.Tip="{DynamicResource Ui.ShortFuseAutoTip}"/>
@@ -759,10 +778,10 @@
         </Grid>
       </ScrollViewer>
 
-      <Border Grid.ColumnSpan="2" Background="#0D1015" Opacity="0.96" IsVisible="{Binding IsBusy}" ZIndex="20">
+      <Border Grid.ColumnSpan="2" Background="{DynamicResource RhiStatusBarBrush}" Opacity="0.96" IsVisible="{Binding IsBusy}" ZIndex="20">
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
           <ProgressBar IsIndeterminate="True" Width="280" Height="4"/>
-          <TextBlock Text="{DynamicResource Ui.Processing}" Foreground="#A0AABB"/>
+          <TextBlock Text="{DynamicResource Ui.Processing}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
           <!-- Stops the running operation (Refs #77); hidden for operations that cannot stop part-way. -->
           <Button Classes="rhi" Content="{DynamicResource Ui.CancelOperation}" HorizontalAlignment="Center"
                   Command="{Binding Operations.CancelCommand}" IsVisible="{Binding Operations.CanCancel}"/>
@@ -773,16 +792,16 @@
     <!-- The overlay backdrop continues over the status bar (same dim); a click there closes the overlay too. -->
     <Border x:Name="StatusBarBackdrop" Classes="libraryBackdrop" Grid.Row="2" IsVisible="False" ZIndex="1"
             PointerPressed="LibraryBackdrop_PointerPressed"/>
-    <Border x:Name="StatusBar" Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
+    <Border x:Name="StatusBar" Grid.Row="2" Padding="12,6" Background="{DynamicResource RhiStatusBarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,1,0,0">
       <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
         <!-- #293: games found in the custom game folders; a link, never a modal (upstream 2.9.0's status-bar notice). -->
         <Button x:Name="CustomGamesNotice" Content="{Binding CustomGamesNoticeText}" IsVisible="{Binding ShowCustomGamesNotice}"
                 ToolTip.Tip="{Binding CustomGamesNoticeTip}" Click="CustomGamesNotice_Click" Background="Transparent" BorderThickness="0"
-                Padding="0" FontSize="10" Foreground="#4DA3FF" Cursor="Hand" VerticalAlignment="Center"/>
-        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
+                Padding="0" FontSize="10" Foreground="{DynamicResource RhiLinkBrush}" Cursor="Hand" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
         <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
-        <TextBlock x:Name="ProductVersionText" Grid.Column="2" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"
+        <TextBlock x:Name="ProductVersionText" Grid.Column="2" Text="{Binding ProductVersionText}" Foreground="{DynamicResource RhiFaintTextBrush}" FontSize="10"
                    Cursor="Hand" Tapped="ProductVersion_Tapped"/>
       </Grid>
     </Border>

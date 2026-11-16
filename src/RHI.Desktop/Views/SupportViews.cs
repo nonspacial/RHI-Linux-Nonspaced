@@ -187,7 +187,7 @@ internal static class ChangelogText
             Margin = new Thickness(0, level is 1 or 2 ? 10 : 0, 0, 0),
             Opacity = level > 0 ? 1 : 0.86
         };
-        if (level is 1 or 2) block.Foreground = Brushes.LightSkyBlue;
+        if (level is 1 or 2) block.Classes.Add("headingText");
         return block;
     }
 
@@ -264,7 +264,7 @@ public sealed partial class MainWindow
         var panel = new StackPanel { Spacing = 10, Margin = new Thickness(18) };
         void Heading(string key) => panel.Children.Add(new TextBlock
         {
-            Text = T(key), FontSize = 17, FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 8, 0, 0)
+            Text = T(key), FontSize = 17, FontWeight = FontWeight.SemiBold, Classes = { "headingText" }, Margin = new Thickness(0, 8, 0, 0)
         });
         void Text(string text, double opacity = 0.86) => panel.Children.Add(new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Opacity = opacity });
 

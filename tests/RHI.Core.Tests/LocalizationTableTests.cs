@@ -18,7 +18,8 @@ public sealed class LocalizationTableTests
         "Ui.Dlssg2030Title", // w14/extras-fg (#281): the mod's name, as Universal MFG Unlocker's
         "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra",
         "Ui.UpliftVersion", "Ui.UpliftLaunchpad", "Ui.UpliftLink", "Uplift.CardTitle", // w14/nr (#274): product names
-        "Ui.Dlss5ToolFoveated", "Ui.Dlss5ToolFoveatedLink" // w14/nr-2 (#276): the build's and project's names
+        "Ui.Dlss5ToolFoveated", "Ui.Dlss5ToolFoveatedLink", // w14/nr-2 (#276): the build's and project's names
+        "Theme.Kiro" // w14/ui-logic (#301): the theme is named after the Kiro IDE
     };
 
     private static readonly Regex PortugueseLetters = new("[ãõçáâêôíúéóàÃÕÇÁÂÊÔÍÚÉÓÀ]");

@@ -5,21 +5,9 @@
              x:Class="RHI.Desktop.App"
              RequestedThemeVariant="Dark">
   <Application.Resources>
+    <!-- #301: the colour brushes (RhiBackgroundBrush, RhiTextBrush, …) are put here at start-up by Theming/ThemeResources,
+         in the default look or the saved colour theme, and replaced when the theme changes. Use them as DynamicResource. -->
     <ResourceDictionary>
-      <SolidColorBrush x:Key="RhiBackgroundBrush">#121518</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiSurfaceBrush">#141820</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiControlBrush">#151A22</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiControlHoverBrush">#1A2430</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiControlPressedBrush">#102331</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiBorderBrush">#1E2630</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiAccentBorderBrush">#1E4858</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiAccentBrush">#4DC9E6</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiTextBrush">#E8ECF2</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiSecondaryTextBrush">#A0AABB</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiMutedTextBrush">#6B7A8E</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiRemoveBackgroundBrush">#281818</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiRemoveForegroundBrush">#E07A7A</SolidColorBrush>
-      <SolidColorBrush x:Key="RhiRemoveBorderBrush">#563030</SolidColorBrush>
     </ResourceDictionary>
   </Application.Resources>
 
@@ -29,7 +17,7 @@
       <StackPanel Spacing="12" Margin="18">
         <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"/>
         <TextBlock Text="{Binding Intro}" TextWrapping="Wrap" Opacity="0.76"/>
-        <TextBlock Text="{Binding RouteNote}" TextWrapping="Wrap" Foreground="#D7B65A" IsVisible="{Binding HasRouteNote}"/>
+        <TextBlock Text="{Binding RouteNote}" TextWrapping="Wrap" Foreground="{DynamicResource RhiWarningTextBrush}" IsVisible="{Binding HasRouteNote}"/>
         <Grid ColumnDefinitions="220,*" ColumnSpacing="12" IsVisible="{Binding HasGpu}">
           <TextBlock Text="{Binding GpuLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
           <ComboBox Grid.Column="1" ItemsSource="{Binding GpuOptions}" SelectedItem="{Binding SelectedGpu}" MinWidth="{Binding GpuMinWidth}"
@@ -62,7 +50,7 @@
               <StackPanel Margin="0,0,0,8">
                 <TextBlock Text="{Binding Text}" FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding IsHeading}" Margin="0,4,0,0"/>
                 <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding IsPlain}"/>
-                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="#D7B65A" IsVisible="{Binding IsWarning}"/>
+                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource RhiWarningTextBrush}" IsVisible="{Binding IsWarning}"/>
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -113,7 +101,7 @@
         </StackPanel>
         <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.82"/>
         <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" IsVisible="{Binding FooterIsPlain}"/>
-        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Foreground="#D7B65A" Opacity="0.78" IsVisible="{Binding FooterIsWarning}"/>
+        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource RhiWarningTextBrush}" Opacity="0.78" IsVisible="{Binding FooterIsWarning}"/>
       </StackPanel>
     </DataTemplate>
     <!-- Dialogs moved out of the main window's code-behind (epic #89): Views/Dialogs/*.axaml. -->
@@ -179,15 +167,15 @@
     </Style>
     <Style Selector="Button:pointerover">
       <Setter Property="Background" Value="{DynamicResource RhiControlHoverBrush}"/>
-      <Setter Property="BorderBrush" Value="#2A6378"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentStrongBrush}"/>
     </Style>
     <Style Selector="Button:pressed">
       <Setter Property="Background" Value="{DynamicResource RhiControlPressedBrush}"/>
     </Style>
     <Style Selector="Button:disabled">
-      <Setter Property="Background" Value="#17191D"/>
-      <Setter Property="Foreground" Value="#626A75"/>
-      <Setter Property="BorderBrush" Value="#292D34"/>
+      <Setter Property="Background" Value="{DynamicResource RhiDisabledBackgroundBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiDisabledTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiDisabledBorderBrush}"/>
       <Setter Property="Opacity" Value="0.55"/>
     </Style>
 
@@ -202,24 +190,66 @@
       <Setter Property="BorderBrush" Value="{DynamicResource RhiRemoveBorderBrush}"/>
     </Style>
     <Style Selector="Button.rhi:disabled">
-      <Setter Property="Background" Value="#17191D"/>
-      <Setter Property="Foreground" Value="#626A75"/>
-      <Setter Property="BorderBrush" Value="#292D34"/>
+      <Setter Property="Background" Value="{DynamicResource RhiDisabledBackgroundBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiDisabledTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiDisabledBorderBrush}"/>
       <Setter Property="Opacity" Value="0.55"/>
     </Style>
     <Style Selector="Button.chip">
-      <Setter Property="Background" Value="#1A2030"/>
-      <Setter Property="Foreground" Value="#8898B0"/>
+      <Setter Property="Background" Value="{DynamicResource RhiChipBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiChipTextBrush}"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="CornerRadius" Value="7"/>
       <Setter Property="Padding" Value="10,5"/>
       <Setter Property="FontSize" Value="11"/>
     </Style>
     <Style Selector="Button.chip:pointerover">
-      <Setter Property="Background" Value="#202A3A"/>
-      <Setter Property="Foreground" Value="#B8C9E0"/>
+      <Setter Property="Background" Value="{DynamicResource RhiChipHoverBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiChipHoverTextBrush}"/>
     </Style>
 
+    <!-- #300: the active collection chip; #193's custom filter chips use the same look. -->
+    <Style Selector="Button.chip.active">
+      <Setter Property="Background" Value="{DynamicResource RhiChipActiveBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiChipActiveTextBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).error">
+      <Setter Property="Foreground" Value="{DynamicResource RhiErrorTextBrush}"/>
+    </Style>
+    <!-- #301: code-built views take their colours from these classes, so they follow the colour theme. -->
+    <Style Selector="Button.chip.customFilterSave">
+      <Setter Property="Foreground" Value="{DynamicResource RhiChipSaveTextBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).warningText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiWarningTextBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).warningStatusText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiWarningBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).alertText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiAlertBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).installedText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiInstalledBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).updateText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiUpdateBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).linkText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiLinkBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).mutedText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <Style Selector=":is(TextBlock).headingText">
+      <Setter Property="Foreground" Value="{DynamicResource RhiHeadingBrush}"/>
+    </Style>
+    <Style Selector="Border.divider">
+      <Setter Property="Background" Value="{DynamicResource RhiBorderBrush}"/>
+    </Style>
+    <Style Selector="Border.dividerStrong">
+      <Setter Property="Background" Value="{DynamicResource RhiDividerBrush}"/>
+    </Style>
     <Style Selector="TextBox">
       <Setter Property="Background" Value="{DynamicResource RhiControlBrush}"/>
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
@@ -227,7 +257,7 @@
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="8"/>
       <Setter Property="Padding" Value="10,7"/>
-      <Setter Property="SelectionBrush" Value="#2A6378"/>
+      <Setter Property="SelectionBrush" Value="{DynamicResource RhiAccentStrongBrush}"/>
     </Style>
     <Style Selector="TextBox:focus">
       <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBrush}"/>
@@ -257,16 +287,16 @@
     </Style>
     <Style Selector="TabItem">
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
-      <Setter Property="Background" Value="#101419"/>
+      <Setter Property="Background" Value="{DynamicResource RhiSidebarBrush}"/>
       <Setter Property="Padding" Value="12,7"/>
     </Style>
     <Style Selector="TabItem:selected">
       <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
-      <Setter Property="Background" Value="#14212A"/>
+      <Setter Property="Background" Value="{DynamicResource RhiSelectedTabBrush}"/>
     </Style>
 
     <Style Selector="ToolTip">
-      <Setter Property="Background" Value="#101419"/>
+      <Setter Property="Background" Value="{DynamicResource RhiSidebarBrush}"/>
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
@@ -276,7 +306,7 @@
     <!-- The toolbar '…' overflow menu and the library card menu use the tooltip surface and the button text colour
          (scoped: other menus, e.g. text-box context menus, keep the theme defaults). -->
     <Style Selector="MenuFlyoutPresenter.toolbarOverflow">
-      <Setter Property="Background" Value="#101419"/>
+      <Setter Property="Background" Value="{DynamicResource RhiSidebarBrush}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="8"/>
@@ -288,7 +318,7 @@
 
     <Style Selector="Border.card">
       <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
-      <Setter Property="BorderBrush" Value="#1E2430"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiCardBorderBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="10"/>
       <Setter Property="Padding" Value="16"/>
