@@ -440,6 +440,28 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         }
     }
 
+    // ---- #283 Load ReShade as ASI (ReShade ⚙) --------------------------------------------------------
+
+    /// <summary>Whether the selected game's ReShade ⚙ shows "Load ReShade as ASI" (not for the Vulkan layer), and its value.</summary>
+    public (bool Offered, bool On) ReShadeAsiMode()
+        => vm.SelectedGame is { } game ? managed.ReShadeAsiMode(game) : (false, false);
+
+    /// <summary>
+    /// Turns "Load ReShade as ASI" on or off for the selected game; an installed ReShade is renamed with it. A refused or
+    /// failed rename leaves the setting as it was (the caller reads <see cref="ReShadeAsiMode"/> back).
+    /// </summary>
+    public async Task<string> SetReShadeAsiModeAsync(bool on)
+    {
+        if (vm.SelectedGame is not { } game) return Report(UiLocalizationService.Text("Vm.SelectGameFirst"));
+        using var op = vm.Operations.TryBegin("reshade-asi", cancellable: false);
+        if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await managed.SetReShadeAsiModeAsync(game, on, op.Token);
+        var line = Report(UiLocalizationService.Present(result.Message));
+        // The row, its DLL-name dropdown (locked while ReShade is an .asi) and the status line follow the new name.
+        if (result.Success) await ((IPanelHost)vm).ReprobeKeepingStatusAsync(game);
+        return line;
+    }
+
     // ---- #189 Luma ⚙ -------------------------------------------------------------------------------
 
     internal LumaSettingsService Luma => managed.LumaSettings ?? new LumaSettingsService(records, null, managed.IniWriteRefusal);

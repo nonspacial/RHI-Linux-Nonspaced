@@ -145,6 +145,7 @@ public static class ComponentIniDialog
             panel.Children.Add(confirm);
             panel.Children.Add(result);
         }
+        if (kind == ManagedComponentKind.ReShade && presenter.ReShadeAsiMode().Offered) panel.Children.Add(AsiSection(presenter, Show)); // #283
         if (kind == ManagedComponentKind.ReShade && presenter.PresetsApply()) panel.Children.Add(PresetSection(presenter, openFolder, Show)); // #180: RHI's ReShade only
 
         return new Window
@@ -157,6 +158,37 @@ public static class ComponentIniDialog
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
+    }
+
+    /// <summary>
+    /// #283 (upstream 2.8.9): the "Loading" section of ReShade's ⚙ with "Load ReShade as ASI" (Off / On). A change is applied
+    /// at once (ReShade renamed in place); a refused one goes back to what the game has. Hidden for the Vulkan layer.
+    /// </summary>
+    internal static Control AsiSection(IniPresetsPresenter presenter, Action<string> show)
+    {
+        var section = new StackPanel { Spacing = 8, Margin = new Avalonia.Thickness(0, 8, 0, 0) };
+        section.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.LoadingSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
+        var label = new TextBlock { Text = UiLocalizationService.Text("Ini.ReShadeAsi"), TextWrapping = TextWrapping.Wrap };
+        var asi = new ComboBox { Name = "ReShadeAsi", ItemsSource = OptionLists.OffOn.Items, MinWidth = 160, SelectedItem = OptionLists.OffOn.Display(presenter.ReShadeAsiMode().On) };
+        ToolTip.SetTip(asi, UiLocalizationService.Text("Ini.ReShadeAsiTip"));
+        ToolTip.SetShowDelay(asi, 2000);
+        var reverting = false;
+        asi.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            if (reverting || asi.SelectedItem is not string chosen) return;
+            asi.IsEnabled = false;
+            try { show(await presenter.SetReShadeAsiModeAsync(OptionLists.OffOn.Value(chosen))); }
+            finally
+            {
+                reverting = true;
+                asi.SelectedItem = OptionLists.OffOn.Display(presenter.ReShadeAsiMode().On);
+                reverting = false;
+                asi.IsEnabled = true;
+            }
+        }, nameof(ComponentIniDialog));
+        section.Children.Add(label);
+        section.Children.Add(asi);
+        return section;
     }
 
     /// <summary>

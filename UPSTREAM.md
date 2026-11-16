@@ -1480,3 +1480,26 @@ makes the check could-not-check and the update refuse, as for the proxy (#238). 
 Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
 MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
 release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane extras-addons)
+
+### #283 — Load ReShade as ASI (2.8.9)
+
+Upstream 2.8.9 `fdcc5b4` (`MainViewModel.ReShadeAsi`). ReShade's ⚙ has a "Loading" section with **Load ReShade as ASI**
+(Off / On). On renames RHI's ReShade to `ReShade64.asi` (`ReShade32.asi` on 32-bit games) for an ASI loader; RHI does
+not install a loader (ASI Loader in Extras, or the user's own). Installs and updates keep the name: the setting wins
+over the user's DLL name and the manifest's, and an installed ReShade keeps its recorded name on update. Off renames it
+back to the user's DLL name, else the automatic one (manifest, then the graphics API's). While it is on, the DLL-name
+dropdown is locked to the `.asi` name and says where to turn it off, as upstream greys it. Not offered for Vulkan games
+(ReShade runs there as a layer). The setting is stored per game beside the DLL-name choices (`dll-names.json`,
+`reshadeAsi`).
+
+Linux adaptation: an `.asi` gets no Wine DLL override (only an ASI loader loads it); the rename goes through the #196
+in-place rename, so the file, the Wine override (the old name's restored, none for the `.asi`), the saved setting and
+ReShade's record move in one journaled operation, and a refused or failed rename leaves the setting as it was.
+Deviations: upstream backs up a game file already at the target name as `.original` and renames over it; RHI Linux
+refuses and names the file (game files are never overwritten by a rename). The switch is refused, with the reason,
+while another component decides ReShade's name (the OptiScaler chain's `ReShade64.dll`, ShortFuse, the DirectX 9
+translation, DX9 HDR, the XNA GAC install). Without ReShade installed the ⚙ is not shown on Linux (the ⚙ is for an
+RHI-managed ReShade); the setting can still be saved through the service, and the DLL-name dropdown then shows the
+`.asi` name the install will use.

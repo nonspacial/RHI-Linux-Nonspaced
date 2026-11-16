@@ -109,6 +109,13 @@ public sealed partial class LinuxManagedComponentService
     public (IReadOnlyList<string> Targets, string? Refusal) OptiScalerRenameOptions(DetectedGame game)
         => _optiscaler.RenameOptions(game, OptiScalerProxyNamesFor(game));
 
+    /// <summary>#283: whether "Load ReShade as ASI" is offered on <paramref name="game"/> (not for the Vulkan layer) and on.</summary>
+    public (bool Offered, bool On) ReShadeAsiMode(DetectedGame game) => (_reshade.AsiModeOffered(game), _reshade.GetAsiMode(game));
+
+    /// <summary>#283: turns "Load ReShade as ASI" on or off; an installed ReShade is renamed in place with it.</summary>
+    public async Task<ComponentOperationResult> SetReShadeAsiModeAsync(DetectedGame game, bool on, CancellationToken cancellationToken = default)
+        => InstallGuard(game) ?? await _reshade.SetAsiModeAsync(game, on, cancellationToken).ConfigureAwait(false);
+
     /// <summary>
     /// Renames RHI's installed ReShade on <paramref name="game"/> to <paramref name="name"/> (null = Automatic) in place, in
     /// one journaled operation with its Wine override, record and saved choice (#196).

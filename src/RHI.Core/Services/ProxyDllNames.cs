@@ -19,12 +19,18 @@ public static class ProxyDllNames
     /// <summary>ShortFuse's loader name for ReShade (UAL loads it); a payload name, never offered.</summary>
     public const string ShortFuseAsiName = "ReShade64.asi";
 
+    /// <summary>#283 (upstream 2.8.9 "Load ReShade as ASI"): ReShade's 32-bit name for an ASI loader.</summary>
+    public const string ReShade32AsiName = "ReShade32.asi";
+
+    /// <summary>#283: ReShade's name when "Load ReShade as ASI" is on (upstream <c>AuxInstallService.RsAsiName</c>).</summary>
+    public static string AsiName(bool is32Bit) => is32Bit ? ReShade32AsiName : ShortFuseAsiName;
+
     // The names every build before #120 checked by signature (unchanged rules for them).
     private static readonly HashSet<string> SignatureCheckedBefore120 = new(StringComparer.OrdinalIgnoreCase)
         { "dxgi.dll", "d3d9.dll", "d3d11.dll", "opengl32.dll" };
 
     private static readonly HashSet<string> ReShadeOwnNames = new(StringComparer.OrdinalIgnoreCase)
-        { "ReShade64.dll", "ReShade32.dll", ShortFuseAsiName };
+        { "ReShade64.dll", "ReShade32.dll", ShortFuseAsiName, ReShade32AsiName };
 
     /// <summary>The offered spelling of <paramref name="name"/> (case-insensitive), or null when it is not offered.</summary>
     /// <remarks>Only bare offered file names pass, so a stored or remote value can never name another folder.</remarks>
@@ -65,9 +71,11 @@ public static class ProxyDllNames
     }
 
     /// <summary>True for the names Wine loads from the system: they need a per-game <c>native,builtin</c> override to
-    /// load from the game folder. ReShade's own names are only loaded by another mod (OptiScaler's LoadReshade).</summary>
+    /// load from the game folder. ReShade's own names are only loaded by another mod (OptiScaler's LoadReshade), and an
+    /// <c>.asi</c> only by an ASI loader (#283), never by Wine's loader.</summary>
     public static bool NeedsWineOverride(string name)
-        => !name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) && !name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase);
+        => !name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) && !name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase)
+           && !name.EndsWith(".asi", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether the file at <paramref name="path"/> is ReShade, judged as the component scan does: ReShade's own names

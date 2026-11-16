@@ -13,7 +13,11 @@ upstream's release leaves beta; until then its builds carry a beta label (such a
 
 ## In progress
 
-Not on `main` yet: nothing at the moment.
+Not on `main` yet:
+
+- Wave 14 — extras-addons
+  - ReShade's ⚙ has **Load ReShade as ASI** (upstream 2.8.9): ReShade becomes `ReShade64.asi` / `ReShade32.asi` for an
+    ASI loader, installs and updates keep that name, Off goes back to its DLL name. Not for Vulkan games (#283).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

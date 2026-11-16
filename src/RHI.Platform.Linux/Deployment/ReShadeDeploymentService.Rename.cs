@@ -49,6 +49,8 @@ public sealed partial class ReShadeDeploymentService
         var current = payload is null ? "ReShade" : Path.GetFileName(payload.Path);
         // w7 integration (#196 × #200): DX9 HDR moved ReShade to its Vulkan layer; it decides ReShade's place, so say so.
         if (record.Metadata.ContainsKey(MetaMovedByDxvkHdr)) return RenameMovedByDxvkHdrMessage;
+        // #283: "Load ReShade as ASI" decides the name while it is on (upstream greys the DLL-name dropdown).
+        if (_dllNames.GetReShadeAsi(game) && !ReShadeVulkanLayer.IsLayerRecord(record)) return AsiModeLocksNamePrefix + current;
         if (payload is null || ReShadeVulkanLayer.IsLayerRecord(record)
             || record.Metadata.TryGetValue(MetaShortFuseOriginalPayloadPath, out var shortFuse) && !string.IsNullOrWhiteSpace(shortFuse)
             || current.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase)

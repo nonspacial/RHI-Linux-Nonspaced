@@ -52,6 +52,32 @@ public sealed class DllNamePickerTests
         Assert.True(picker.CanReset); // winmm.dll is saved and d3d11.dll is not the automatic name
     }
 
+    // #283: "Load ReShade as ASI" decides the next install's name too, so the dropdown shows it, locked, and says why.
+    [Fact]
+    public async Task Picker_LoadReShadeAsAsiOn_LocksTheDropdownToTheAsiName_AndTheSettingIsSavedFromTheGear()
+    {
+        var (fx, game) = await StartAsync("Asi Picker Game");
+        using var _ = fx;
+        var picker = fx.Vm.DllNamePicker;
+        await SettledAsync(picker);
+        Assert.True(picker.CanChoose);
+        Assert.Equal((true, false), fx.Vm.IniPresets.ReShadeAsiMode());
+
+        var line = await fx.Vm.IniPresets.SetReShadeAsiModeAsync(true);
+        await ReselectAsync(fx, game, picker);
+
+        Assert.Equal(UiLocalizationService.Present(ReShadeDeploymentService.AsiModeSavedPrefix + "ReShade64.asi"), line);
+        Assert.Equal((true, true), fx.Vm.IniPresets.ReShadeAsiMode());
+        Assert.False(picker.CanChoose);
+        Assert.Equal("ReShade64.asi", Assert.Single(picker.Options).Value);
+        Assert.StartsWith("ReShade is loaded as an ASI", picker.Hint);
+
+        await fx.Vm.IniPresets.SetReShadeAsiModeAsync(false);
+        await ReselectAsync(fx, game, picker);
+        Assert.True(picker.CanChoose);
+        Assert.Null(picker.SelectedOption!.Value); // Automatic again
+    }
+
     [Fact]
     public async Task Picker_ChoosingAnotherName_RenamesTheInstalledReShade_AndResetPutsItBack()
     {
