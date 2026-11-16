@@ -1342,3 +1342,16 @@ the old `* [Game](…/discussions/N)` lines. Names are HTML-decoded (`Ratchet &a
 non-empty README in which no game is recognised already kept the last good cached copy (and a loaded copy through Full
 Refresh); tests now pin that for this list, so a further format change leaves the links as they were instead of removing
 them. The README as served on 2026-11-16 (138 games) is a test fixture.
+
+### #260 — OptiScaler F5 DLSSNR takes the renamed release zip (#157 follow-up)
+
+Upstream 2.9.1 `1f8a32e`. Since v0.1.37 janblade's F5 release names its package `v0.1.37-Optiscaler-F5.zip` instead of
+`OptiScaler-DLSSNR-F5-*.zip`, so the #157 rule above (that prefix only) found no package and every F5 install and update
+failed. Upstream now takes the first zip whose name contains "OptiScaler" and does not start with "Optional". RHI takes
+the one `.zip` whose name has "OptiScaler" and "F5" as a word of its own, does not start with "Optional" and is no
+forwarder, debug, symbol or source build (`OptiScalerPackageProvider.SelectF5AssetName`), so both name shapes install
+and the companions ("Optional-Vendor-Neutral-DLSS5-Forwarder.zip", "Optional-F5Low-Update-….zip", the troubleshooting
+`.md`) are never taken. Linux deviation: a release with two such packages (v0.1.28 published a test build beside the
+package) is refused and both names are shown; upstream takes whichever GitHub lists first. The asset list of v0.1.38
+(`/releases/latest` on 2026-11-16) is a test fixture; the lists of v0.1.37.2, v0.1.36, v0.1.30 and v0.1.28 are pinned in
+the tests.
