@@ -1392,3 +1392,28 @@ at RHI 2.8.8 (rhi-repo `9a9cf39`, the file's only commit, 13 games). Its games j
 ones (upstream's order), ✓ or 🔨 by `Status`, never over a named mod's row; Luma and Ultra+ merge into them by name.
 `Bitness` is not read (upstream ignores it as well). A database that cannot be loaded leaves those rows out and the
 dialog says so. Installing the Source add-on from RHI is not part of this (upstream added it in 2.9.3).
+
+<!-- w13/manifest notes -->
+
+### #258 — Manifest-only and Windows-only commits of the 2.8.8 release
+
+Nothing to port in code; each reaches Linux through the fetched manifest or does not apply. Pinned by
+`UpstreamManifest288ReleaseTests` with the entries copied from upstream's `manifest.json` at `RHI-2.8.8`.
+
+- `e40845a` Portal `installPathOverrides` → `bin`: applied by `UpstreamGameLibraryPolicyService` as every install path
+  override (inside the game root only, #45), so Portal's mods go into `bin`.
+- `2281a09`, `d4dba12` engine versions (DAEMON X MACHINA Unreal Engine 4.20.3, Phantom Blade Zero Unreal Engine 5.7.4):
+  `engineHintOverrides` become the game's engine hint, which the UE rules read (neither is in the DOF Fix range, UE
+  5.0–5.6).
+- `fc63285` Metro 2033 Redux `profileNameOverrides` and `cc08885` (manifest profile overrides win over upstream's cached
+  NVIDIA profile matches): not applicable. There is no NVIDIA driver profile under Wine/Proton (#16, #211: the DLSS
+  preset is RHI's own launch setting), and nothing in the fork reads `profileNameOverrides` or `profileExeExclusions`.
+- `b1f3396` (one commit after the tag, upstream's DLSS manifest): the Streamline entry's label is now `2.14.16.0`
+  instead of `2.14.16.0-v2` (same archive). The fork reads `dlss_manifest.json` from upstream's `main` and shows each
+  entry's `version` as its label, so the list shows `2.14.16.0` with no change here; the package is cached once more
+  under the new label.
+- `698956d`, `be3bee9` notes: upstream now tells users to add a GitHub Personal Access Token rather than "Sign in with
+  GitHub". The fork never had the sign-in (#163, #134 parked); the Settings note now says the token is recommended (it
+  was "Optional"), why (almost every download comes from GitHub; 60 requests an hour without it, 5,000 with it) and how
+  (github.com/settings/tokens → Generate new token (classic), any name and expiry, no scopes), as does the README.
+- `e97d1a5`, `7d9a715`, `edeafed`, `3689428` `pcgw_data.json` updates: fetched at runtime (#12), nothing to port.

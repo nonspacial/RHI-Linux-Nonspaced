@@ -667,7 +667,7 @@ internal static class UiStrings
         // w3/parity rows
         ("Parity.AccountsTab", "Contas e atualizações", "Accounts & updates"),
         ("Parity.GitHubTokenHeading", "Token do GitHub", "GitHub token"),
-        ("Parity.GitHubTokenNote", "Opcional. Com um token, o GitHub permite 5.000 consultas por hora em vez de 60. Use um token clássico sem permissões (scopes). Ele fica só neste computador, legível apenas pela sua conta.", "Optional. With a token GitHub allows 5,000 lookups an hour instead of 60. Use a classic token with no scopes. It stays on this computer, readable by your account only."),
+        ("Parity.GitHubTokenNote", "Recomendado. Quase tudo o que o RHI baixa vem do GitHub. Sem token, o GitHub permite 60 consultas por hora; quando acabam, instalações e verificações de atualização falham por um tempo. Com um token, são 5.000 por hora. Crie um em github.com/settings/tokens → Generate new token (classic): qualquer nome e validade, sem marcar nenhuma permissão (scope). Ele fica só neste computador, legível apenas pela sua conta.", "Recommended. Almost everything RHI downloads comes from GitHub. Without a token GitHub allows 60 lookups an hour; once they run out, installs and update checks fail for a while. With a token it allows 5,000 an hour. Create one at github.com/settings/tokens → Generate new token (classic): any name and expiry, every scope left unticked. It stays on this computer, readable by your account only."),
         ("Parity.GitHubTokenPlaceholder", "Cole o token aqui", "Paste the token here"),
         ("Parity.CheckAndSave", "Verificar e salvar", "Check and save"),
         ("Parity.GitHubTokenCheck", "Verificar o token salvo", "Check saved token"),
