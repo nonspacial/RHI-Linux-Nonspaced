@@ -1772,6 +1772,10 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.CannotChainPrefix, "Não foi possível encadear "),
         (RHI.Platform.Linux.Deployment.UltimateAsiLoaderDeploymentService.HookedBackupExistsSuffix,
             " já existe. O RHI não sobrescreve uma cópia de segurança Hooked existente. Mova ou apague esse arquivo, ou escolha outro nome de DLL, e instale de novo."),
+        // w13/addonpath rows
+        // #255: an add-on RHI put in reshade.ini's AddonPath folder; a same-named file in the game folder is not RHI's.
+        (RHI.Platform.Linux.Deployment.AddonPathFolder.LeftInGameFolderPrefix,
+            "Não é do RHI, então ficou na pasta do jogo (o ReShade carrega add-ons do AddonPath do reshade.ini, não de lá): "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

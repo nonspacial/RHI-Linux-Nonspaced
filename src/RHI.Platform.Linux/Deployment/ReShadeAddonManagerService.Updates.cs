@@ -133,7 +133,10 @@ public sealed partial class ReShadeAddonManagerService
         // #179: the update re-applies the game's effective set (Global follows the global add-ons); without a store, the record's.
         var selected = EffectiveSelectionFor(game) is { HeldByNoAddons: false } effective ? effective.Ids : SelectedIdsOf(record);
         var result = await ApplySelectionAsync(game, selected, cancellationToken).ConfigureAwait(false);
-        return result.Success ? result with { Message = UpdatedPrefix + selected.Count } : result;
+        if (!result.Success) return result;
+        // #255: the note naming a same-named add-on left in the game folder (not RHI's) stays on the update's line.
+        var note = result.Message.IndexOf(" · " + AddonPathFolder.LeftInGameFolderPrefix, StringComparison.Ordinal);
+        return result with { Message = UpdatedPrefix + selected.Count + (note >= 0 ? result.Message[note..] : "") };
     }
 
     /// <summary>What the add-on list's source for <paramref name="definition"/> is now (null = cannot tell). Network.</summary>

@@ -240,6 +240,44 @@ public sealed class NrCostScalerUpdateTests : IDisposable
                                       && e.FromVersion == "v1.0.6" && e.ToVersion == "v1.0.7");
     }
 
+    // #255 (upstream 2.8.8 54ec8f2): the companion add-on goes where ReShade loads add-ons, and moves there on update.
+    [Fact]
+    public async Task Install_PutsTheCompanionAddonInReShadesAddonPath()
+    {
+        File.WriteAllText(Path.Combine(Bin, "ReShade.ini"), "[ADDON]\nAddonPath=.\\addons\n");
+
+        await InstalledAsync();
+
+        var expected = Path.Combine(Bin, "addons", NrCostScalerService.CompanionAddonName);
+        Assert.True(File.Exists(expected));
+        Assert.False(File.Exists(Addon));
+        Assert.Contains(_records.Find(_game, ManagedComponentKind.NrCostScaler)!.Files, file => file.Path == expected);
+    }
+
+    [Fact]
+    public async Task Update_AfterAddonPathIsSet_MovesRhisAddonThere_AndTheRecordFollows()
+    {
+        var service = await InstalledAsync();
+        Assert.True(File.Exists(Addon));
+        File.WriteAllText(Path.Combine(Bin, "ReShade.ini"), "[ADDON]\nAddonPath=addons\n");
+        _tag = "v1.0.7";
+        _zip = Package("v1.0.7");
+
+        var update = await service.UpdateAsync(_game);
+
+        var moved = Path.Combine(Bin, "addons", NrCostScalerService.CompanionAddonName);
+        Assert.True(update.Success, update.Message);
+        Assert.False(File.Exists(Addon));
+        Assert.Equal("MZ addon v1.0.7", File.ReadAllText(moved));
+        var files = _records.Find(_game, ManagedComponentKind.NrCostScaler)!.Files;
+        Assert.Contains(files, file => file.Path == moved);
+        Assert.DoesNotContain(files, file => file.Path == Addon);
+
+        var removed = await service.RemoveAsync(_game);
+        Assert.True(removed.Success, removed.Message);
+        Assert.False(File.Exists(moved));
+    }
+
     private sealed class NeverRunning : IGameRunningProbe
     {
         public bool IsRunning(DetectedGame game) => false;

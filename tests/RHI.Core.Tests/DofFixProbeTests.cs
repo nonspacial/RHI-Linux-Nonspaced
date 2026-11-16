@@ -39,5 +39,25 @@ public sealed class DofFixProbeTests : IDisposable
         Assert.Equal(ComponentAvailability.Available, second.Single(x => x.Kind == ManagedComponentKind.RenoDX).Availability);
     }
 
+    // #255: the add-on in reshade.ini's AddonPath folder counts, also when that folder is outside the game tree.
+    [Fact]
+    public void ComponentProbe_FindsAddonsInTheAddonPathFolder()
+    {
+        var install = Path.Combine(_root, "game");
+        var addons = Path.Combine(_root, "shared-addons");
+        Directory.CreateDirectory(install);
+        Directory.CreateDirectory(addons);
+        File.WriteAllText(Path.Combine(addons, "renodx-universal_ue-dof-fix.addon64"), "x");
+        File.WriteAllText(Path.Combine(addons, "renodx-mfgunlock.addon64"), "x");
+        var game = new DetectedGame { Name = "Game", InstallPath = install, BinaryDirectory = install, Source = "Steam", Runner = "Proton" };
+
+        var without = ComponentProbe.Probe(game, []);
+        Assert.Equal(ComponentAvailability.Available, without.Single(x => x.Kind == ManagedComponentKind.DofFix).Availability);
+
+        var with = ComponentProbe.Probe(game, [], addonDirectory: addons);
+        Assert.Equal(ComponentAvailability.Installed, with.Single(x => x.Kind == ManagedComponentKind.DofFix).Availability);
+        Assert.Equal(ComponentAvailability.Installed, with.Single(x => x.Kind == ManagedComponentKind.MfgAdaUnlock).Availability);
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 }

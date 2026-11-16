@@ -11,12 +11,16 @@ public static class ComponentProbe
     public static IReadOnlyList<ManagedComponent> Probe(
         DetectedGame game,
         IReadOnlyList<string>? indexedFiles = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? addonDirectory = null)
     {
         if (!game.HasConfirmedPatchTarget && game.RequiresExplicitPatchTarget)
             indexedFiles ??= Array.Empty<string>();
         else
+        {
             indexedFiles ??= GameFileIndexer.Build(game.InstallPath, 8, cancellationToken);
+            indexedFiles = WithAddonDirectory(indexedFiles, addonDirectory);
+        }
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in indexedFiles)
         {
@@ -27,6 +31,9 @@ public static class ComponentProbe
         var binaryDirectory = string.IsNullOrWhiteSpace(game.BinaryDirectory)
             ? null
             : Path.GetFullPath(game.BinaryDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        var addonFolder = string.IsNullOrWhiteSpace(addonDirectory)
+            ? null
+            : Path.GetFullPath(addonDirectory).TrimEnd(Path.DirectorySeparatorChar);
         var dlssg2030Installed = files.Contains("dlssg_sm86.ini") &&
             new[] { "version.dll", "winmm.dll", "dinput8.dll", "winhttp.dll", "dxgi.dll" }.Any(files.Contains);
 
@@ -91,10 +98,7 @@ public static class ComponentProbe
             Make(ManagedComponentKind.ShortFuse, ShortFuseDisplayName, files.Contains("renodx-dlss.addon64") || files.Contains("zzz_renodx-dlss.addon64")),
             Make(ManagedComponentKind.DofFix, "Universal UE DOF Fix", indexedFiles.Any(path =>
                 Path.GetFileName(path).Equals("renodx-universal_ue-dof-fix.addon64", StringComparison.OrdinalIgnoreCase) &&
-                (binaryDirectory is null || string.Equals(
-                    Path.GetFullPath(Path.GetDirectoryName(path) ?? "").TrimEnd(Path.DirectorySeparatorChar),
-                    binaryDirectory,
-                    StringComparison.Ordinal)))),
+                (binaryDirectory is null || InFolder(path, binaryDirectory) || (addonFolder is not null && InFolder(path, addonFolder))))),
         };
 
         // The detail's credit line lists the recorded add-on files; it keeps only those still found here.
@@ -248,6 +252,32 @@ public static class ComponentProbe
 
     private static bool IsDisplayCommanderAddonFileName(string fileName)
         => IsReShadeAddonFileName(fileName, "display_commander", "displaycommander");
+
+    /// <summary>
+    /// #255 (upstream 2.8.8 <c>54ec8f2</c>): the add-ons in ReShade's add-on folder (reshade.ini's <c>AddonPath</c>, which the
+    /// caller resolves) count too when that folder is outside the indexed game tree.
+    /// </summary>
+    private static IReadOnlyList<string> WithAddonDirectory(IReadOnlyList<string> indexedFiles, string? addonDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(addonDirectory)) return indexedFiles;
+        var folder = Path.GetFullPath(addonDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        if (indexedFiles.Any(path => InFolder(path, folder))) return indexedFiles;
+        try
+        {
+            if (!Directory.Exists(folder)) return indexedFiles;
+            var extra = Directory.EnumerateFiles(folder, "*", SearchOption.TopDirectoryOnly)
+                .Where(path => path.EndsWith(".addon64", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".addon32", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            return extra.Length == 0 ? indexedFiles : [.. indexedFiles, .. extra];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return indexedFiles;
+        }
+    }
+
+    private static bool InFolder(string path, string folder)
+        => string.Equals(Path.GetFullPath(Path.GetDirectoryName(path) ?? "").TrimEnd(Path.DirectorySeparatorChar), folder, StringComparison.Ordinal);
 
     private static bool IsMfgAdaUnlockAddonFileName(string fileName)
         => IsReShadeAddonFileName(fileName, "mfgunlock", "mfg_unlock");

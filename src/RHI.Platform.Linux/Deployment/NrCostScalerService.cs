@@ -127,7 +127,8 @@ public sealed class NrCostScalerService
             return ComponentOperationResult.Fail(OwnerModifiedPrefix + owner.Owner);
         var realPath = Path.Combine(directory, RealDllName);
         var iniPath = Path.Combine(directory, IniFileName);
-        var addonPath = Path.Combine(directory, CompanionAddonName);
+        // #255: the companion add-on goes where ReShade loads add-ons (reshade.ini's AddonPath, else beside the proxy).
+        var addonPath = CompanionAddonPath(directory);
         foreach (var inTheWay in new[] { realPath, iniPath, addonPath })
             if (File.Exists(inTheWay) || Directory.Exists(inTheWay)) return ComponentOperationResult.Fail(ForeignFilePrefix + inTheWay);
 
@@ -180,6 +181,7 @@ public sealed class NrCostScalerService
             {
                 var sha = FileHash.Sha256Hex(source);
                 await operation.RecordWriteAsync(target, sha, CancellationToken.None).ConfigureAwait(false);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 await AtomicFile.CopyAsync(source, target, sha, CancellationToken.None, overwrite: false).ConfigureAwait(false);
                 // The INI holds the user's scale; RHI removes it with the scaler whatever it says now.
                 files.Add(new LinuxDeployedFile { Path = target, Sha256 = sha, ExistedBeforeInstall = false, AllowUserChanges = target == iniPath });
@@ -305,8 +307,10 @@ public sealed class NrCostScalerService
             .Where(f => !File.Exists(f.Path) || f.Sha256 is null || !FileHash.HexEquals(FileHash.Sha256Hex(f.Path), f.Sha256))
             .Select(f => f.Path).ToList();
         if (changed.Count > 0) return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + string.Join(", ", changed));
-        var addonPath = addon?.Path ?? Path.Combine(directory, CompanionAddonName);
-        if (addon is null && (File.Exists(addonPath) || Directory.Exists(addonPath))) return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + addonPath);
+        // #255: the add-on moves to reshade.ini's AddonPath folder when that is set or changed after the install.
+        var addonPath = CompanionAddonPath(directory);
+        if ((addon is null || !string.Equals(addon.Path, addonPath, StringComparison.Ordinal)) && (File.Exists(addonPath) || Directory.Exists(addonPath)))
+            return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + addonPath);
         var iniIsRhis = File.Exists(ini.Path) && ini.Sha256 is { Length: > 0 } && FileHash.HexEquals(FileHash.Sha256Hex(ini.Path), ini.Sha256);
 
         Staged staged;
@@ -347,8 +351,18 @@ public sealed class NrCostScalerService
             if (iniIsRhis) Entry(ini.Path).Sha256 = await scope.PlaceCopyAsync(staged.Ini, ini.Path, CancellationToken.None).ConfigureAwait(false);
             if (staged.Addon is not null)
             {
-                var sha = await scope.PlaceCopyAsync(staged.Addon, addonPath, CancellationToken.None, overwrite: addon is not null).ConfigureAwait(false);
-                if (addon is not null) Entry(addon.Path).Sha256 = sha;
+                var moving = addon is not null && !string.Equals(addon.Path, addonPath, StringComparison.Ordinal);
+                Directory.CreateDirectory(Path.GetDirectoryName(addonPath)!);
+                var sha = await scope.PlaceCopyAsync(staged.Addon, addonPath, CancellationToken.None, overwrite: addon is not null && !moving).ConfigureAwait(false);
+                if (moving)
+                {
+                    // #255: RHI's copy at its old place goes (checked unchanged above); the record follows the add-on.
+                    await scope.DeleteAsync(addon!.Path, CancellationToken.None).ConfigureAwait(false);
+                    var entry = Entry(addon.Path);
+                    entry.Path = addonPath;
+                    entry.Sha256 = sha;
+                }
+                else if (addon is not null) Entry(addon.Path).Sha256 = sha;
                 else updated.Files.Add(new LinuxDeployedFile { Path = addonPath, Sha256 = sha, ExistedBeforeInstall = false });
             }
             else if (addon is not null)
@@ -373,6 +387,10 @@ public sealed class NrCostScalerService
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(UpdatedPrefix + staged.Version + "." + (iniIsRhis ? "" : IniKeptNote), updated.Files.Select(f => f.Path).ToArray());
     }
+
+    /// <summary>#255: where the companion add-on goes for a scaler beside <paramref name="proxyDirectory"/>.</summary>
+    internal static string CompanionAddonPath(string proxyDirectory)
+        => Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(proxyDirectory), CompanionAddonName);
 
     private sealed record Release(string Version, string Url, string? Digest, string AssetName);
 

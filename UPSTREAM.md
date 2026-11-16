@@ -1329,3 +1329,30 @@ saved HDR mode stays in `game-library.json` but is not applied at a direct launc
 desktop switch can apply (a game RHI starts, the desktop's tool installed) and switches the resolution around a direct
 start; gamescope-only cases (store hand-offs, no desktop tool) need the HDR row and hide with it. Provenance is only in the
 section label's 2 s tooltip (EN + PT-BR).
+
+## Parity notes (upstream 2.8.8 release)
+
+Wave 13 ports the upstream delta from the 2.8.8 beta sync point (`c1076d3`) to the 2.8.8 release (tag `RHI-2.8.8`,
+`3689428`).
+
+<!-- w13/addonpath notes -->
+
+### #255 — ReShade add-ons follow reshade.ini AddonPath everywhere
+
+Behavioural port of upstream `54ec8f2` (`AddonPackService.DeployAddonsForGame`, `DetailPanelBuilder.Extras.Unlocks`).
+Upstream fixed two writers that ignored `[ADDON] AddonPath`: the add-on picker and MFG Ada Unlock from Extras. On Linux
+both already resolved the folder through `RenoDxDeploymentService.ResolveAddonDeployPath` (the Addon Manager, and every
+GitHub add-on: MFG Ada Unlock, ReLimiter, Display Commander, the DLSS5 DX11 Bridge), as did RenoDX, the RenoDX Upgrade,
+ShortFuse, Luma, the DLSS5 Feeder and dropped add-ons. Two writers still put their add-on beside the executable and now
+follow AddonPath (relative to the binary folder, or absolute): the Universal UE DOF Fix and NR Cost Scaler's
+`dlssnr-companion.addon64` (its proxy, its INI and the owner's runtime stay beside `nvngx_dlssnr.dll`). Upstream 2.8.8
+still puts these two in the game folder.
+
+When AddonPath is set or changed after an install, the next install or update (Update All included) moves RHI's copy
+from the path in its record to the AddonPath folder in the same journaled operation, and the record follows; upstream
+deletes the game-folder copy its tracker lists. RHI's copy is deleted only while it still holds the bytes RHI placed; a
+copy changed since is kept and the update refused, as before. A same-named file in the game folder that RHI does not own
+is left, and the result line names it ("Not RHI's, so left in the game folder …", EN + PT-BR). Remove follows the record
+wherever the file is. The component rows also look in the AddonPath folder when it lies outside the game tree
+(upstream's MFG Ada Unlock check reads the AddonPath folder; the Linux file index already covered an AddonPath inside
+the game). An AddonPath outside the game folder is used, as before (Luma relies on it); it is not refused.

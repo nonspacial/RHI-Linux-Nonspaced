@@ -374,7 +374,8 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
             return ComponentOperationResult.Ok(
                 normalized.Length == 0
                     ? "RHI-managed generic ReShade addons removed."
-                    : $"Applied {normalized.Length} ReShade addon selection(s).",
+                    : $"Applied {normalized.Length} ReShade addon selection(s)."
+                      + AddonPathFolder.LeftInGameFolderNote(game.BinaryDirectory, deployDir, prepared.Select(item => item.DeployName)),
                 changed.ToArray());
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)

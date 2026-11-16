@@ -83,6 +83,43 @@ public sealed partial class GitHubReShadeAddonDeploymentServiceTests : IDisposab
         Assert.Null(store.Find(game, ManagedComponentKind.ReLimiter));
     }
 
+    // #255 (upstream 2.8.8 54ec8f2, MFG Ada Unlock / ReLimiter / Display Commander): AddonPath set after the install moves
+    // RHI's copy out of the game folder on the next update (record follows); the user's own copy there is left and named.
+    [Fact]
+    public async Task Update_AfterAddonPathIsSet_MovesRhisCopy_AndLeavesAUsersCopyNamed()
+    {
+        var game = CreateGame();
+        WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
+        var payload = MakePePayload(150 * 1024);
+        var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest);
+        using var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri.Contains("api.github")
+            ? JsonResponse(json)
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) }));
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "addonpath-records.json"));
+        var service = NewReLimiter(http, store);
+        Assert.True((await service.InstallAsync(game)).Success);
+        var old = Path.Combine(game.BinaryDirectory!, "relimiter.addon64");
+        Assert.True(File.Exists(old));
+
+        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "reshade.ini"), "[ADDON]\nAddonPath=.\\reshade-addons\n");
+        var update = await service.UpdateAsync(game);
+
+        var moved = Path.Combine(game.BinaryDirectory!, "reshade-addons", "relimiter.addon64");
+        Assert.True(update.Success, update.Message);
+        Assert.False(File.Exists(old));
+        Assert.True(File.Exists(moved));
+        Assert.Equal(moved, store.Find(game, ManagedComponentKind.ReLimiter)!.Files.Single().Path);
+        Assert.DoesNotContain(AddonPathFolder.LeftInGameFolderPrefix, update.Message);
+
+        // A copy the user put back in the game folder is theirs: the next update leaves it and says so.
+        File.WriteAllBytes(old, MakePePayload(151 * 1024));
+        var again = await service.UpdateAsync(game);
+        Assert.True(again.Success, again.Message);
+        Assert.True(File.Exists(old));
+        Assert.Contains(AddonPathFolder.LeftInGameFolderPrefix + old, again.Message);
+    }
+
     [Fact]
     public async Task Install_ProtectsExternalTarget()
     {

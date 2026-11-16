@@ -252,7 +252,7 @@ public sealed class SelectedGameSession
     public bool Recompose(DetectedGame game, Func<SelectionFacts, SelectionFacts>? updateFacts = null)
     {
         if (!TryGetCached(game, out var cached)) return false;
-        var components = ComponentProbe.Probe(game, cached.Files);
+        var components = ComponentProbe.Probe(game, cached.Files, addonDirectory: AddonFolder(game));
         _managed.Decorate(game, components);
         var refreshed = cached with { Components = components, Facts = updateFacts?.Invoke(cached.Facts) ?? cached.Facts };
         _cache.Set(Key(game), refreshed);
@@ -299,7 +299,7 @@ public sealed class SelectedGameSession
             if (game.UserGraphicsApiOverride != userApiOverride)
             {
                 // The API override changed while the analysis ran: the rows must follow the new one.
-                var components = ComponentProbe.Probe(game, files);
+                var components = ComponentProbe.Probe(game, files, addonDirectory: AddonFolder(game));
                 _managed.Decorate(game, components);
                 analysis = analysis with { Components = components };
             }
@@ -328,10 +328,14 @@ public sealed class SelectedGameSession
         }
     }
 
+    /// <summary>#255: ReShade's add-on folder (reshade.ini's AddonPath, else the binary folder), so the rows find add-ons there.</summary>
+    private static string? AddonFolder(DetectedGame game)
+        => string.IsNullOrWhiteSpace(game.BinaryDirectory) ? null : RHI.Platform.Linux.Deployment.RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
+
     private GameAnalysis Derive(DetectedGame working, IReadOnlyList<string> files, bool skipDlss, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var components = ComponentProbe.Probe(working, files, cancellationToken);
+        var components = ComponentProbe.Probe(working, files, cancellationToken, AddonFolder(working));
         _managed.Decorate(working, components);
         var dlss = skipDlss ? new DlssDetectionResult() : _dlssDefaults.DetectTargets(working, files, cancellationToken);
         var facts = SelectionFacts.Compute(working, dlss, _managed, _hdr);

@@ -119,9 +119,11 @@ public sealed class DofFixDeploymentService
         if (!IsGameEligible(game))
             return ComponentOperationResult.Fail(EligibilityReason(game));
 
-        var deployDir = ResolveDeployDirectory(game);
-        if (string.IsNullOrWhiteSpace(deployDir) || !Directory.Exists(deployDir))
+        var gameDir = ResolveDeployDirectory(game);
+        if (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir))
             return ComponentOperationResult.Fail("Game binary/install directory is not available for DOF Fix deployment.");
+        // #255 (upstream 2.8.8 54ec8f2): ReShade loads add-ons from reshade.ini's AddonPath when it is set.
+        var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(gameDir);
 
         var target = Path.Combine(deployDir, AddonFileName);
         var existingRecord = GetRecord(game);
@@ -143,6 +145,19 @@ public sealed class DofFixDeploymentService
                 return ComponentOperationResult.Fail("RHI-managed DOF Fix was modified after installation. Update is blocked to preserve the changed file.");
         }
 
+        // #255: RHI's copy at another path (the game folder, before AddonPath was set) moves to the add-on folder; it is
+        // deleted only while it still holds what RHI placed.
+        var movedFrom = existingRecord?.Files
+            .Where(file => !string.IsNullOrWhiteSpace(file.Path) && File.Exists(file.Path)
+                           && !Path.GetFullPath(file.Path).Equals(Path.GetFullPath(target), StringComparison.Ordinal))
+            .ToArray() ?? [];
+        foreach (var old in movedFrom)
+        {
+            if (old.Sha256 is not { Length: > 0 }
+                || !string.Equals(await FileHash.Sha256HexAsync(old.Path, cancellationToken).ConfigureAwait(false), old.Sha256, StringComparison.OrdinalIgnoreCase))
+                return ComponentOperationResult.Fail("RHI-managed DOF Fix was modified after installation. Update is blocked to preserve the changed file.");
+        }
+
         var release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
         var cached = await DownloadAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
 
@@ -158,13 +173,15 @@ public sealed class DofFixDeploymentService
         {
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."));
             var deployedHash = await scope.PlaceCopyAsync(cached.Path, target, cancellationToken).ConfigureAwait(false);
+            foreach (var old in movedFrom)
+                await scope.DeleteAsync(old.Path, cancellationToken).ConfigureAwait(false);
 
             _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
                 Component = ManagedComponentKind.DofFix,
-                BinaryDirectory = deployDir,
+                BinaryDirectory = gameDir,
                 SourceUrl = release.AssetUrl,
                 Version = release.Version,
                 InstalledAtUtc = DateTime.UtcNow,
@@ -197,7 +214,8 @@ public sealed class DofFixDeploymentService
             throw new IOException($"{ex.Message}{DeploymentScope.RollbackNote(rollback)}", ex);
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok($"Universal UE DOF Fix {release.Version} installed.", target);
+        return ComponentOperationResult.Ok($"Universal UE DOF Fix {release.Version} installed."
+                                           + AddonPathFolder.LeftInGameFolderNote(gameDir, deployDir, [AddonFileName]), target);
     }
 
     /// <summary>Fixed text of a failed, rolled-back removal (PT-BR row under the journal anchor); the reason follows.</summary>

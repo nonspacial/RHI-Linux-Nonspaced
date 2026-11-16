@@ -263,7 +263,10 @@ public sealed class GitHubReShadeAddonDeploymentService
         }
         // The record carries the operation id: the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok($"{_definition.DisplayName} {release.Version} installed → {target}", target);
+        // #255: RHI's copy at its old place (the game folder before AddonPath was set) went above; a same-named file
+        // there that is not RHI's is left and named.
+        return ComponentOperationResult.Ok($"{_definition.DisplayName} {release.Version} installed → {target}"
+                                           + AddonPathFolder.LeftInGameFolderNote(game.BinaryDirectory, deployDir, [deployFileName]), target);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)
