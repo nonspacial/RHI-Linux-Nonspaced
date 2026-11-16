@@ -1084,6 +1084,25 @@ internal static class GraphicsApiDetector
         }
     }
 
+    /// <summary>
+    /// #294 (upstream 2.9.2 <c>93d0fcb</c>): general-purpose libraries that load D3D11/D3D12 for video, UI or windowing
+    /// whatever the game renders with (FFmpeg, Qt, SDL, Chromium/CEF, ANGLE, the D3D compiler), RHI's own helper exes, and
+    /// crash reporters / uninstallers. OpenMW (OpenGL) ships avutil, Qt6Gui and SDL2 and read as DX12 through them.
+    /// </summary>
+    internal static bool IsHelperBinary(string fileName)
+    {
+        var name = Path.GetFileName(fileName).ToLowerInvariant();
+        string[] prefixes =
+        [
+            "avutil", "avcodec", "avformat", "avfilter", "avdevice", "swscale", "swresample", "postproc",
+            "qt5", "qt6", "sdl2", "sdl3", "libcef", "libegl", "libglesv2", "d3dcompiler"
+        ];
+        if (name == "sdl.dll" || prefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal))) return true;
+        if (name is "gitc-uplift-helper64.exe" or "dlss5-feed-host64.exe") return true;
+        return name.EndsWith(".exe", StringComparison.Ordinal)
+               && DetectionHelpers.IsSupportExecutableName(Path.GetFileNameWithoutExtension(Path.GetFileName(fileName)));
+    }
+
     private static bool IsKnownInjectionOrProxyBinary(string path)
     {
         var name = Path.GetFileName(path);
@@ -1094,6 +1113,7 @@ internal static class GraphicsApiDetector
             "winmm.dll", "version.dll", "ReShade64.dll", "OptiScaler.dll"
         ];
         if (exact.Any(x => name.Equals(x, StringComparison.OrdinalIgnoreCase))) return true;
+        if (IsHelperBinary(name)) return true; // #294
         return name.Contains("reshade", StringComparison.OrdinalIgnoreCase) ||
                name.Contains("optiscaler", StringComparison.OrdinalIgnoreCase) ||
                name.Contains("renodx", StringComparison.OrdinalIgnoreCase) ||

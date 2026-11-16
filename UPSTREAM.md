@@ -1605,3 +1605,153 @@ Deferred to the owner test: the DXVK chain (above), `dxvk.conf`, the `ReShade2.i
 on the layer route), Garry's Mod's second install, moving a 32-bit main-folder ReShade to bin, the Source Engine badge,
 update and uninstall. `-insecure`: RHI Linux hands Steam, Heroic and Lutris games to their client, whose launch options
 RHI does not edit, so the one-click install will say to add it there (upstream's own advice for Steam starts).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane library-updates)
+
+### #266 — The app update check never says "up to date" when GitHub refused it (2.9.4)
+
+Upstream 2.9.4 fixed its update check reading GitHub's hourly-limit refusal as "no newer version". Here the check
+already told a refusal apart, but the GitHub API cache (#35/#244) answers a refused or rate-limited request with the
+release list it holds (confirmed this session, or saved by an earlier launch while GitHub's advertised rate-limit window
+runs), and the check read that older list as current, so RHI-Linux said "You have the newest version" when a newer
+release might be out. The cache now marks every answer it stands in with (`X-RHI-GitHub-Stand-In: rate-limit` or
+`refused`), and the app update check refuses such an answer: it says GitHub's hourly request limit is reached (and that a
+token raises it) or that it could not check, and offers no release page. An answer GitHub confirmed less than a minute
+earlier (the cache's ordinary reuse) still counts. Every other caller of the cache keeps the stand-in answers as before.
+The start-up check stays quiet unless a newer release is found, as upstream. Not part of this lane: upstream 2.9.4's
+handling of an expired or revoked token.
+
+### #291 — Hidden games are left out of library-wide changes (2.8.9)
+
+As upstream 2.8.9: a hidden game is never changed by anything that runs over the whole library. Left out are Update
+All (and its availability: the button is off when only hidden games have RHI components), the automatic component pass
+and its after-the-game-closed pass (#242; a game hidden while it waited is dropped), Follow newest DLSS / Streamline
+(#177, the Linux form of upstream's automatic DLSS / Streamline updates), and every Settings "Apply to all games" or
+"Deploy to all" button: ReShade settings, ReLimiter settings, peak brightness, the INI mass deploy (and the counts their
+questions name) and the OptiScaler overlay key. The game's own buttons still work. One rule
+(`GameLibraryFilter.Unattended`) decides it for every caller. Linux deviation: upstream's Update All already skipped
+hidden games; here it did not, so it changes with this port. Not changed: games set to the global shader / add-on set
+still follow it when the global set is saved (a choice the game itself made, not an apply-to-all), and the DLSS batch
+dialog lists every game because the user ticks each one.
+
+### #292 — Update cadence across restarts, hourly with a token, link lists every 4 h, Refresh rescans (2.8.9–2.9.3)
+
+- **Cadence.** The automatic pass (component updates and Follow newest DLSS / Streamline) runs every 4 hours, every
+  hour while a GitHub token is in use (upstream 2.9.2; the interval is read before each wait, so adding or removing a
+  token changes the next one). The time of the last pass that ran to the end is kept in
+  `~/.local/share/rhi-linux/update-check.json` (a cache: unreadable means "never", and it is replaced). A start waits
+  what is left of the interval since that pass, or runs at once when it is over (upstream 2.8.9: "at least every 4
+  hours, even if you restart RHI"). Linux difference: before this, every start ran a pass at once and any Settings save
+  with automatic updates on ran another; now only turning automatic updates or a Follow toggle on runs one at once.
+  A manual Update All counts as a pass and restarts the countdown, as upstream's manual check does. The hidden
+  `UpdateCheckIntervalHours` setting (always 4) is no longer read. A token GitHub rejected counts as no token.
+  Upstream's floor of 5 minutes before the first periodic check has no counterpart: its launch check runs separately,
+  here the first pass is that check.
+- **Ultra+ and ultrawide fix lists** are kept 4 hours instead of a day, and a list loaded earlier in the session is
+  asked again once it is older than that (the copy in use stays until the new one is in; a list that cannot be fetched
+  is asked again after 5 minutes). The HDR Gaming Database list stays at a day. Full Refresh already downloaded every
+  list again (#174), as upstream 2.8.9 now does.
+- **Refresh rescans the selected game** (upstream 2.9.3 `5b0054b`): Refresh here was always the full refresh (every
+  detector, every cached analysis dropped), so DLSS a game update added or removed already showed at once. Pinned by a
+  test, no code change.
+
+### #289 — Update History records every component (2.9.3)
+
+Upstream 2.9.3 (`487b4fc`) added Update History entries for components its own update paths missed. Here every
+install, update and removal through the managed component path (Install, Update, Update All, the automatic pass,
+dependencies installed on the way) was already recorded by diffing the deployment ledger (#18/#112), today's
+list (Universal MFG, DLSS Enabler, NR Cost Scaler, Ultimate ASI Loader, RE Framework, UE DOF Fix, ReShade on either
+channel, the Addon Manager) and the NR DLL swap. DLSS5 Feeder and DX11 Bridge are listed under their own names
+(pinned). The gap was DLSS and Streamline files outside Follow newest: the DLSS batch, the DLSS defaults and the DLSS
+panel's swap and restore wrote nothing. They now record one entry per DLL family ("DLSS SR (nvngx_dlss.dll)",
+"Streamline (sl.*.dll)") with the version before and after (read from the DLL), and a failed swap with its reason.
+
+One generic hook, `ComponentHistory.Record(game, component, action, from, to, …)`, keyed by `ManagedComponentKind`,
+writes for any change made outside the managed path; an update is written only when the version changed (upstream
+`ShouldRecord`), a failure always. A new component recorded through the managed path needs nothing but its name in
+`LinuxManagedComponentService.DisplayDependencyName` (or `ComponentHistory.NameFor`). Not applicable: DXVK (the runner's,
+never RHI's here). Nexus Mods files reach RHI as dropped add-ons or Luma packages and are recorded on those paths.
+
+### #295 — ⚙ and Settings saving fixes from 2.8.9, checked one by one
+
+- **Add-on watch folder that does not exist** (fixed): Settings saved any typed folder and the watcher then said it
+  could not open it. Save now keeps the previous folder, saves the rest and says the folder does not exist. An empty
+  box (Downloads) and an unchanged folder are saved as before.
+- **Invalid ReLimiter custom FPS** (fixed): an empty or out-of-range custom box was saved as "no cap" without a word.
+  It now keeps the saved cap and the line says the value must be a whole number from 20 to 1000.
+- **Keys saved on press, typed folders and peak brightness saved on blur** (Linux deviation, not ported here): the
+  Linux Settings dialog saves everything with its Save button, so no typed value is lost to a missing Enter. Save on
+  change comes with the Settings restyle (phase 2 of wave 14). The overlay, screenshot and ReLimiter OSD key editors
+  hand their value to that Save.
+- **A failed ⚙ save reverts and says why** (already so): the ⚙ presenters save through `ParityPersistence.TryPersist` or
+  the operation result; a refused save puts the control back to the saved value and shows the reason.
+- **"Deploy dxvk.conf" reporting success after a failed copy** (not applicable): Linux has no separate dxvk.conf deploy
+  button; DXVK HDR writes `dxvk.conf` journaled and its failure is the operation's failed result.
+- **Addon Manager switching an add-on back off silently after a failed download** (not verified in this lane): the
+  Addon Manager's update path reports a failed download as could-not-check; the selection-apply path was not traced to
+  the end. Left open on #295.
+- **RE Framework "Delete _storage_" stuck on "Deleting…"** (already so): the button is restored in a `finally` and the
+  result line is shown.
+- **ReShade hotkey "Applied!" with no reshade.ini** (not applicable): Linux has no per-game hotkey Apply button; keys
+  reach games through "Apply to all games", whose line counts only the ReShade.ini files it wrote.
+- **ReLimiter ⚙ with a separate add-on folder** (already so since #255): the ⚙ finds relimiter.ini in the AddonPath
+  folder.
+
+### #294 — Detection fixes (2.8.9–2.9.3)
+
+- **Helper libraries and exes made games look DX12** (fixed; upstream 2.9.2 `93d0fcb`): the graphics-API detector's
+  last step reads nearby binaries, and FFmpeg (`avutil`, `avcodec`, …), Qt 5/6, SDL 2/3, CEF, ANGLE (`libEGL`,
+  `libGLESv2`) and `d3dcompiler` name D3D11/D3D12 whatever the game renders with (OpenMW, an OpenGL game, read as DX12).
+  They are skipped there now, with upstream's list, and so are RHI's own helper exes (`gitc-uplift-helper64.exe`,
+  `dlss5-feed-host64.exe`) and crash reporters / uninstallers.
+- **GOG games read as 32-bit from the uninstaller** (already so; upstream 2.9.3 `870f4a9`): upstream took the biggest
+  exe in the folder for bitness. Here bitness comes from the chosen game exe, and the chooser has always skipped
+  uninstallers, redistributables and crash handlers by name (`unins000.exe`, `UnityCrashHandler64.exe`). Pinned with
+  Ghost Song's layout (a 3 MB 32-bit uninstaller beside a 650 KB 64-bit game exe).
+- **Running-game tracking following the crash reporter** (already so; upstream 2.9.3 `2984022`): the running probe
+  matches the chosen exe's full path in `/proc/<pid>/cmdline`, and the chooser never picks `CrashReportClient.exe`
+  (pinned with Phantom Blade Zero's layout).
+- **DLSS / Streamline for Unreal games outside `Binaries`** (already so): DLSS detection reads the game's whole file
+  index (depth 8 from the install root), not only the exe's folder, and manifest `dlssPathOverrides` /
+  `streamlinePathOverrides` (#155) reach deeper layouts such as Mafia: The Old Country's.
+- **Config button and UE-Extended Engine.ini with several PCGW config paths** (not applicable): RHI Linux never used
+  PCGamingWiki's config paths (see #12); the Engine.ini RenoDX writes (#217/#218) has its own lookup, which this lane
+  did not change.
+
+### #290 — Block Steam updates (2.9.4)
+
+Upstream 2.9.4 adds "Block Steam updates" to the Game settings cog beside a Steam game's title: the game's Steam app
+manifest is made read-only so Steam cannot update the game, and turning it off lets Steam update again. Ported as a
+header action beside Favourite / Hide ("Block Steam updates" / "Allow Steam updates"), shown only for a Steam game whose
+manifest RHI finds; Linux has no Game settings cog yet (the header is restyled in phase 2 of wave 14). The tooltip says
+what it does to the user's Steam: Steam may show the game as needing an update, or report a disk write error, while it
+is blocked.
+
+Linux details: the manifest is `steamapps/appmanifest_<appid>.acf` in the game's own Steam library (the parent of
+`steamapps/common/<installdir>`), so native and Flatpak Steam libraries and extra library folders all work. RHI checks
+that the manifest's `appid` and `installdir` are this game's before touching it. Only the file's mode changes (all write
+bits off; Allow gives the owner write back), never its contents. Blocking is refused while Steam is updating the game
+(`StateFlags` update running, started or paused); an update that is only queued can be blocked, which is the point. The
+state is read from the file every time, so if Steam replaces the manifest with a new file the switch reads "Block"
+again. Not journaled: nothing in the game folder changes, and the change is undone by the same switch.
+
+### #293 — Game folders: Remove from RHI and Removed games (2.9.0–2.9.3; partial)
+
+- **Remove from RHI** (ported): a header action beside Hide for every detected game. The game is gone from every list,
+  Hidden included, and a scan does not bring it back: the library file keeps it under `RemovedGames` by its library key
+  (omitted while empty, so the file keeps the shape older builds wrote). Upstream places the button in Management;
+  Linux has no Management section yet, so it sits with Favourite / Hide (restyle in phase 2). A game the user added is
+  removed with the existing "Remove manual game", as upstream deletes it. Linux deviation: upstream offers to uninstall
+  the game's components at the same time; here they stay installed and the tooltip says to remove them first if wanted.
+- **Settings → Removed games** (ported, as its own Settings tab; upstream Tools & Maintenance › Troubleshooting): every
+  removed game, newest first, with Restore, which drops it from the list and rescans so the game comes back.
+- **Reset install folder** (by design here): Linux's Edit game keeps one install-folder override per game; clearing it
+  goes back to the folder the scan found, so upstream's "goes back to an earlier pick" bug has no counterpart.
+- **"Folder moved → offer Refresh instead of a folder browser"** (not applicable): RHI Linux never opens a folder
+  browser for a missing game folder; it says the folder is missing and offers Refresh and Repair after move (#38).
+- **Not ported in this wave (deferred, see #293):** custom game folders (Settings list, scan on start / Refresh / Scan
+  now, review list with name, exe choice and "Check the exe", ignore list, and on Linux a runner / prefix choice like
+  manual games), and install-folder migration (moving a game's mods, settings and presets after Change / Reset install
+  folder, automatic when RHI corrects the folder, manifest `installPathMigrations`). Both need journaled moves of user
+  and RHI files across folders and a review UI; they were left for a follow-up so this lane's other items could land
+  with their tests.

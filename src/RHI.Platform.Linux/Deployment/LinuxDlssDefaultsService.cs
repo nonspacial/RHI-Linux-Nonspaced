@@ -76,6 +76,9 @@ public sealed record LinuxDlssBatchCandidate(
 
 public sealed class LinuxDlssDefaultsService
 {
+    /// <summary>#289: Update History for DLSS / Streamline swaps and restores (batch, defaults and the DLSS panel); null = not kept.</summary>
+    public ComponentHistory? History { get; set; }
+
     private readonly DlssManagerService _dlss;
     private readonly LinuxDeploymentRecordStore _records;
     private readonly IGameRunningProbe _running;
@@ -396,8 +399,11 @@ public sealed class LinuxDlssDefaultsService
             return;
         }
 
+        var from = ComponentHistory.DllVersion(targets); // #289
         var swap = await _dlss.SwapAsync(kind, targets, version, cancellationToken).ConfigureAwait(false);
         var changed = swap.Results.Count(result => result.Changed);
+        if (!swap.Success || changed > 0)
+            History?.Record(game, ManagedComponentKind.Dlss, ComponentUpdateAction.Update, from, version, swap.Success, swap.Error, ComponentHistory.DlssName(kind));
         results.Add(new(game.Name, batchComponent, swap.Success, changed > 0, false, false,
             swap.Success
                 ? changed > 0
@@ -420,8 +426,11 @@ public sealed class LinuxDlssDefaultsService
                 "Streamline not present; skipped without creating a layout."));
             return;
         }
+        var from = ComponentHistory.StreamlineVersion(folders); // #289
         var swap = await _dlss.SwapStreamlineAsync(folders, version, cancellationToken).ConfigureAwait(false);
         var changed = swap.Results.Count(result => result.Changed);
+        if (!swap.Success || changed > 0)
+            History?.Record(game, ManagedComponentKind.Streamline, ComponentUpdateAction.Update, from, version, swap.Success, swap.Error, ComponentHistory.StreamlineName);
         results.Add(new(game.Name, LinuxDlssBatchComponent.Streamline, swap.Success, changed > 0, false, false,
             swap.Success
                 ? changed > 0
@@ -442,7 +451,9 @@ public sealed class LinuxDlssDefaultsService
             .Where(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
             .ToArray();
         if (restoreTargets.Length == 0) return;
+        var from = ComponentHistory.DllVersion(restoreTargets); // #289
         var restore = await _dlss.RestoreAsync(kind, restoreTargets, cancellationToken).ConfigureAwait(false);
+        RecordRestore(game, ManagedComponentKind.Dlss, ComponentHistory.DlssName(kind), from, ComponentHistory.DllVersion(restoreTargets), restore.Success, restore.Error);
         results.Add(new(game.Name, batchComponent, restore.Success,
             restore.Success && restore.Results.Any(result => result.Changed), false, false,
             restore.Success
@@ -460,7 +471,9 @@ public sealed class LinuxDlssDefaultsService
             .SelectMany(folder => DlssManagerService.KnownStreamlineDlls.Select(name => Path.Combine(folder, name)))
             .Any(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension));
         if (!hasBackup) return;
+        var from = ComponentHistory.StreamlineVersion(folders); // #289
         var restore = await _dlss.RestoreStreamlineAsync(folders, cancellationToken).ConfigureAwait(false);
+        RecordRestore(game, ManagedComponentKind.Streamline, ComponentHistory.StreamlineName, from, ComponentHistory.StreamlineVersion(folders), restore.Success, restore.Error);
         results.Add(new(game.Name, LinuxDlssBatchComponent.Streamline, restore.Success,
             restore.Success && restore.Results.Any(result => result.Changed), false, false,
             restore.Success
@@ -545,6 +558,10 @@ public sealed class LinuxDlssDefaultsService
     /// <summary>The component names <see cref="CouldNotApplyMessage"/> uses (each has its PT-BR presentation pair).</summary>
     public static IReadOnlyList<string> ComponentDisplayNames { get; } =
         Enum.GetValues<LinuxDlssBatchComponent>().Select(Display).ToArray();
+
+    /// <summary>#289: a restore back to the game's own files is an update to the version they hold.</summary>
+    public void RecordRestore(DetectedGame game, ManagedComponentKind component, string name, string? from, string? to, bool success, string? error)
+        => History?.Record(game, component, ComponentUpdateAction.Update, from, to, success, error, name);
 
     private static string Display(LinuxDlssBatchComponent component) => component switch
     {

@@ -19,8 +19,11 @@ public enum AppUpdateCheckResult
     /// <summary>The project publishes no release this build can compare with (or its repository is not found).</summary>
     NoReleases,
 
-    /// <summary>GitHub could not be asked (offline, rate limit, unreadable answer).</summary>
-    CouldNotCheck
+    /// <summary>GitHub could not be asked (offline, refused, unreadable answer).</summary>
+    CouldNotCheck,
+
+    /// <summary>#266: GitHub's hourly request limit is reached; nothing current could be read (never "up to date").</summary>
+    RateLimited
 }
 
 /// <summary>A published release: its version text, the repository and its release page on github.com.</summary>
@@ -67,6 +70,11 @@ public sealed class AppUpdateCheckService
         {
             releases = await ListAsync(_repository, current, cancellationToken).ConfigureAwait(false);
         }
+        catch (GitHubAnswerNotCurrentException ex)
+        {
+            AppLog.Warn("app-update", $"GitHub did not answer the release check of {_repository} ({ex.Message}); not reading the cached list as current");
+            return new AppUpdateCheck(ex.RateLimited ? AppUpdateCheckResult.RateLimited : AppUpdateCheckResult.CouldNotCheck, _currentVersion);
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UntrustedDownloadException
                                        or InvalidDataException or JsonException or IOException)
         {
@@ -88,13 +96,30 @@ public sealed class AppUpdateCheckService
         try
         {
             json = await TrustedDownload.GetStringAsync(_http, ReleasesUrl(repository), DownloadSources.GitHubApi,
-                accept: "application/vnd.github+json", cancellationToken: cancellationToken).ConfigureAwait(false);
+                accept: "application/vnd.github+json", cancellationToken: cancellationToken, onResponse: RefuseStandIns).ConfigureAwait(false);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             return null;
         }
         return Parse(json, repository, includePrereleases: current is null || current.IsPrerelease);
+    }
+
+    /// <summary>
+    /// #266 (upstream 2.9.4): an answer the GitHub API cache stood in with after GitHub refused is an older list, so it can
+    /// never say "up to date"; GitHub's own rate-limit refusal is named as such.
+    /// </summary>
+    private static void RefuseStandIns(HttpResponseMessage response)
+    {
+        if (GitHubConditionalCacheHandler.StandInReason(response) is { } reason)
+            throw new GitHubAnswerNotCurrentException(reason, reason == "rate-limit");
+        if (GitHubConditionalCacheHandler.IsRateLimitRefusal(response))
+            throw new GitHubAnswerNotCurrentException("rate-limit", rateLimited: true);
+    }
+
+    private sealed class GitHubAnswerNotCurrentException(string reason, bool rateLimited) : Exception(reason)
+    {
+        public bool RateLimited { get; } = rateLimited;
     }
 
     internal static IReadOnlyList<AppRelease> Parse(string json, string repository, bool includePrereleases)

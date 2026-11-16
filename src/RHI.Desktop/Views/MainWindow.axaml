@@ -152,6 +152,10 @@
             <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button x:Name="RemoveFromRhiButton" views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding RemoveFromRhiText}" Command="{Binding RemoveFromRhiCommand}"
+                      IsVisible="{Binding CanRemoveFromRhi}" ToolTip.Tip="{Binding RemoveFromRhiTip}"/>
+              <Button x:Name="BlockSteamUpdatesButton" views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding BlockSteamUpdatesText}" Command="{Binding ToggleSteamUpdatesCommand}"
+                      IsVisible="{Binding CanBlockSteamUpdates}" ToolTip.Tip="{Binding BlockSteamUpdatesTip}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
                       ToolTip.Tip="{DynamicResource Ui.EditTip}"/>
               <!-- Only manually added games can be removed; hide the button for everything else. -->

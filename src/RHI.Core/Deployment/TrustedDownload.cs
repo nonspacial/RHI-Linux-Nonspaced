@@ -277,14 +277,17 @@ public static class TrustedDownload
     /// checked, success status required, body capped at the smaller of the policy's cap and
     /// <see cref="MetadataMaxBytes"/>, decoded as UTF-8 (a BOM is honoured).
     /// </summary>
+    /// <param name="onResponse">#266: sees the response (status and headers) before the status check and the body read; it
+    /// may throw to refuse the answer (the app update check refuses an answer the GitHub API cache stood in with).</param>
     public static async Task<string> GetStringAsync(
         HttpClient http,
         string url,
         TrustedDownloadPolicy policy,
         string? accept = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<HttpResponseMessage>? onResponse = null)
     {
-        var bytes = await GetBytesAsync(http, url, policy, accept, cancellationToken).ConfigureAwait(false);
+        var bytes = await GetBytesAsync(http, url, policy, accept, cancellationToken, onResponse).ConfigureAwait(false);
         using var buffer = new MemoryStream(bytes, writable: false);
         using var reader = new StreamReader(buffer, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
@@ -299,12 +302,13 @@ public static class TrustedDownload
         string url,
         TrustedDownloadPolicy policy,
         string? accept = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<HttpResponseMessage>? onResponse = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, policy.Validate(url));
         request.Headers.UserAgent.Add(DefaultUserAgent);
         if (!string.IsNullOrWhiteSpace(accept)) request.Headers.Accept.ParseAdd(accept);
-        return await SendCappedAsync(http, request, url, policy, cancellationToken).ConfigureAwait(false);
+        return await SendCappedAsync(http, request, url, policy, cancellationToken, onResponse).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -328,9 +332,11 @@ public static class TrustedDownload
     }
 
     private static async Task<byte[]> SendCappedAsync(
-        HttpClient http, HttpRequestMessage request, string url, TrustedDownloadPolicy policy, CancellationToken cancellationToken)
+        HttpClient http, HttpRequestMessage request, string url, TrustedDownloadPolicy policy, CancellationToken cancellationToken,
+        Action<HttpResponseMessage>? onResponse = null)
     {
         using var response = await SendAsync(http, request, policy, cancellationToken).ConfigureAwait(false);
+        onResponse?.Invoke(response);
         response.EnsureSuccessStatusCode();
         policy.ValidateFinal(response, url);
         var cap = Math.Min(policy.MaxBytes, MetadataMaxBytes);

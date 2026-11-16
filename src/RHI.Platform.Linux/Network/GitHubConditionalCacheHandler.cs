@@ -83,6 +83,22 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
         _persistTimer = new Timer(_ => WriteIfDirty(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
+    /// <summary>
+    /// #266: the header on an answer the cache stood in with because GitHub refused (its value: <c>rate-limit</c> inside
+    /// GitHub's advertised rate-limit window, else <c>refused</c>). A caller that must not take an older answer as current
+    /// (the app update check) reads it; <see cref="StandInReason"/> reads it for them.
+    /// </summary>
+    public const string StandInHeader = "X-RHI-GitHub-Stand-In";
+
+    /// <summary>#266: <c>rate-limit</c> or <c>refused</c> when <paramref name="response"/> is a stand-in answer, else null.</summary>
+    public static string? StandInReason(HttpResponseMessage response)
+        => response.Headers.TryGetValues(StandInHeader, out var values) ? values.FirstOrDefault() : null;
+
+    /// <summary>#266: GitHub's own rate-limit refusal (403/429 with no quota left).</summary>
+    public static bool IsRateLimitRefusal(HttpResponseMessage response)
+        => response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests
+           && response.Headers.TryGetValues("X-RateLimit-Remaining", out var remaining) && remaining.FirstOrDefault() == "0";
+
     /// <summary>Requests answered from the cache (304 revalidation, fresh reuse or rate-limit fallback), for tests and diagnostics.</summary>
     public int CacheHits => Volatile.Read(ref _cacheHits);
     private int _cacheHits;
@@ -110,7 +126,7 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
         {
             if (IsFresh(cached)) return Hit(cached, request, null);
             if (IsRateLimited())
-                return Hit(cached, request, "GitHub API rate limit reached; using the answer cached earlier");
+                return Hit(cached, request, "GitHub API rate limit reached; using the answer cached earlier", "rate-limit");
         }
         return await SendSharedAsync(key, request, cancellationToken).ConfigureAwait(false);
     }
@@ -275,8 +291,9 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
             if (cached is not null && IsRefusal(response.StatusCode) && (!cached.FromDisk || IsRateLimited()))
             {
                 AppLog.Warn("github-cache", $"GitHub API answered {(int)response.StatusCode}; using the answer cached earlier for {outgoing.RequestUri}");
+                var reason = IsRateLimited() ? "rate-limit" : "refused";
                 response.Dispose();
-                return new Outcome(Answer.From(cached));
+                return new Outcome(Answer.From(cached, standIn: reason));
             }
         }
 
@@ -382,13 +399,15 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
                 .Select(header => new KeyValuePair<string, string[]>(header.Key, header.Value.ToArray())).ToArray(),
             body, response.RequestMessage?.RequestUri, FromCache: false);
 
-        public static Answer From(Entry entry)
+        public static Answer From(Entry entry, string? standIn = null)
         {
-            var headers = entry.ETag is null ? [] : new[] { new KeyValuePair<string, string[]>("ETag", [entry.ETag.ToString()]) };
+            var headers = new List<KeyValuePair<string, string[]>>();
+            if (entry.ETag is not null) headers.Add(new("ETag", [entry.ETag.ToString()]));
+            if (standIn is not null) headers.Add(new(StandInHeader, [standIn]));
             var content = new List<KeyValuePair<string, string[]>>();
             if (entry.ContentType is not null) content.Add(new("Content-Type", [entry.ContentType.ToString()]));
             if (entry.LastModified is { } modified) content.Add(new("Last-Modified", [modified.ToString("R")]));
-            return new(HttpStatusCode.OK, null, HttpVersion.Version11, headers, [.. content], entry.Body, FinalUri: null, FromCache: true);
+            return new(HttpStatusCode.OK, null, HttpVersion.Version11, [.. headers], [.. content], entry.Body, FinalUri: null, FromCache: true);
         }
 
         /// <summary>A response of the caller's own (its own content object over the shared bytes).</summary>
@@ -465,11 +484,11 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
         }
     }
 
-    private HttpResponseMessage Hit(Entry cached, HttpRequestMessage request, string? logLine)
+    private HttpResponseMessage Hit(Entry cached, HttpRequestMessage request, string? logLine, string? standIn = null)
     {
         Interlocked.Increment(ref _cacheHits);
         if (logLine is not null) AppLog.Warn("github-cache", $"{logLine}: {request.RequestUri}");
-        return Answer.From(cached).ToResponse(request);
+        return Answer.From(cached, standIn).ToResponse(request);
     }
 
     private void Store(string key, Entry entry)
@@ -485,8 +504,7 @@ public sealed class GitHubConditionalCacheHandler : DelegatingHandler
 
     private void NoteRateLimit(HttpResponseMessage response)
     {
-        if (response.StatusCode is not (HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests)) return;
-        if (!response.Headers.TryGetValues("X-RateLimit-Remaining", out var remaining) || remaining.FirstOrDefault() != "0") return;
+        if (!IsRateLimitRefusal(response)) return;
         var until = _now().AddMinutes(1);
         if (response.Headers.TryGetValues("X-RateLimit-Reset", out var reset)
             && long.TryParse(reset.FirstOrDefault(), out var epoch))

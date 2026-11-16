@@ -4,6 +4,7 @@ using RHI.Core.Services;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
@@ -27,6 +28,55 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     // #177: stops a Follow newest pass a Full Refresh started when the shell closes.
     private readonly CancellationTokenSource _followCts = new();
     private Task? _followRequest;
+
+    // ---- #292 cadence: every 4 h, hourly with a GitHub token, counted across restarts ----------------------------
+
+    /// <summary>#292: where the last pass's time is kept between launches; null = this session only (tests).</summary>
+    internal UpdateCheckStampStore? CheckStamps { get; set; }
+
+    /// <summary>#292: whether a usable GitHub token is set (the app: the API token handler); read before each wait.</summary>
+    internal Func<bool> HasGitHubToken { get; set; } = () => false;
+
+    /// <summary>Test seam: the clock.</summary>
+    internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
+
+    /// <summary>Test seam: the loop's waits (<see cref="Task.Delay(TimeSpan, CancellationToken)"/> by default).</summary>
+    internal Func<TimeSpan, CancellationToken, Task>? LoopDelay { get; set; }
+
+    private DateTimeOffset? _lastPass;
+
+    /// <summary>#292: the time between automatic passes now.</summary>
+    internal TimeSpan Interval => UpdateCadence.Interval(HasGitHubToken());
+
+    /// <summary>#292: the last automatic pass (or manual Update All) that ran to the end, this launch or an earlier one.</summary>
+    internal DateTimeOffset? LastPass
+    {
+        get
+        {
+            if (_lastPass is null && CheckStamps is { } stamps)
+            {
+                try { _lastPass = stamps.LastCheck(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Warn("update", "Could not read when updates were last checked", ex); }
+            }
+            return _lastPass;
+        }
+    }
+
+    /// <summary>#292: when the next automatic pass runs (null while the loop is off).</summary>
+    internal DateTimeOffset? NextPass { get; private set; }
+
+    private void RecordPass()
+    {
+        var now = Now();
+        _lastPass = now;
+        NextPass = now + Interval;
+        if (CheckStamps is not { } stamps) return;
+        try { stamps.Record(now); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or RHI.Platform.Linux.Persistence.JsonStoreUnavailableException)
+        {
+            AppLog.Warn("update", "Could not save when updates were last checked; the next start checks at once", ex);
+        }
+    }
 
     // Library-wide facts that need disk access, worked out off the UI thread after scans and operations (Refs #71).
     private bool _libraryHasManagedTargets;
@@ -62,7 +112,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     private async Task UpdateAllAsync()
     {
         if (!CanUpdateAll) return;
-        var games = Host.AllGames.ToArray();
+        var games = Host.UnattendedGames.ToArray(); // #291: hidden games left out
         using var op = BeginOperation("update-all");
         if (op is null) return;
         try
@@ -78,6 +128,9 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             // action on "wait for analysis" (Refs #72).
             await InvalidateAllAndReprobeSelectedAsync();
             StatusText = UiLocalizationService.UpdateAllSummary(result) + Shell.F5Driver.UpdateAllNote(games, result); // w11/nr-gpu hook (#231)
+            // #292 (upstream: a manual check restarts the countdown): the next automatic pass is a whole interval away.
+            RecordPass();
+            if (_backgroundUpdateCts is not null) RestartBackgroundUpdateLoop(runImmediate: false);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
@@ -121,21 +174,27 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         return indexes;
     }
 
+    /// <param name="runImmediate">A pass is wanted now (a Follow newest toggle or automatic updates just turned on);
+    /// otherwise the first pass waits what is left of the interval since the last one (#292), none when that is over.</param>
     internal void RestartBackgroundUpdateLoop(bool runImmediate)
     {
         try { _backgroundUpdateCts?.Cancel(); } catch { }
         _backgroundUpdateCts?.Dispose();
         _backgroundUpdateCts = null;
         _deferred = null; // #242: a restarted loop's first pass defers the running games again
+        NextPass = null;
         if (!LoopWanted(Host.Settings)) return;
         _backgroundUpdateCts = new CancellationTokenSource();
-        UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
+        var first = runImmediate ? TimeSpan.Zero : UpdateCadence.FirstDelay(LastPass, Now(), Interval);
+        NextPass = Now() + first;
+        UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, first), "BackgroundUpdateLoopAsync");
     }
 
     // A failed pass is logged, reported and retried with back-off; the loop ends only when cancelled (#81).
-    private Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
-        => BackgroundUpdateLoop.RunAsync(RunBackgroundUpdatePassAsync, TimeSpan.FromHours(Host.Settings.UpdateCheckIntervalHours), runImmediate,
-            (ex, retry) => StatusText = BackgroundUpdateLoop.FailedStatus(ex, retry), cancellationToken);
+    private Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, TimeSpan firstDelay)
+        => BackgroundUpdateLoop.RunAsync(RunBackgroundUpdatePassAsync, Interval, runImmediate: false,
+            (ex, retry) => { NextPass = Now() + retry; StatusText = BackgroundUpdateLoop.FailedStatus(ex, retry); }, cancellationToken,
+            delay: LoopDelay, firstDelay: firstDelay, currentInterval: () => Interval, passSucceeded: RecordPass);
 
     // One pass: the component updates (when that setting is on), then, with the gate released, Follow newest (#177).
     private async Task RunBackgroundUpdatePassAsync(CancellationToken cancellationToken)
@@ -147,7 +206,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     private async Task RunBackgroundComponentPassAsync(CancellationToken cancellationToken)
     {
         if (!Host.Settings.AutoUpdateComponents || IsBusy) return;
-        var games = Host.AllGames.ToArray();
+        var games = Host.UnattendedGames.ToArray(); // #291: hidden games left out
         if (!await Task.Run(() => _updateAll.HasManagedTargets(games), cancellationToken)) return;
         using var op = Host.Operations.TryBegin("background-update", linkedToken: cancellationToken);
         if (op is null) return;
@@ -204,7 +263,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         } while (claimed is null);
         using var op = claimed;
         // The library may have been refreshed meanwhile: the game as it is now, or nothing when it is gone.
-        var game = Host.AllGames.FirstOrDefault(candidate => Key(candidate) == Key(deferred));
+        var game = Host.UnattendedGames.FirstOrDefault(candidate => Key(candidate) == Key(deferred)); // #291: hidden since
         if (game is null) return false;
         try
         {
@@ -244,10 +303,10 @@ public sealed partial class UpdatesViewModel : PanelViewModel
            || previous.FollowNewestDlss != saved.FollowNewestDlss
            || previous.FollowNewestStreamline != saved.FollowNewestStreamline;
 
-    /// <summary>A restarted loop runs at once when component updates are on, or when a Follow newest toggle was just
-    /// turned on (its first pass seeds the baseline from today's manifest).</summary>
+    /// <summary>A restarted loop runs at once when component updates or a Follow newest toggle were just turned on (its
+    /// first pass seeds the baseline from today's manifest); any other restart keeps the cadence (#292).</summary>
     internal static bool RunsImmediatelyAfterSave(LinuxAppSettings previous, LinuxAppSettings saved)
-        => saved.AutoUpdateComponents
+        => (saved.AutoUpdateComponents && !previous.AutoUpdateComponents) // #292: otherwise the cadence decides
            || (saved.FollowNewestDlss && !previous.FollowNewestDlss)
            || (saved.FollowNewestStreamline && !previous.FollowNewestStreamline);
 
@@ -289,7 +348,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         await Host.Operations.WhenIdleAsync(cancellationToken);
         using var op = Host.Operations.TryBegin("dlss-follow", linkedToken: cancellationToken);
         if (op is null) return;
-        var games = Host.AllGames.ToArray();
+        var games = Host.UnattendedGames.ToArray(); // #291: hidden games left out
         // File indexes the selection analysis already built; the service builds the rest itself, off the UI thread.
         var cached = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (var game in games)

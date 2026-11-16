@@ -47,6 +47,12 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
     /// </summary>
     public event EventHandler<GitHubTokenFileExposedEventArgs>? TokenFileExposed;
 
+    /// <summary>
+    /// #292: whether requests to api.github.com carry a token now (a private token file whose token GitHub has not
+    /// rejected). The update cadence is hourly with one, every 4 hours without.
+    /// </summary>
+    public bool HasUsableToken => LoadToken() is not null;
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         string? sentToken = null;

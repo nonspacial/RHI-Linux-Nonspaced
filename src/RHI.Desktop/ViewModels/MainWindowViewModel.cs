@@ -106,6 +106,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>w3/parity features (Settings → Accounts &amp; updates, shortcuts, hand-off); set by App. Integrator hook.</summary>
     public ParityFeatures? Parity { get; set; }
     internal IReadOnlyList<DetectedGame> AllLibraryGames => _library.AllGames; // w3/parity hook (shortcut launch by key)
+
+    /// <summary>#291: the library games a library-wide change may touch (Update All, apply to all): hidden games left out.</summary>
+    internal IReadOnlyList<DetectedGame> UnattendedLibraryGames => GameLibraryFilter.Unattended(_library.AllGames);
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
     // Labels and values of every option list come from OptionLists (one mapping, shared with the dialogs; Refs #87).
     public ObservableCollection<string> Dlss5FeederConsumerOptions { get; } = ["RenoDX DLSS5", "Deep Fried Chicken"];
@@ -475,7 +478,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         ShaderPackPrefetch = StartShaderPackPrefetch(() => PrefetchShaderPacksAsync(downloadAll, cancel));
     }
 
-    void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate);
+    // #292: a start runs a pass at once only when the last one (kept between launches) is an interval or more ago.
+    void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate: false);
     bool IStartupSteps.AutoUpdateComponents => _settings.AutoUpdateComponents;
 
     /// <summary>#194/#267: the start-up shader-pack check (updates, and with CacheAllShaders the missing packs); a test seam.</summary>
@@ -946,6 +950,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 game.LibraryIdentityPath ??= game.InstallPath;
                 adoptedMergedKeys |= _libraryState.AdoptOlderKeys(game); // older-build and merged-duplicate keys (Refs #55, #147)
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
+                if (_libraryState.IsRemoved(libraryKey)) continue; // #293: removed from RHI until Restore
                 if (previous is not null && previous.TryGetValue(Key(game), out var kept))
                 {
                     _library.SetLibraryFlags(kept, _libraryState.FavouriteGames.Contains(libraryKey), _libraryState.HiddenGames.Contains(libraryKey));
@@ -1516,11 +1521,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     private async Task RefreshLibraryFactsAsync()
     {
         var games = _library.AllGames.ToArray();
+        var unattended = GameLibraryFilter.Unattended(games); // #291: Update All leaves hidden games out
         bool managed, batch;
         try
         {
             (managed, batch) = await Task.Run(() => (
-                _updateAll.HasManagedTargets(games),
+                _updateAll.HasManagedTargets(unattended),
                 games.Any(game => game.HasConfirmedPatchTarget &&
                                   !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) &&
                                   !game.DlssScanSkippedByManifest && Directory.Exists(game.InstallPath))));
@@ -1536,6 +1542,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         Updates.NotifyCanUpdateAll();
         OnPropertyChanged(nameof(CanOpenDlssBatch));
     }
+
+    /// <summary>Test seam: re-works Update All / DLSS batch availability now.</summary>
+    internal Task RefreshLibraryFactsForTestingAsync() => RefreshLibraryFactsAsync();
 
     [RelayCommand]
     private void OpenGameFolder()
@@ -1794,6 +1803,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
         NotifySelected();
+        UiExceptionGuard.Forget(RefreshLibraryFactsAsync(), "RefreshLibraryFactsAsync"); // #291: Update All counts shown games only
     }
 
     /// <summary>
@@ -2112,6 +2122,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         OnPropertyChanged(nameof(SelectedPrefix));
         OnPropertyChanged(nameof(SelectedExecutable));
         OnPropertyChanged(nameof(SelectedBinaryDirectory));
+        NotifySteamUpdateBlock(); // #290
+        NotifyRemoveFromRhi(); // #293
         Runtime.NotifySection();
         OnPropertyChanged(nameof(HasSelectedGame));
         OnPropertyChanged(nameof(SelectedGameHasNotes));
@@ -2152,6 +2164,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     GameAnalysis? IPanelHost.CurrentAnalysis => CurrentAnalysis;
     LinuxAppSettings IPanelHost.Settings => _settings;
     IReadOnlyList<DetectedGame> IPanelHost.AllGames => _library.AllGames;
+    IReadOnlyList<DetectedGame> IPanelHost.UnattendedGames => UnattendedLibraryGames;
     LinuxGameLibraryState IPanelHost.LibraryState => _libraryState;
     OperationScope? IPanelHost.BeginOperation(string kind, bool cancellable, CancellationToken linkedToken) => BeginOperation(kind, cancellable, linkedToken);
     string? IPanelHost.TryPersist(Action save, string whatKey, bool sessionOnly, bool reportStatus) => TryPersist(save, whatKey, sessionOnly, reportStatus);

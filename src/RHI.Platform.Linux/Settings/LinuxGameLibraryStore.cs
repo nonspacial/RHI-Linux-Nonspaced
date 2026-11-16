@@ -106,6 +106,15 @@ public sealed class LinuxGameEditOverride
 }
 
 /// <summary>A saved custom filter (Refs #193): a name and the search text it applies.</summary>
+/// <summary>#293 (upstream 2.9.0 "Remove from RHI"): a game the user removed from every list, until Restore.</summary>
+public sealed class LinuxRemovedGame
+{
+    public string Key { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Source { get; set; } = "";
+    public DateTimeOffset RemovedUtc { get; set; }
+}
+
 public sealed class LinuxCustomFilter
 {
     public string Name { get; set; } = "";
@@ -149,6 +158,15 @@ public sealed class LinuxGameLibraryState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<LinuxCustomFilter>? CustomFilters { get; set; }
 
+    /// <summary>
+    /// #293 (upstream 2.9.0): games removed from RHI (gone from every list, Hidden included, and not brought back by a
+    /// scan) by library key. Null when there are none, so the file keeps the shape older builds wrote.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LinuxRemovedGame>? RemovedGames { get; set; }
+
+    public bool IsRemoved(string key) => RemovedGames?.Any(entry => string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase)) == true;
+
     public LinuxGameLibraryState Normalize()
     {
         FavouriteGames = new HashSet<string>(FavouriteGames ?? [], StringComparer.OrdinalIgnoreCase);
@@ -182,6 +200,11 @@ public sealed class LinuxGameLibraryState
             .ToList();
         FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(FilterMode);
         CustomFilters = LinuxCustomFilter.NormalizeList(CustomFilters);
+        var removed = (RemovedGames ?? [])
+            .Where(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.Key))
+            .DistinctBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        RemovedGames = removed.Count == 0 ? null : removed;
         return this;
     }
 

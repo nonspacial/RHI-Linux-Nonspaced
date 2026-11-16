@@ -56,6 +56,7 @@ public sealed partial class AppUpdatePresenter : ObservableObject
                 AppUpdateCheckResult.UpdateAvailable => TF("Parity.AppUpdateAvailable", check.Latest!.Version, check.CurrentVersion),
                 AppUpdateCheckResult.UpToDate => TF("Parity.AppUpdateUpToDate", check.CurrentVersion),
                 AppUpdateCheckResult.NoReleases => TF("Parity.AppUpdateNoReleases", check.CurrentVersion),
+                AppUpdateCheckResult.RateLimited => TF("Parity.AppUpdateRateLimited", check.CurrentVersion),
                 _ => TF("Parity.AppUpdateCouldNotCheck", check.CurrentVersion)
             };
             return check.Result == AppUpdateCheckResult.UpdateAvailable

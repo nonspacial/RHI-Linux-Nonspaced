@@ -446,7 +446,7 @@ internal sealed class AppComposition
             OptiScalerVariantStore = optiScalerVariantStore,
             SettingsStore = settingsStore,
             UpdateAll = new LinuxUpdateAllService(records, managedComponents),
-            DlssDefaults = new LinuxDlssDefaultsService(dlss, records),
+            DlssDefaults = new LinuxDlssDefaultsService(dlss, records) { History = new ComponentHistory(updateLog) }, // #289
             LibraryStore = libraryStore,
             Records = records,
             UpdateLog = updateLog,

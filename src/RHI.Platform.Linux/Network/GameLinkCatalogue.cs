@@ -37,6 +37,9 @@ public sealed partial class GameLinkCatalogue
     public const string P1xelReadmeUrl = "https://raw.githubusercontent.com/p1xel8ted/UltrawideFixes/main/README.md";
     public const string HdrDatabaseReadmeUrl = "https://raw.githubusercontent.com/KoKlusz/HDR-Gaming-Database/main/README.md";
     public static readonly TimeSpan DefaultFreshness = TimeSpan.FromHours(24);
+
+    /// <summary>#292 (upstream 2.8.9): how long the Ultra+ and ultrawide fix lists are used before RHI asks again.</summary>
+    public static readonly TimeSpan ModListFreshness = TimeSpan.FromHours(4);
     /// <summary>How long "PCGamingWiki has no page for this game" is trusted before RHI asks again.</summary>
     public static readonly TimeSpan PcgwMissFreshness = TimeSpan.FromDays(7);
     private static readonly TimeSpan SteamSearchGap = TimeSpan.FromSeconds(1);
@@ -80,14 +83,16 @@ public sealed partial class GameLinkCatalogue
         _policy = policy;
         var directory = cacheDirectory ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "links");
         var fresh = freshness ?? DefaultFreshness;
+        // #292 (upstream 2.8.9): the Ultra+ and ultrawide fix lists are kept 4 hours, not a day, so new mods show sooner.
+        var modLists = freshness ?? ModListFreshness;
         _ultraPlus = Links("Ultra+", UltraPlusGamesUrl, DownloadSources.UltraPlusGameList, ParseUltraPlus, LinkHosts.UltraPlus,
-            Path.Combine(directory, "ultraplus-games.json"), fresh);
+            Path.Combine(directory, "ultraplus-games.json"), modLists);
         _lyall = Links("Lyall ultrawide fixes", LyallReposUrl, DownloadSources.UltrawideFixList, ParseLyall, LinkHosts.UltrawideFix,
-            Path.Combine(directory, "uwfix-lyall.json"), fresh);
+            Path.Combine(directory, "uwfix-lyall.json"), modLists);
         _rose = Links("RoseTheFlower ultrawide fixes", RoseReadmeUrl, DownloadSources.CommunityGameList, ParseRose, LinkHosts.UltrawideFix,
-            Path.Combine(directory, "uwfix-rose.json"), fresh);
+            Path.Combine(directory, "uwfix-rose.json"), modLists);
         _p1xel = Links("p1xel8ted ultrawide fixes", P1xelReadmeUrl, DownloadSources.CommunityGameList, ParseP1xel, LinkHosts.UltrawideFix,
-            Path.Combine(directory, "uwfix-p1xel8ted.json"), fresh);
+            Path.Combine(directory, "uwfix-p1xel8ted.json"), modLists);
         _hdrDatabase = Links("HDR Gaming Database", HdrDatabaseReadmeUrl, DownloadSources.CommunityGameList, ParseHdrDatabase, LinkHosts.HdrDatabase,
             Path.Combine(directory, "hdr-gaming-database.json"), fresh, HdrDatabaseKey);
         _pcgwStore = new JsonFileStore<PcgwLinkCache>(Path.Combine(directory, "pcgw-links.json"), new JsonSerializerOptions { WriteIndented = false },

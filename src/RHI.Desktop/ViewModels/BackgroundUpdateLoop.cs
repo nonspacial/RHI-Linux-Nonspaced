@@ -20,19 +20,28 @@ public static class BackgroundUpdateLoop
     /// <param name="runImmediate">Run a pass before the first wait.</param>
     /// <param name="passFailed">Told about a failed pass and when the next try is (status line); runs on the caller's context.</param>
     /// <param name="delay">Waits; <see cref="Task.Delay(TimeSpan, CancellationToken)"/> unless a test drives the clock.</param>
+    /// <param name="firstDelay">#292: the wait before the first pass (overrides <paramref name="runImmediate"/>): what is left of
+    /// the interval since the last pass, which may have been in an earlier launch.</param>
+    /// <param name="currentInterval">#292: read before each wait, so a GitHub token added or removed changes the cadence
+    /// (default: <paramref name="interval"/>).</param>
+    /// <param name="passSucceeded">#292: told after each pass that ran to the end (the stamp kept between launches).</param>
     public static async Task RunAsync(
         Func<CancellationToken, Task> pass,
         TimeSpan interval,
         bool runImmediate,
         Action<Exception, TimeSpan> passFailed,
         CancellationToken cancellationToken,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        TimeSpan? firstDelay = null,
+        Func<TimeSpan>? currentInterval = null,
+        Action? passSucceeded = null)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(passFailed);
         delay ??= Task.Delay;
+        currentInterval ??= () => interval;
         var failures = 0;
-        var next = runImmediate ? TimeSpan.Zero : interval;
+        var next = firstDelay ?? (runImmediate ? TimeSpan.Zero : interval);
         while (true)
         {
             try
@@ -41,7 +50,8 @@ public static class BackgroundUpdateLoop
                 cancellationToken.ThrowIfCancellationRequested();
                 await pass(cancellationToken);
                 failures = 0;
-                next = interval;
+                next = currentInterval();
+                passSucceeded?.Invoke();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -51,7 +61,7 @@ public static class BackgroundUpdateLoop
             {
                 // Network, disk or a component service: none of them should stop automatic updates for the session.
                 failures++;
-                next = RetryDelay(failures, interval);
+                next = RetryDelay(failures, currentInterval());
                 AppLog.Warn("update", $"background update pass failed ({failures} in a row); next try in {next}", ex);
                 passFailed(ex, next);
             }
