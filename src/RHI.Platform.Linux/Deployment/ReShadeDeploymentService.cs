@@ -113,6 +113,9 @@ public sealed partial class ReShadeDeploymentService
     public IReadOnlyList<ReShadeShaderPackInfo> AvailableShaderPacks => _shaderPacks.AvailablePacks;
     /// <summary>#194: stages every shader pack not in the cache yet (the CacheAllShaders setting; cache only).</summary>
     public Task<int> PrefetchShaderPacksAsync(CancellationToken cancellationToken = default) => _shaderPacks.PrefetchMissingAsync(cancellationToken);
+
+    /// <summary>#265/#267: checks every shader pack already downloaded for a newer build (cache only).</summary>
+    public Task<int> RefreshDownloadedShaderPacksAsync(CancellationToken cancellationToken = default) => _shaderPacks.RefreshDownloadedAsync(cancellationToken);
     public string CustomShaderRoot => _shaderPacks.CustomRoot;
     public Task<IReadOnlyList<ReShadeShaderPackInfo>> RefreshShaderPackCatalogAsync(CancellationToken cancellationToken = default)
         => _shaderPacks.RefreshCatalogAsync(cancellationToken);

@@ -466,17 +466,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     Task IStartupSteps.RefreshLibraryAsync() => RefreshAsync();
 
     // w6/crash hook (#194, upstream CacheAllShaders): with the setting on, every shader pack is staged in the background.
+    // #265/#267 (upstream 2.8.9/2.9.4): packs already downloaded are checked for updates at every start, setting on or off.
     void IStartupSteps.LibraryScanned()
     {
-        if (!_settings.CacheAllShaders || _disposed) return;
+        if (_disposed) return;
         var cancel = _shaderPackPrefetchCancel.Token; // read here, not in the task: Dispose disposes the source
-        ShaderPackPrefetch = StartShaderPackPrefetch(() => PrefetchShaderPacksAsync(cancel));
+        var downloadAll = _settings.CacheAllShaders;
+        ShaderPackPrefetch = StartShaderPackPrefetch(() => PrefetchShaderPacksAsync(downloadAll, cancel));
     }
 
     void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate);
     bool IStartupSteps.AutoUpdateComponents => _settings.AutoUpdateComponents;
 
-    /// <summary>#194: the start-up shader-pack prefetch (null while CacheAllShaders is off); a test seam.</summary>
+    /// <summary>#194/#267: the start-up shader-pack check (updates, and with CacheAllShaders the missing packs); a test seam.</summary>
     internal Task? ShaderPackPrefetch { get; private set; }
 
     /// <summary>Starts the prefetch off the UI context (<see cref="Task.Run(Func{Task})"/>); a test seam that runs it later.</summary>
@@ -486,9 +488,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     // Cache only, best effort: a failure is logged and the packs are fetched when an install needs them. Disposing the
     // view model cancels it.
-    private async Task PrefetchShaderPacksAsync(CancellationToken cancel)
+    private async Task PrefetchShaderPacksAsync(bool downloadAll, CancellationToken cancel)
     {
-        try { await _managedComponents.PrefetchShaderPacksAsync(cancel).ConfigureAwait(false); }
+        try
+        {
+            await _managedComponents.RefreshDownloadedShaderPacksAsync(cancel).ConfigureAwait(false);
+            if (downloadAll) await _managedComponents.PrefetchShaderPacksAsync(cancel).ConfigureAwait(false);
+        }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
         catch (Exception ex) { AppLog.Warn("shaders", "Start-up shader-pack staging failed; packs are fetched when an install needs them", ex); }
     }

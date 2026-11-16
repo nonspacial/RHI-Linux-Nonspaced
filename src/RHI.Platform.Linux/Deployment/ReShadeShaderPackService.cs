@@ -823,6 +823,50 @@ public sealed class ReShadeShaderPackService
         return fetched;
     }
 
+    /// <summary>
+    /// #267 (upstream 2.8.9 <c>EnsureDownloadedPacksAsync</c>) and #265 (upstream 2.9.4 <c>EnsureManifestPacksAsync</c>): at
+    /// start-up every pack already downloaded is checked for a newer build and staged again when there is one, whether or
+    /// not a game uses it and whatever "Download all shaders" says; packs never downloaded stay on demand. The catalogue is
+    /// refreshed first, so packs the upstream manifest adds are checked like the built-in ones. Cache only: games get the
+    /// new files with their next shader sync (an install, an update, Shaders/Add-ons). Returns how many packs it re-staged.
+    /// </summary>
+    public async Task<int> RefreshDownloadedAsync(CancellationToken cancellationToken = default)
+    {
+        await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
+        var refreshed = 0;
+        foreach (var pack in _packs.Where(pack => !pack.IsCustom).Append(CoreHeadersPack).ToArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (await RefreshIfStagedAsync(pack, cancellationToken).ConfigureAwait(false)) refreshed++;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                AppLog.Warn("shaders", $"Could not check the shader pack {pack.DisplayName} for updates at start-up", ex);
+            }
+        }
+        return refreshed;
+    }
+
+    private async Task<bool> RefreshIfStagedAsync(ReShadeShaderPackDefinition pack, CancellationToken cancellationToken)
+    {
+        await _packGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var packDir = Path.Combine(_cacheDir, SafePackDirectoryName(pack.Id));
+            if (!Directory.Exists(Path.Combine(packDir, "extracted"))) return false;
+            var marker = Path.Combine(packDir, ".complete");
+            var before = File.Exists(marker) ? File.ReadAllText(marker) : null;
+            await EnsurePackCoreAsync(pack, cancellationToken).ConfigureAwait(false);
+            return !string.Equals(before, File.Exists(marker) ? File.ReadAllText(marker) : null, StringComparison.Ordinal);
+        }
+        finally
+        {
+            _packGate.Release();
+        }
+    }
+
     /// <summary>Stages <paramref name="pack"/> only when it has no cache entry, checked under the pack cache gate.</summary>
     private async Task<bool> EnsurePackIfMissingAsync(ReShadeShaderPackDefinition pack, CancellationToken cancellationToken)
     {
@@ -851,7 +895,10 @@ public sealed class ReShadeShaderPackService
 
         var (downloadUrl, sourceIdentity) = pack.SourceKind == ReShadeShaderPackSourceKind.GhRelease
             ? await ResolveGitHubReleaseAssetAsync(pack.Url, pack.AssetExt ?? ".zip", cancellationToken).ConfigureAwait(false)
-            : (pack.Url, pack.Url);
+            : (pack.Url, await DirectUrlIdentityAsync(pack.Url, cancellationToken).ConfigureAwait(false));
+        // #265/#267: a branch archive whose server could not be asked (offline, no validator) keeps the copy staged from it.
+        if (sourceIdentity == pack.Url && File.Exists(sourceMarker) && IsIdentityOf(File.ReadAllText(sourceMarker), pack.Url))
+            sourceIdentity = File.ReadAllText(sourceMarker);
 
         if (File.Exists(marker) && File.Exists(sourceMarker) && Directory.Exists(extracted) &&
             SafeFileEnumeration.Files(extracted).Any() &&
@@ -893,6 +940,16 @@ public sealed class ReShadeShaderPackService
             {
                 // Host tool through the shared runner: time limit, process-tree kill, link check (#37).
                 await ExternalArchiveRunner.ExtractAsync(temp, raw, cancellationToken).ConfigureAwait(false);
+            }
+            else if (extension.Equals(".fx", StringComparison.OrdinalIgnoreCase) || extension.Equals(".fxh", StringComparison.OrdinalIgnoreCase))
+            {
+                // #265: a pack that is one shader file (UltrawideSideGlass, a GitHub release asset; upstream copies it as is).
+                var name = Path.GetFileName(new Uri(downloadUrl).AbsolutePath);
+                if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                    || !Path.GetExtension(name).Equals(extension, StringComparison.OrdinalIgnoreCase))
+                    name = SafePackDirectoryName(pack.Id) + extension;
+                Directory.CreateDirectory(Path.Combine(raw, "Shaders"));
+                File.Copy(temp, Path.Combine(raw, "Shaders", name));
             }
             else
             {
@@ -964,6 +1021,32 @@ public sealed class ReShadeShaderPackService
             AppLog.Warn("shaders", $"Could not create the custom shader folders under {_customRoot}", ex);
         }
     }
+
+    /// <summary>
+    /// #265/#267 (upstream <c>ResolveDirectUrlVersion</c>): a branch archive or other direct link is rebuilt under the same
+    /// link, so its version is the server's ETag, else its Last-Modified, asked with a HEAD under the shader-pack policy.
+    /// The link alone when the server cannot be asked or sends neither (the staged copy is then kept).
+    /// </summary>
+    private async Task<string> DirectUrlIdentityAsync(string url, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            using var response = await TrustedDownload.HeadAsync(_http, url, DownloadSources.ShaderPacks, timeout.Token).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return url;
+            var validator = response.Headers.ETag?.Tag ?? response.Content.Headers.LastModified?.UtcDateTime.ToString("O");
+            return string.IsNullOrWhiteSpace(validator) ? url : url + "|" + validator;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            return url;
+        }
+    }
+
+    private static bool IsIdentityOf(string identity, string url)
+        => identity == url || identity.StartsWith(url + "|", StringComparison.Ordinal);
 
     private async Task<(string DownloadUrl, string SourceIdentity)> ResolveGitHubReleaseAssetAsync(
         string apiUrl,

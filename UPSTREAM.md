@@ -1502,3 +1502,30 @@ it names a 64- or 32-bit add-on to match its key; anything else keeps the built-
 link). Each fallback link passes the same policy. A copy downloaded from a fallback link is not reused from the cache
 for the catalogue's link, so it is downloaded again while that link stays unreachable. Not ported from `a593a09`: the
 Built-in add-ons setting (Generic Depth / Effect Runtime Sync), which belongs to the ReShade settings lanes.
+
+### #267 / #265 — Shader packs you downloaded are checked for updates at every start, manifest packs included
+
+Upstream 2.8.9 `b59a60f` (`EnsureDownloadedPacksAsync`) and 2.9.4 `73af594` (`EnsureManifestPacksAsync`). RHI Linux had
+no start-up check for staged packs at all: with "Download all shaders" on, start-up staged only the packs missing from
+the cache (#194), and an install refreshed only the packs that game uses. Now every start checks each pack already in
+the cache, whatever the setting and whether or not a game uses it, and stages it again when its source has a newer
+build (`ReShadeShaderPackService.RefreshDownloadedAsync`); packs never downloaded stay on demand. The catalogue is
+refreshed from the manifest first, so the packs it adds (SD Shaders, UltrawideSideGlass, BaBa Shaders…) are checked
+with the built-in ones in one pass; upstream needs a second pass because its start-up check runs before the manifest
+loads. Games get the new files with their next shader sync (ReShade install or update, Shaders/Add-ons, Update All of
+ReShade), as before.
+
+Two Linux gaps closed on the way. A branch-archive pack (`DirectUrl`, most packs) was keyed by its link alone, so it
+never updated once staged; its version is now the server's ETag, else its Last-Modified, asked with a HEAD under the
+shader-pack policy (upstream `ResolveDirectUrlVersion`). Each pack staged by an older build is therefore downloaded
+once more after the upgrade. A pack that is one `.fx` / `.fxh` file (UltrawideSideGlass's release asset) was refused
+("format is not supported"); it is now staged in the pack's `Shaders` folder, as upstream copies it. Upstream's
+second 2.8.9 fix (shaders a pack removed or renamed staying behind) never applied here: each build of a pack replaces
+the whole staged tree.
+
+Linux deviations: when the server cannot be asked or sends no validator, the staged copy is kept (upstream downloads
+it again on every check). The refresh runs under the pack cache gate; a ReShade install that staged a pack just
+before could see it replaced before it copies it, as two installs at once already could, and its journaled sync then
+fails and is undone rather than deploying a mix. Not ported: upstream's Zenteon+ link is a Patreon file link, which
+the shader-pack download policy (GitHub, GitLab) refuses, so Zenteon+ shows in the list but does not download; adding
+patreon.com as a trusted host is an owner decision.

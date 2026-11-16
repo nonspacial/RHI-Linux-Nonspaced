@@ -49,6 +49,9 @@ public sealed partial class LinuxManagedComponentService
     public IReadOnlyList<ReShadeShaderPackInfo> AvailableReShadeShaderPacks => _reshade.AvailableShaderPacks;
     /// <summary>#194 (upstream CacheAllShaders): stages every shader pack not in the cache yet; cache only.</summary>
     public Task<int> PrefetchShaderPacksAsync(CancellationToken cancellationToken = default) => _reshade.PrefetchShaderPacksAsync(cancellationToken);
+
+    /// <summary>#265/#267 (upstream 2.8.9/2.9.4): checks every shader pack already downloaded for a newer build; cache only.</summary>
+    public Task<int> RefreshDownloadedShaderPacksAsync(CancellationToken cancellationToken = default) => _reshade.RefreshDownloadedShaderPacksAsync(cancellationToken);
     public string CustomShaderRoot => _reshade.CustomShaderRoot;
 
     public Task<IReadOnlyList<ReShadeShaderPackInfo>> RefreshReShadeShaderPackCatalogAsync(

@@ -20,6 +20,11 @@ Not on `main` yet.
 - The generic Unity RenoDX add-on comes from its new location (Voosh's GitHub Pages, 64-bit), and the upstream
   manifest can move it again without an app update. Games with the add-on from the old link show an update. When a
   link cannot be reached, RHI tries the add-on's older links in turn (#268).
+- Shader packs you have downloaded are checked for updates at every start, whether or not a game uses them and with
+  "Download all shaders" on or off; packs you never used are still downloaded only when needed (#267). Packs that
+  come as a branch archive (most of them) now update when their author changes them; before, the first download was
+  kept for good. Packs the online manifest adds (SD Shaders, UltrawideSideGlass) update like the others, and
+  UltrawideSideGlass, a single `.fx` file, now installs at all (#265).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

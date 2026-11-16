@@ -389,7 +389,7 @@ public sealed class AddonManagerUpdateTests : IDisposable
     }
 }
 
-/// <summary>#194: the app stages the shader packs at start-up only with CacheAllShaders on (a VM test, so in the UI-language collection).</summary>
+/// <summary>#194: the app stages the shader packs at start-up only with CacheAllShaders on (#267: and checks staged ones for updates either way) (a VM test, so in the UI-language collection).</summary>
 [Collection(UiLanguageCollection.Name)]
 public sealed class ShaderPackPrefetchStartUpTests
 {
@@ -413,7 +413,10 @@ public sealed class ShaderPackPrefetchStartUpTests
         }
         else
         {
-            Assert.Null(fx.Vm.ShaderPackPrefetch);
+            // #267: the start-up check still runs (packs already downloaded are checked for updates) but stages nothing new.
+            Assert.NotNull(fx.Vm.ShaderPackPrefetch);
+            await fx.Vm.ShaderPackPrefetch!.WaitAsync(TimeSpan.FromSeconds(60));
+            Assert.DoesNotContain(requests, url => url.Contains("reshade-shaders", StringComparison.OrdinalIgnoreCase));
         }
     }
 
