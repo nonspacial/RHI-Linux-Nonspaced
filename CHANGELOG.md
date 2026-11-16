@@ -173,6 +173,15 @@ Wave 14 — extras-fg
   - The DLL name list puts the name the RHI manifest recommends for a game first and uses it by default (Euro Truck
     Simulator 2: `winmm.dll`); the ⚙ names it.
 
+### Wave 14 — ui-logic
+
+- **Game search like Steam's** (upstream 2.9.3): punctuation and spaces are ignored (fear finds F.E.A.R.), words can
+  come in any order (batman lego), initials work (gta, rdr2, ff7, hl2, mw3), Roman numerals match numbers (gta 3 finds
+  Grand Theft Auto III) and small typos are fine (resident eviaa). When a name or a whole word matches, near misses
+  are hidden (sifu shows only Sifu), and the best match comes first (resident evil 4 puts Resident Evil 4 on top).
+  Stores, runners, engines, graphics APIs, authors and folders match whole words only: st no longer lists every Steam
+  game; type steam, unreal, dx12 or vulkan to list those games.
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

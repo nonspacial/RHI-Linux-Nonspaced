@@ -82,15 +82,14 @@ public sealed class LibraryViewModel
     }
 
     /// <summary>
-    /// Shows the games matching <paramref name="mode"/> and <paramref name="search"/>, sorted by name, by removing and
-    /// inserting cards in place (never clearing the list).
+    /// Shows the games matching <paramref name="mode"/> and <paramref name="search"/>, sorted by name (with a search, best
+    /// match first: #299, <see cref="GameLibraryFilter.Filter"/>), by removing, moving and inserting cards in place (never
+    /// clearing the list).
     /// </summary>
     /// <param name="customQuery">The active saved custom filter's search (Refs #193); null = none.</param>
     public void ApplyFilter(GameLibraryFilterMode mode, string? search, Func<DetectedGame, GameLibraryFilterFacts>? facts, string? customQuery = null)
     {
-        var wanted = _all
-            .Where(game => GameLibraryFilter.Matches(game, mode, search, facts?.Invoke(game) ?? default, customQuery))
-            .OrderBy(game => game.DisplayName(), StringComparer.CurrentCultureIgnoreCase)
+        var wanted = GameLibraryFilter.Filter(_all, mode, search, facts, customQuery)
             .Select(game => _rows[game])
             .ToList();
         var wantedSet = wanted.ToHashSet(ReferenceEqualityComparer.Instance);

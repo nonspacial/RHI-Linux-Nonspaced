@@ -2273,3 +2273,23 @@ use another mapping.
   already lists it.
 - Linux deviation: installs from before get the XeSS files, 310.9.16 and the ASI build through Update / Update All (the
   check plans it), not at start-up. A failed XeSS download does not stop an install (upstream); the message says so.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane ui-logic)
+
+### #299 — Game search like Steam's (2.9.3)
+
+- Ported from upstream's `FilterViewModel` (2.9.4) into `GameSearch` (Core): punctuation and spaces ignored, any word
+  order, initials and partial initials (three or more characters anywhere in them), capital Roman numerals I–XXXIX as
+  numbers (a lone "I" only at the end of a name), typos by word length (5+ letters: 2 off, 4 letters: 1 off, shorter:
+  none; a word being typed is compared with the start of longer words), near misses hidden when a name or whole words
+  match, and best match first (whole name, starts with, whole words, part of the name, initials, near miss, then games
+  found by a tag), A to Z within each rank. Upstream's test table is pinned in `GameSearchTests`.
+- Tags match whole words only (`GameSearch.TagMatches`), as upstream: store, engine, graphics API, bitness and author.
+- Linux deviations: a card is found by its Edit game display name, its detected name and its manifest name (#190); the
+  rank is the best of the three. Linux's extra search fields (runner, compatibility tool and layer, wiki status, the
+  manifest's game note, the install, executable and prefix folders, HDR, Manual) are tags too, so they also match whole
+  words only (a folder by any of its path's words). Upstream also finds a game by its RenoDX/Luma mod's name and author
+  and by DLSS, UW Fix and Ultra+ badges; Linux searched none of these before and does not now (the author tag is the
+  manifest's author override).
+- Upstream's rules give the same near misses: "steam" also shows Stellar Blade ("stell" is two letters off), ranked
+  above the Steam games found by their store.
