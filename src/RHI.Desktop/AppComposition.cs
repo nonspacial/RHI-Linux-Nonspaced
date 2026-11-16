@@ -108,6 +108,8 @@ internal sealed class AppComposition
     // w14/optiscaler rows
     /// <summary>#269: the recommended OptiScaler presets (upstream's optiscaler_presets.json).</summary>
     public OptiScalerRecommendedPresets? OptiScalerRecommendedPresets { get; init; }
+    /// <summary>#293: PCGamingWiki's data, whose page titles name the games found in custom game folders.</summary>
+    public PcgwCentralDataService? PcgwData { get; init; }
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -122,6 +124,7 @@ internal sealed class AppComposition
             vm.OptiScalerPresets.RecommendedSource = presets;
             RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => presets.RefreshAsync()), "optiscaler-presets");
         }
+        if (PcgwData is { } pcgw) vm.CustomFolderTitleLookup = name => pcgw.Current?.TryLookup(name, null)?.PageTitle; // #293
         return vm;
     }
 
@@ -415,6 +418,7 @@ internal sealed class AppComposition
         // w5/ini-presets rows
         managedComponents.UserIni = new UserIniService(userIniTemplates, records, managedComponents.IniWriteRefusal, journal); // #181: deploys journaled
         managedComponents.ReShadePresets = new ReShadePresetService(records, journal, managedComponents.IniWriteRefusal); // #180
+        managedComponents.FolderMoveJournal = journal; // #293 install folder moves are journaled
         managedComponents.LumaSettings = new LumaSettingsService(records, journal, managedComponents.IniWriteRefusal); // #189
         managedComponents.DisplayCommanderSettings = new DisplayCommanderSettingsService(records, journal, managedComponents.IniWriteRefusal); // #282
         managedComponents.Hsf = new HsfDeploymentService(http, records, journal, new ImmerseLaunchpadStep(http)); // #277
@@ -533,6 +537,7 @@ internal sealed class AppComposition
             // w12/pins rows
             // w12/hdr-wsi rows
             HdrSupport = hdrSupport,
+            PcgwData = pcgwData, // #293
         };
     }
 }

@@ -126,6 +126,9 @@
     <DataTemplate DataType="vm:OptiScalerSettingsDialogViewModel">
       <dialogs:OptiScalerSettingsDialogView/>
     </DataTemplate>
+    <DataTemplate DataType="vm:CustomGamesReviewViewModel">
+      <dialogs:CustomGamesReviewDialogView/>
+    </DataTemplate>
     <DataTemplate DataType="vm:AddGameDialogViewModel">
       <dialogs:AddGameDialogView/>
     </DataTemplate>

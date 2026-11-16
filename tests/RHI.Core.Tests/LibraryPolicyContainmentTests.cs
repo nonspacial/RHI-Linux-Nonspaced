@@ -104,6 +104,23 @@ public sealed class LibraryPolicyContainmentTests : IDisposable
         Assert.Equal("/", PathIdentity.Canonicalize("/"));
     }
 
+    [Fact]
+    public async Task InstallPathMigrations_WinOverInstallPathOverrides_AndMoveTheGamesFolder()
+    {
+        // #293: upstream manifest.json at RHI-2.9.4 — "installPathMigrations": { "Phantom Blade Zero": "platform\\steam" }.
+        var root = Dir("lib", "Phantom Blade Zero");
+        Dir("lib", "Phantom Blade Zero", "ProjectPBZ", "Binaries", "Win64");
+        var steam = Dir("lib", "Phantom Blade Zero", "platform", "steam");
+
+        var applied = Assert.Single(await Policy("""
+            { "version": 3, "installPathOverrides": { "Phantom Blade Zero": "ProjectPBZ\\Binaries\\Win64" },
+              "installPathMigrations": { "Phantom Blade Zero": "platform\\steam" } }
+            """).ApplyAsync([Game("Phantom Blade Zero", root)]));
+
+        Assert.Equal(steam, applied.InstallPath);
+        Assert.Equal(root, applied.ManifestInstallRoot);
+    }
+
     private UpstreamGameLibraryPolicyService Policy(string json)
         => new(new UpstreamRhiManifestService(new HttpClient(new JsonHandler(json)), "https://manifest.test/manifest.json"));
 

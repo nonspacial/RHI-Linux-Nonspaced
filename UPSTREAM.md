@@ -1741,20 +1741,15 @@ again. Not journaled: nothing in the game folder changes, and the change is undo
   Hidden included, and a scan does not bring it back: the library file keeps it under `RemovedGames` by its library key
   (omitted while empty, so the file keeps the shape older builds wrote). Upstream places the button in Management;
   Linux has no Management section yet, so it sits with Favourite / Hide (restyle in phase 2). A game the user added is
-  removed with the existing "Remove manual game", as upstream deletes it. Linux deviation: upstream offers to uninstall
-  the game's components at the same time; here they stay installed and the tooltip says to remove them first if wanted.
+  removed with the existing "Remove manual game", as upstream deletes it. Uninstalling the game's components at the
+  same time: see the library-folders lane below.
 - **Settings → Removed games** (ported, as its own Settings tab; upstream Tools & Maintenance › Troubleshooting): every
   removed game, newest first, with Restore, which drops it from the list and rescans so the game comes back.
 - **Reset install folder** (by design here): Linux's Edit game keeps one install-folder override per game; clearing it
   goes back to the folder the scan found, so upstream's "goes back to an earlier pick" bug has no counterpart.
 - **"Folder moved → offer Refresh instead of a folder browser"** (not applicable): RHI Linux never opens a folder
   browser for a missing game folder; it says the folder is missing and offers Refresh and Repair after move (#38).
-- **Not ported in this wave (deferred, see #293):** custom game folders (Settings list, scan on start / Refresh / Scan
-  now, review list with name, exe choice and "Check the exe", ignore list, and on Linux a runner / prefix choice like
-  manual games), and install-folder migration (moving a game's mods, settings and presets after Change / Reset install
-  folder, automatic when RHI corrects the folder, manifest `installPathMigrations`). Both need journaled moves of user
-  and RHI files across folders and a review UI; they were left for a follow-up so this lane's other items could land
-  with their tests.
+- **Custom game folders and install-folder migration:** see the library-folders lane below.
 
 ## Parity notes (upstream 2.8.9–2.9.4, lane extras-addons)
 
@@ -2273,3 +2268,85 @@ use another mapping.
   already lists it.
 - Linux deviation: installs from before get the XeSS files, 310.9.16 and the ASI build through Update / Update All (the
   check plans it), not at start-up. A failed XeSS download does not stop an install (upstream); the message says so.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane library-folders)
+
+These notes finish #293. They supersede the "deferred" bullet and the "components stay installed" deviation of the
+library-updates lane's #293 section above.
+
+### #293 — Custom game folders (2.9.0)
+
+- **Settings → Custom game folders** (ported; upstream Settings › Tools & Maintenance › Custom game folders): a Settings
+  tab beside Removed games until phase 2 restyles Settings. It lists the folders with Remove, then Add folder, Scan now,
+  Review N new games (while games wait) and Forget ignored games (N), with upstream's texts. The folders and the ignored
+  list live in the library file (`game-library.json` `CustomGameFolders`, `IgnoredCustomGameFolders`, absent while empty;
+  upstream: settings.json).
+- **Scan** (ported): at start, after Refresh and with Scan now, off the UI thread. Each direct subfolder of a custom folder
+  is a game, or the folder itself when it is one game (store or engine markers, or its own exe and at most one game-like
+  subfolder). A folder already in the library (any source, by path in either direction), ignored, or named like a listed
+  or removed game, or without an exe, is not offered. The exe ranking, the folder-name cleaner and the "Check the exe"
+  margin (top two within 15 points) are upstream's code, pinned by upstream's test fixtures: installers, redistributables,
+  anti-cheat and crash reporters are skipped, launchers and helper-like names rank lower, Unreal shipping exes, Binaries
+  folders, Unity players, graphics imports and a name like the folder's rank higher. Found games are never added on their
+  own: the status line shows "N new games found in your custom folders · Review"; Not now hides it until the next scan
+  finds something. Scan now opens the review straight away, as upstream.
+- **Review** (ported): one row per game with the name to fix, the exe to choose and "Check the exe: more than one looks
+  like the game.". Add selected, Ignore selected and Not now as upstream. Added games are manual games (Add game's checks,
+  one save and one refresh for all of them) with the chosen exe as their executable. Ignore selected, and removing a game
+  added from a custom folder, keep its folder from being offered again; Forget ignored games undoes both.
+- **Linux additions**: each row also has Add game's Wine/Proton prefix (with Browse; a prefix makes the runner "Manual
+  Wine", none "Manual Windows") and optional launch command, so a custom-folder game launches like any manual game. An
+  exe named `.EXE` counts (Linux filesystems are case sensitive). Paths compare as the library does (symlinks resolved,
+  case sensitive), and a symlinked game folder inside a custom folder is a candidate (upstream skips junctions).
+- **Linux deviations**: the canonical name comes from PCGamingWiki's page titles only (upstream also matches the RenoDX
+  wiki's mod names first). Folders refused as custom folders are the Linux ones: the filesystem root, system folders and
+  whole drives, the home folder itself, a whole Wine prefix or its `drive_c` (`drive_c/Games` is fine), and any path
+  through `steamapps` (upstream: Windows, WindowsApps, Program Files, the user profile, steamapps). The engine shown in the
+  review is read from the folder's layout (Unreal, Unity, RE Engine) rather than upstream's engine detector.
+
+### #293 — Remove from RHI offers to uninstall (2.9.0)
+
+- Ported: Remove from RHI asks first ("Remove <game> from RHI?", how to undo it) and, when RHI installed components in the
+  game, lists them with "Also uninstall all RHI-managed components from game folder" (off by default). Ticked, every
+  component goes through its own journaled removal, layers and add-ons before what they sit on, and a component refused
+  because another depends on it is tried again once the rest is gone. As upstream, the game is removed either way.
+- Linux deviation: upstream only logs a component that could not be uninstalled; here the status line names it with the
+  reason ("Still installed (they come back with the game on Restore): …"). DLSS/Streamline swaps are not components and
+  stay, as upstream.
+
+### #293 — Install folder migration (2.9.2) and Reset install folder (2.9.2/2.9.3)
+
+- **Change install folder** is Edit game's patch target on Linux. Saving a new binaries folder while RHI has installs in
+  the old one asks "Move the game's mods?" (what is installed, the old and the new folder). Yes moves them and saves the
+  new target in the same commit; No changes nothing. Linux deviation: upstream changes the folder and leaves the mods
+  behind on No; here records left in a folder the game no longer uses would block its components, so the folder stays.
+  A change that keeps the folder (another exe or root only) still asks to remove the components first.
+- **Reset install folder** is Restore automatic detection. The detected folder is only known once the game is analysed
+  without its edit, so the reset is saved, the game analysed, and the move offered; declined (or a move that cannot run)
+  the edit is put back and the game keeps the chosen folder and its installs. Upstream's "Reset goes back to an earlier
+  pick" bug has no counterpart (one override per game).
+- **Automatic move** (ported): when the manifest moved the game's folder (`installPathOverrides`, or the new
+  `installPathMigrations`, which wins over it, pinned with upstream's Phantom Blade Zero entry) and the user picked none,
+  installs RHI made in another folder of the game move there on their own after the game's analysis (at start, on
+  Refresh or on selection), with "Moved <game>'s mods to <folder>". A `splitGames` child is left alone (it shares
+  its store's record key and root with its siblings, whose installs are not its own). Never while the game runs: the status line says the
+  mods stay until the game is closed, and the next analysis tries again.
+- **What moves** (Linux): what the deployment records list, not an inventory rebuilt per component. Every record whose
+  binary directory is the old folder moves with its files under it, its folders RHI created and the ReShade presets its
+  record lists. Settings files the component owns move as they are, the user's changes included. A file RHI did not place
+  (it was there before the install and has no `.original` copy beside it: a game or user file RHI edited in place, such
+  as Control's `renderer.ini`) stays where it is; so do files outside the old folder (AddonPath folders, the prefix).
+- **How it moves**: each file is copied to the new folder, verified against its hash, and only then removed. A game file
+  of the same name in the new folder is kept as `.original` (as an install would), and the game's own file RHI kept as
+  `.original` in the old folder is put back. Every step is journaled (start-up recovery undoes a crash) and any failure
+  rolls back the whole move. The re-pointed records (re-keyed when the game's key changed: a folder-keyed game whose root
+  changed) and the game's per-game settings are written in one staged commit, which is the move's commit point. Folders
+  RHI had created in the old folder go once empty.
+- **Never** (refused, nothing changed): while the game runs; when a file RHI owns changed since the install or is
+  missing; when the new folder already has a file and its `.original` copy, or another installed component already uses a
+  target name there (upstream's "new folder wins" is not ported: a user file is never overwritten); when a component's
+  Wine override names another executable (Linux: remove and reinstall it); when NR Cost Scaler sits over a component
+  (Linux: remove it first).
+- Not ported: the RTX Encore `native:` rewrite, the DLSS search-root widening for migrated games and the DLSS skip-list
+  reset (Linux's DLSS search has no skip list and already covers the game root), and upstream's per-component inventory
+  (the records already list every file RHI placed).

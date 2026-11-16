@@ -173,6 +173,20 @@ Wave 14 — extras-fg
   - The DLL name list puts the name the RHI manifest recommends for a game first and uses it by default (Euro Truck
     Simulator 2: `winmm.dll`); the ⚙ names it.
 
+Wave 14 — library-folders
+
+- **Custom game folders** (upstream 2.9.0): Settings → Custom game folders lists folders where you keep DRM-free or
+  other non-store games. RHI checks them at start, on Refresh and with Scan now, and never adds a game on its own: the
+  status line says "N new games found in your custom folders · Review". In the review you fix the name, choose the exe
+  (RHI picks the likely one and says "Check the exe" when two look alike) and, as in Add game, the Wine/Proton prefix
+  and launch command. Ignore selected, or removing a game you added this way, stops it being offered; Forget ignored
+  games undoes that.
+- **Remove from RHI asks first and can uninstall the game's components** at the same time (upstream 2.9.0). A component
+  that cannot be removed is named, and comes back with the game on Restore.
+- **Changing or resetting a game's install folder moves its mods, settings and presets** (upstream 2.9.2): Edit game and
+  Restore automatic detection ask, and when RHI corrects a folder itself (the online manifest) the mods move on their
+  own. Nothing moves while the game is running, a file you changed is never overwritten, and a failed move is undone.
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

@@ -45,6 +45,10 @@ public sealed class CompiledBindingsTests
     [InlineData(typeof(OptiScalerIniSetting), nameof(OptiScalerIniSetting.SelectedIndex))]
     [InlineData(typeof(AddGameDialogViewModel), nameof(AddGameDialogViewModel.Prefix))]
     [InlineData(typeof(EditGameDialogViewModel), nameof(EditGameDialogViewModel.BinaryDirectory))]
+    [InlineData(typeof(CustomGamesReviewViewModel), nameof(CustomGamesReviewViewModel.Rows))] // #293 custom game folders' review
+    [InlineData(typeof(CustomGameReviewRow), nameof(CustomGameReviewRow.ExeIndex))]
+    [InlineData(typeof(CustomGameReviewRow), nameof(CustomGameReviewRow.Prefix))]
+    [InlineData(typeof(MainWindowViewModel), nameof(MainWindowViewModel.CustomGamesNoticeText))]
     [InlineData(typeof(ShaderAddonsDialogViewModel), nameof(ShaderAddonsDialogViewModel.CanApply))]
     [InlineData(typeof(ShaderPackRow), nameof(ShaderPackRow.IsChecked))]
     [InlineData(typeof(ShaderPackFilesDialogViewModel), nameof(ShaderPackFilesDialogViewModel.Status))]

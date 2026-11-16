@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.Input;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
+using RHI.Core.Models;
+using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
@@ -23,10 +25,60 @@ public partial class MainWindowViewModel
 
     public string RemoveFromRhiTip => UiLocalizationService.Text("Removed.RemoveTip");
 
+    /// <summary>
+    /// What the Remove from RHI confirmation shows (upstream 2.9.0): the question, how to undo it and, when RHI installed
+    /// components in the game, which ones, with the box that uninstalls them at the same time.
+    /// </summary>
+    public sealed record RemoveFromRhiPrompt(string Title, string Question, string UndoNote, string? Installed, string UninstallText, string RemoveText)
+    {
+        public bool OffersUninstall => Installed is not null;
+    }
+
+    /// <summary>
+    /// Asks the Remove from RHI confirmation: null = cancelled, false = remove only, true = remove and uninstall the
+    /// components. Unset (tests, a window without dialogs): the game is removed and its components stay.
+    /// </summary>
+    public Func<RemoveFromRhiPrompt, Task<bool?>>? ConfirmRemoveFromRhiAsync { get; set; }
+
+    /// <summary>The confirmation for <paramref name="game"/>.</summary>
+    internal RemoveFromRhiPrompt RemoveFromRhiPromptFor(DetectedGame game)
+    {
+        var installed = _managedComponents.RemovableComponents(game);
+        return new RemoveFromRhiPrompt(
+            UiLocalizationService.Text("Removed.Title"),
+            UiLocalizationService.Format("Removed.Question", game.DisplayName()),
+            UiLocalizationService.Text("Removed.UndoNote"),
+            installed.Count == 0 ? null
+                : UiLocalizationService.Format("Removed.Installed", string.Join(", ", installed.Select(LinuxManagedComponentService.DisplayDependencyName))),
+            UiLocalizationService.Text("Removed.AlsoUninstall"),
+            UiLocalizationService.Text("Vm.Remove"));
+    }
+
     [RelayCommand]
-    private void RemoveFromRhi()
+    private async Task RemoveFromRhiAsync()
     {
         if (SelectedGame is not { IsManuallyAdded: false } game || IsBusy || LibraryWritesPaused()) return;
+        var prompt = RemoveFromRhiPromptFor(game);
+        var uninstall = false;
+        if (ConfirmRemoveFromRhiAsync is { } confirm)
+        {
+            if (await confirm(prompt) is not { } answer) return;
+            uninstall = answer && prompt.OffersUninstall;
+        }
+        // #293 (upstream 2.9.0): "Also uninstall all RHI-managed components" — each through its own journaled removal.
+        // Upstream removes the game whatever happens and only logs a failure; here a component that stays is named.
+        string? kept = null;
+        if (uninstall)
+        {
+            using var op = BeginOperation("component", cancellable: false);
+            if (op is null) return;
+            StatusText = UiLocalizationService.Format("Removed.Uninstalling", game.Name);
+            var result = await _managedComponents.RemoveAllComponentsAsync(game, op.Token);
+            if (!result.Success)
+                kept = UiLocalizationService.Format("Removed.KeptComponents", string.Join("; ", result.Kept.Select(k =>
+                    $"{LinuxManagedComponentService.DisplayDependencyName(k.Component)} ({UiLocalizationService.Present(k.Reason)})")));
+        }
+        if (LibraryWritesPaused()) return;
         AdoptRestoredLibraryFile();
         var key = LinuxGameLibraryStore.GameKey(game);
         var state = WorkingLibraryCopy();
@@ -35,7 +87,7 @@ public partial class MainWindowViewModel
         state.RemovedGames.Add(new LinuxRemovedGame { Key = key, Name = game.Name, Source = game.Source, RemovedUtc = DateTimeOffset.UtcNow });
         if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved)
         {
-            StatusText = notSaved;
+            StatusText = kept is null ? notSaved : notSaved + " " + kept;
             return;
         }
         _libraryState = state;
@@ -44,7 +96,8 @@ public partial class MainWindowViewModel
         SelectedGame = Games.FirstOrDefault()?.Game;
         LoadRemovedGames();
         UiExceptionGuard.Forget(RefreshLibraryFactsAsync(), "RefreshLibraryFactsAsync");
-        StatusText = UiLocalizationService.Format("Removed.Done", game.Name);
+        var done = UiLocalizationService.Format("Removed.Done", game.Name);
+        StatusText = kept is null ? done : done + " " + kept;
     }
 
     /// <summary>Restore from Settings: the game comes back with the next scan, which runs now (or once the gate is free).</summary>
