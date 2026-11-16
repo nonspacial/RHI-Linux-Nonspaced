@@ -24,8 +24,8 @@ public sealed class CardMenuTests : IDisposable
         var menu = fx.Vm.CardMenuFor(Row(fx, "Beta Quest"));
 
         Assert.Equal("Beta Quest", fx.Vm.SelectedGame?.Name);
-        Assert.Equal(["open-folder", "favourite", "hide", "game-report"], menu.Select(i => i.Id));
-        Assert.Equal([UiLocalizationService.Text("Ui.OpenFolder"), fx.Vm.FavouriteActionText, fx.Vm.HideActionText, UiLocalizationService.Text("Shell.CopyReport")], menu.Select(i => i.Label));
+        Assert.Equal(["open-folder", "favourite", "hide", "add-to-collection", "game-report"], menu.Select(i => i.Id));
+        Assert.Equal([UiLocalizationService.Text("Ui.OpenFolder"), fx.Vm.FavouriteActionText, fx.Vm.HideActionText, UiLocalizationService.Text("Coll.AddTo"), UiLocalizationService.Text("Shell.CopyReport")], menu.Select(i => i.Label));
         Assert.All(menu, item => Assert.True(item.Command.CanExecute(null), item.Id)); // nothing greyed out
 
         menu.Single(i => i.Id == "favourite").Command.Execute(null);
@@ -55,7 +55,7 @@ public sealed class CardMenuTests : IDisposable
 
         var plain = fx.Vm.CardMenuFor(Row(fx, "Plain Quest"));
         Assert.DoesNotContain(plain, i => i.Id == "notes");
-        Assert.Equal(["favourite", "hide", "game-report"], plain.Select(i => i.Id)); // no confirmed game folder yet: Open folder is left out
+        Assert.Equal(["favourite", "hide", "add-to-collection", "game-report"], plain.Select(i => i.Id)); // no confirmed game folder yet: Open folder is left out
 
         var menu = fx.Vm.CardMenuFor(Row(fx, "Noted Quest"));
         var notes = menu.Single(i => i.Id == "notes");
@@ -89,7 +89,7 @@ public sealed class CardMenuTests : IDisposable
 
         var menu = fx.Vm.CardMenuFor(Row(fx, "Odd Quest"));
 
-        Assert.Equal(["favourite", "hide", "game-report"], menu.Select(i => i.Id));
+        Assert.Equal(["favourite", "hide", "add-to-collection", "game-report"], menu.Select(i => i.Id));
         Assert.All(menu, item => Assert.True(item.Command.CanExecute(null), item.Id));
         Assert.Contains(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id == "open-folder"); // a confirmed folder keeps it
     }
@@ -122,7 +122,7 @@ public sealed class CardMenuTests : IDisposable
             using var fx = await ViewModelFixture.StartAsync([noted], uiLanguage: "pt-BR");
             UiLocalizationService.Apply("pt-BR");
             var menu = fx.Vm.CardMenuFor(Row(fx, "Noted Quest"));
-            Assert.Equal(["Abrir pasta", "☆ Favorito", "Ocultar", "Ver notas", "Copiar relatório do jogo"], menu.Select(i => i.Label));
+            Assert.Equal(["Abrir pasta", "☆ Favorito", "Ocultar", "Adicionar à coleção", "Ver notas", "Copiar relatório do jogo"], menu.Select(i => i.Label));
         }
         finally { UiLocalizationService.Apply("en-US"); }
     }
@@ -140,7 +140,7 @@ public sealed class CardMenuTests : IDisposable
 
         var show = Assert.Single(menu, i => i.Id == "show-in-owning-app");
         Assert.Equal(UiLocalizationService.Format("Scan.ShowInOwningApp", UiLocalizationService.Text("Scan.InstallerAppName")), show.Label);
-        Assert.Equal(["open-folder", "show-in-owning-app", "favourite", "hide", "game-report"], menu.Select(i => i.Id));
+        Assert.Equal(["open-folder", "show-in-owning-app", "favourite", "hide", "add-to-collection", "game-report"], menu.Select(i => i.Id));
         Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Opener Quest")), i => i.Id == "show-in-owning-app");
         Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id == "show-in-owning-app");
     }
@@ -170,14 +170,14 @@ public sealed class CardMenuTests : IDisposable
         Assert.Equal(["shortcut-desktop", "shortcut-menu"], shortcut.Children!.Select(i => i.Id));
         Assert.Equal(UiLocalizationService.Text("Parity.ShortcutCreate"), shortcut.Label);
         Assert.DoesNotContain(plain, i => i.Id == "nexus-page");
-        Assert.Equal(["open-folder", "favourite", "hide", "create-shortcut", "nexus-page", "game-report"], noted.Select(i => i.Id));
+        Assert.Equal(["open-folder", "favourite", "hide", "add-to-collection", "create-shortcut", "nexus-page", "game-report"], noted.Select(i => i.Id));
         var page = noted.Single(i => i.Id == "nexus-page");
         Assert.Equal("https://www.nexusmods.com/games/nexusquest", page.Tip);
         Assert.False(page.SeparatorBefore); // one separator before the parity group
 
         // w5 integration (#183 × #192): the web pages (where the game has one) come before the game report.
         var linked = fx.Vm.CardMenuFor(Row(fx, "Wiki Quest"));
-        Assert.Equal(["open-folder", "favourite", "hide", "create-shortcut", "nexus-page", "web-pages", "game-report"], linked.Select(i => i.Id));
+        Assert.Equal(["open-folder", "favourite", "hide", "add-to-collection", "create-shortcut", "nexus-page", "web-pages", "game-report"], linked.Select(i => i.Id));
         Assert.Equal(["pcgw-page"], linked.Single(i => i.Id == "web-pages").Children!.Select(i => i.Id));
     }
 
