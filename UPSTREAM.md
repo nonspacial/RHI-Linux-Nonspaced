@@ -1584,3 +1584,12 @@ Upstream 2.9.2 `93d0fcb`, `d5b2df4`, `18088a3`; 2.9.3 `5f409de`, `7748d10`, `71a
 - Linux deviations, in short: RHI shader trees instead of the shared shader folder; fail-closed download checks; key list
   instead of key capture; the card under DLSS/Streamline until the Settings restyle (C1, #296) brings the Components
   section; no automatic method choice.
+
+### #276 — Foveated DLSS5 Tool switch (2.9.3): not ported yet (owner decision)
+
+Upstream 2.9.3 `77cd3f7` offers the switch only for its "DLSS5 Tool" and "DLSS5 Tool + DX11 Bridge" methods.
+FoveatedDLSS5 (maximedgoulet) is a build of the DLSS5 Tool's `renodx-dlss5.addon64`, published as pre-releases with a
+`.sha256` beside the add-on. RHI Linux has no DLSS5 Tool method: its DX11 Bridge row deploys only
+`dlss5-dx11-bridge.addon64`, and `renodx-dlss5.addon64` is deployed only as the DLSS5 Feeder's consumer, where upstream
+offers no Foveated switch. The switch waits for the owner's choice on the tracker: port the DLSS5 Tool methods first, or
+use another mapping.
