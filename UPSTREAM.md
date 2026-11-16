@@ -1590,5 +1590,5 @@ never RHI's here). Nexus Mods files reach RHI as dropped add-ons or Luma package
   index (depth 8 from the install root), not only the exe's folder, and manifest `dlssPathOverrides` /
   `streamlinePathOverrides` (#155) reach deeper layouts such as Mafia: The Old Country's.
 - **Config button and UE-Extended Engine.ini with several PCGW config paths** (not applicable): RHI Linux never used
-  PCGamingWiki's config paths (see #12); the Engine.ini RenoDX writes is found in the game's prefix from the game's
-  own folder name.
+  PCGamingWiki's config paths (see #12); the Engine.ini RenoDX writes (#217/#218) has its own lookup, which this lane
+  did not change.
