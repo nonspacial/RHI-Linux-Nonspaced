@@ -256,7 +256,9 @@ public static class UiLocalizationService
         ["Cog.LumaNotUnreal"] = "As configurações do Luma são para jogos Unreal Engine. Este jogo não tem nada para configurar aqui.",
         ["Cog.Files"] = "Arquivos",
         ["Cog.UnrealEngine"] = "Unreal Engine",
-        ["Cog.OpenReLimiterLog"] = "Abrir log do ReLimiter"
+        ["Cog.OpenReLimiterLog"] = "Abrir log do ReLimiter",
+        ["Cog.HsfThisGame"] = "Este jogo",
+        ["Cog.OpenHelperLog"] = "Abrir log do auxiliar"
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -506,7 +508,9 @@ public static class UiLocalizationService
         ["Cog.LumaNotUnreal"] = "Luma's settings are for Unreal Engine games. This game has nothing to set here.",
         ["Cog.Files"] = "Files",
         ["Cog.UnrealEngine"] = "Unreal Engine",
-        ["Cog.OpenReLimiterLog"] = "Open ReLimiter log"
+        ["Cog.OpenReLimiterLog"] = "Open ReLimiter log",
+        ["Cog.HsfThisGame"] = "This game",
+        ["Cog.OpenHelperLog"] = "Open helper log"
     };
 
 

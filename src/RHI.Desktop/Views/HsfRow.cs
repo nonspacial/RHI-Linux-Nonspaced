@@ -62,7 +62,7 @@ public sealed class HsfRow : ContentControl
         {
             var moved = await p.PrepareGearAsync(_vm!);
             if (TopLevel.GetTopLevel(this) is Window owner && p.StateFor(_vm!) is { Settings: { } settings })
-                await HsfSettingsDialog.Create(_vm!, p, settings, moved).ShowDialog(owner);
+                await HsfSettingsDialog.Build(_vm!, p, settings, moved).Build(height: 600).ShowDialog(owner);
         }, "HsfSettings");
     }
 
@@ -116,7 +116,11 @@ public sealed class HsfRow : ContentControl
     }
 }
 
-/// <summary>#277: HSF's ⚙ — installed version, DirectX 12 mode (HSF.ini's D3D12 route) and iMMERSE Launchpad on/off.</summary>
+/// <summary>
+/// #277: HSF's ⚙ on the shared ⚙ layout (#297; upstream 2.9.3 <c>HsfCogButton_Click</c>): "This game" (installed version),
+/// "DirectX 12" (HSF.ini's D3D12 mode), "Motion" (iMMERSE Launchpad on/off), each saved the moment it changes and put back
+/// when refused, the result in the ⚙'s status line; Open HSF.ini and Open helper log as upstream.
+/// </summary>
 internal static class HsfSettingsDialog
 {
     private static string T(string key) => UiLocalizationService.Text(key);
@@ -124,46 +128,40 @@ internal static class HsfSettingsDialog
     private static readonly (HsfRoute Route, string Key)[] Routes =
         [(HsfRoute.None, "Hsf.RouteNone"), (HsfRoute.GameStreamline, "Hsf.RouteGame"), (HsfRoute.BringIn, "Hsf.RouteBringIn")];
 
-    public static Window Create(MainWindowViewModel vm, HsfPresenter presenter, HsfState settings, string? note)
-    {
-        var panel = new StackPanel { Spacing = 10, Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = "HSF", FontSize = 18, FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Format("Hsf.Installed", settings.Version ?? "?"), TextWrapping = TextWrapping.Wrap });
-        var result = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82, Text = note ?? "", IsVisible = note is not null };
-        void Show() { result.Text = vm.StatusText; result.IsVisible = true; }
+    /// <summary>The helper's log beside HSF.ini (upstream <c>HSF_streamline/hsf_dlssg.log</c>).</summary>
+    internal static string? HelperLog(HsfState settings)
+        => settings.IniPath is { } ini && Path.GetDirectoryName(ini) is { } dir ? Path.Combine(dir, HsfPackage.StreamlineFolder, "hsf_dlssg.log") : null;
 
-        panel.Children.Add(new TextBlock { Text = T("Hsf.RouteLabel"), FontWeight = FontWeight.SemiBold });
-        var route = new ComboBox { Name = "HsfRoute", ItemsSource = Routes.Select(r => T(r.Key)).ToArray(), MinWidth = 260,
-            SelectedIndex = Array.FindIndex(Routes, r => r.Route == settings.Route) };
-        ToolTip.SetTip(route, T("Hsf.RouteTip"));
-        if (settings.RouteSwitchedOff) panel.Children.Add(new TextBlock { Text = T("Hsf.RouteOff"), Classes = { "muted" }, TextWrapping = TextWrapping.Wrap });
-        var launchpad = new CheckBox { Name = "HsfLaunchpadSetting", Content = "iMMERSE Launchpad", IsChecked = settings.LaunchpadOn };
-        ToolTip.SetTip(launchpad, T("Hsf.LaunchpadTip"));
-        var ready = false;
-        route.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+    public static CogDialog Build(MainWindowViewModel vm, HsfPresenter presenter, HsfState settings, string? note)
+    {
+        var cog = new CogDialog("HSF", vm.SelectedGame?.Name);
+        cog.AddIntro(T("Hsf.GearNote"));
+        cog.AddSection(T("Cog.HsfThisGame"));
+        cog.AddNote(UiLocalizationService.Format("Hsf.Installed", settings.Version ?? "?"));
+
+        cog.AddSection("DirectX 12"); // upstream's section name (an API name)
+        if (settings.RouteSwitchedOff) cog.AddNote(T("Hsf.RouteOff"));
+        cog.AddCombo(T("Hsf.RouteLabel"), T("Hsf.RouteTip"), Routes.Select(r => T(r.Key)).ToArray(),
+            Math.Max(0, Array.FindIndex(Routes, r => r.Route == settings.Route)), async i =>
+            {
+                var saved = await presenter.SetRouteAsync(vm, Routes[i].Route);
+                cog.SetResult(saved, vm.StatusText);
+                return saved;
+            }, name: "HsfRoute");
+
+        cog.AddSection(T("Hsf.LaunchpadLabel"));
+        cog.AddCombo("iMMERSE Launchpad", T("Hsf.LaunchpadTip"), OptionLists.OffOn.Items, settings.LaunchpadOn ? 1 : 0, async i =>
         {
-            if (!ready || route.SelectedIndex < 0) return;
-            await presenter.SetRouteAsync(vm, Routes[route.SelectedIndex].Route);
-            Show();
-        }, nameof(HsfSettingsDialog));
-        launchpad.IsCheckedChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
-        {
-            if (!ready) return;
-            await presenter.SetLaunchpadAsync(vm, launchpad.IsChecked == true);
-            Show();
-        }, nameof(HsfSettingsDialog));
-        ready = true;
-        panel.Children.Add(route);
-        panel.Children.Add(new TextBlock { Text = T("Hsf.LaunchpadLabel"), FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(launchpad);
-        panel.Children.Add(new TextBlock { Text = T("Hsf.GearNote"), Classes = { "muted" }, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(result);
-        return new Window
-        {
-            Title = $"HSF — {vm.SelectedGame?.Name}",
-            Width = 560, Height = 440, MinWidth = 420, MinHeight = 300,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = panel }
-        };
+            var saved = await presenter.SetLaunchpadAsync(vm, i == 1);
+            cog.SetResult(saved, vm.StatusText);
+            return saved;
+        }, name: "HsfLaunchpadSetting");
+
+        cog.AddSection(T("Cog.Files"));
+        cog.AddButtons(
+            cog.MakeOpenFileButton(UiLocalizationService.Format("Fg.OpenFile", HsfPackage.IniName), settings.IniPath, "HsfOpenIni"),
+            cog.MakeOpenFileButton(T("Cog.OpenHelperLog"), HelperLog(settings), "HsfOpenLog"));
+        if (note is not null) cog.SetStatus(note);
+        return cog;
     }
 }
