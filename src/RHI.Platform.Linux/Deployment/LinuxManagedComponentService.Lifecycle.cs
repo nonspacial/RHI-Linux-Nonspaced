@@ -292,7 +292,7 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.ReShade => _reshade.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.RenoDX => _renodx.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.RenoDXUpgrade => _renodxUpgrade.RemoveAsync(game, cancellationToken),
-            ManagedComponentKind.OptiScaler => _optiscaler.RemoveAsync(game, cancellationToken),
+            ManagedComponentKind.OptiScaler => RemoveOptiScalerForgettingIniChoicesAsync(game, cancellationToken), // #272
             ManagedComponentKind.ReLimiter => _relimiter.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.DisplayCommander => _displayCommander.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.MfgAdaUnlock => _mfgAdaUnlock.RemoveAsync(game, cancellationToken),

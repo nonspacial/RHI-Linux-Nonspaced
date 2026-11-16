@@ -77,6 +77,9 @@
         </DataTemplate>
       </ItemsControl.DataTemplates>
     </ItemsControl>
+    <!-- #272 (upstream 2.9.3): All Settings, then Save ini / Load saved ini (w14/optiscaler-2 slots). -->
+    <Panel x:Name="AllSettingsSlot" IsVisible="False"/>
+    <Panel x:Name="IniLibrarySlot" IsVisible="False"/>
     <!-- #269: "Deploy OptiScaler.ini" became "Replace with a fresh copy…" at the bottom, and asks first. -->
     <StackPanel Spacing="6" IsVisible="{Binding CanReplaceIni}">
       <Button x:Name="OptiScalerFreshIni" Classes="rhi" Content="{l:T Osp.FreshIni}" Command="{Binding AskReplaceIniCommand}" HorizontalAlignment="Left"

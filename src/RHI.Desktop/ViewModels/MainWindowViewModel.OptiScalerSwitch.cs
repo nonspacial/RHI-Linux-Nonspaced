@@ -1,3 +1,4 @@
+using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
@@ -11,6 +12,12 @@ public sealed partial class MainWindowViewModel
     /// (<see cref="LinuxManagedComponentService.SwitchOptiScalerVersionAsync"/>). True with the line to add when switched;
     /// false with the line to show when declined, refused or failed (the preset is then not applied).
     /// </summary>
+    /// <summary>#272: the ⚙'s All Settings for <paramref name="game"/> (one per dialog: its unapplied changes are its own).</summary>
+    internal OptiScalerAllSettingsPresenter NewOptiScalerAllSettings(DetectedGame game) => new(this, _managedComponents, game);
+
+    /// <summary>#272: the ⚙'s Save ini / Load saved ini for <paramref name="game"/>.</summary>
+    internal OptiScalerIniLibraryPresenter NewOptiScalerIniLibrary(DetectedGame game) => new(_managedComponents, game);
+
     internal async Task<(bool Switched, string Line)> SwitchOptiScalerVersionForPresetAsync(OptiScalerVariant target, string presetName)
     {
         if (SelectedGame is not { } game) return (false, "");

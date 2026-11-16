@@ -350,6 +350,7 @@ public sealed partial class OptiScalerDeploymentService
         }
         // The record carries the operation id: it is the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
+        SaveReferenceIni(game, package.RootDirectory); // #272
         if (emptiedPatcherDir is not null) CleanupDirectories([emptiedPatcherDir]);
         return ComponentOperationResult.Ok(nightly?.SuccessMessage(package)
             ?? $"OptiScaler {VariantLabel(variant)} updated to {package.Version}; OptiScaler.ini, ReShade coexistence and Wine override ownership were preserved.",
@@ -647,6 +648,7 @@ public sealed partial class OptiScalerDeploymentService
         }
         // The record carries the operation id: it is the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
+        SaveReferenceIni(game, package.RootDirectory); // #272: the build's own INI describes All Settings
         return ComponentOperationResult.Ok(
             $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as {proxyName}" +
             (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled.") + iniTemplateNote + optiPatcherNote,

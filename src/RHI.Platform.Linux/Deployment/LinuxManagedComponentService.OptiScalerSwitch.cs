@@ -52,7 +52,7 @@ public sealed partial class LinuxManagedComponentService
             return ComponentOperationResult.Fail(SwitchRemoveFailedPrefix + ex.Message);
         }
 
-        var removed = await RemoveAsync(game, ManagedComponentKind.OptiScaler, cancellationToken).ConfigureAwait(false);
+        var removed = await RemoveOptiScalerKeepingIniChoicesAsync(game, cancellationToken).ConfigureAwait(false);
         if (!removed.Success) return ComponentOperationResult.Fail(SwitchRemoveFailedPrefix + removed.Message);
         // From here the switch runs to the end: a half-switched game would have no OptiScaler at all.
         var installed = await InstallOptiScalerAsync(game, target, CancellationToken.None).ConfigureAwait(false);

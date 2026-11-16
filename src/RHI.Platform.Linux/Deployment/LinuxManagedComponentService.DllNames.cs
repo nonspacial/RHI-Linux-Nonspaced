@@ -82,6 +82,8 @@ public sealed partial class LinuxManagedComponentService
     {
         var skipped = OptiScalerSkippedChoice(game);
         var result = await _optiscaler.InstallAsync(game, variant, nightlyBuild, OptiScalerProxyNameFor(game), releaseTag, cancellationToken).ConfigureAwait(false);
+        if (result.Success && await ReapplyOptiScalerIniChoicesAsync(game).ConfigureAwait(false) is { Length: > 0 } reapplied) // #272
+            result = result with { Message = result.Message + reapplied };
         return result.Success && skipped is not null
             ? result with { Message = result.Message + OptiScalerSavedNameSkippedPrefix + skipped }
             : result;

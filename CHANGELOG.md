@@ -125,6 +125,13 @@ Not on `main` yet:
 - **OptiScaler presets remember their version** (upstream): a preset saved on F5 (or any version) switches the game to
   that version when you apply it. RHI asks first, because that reinstalls OptiScaler; your OptiScaler.ini settings are
   kept and a copy goes to RHI's data folder. Presets saved before this build keep the game's version.
+- **All Settings in OptiScaler's ⚙** (#272, upstream 2.9.3): every setting of the game's OptiScaler.ini, with the
+  options the installed build lists in its own INI (forks and custom builds show theirs). Pick a section or search;
+  nothing is written until you press Apply, and the old file is backed up first. Applied changes are written again
+  after a reinstall or a version switch; Forget saved edits stops that.
+- **Save ini… / Load saved ini…** in OptiScaler's ⚙ (#272): keep any game's OptiScaler.ini under a name ("F5 super
+  ini"), add one from a file, and use it for any game. The game remembers it and gets it back after a reinstall or a
+  version switch.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

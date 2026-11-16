@@ -13,7 +13,7 @@ namespace RHI.Core.Tests;
 /// folder or a bare OptiScaler.dll into RHI's data folder; a version like the built-ins, never updated automatically;
 /// Replace, Rename, Remove and the DLSS NR DLL tick.
 /// </summary>
-public sealed class OptiScalerCustomBuildTests : IDisposable
+public sealed partial class OptiScalerCustomBuildTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-os-custom-" + Guid.NewGuid().ToString("N"));
     private readonly OptiScalerCustomBuildStore _store;
