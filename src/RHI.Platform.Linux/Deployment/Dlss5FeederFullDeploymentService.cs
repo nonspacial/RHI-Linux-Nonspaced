@@ -76,6 +76,11 @@ public sealed class Dlss5FeederFullDeploymentService
     private const string MetaPresetPreviousValue = "Feeder.PresetPreviousValue";
     private const string MetaPresetSetValue = "Feeder.PresetSetValue";
     private const string MetaFeederVersion = "Feeder.Version";
+    // w14/nr (#275): Feeder 2.0's motion vectors and the preset it was added to.
+    internal const string MetaMvProvider = "Feeder.MvProvider";
+    internal const string MetaPresetPath = "Feeder.PresetPath";
+    internal const string MetaPresetCreated = "Feeder.PresetCreated";
+    internal const string MetaPresetChange = "Feeder.PresetChange";
     private const string MetaConsumer = "Feeder.Consumer";
     private const string MetaConsumerVersion = "Feeder.ConsumerVersion";
     private const string MetaConsumerPackageSha256 = "Feeder.ConsumerPackageSha256";
@@ -397,7 +402,7 @@ public sealed class Dlss5FeederFullDeploymentService
         string? RenoDxPackageSha256,
         string CachedSr,
         string CachedNr,
-        string LumeniteStage,
+        string? LumeniteStage, // w14/nr (#275): null with Feeder 2.0's built-in motion vectors
         string HeadersStage,
         ReShadeDx9MigrationState? SharedDx9State,
         LinuxDeploymentRecord? SharedDx9Record,
@@ -406,7 +411,8 @@ public sealed class Dlss5FeederFullDeploymentService
         IReadOnlyList<(string? Part, string Sha256, bool DigestVerified)> Downloads,
         string? ReleaseTag,
         string? ConsumerPackage,
-        string? CachedNrVersion = null); // #230: the manifest version of the NR DLL placed (recorded as NeuralRendering.DllVersion)
+        string? CachedNrVersion = null, // #230: the manifest version of the NR DLL placed (recorded as NeuralRendering.DllVersion)
+        int MvProvider = FeederPreset.LumeniteProvider); // w14/nr (#275): DLSS5_MV_PROVIDER for the game's preset
 
     // The network half of an install (before the write gate): every download and extraction.
     private async Task<FeederStaged> StageAsync(
@@ -476,11 +482,18 @@ public sealed class Dlss5FeederFullDeploymentService
         ValidateCachedRuntime(cachedSr, DlssName);
         ValidateCachedRuntime(cachedNr, NrName);
 
-        var lumeniteStage = Path.Combine(stageRoot, "lumenite");
-        downloads.Add((LumeniteDownloadPart,
-            await DownloadAndExtractShaderArchiveAsync(LumeniteUrl, Path.Combine(stageRoot, "lumenite.zip"), lumeniteStage, cancellationToken).ConfigureAwait(false),
-            false));
-        FeederShaderStackInstaller.EnsureLumeniteLayout(lumeniteStage);
+        // w14/nr (#275): the motion-vector provider, as Feeder 2.0's installer chooses it: the one the game's preset already
+        // names, else the estimator built into DLSS5_Feed.fx (2.0.0+), else LumeniteFX. LumeniteFX is downloaded only for it.
+        var mvProvider = FeederPreset.ChooseProvider(ReShadePresetFile.Read(targets.Preset), await File.ReadAllTextAsync(feederFx, cancellationToken).ConfigureAwait(false));
+        string? lumeniteStage = null;
+        if (FeederPreset.NeedsLumenite(mvProvider))
+        {
+            lumeniteStage = Path.Combine(stageRoot, "lumenite");
+            downloads.Add((LumeniteDownloadPart,
+                await DownloadAndExtractShaderArchiveAsync(LumeniteUrl, Path.Combine(stageRoot, "lumenite.zip"), lumeniteStage, cancellationToken).ConfigureAwait(false),
+                false));
+            FeederShaderStackInstaller.EnsureLumeniteLayout(lumeniteStage);
+        }
 
         var headersStage = Path.Combine(stageRoot, "headers");
         downloads.Add((HeadersDownloadPart,
@@ -525,7 +538,7 @@ public sealed class Dlss5FeederFullDeploymentService
 
         return new FeederStaged(feederRelease, feederAddon, host64Executable, feederFx, dfc, renoDxRelease, renoDxAddon, renoDxPackageSha256,
             cachedSr, cachedNr, lumeniteStage, headersStage, sharedDx9, sharedDx9Record, dgVoodooPayload, hostReShade, downloads, releaseTag, consumerPackage,
-            cachedNrVersion.Version);
+            cachedNrVersion.Version, mvProvider);
     }
 
     // The file half of an install (after the write gate): every change goes through the scope; the Feeder record (and,
@@ -587,9 +600,8 @@ public sealed class Dlss5FeederFullDeploymentService
             await FeederShaderStackInstaller.PlaceAsync(scope, staged.CachedNr, t.Layout.NrTarget, copied).ConfigureAwait(false);
             await FeederShaderStackInstaller.InstallAsync(scope, staged.FeederFx, staged.LumeniteStage, staged.HeadersStage, t.ShaderRoot, t.TextureRoot, copied).ConfigureAwait(false);
 
-            if (File.Exists(t.Preset)) throw new IOException($"Protected target already exists: {t.Preset}");
-            await scope.PlaceBytesAsync(t.Preset, new UTF8Encoding(false).GetBytes(BuildPresetText()), CancellationToken.None).ConfigureAwait(false);
-            copied.Add(t.Preset);
+            // w14/nr (#275): added to the game's own preset (merged), never a preset of RHI's own that replaces it.
+            var presetWrite = await MergePresetAsync(scope, game, t, staged.MvProvider, copied).ConfigureAwait(false);
 
             // ReShade.ini: tracked before its three edits and declared after them, so a rollback (or the next start after a
             // crash) puts back exactly the file as it was. #213: the file the writes land in is tracked — a ReShade.ini
@@ -598,12 +610,11 @@ public sealed class Dlss5FeederFullDeploymentService
             var iniTarget = ReShadeIniManager.ResolveWriteTarget(ReShadeIniManager.ResolveIniPath(t.BinaryDirectory), t.BinaryDirectory, gameRoot: null);
             await scope.TrackAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
             var iniResult = ReShadeIniManager.Apply(t.BinaryDirectory, [EffectSearchPath], [TextureSearchPath]);
-            var presetMutation = SetPresetPath(iniResult.Path, @".\RHI-DLSS5-Feeder.ini");
             var earlyLoadMutation = consumer == Dlss5FeederConsumer.DeepFriedChicken ? EnsureLoadFromDllMainToken(iniResult.Path, DeepFriedAddonName) : null;
             await scope.DeclareWrittenContentAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
 
             record = BuildRecord(game, consumer, compilerPlan, t, staged, dx9?.State ?? staged.SharedDx9State, copied, createdDirs, compilerOverride,
-                iniResult, presetMutation, earlyLoadMutation);
+                iniResult, presetWrite, earlyLoadMutation);
             // The record carries the operation id: it is the commit point (with ReShade's, after a DX9 translation, in the same write).
             _records.Commit(dx9 is null ? [scope.Stamp(record)] : [scope.Stamp(record), dx9.ReShadeRecord]);
         }
@@ -644,14 +655,14 @@ public sealed class Dlss5FeederFullDeploymentService
     private static LinuxDeploymentRecord BuildRecord(
         DetectedGame game, Dlss5FeederConsumer consumer, FeederCompilerPlan compilerPlan, FeederInstallTargets t, FeederStaged staged,
         ReShadeDx9MigrationState? dx9Migration, List<string> copied, List<string> createdDirs, WineOverrideRecord? compilerOverride,
-        ReShadeIniApplyResult iniResult, PresetPathMutation presetMutation, IniListTokenMutation? earlyLoadMutation)
+        ReShadeIniApplyResult iniResult, FeederPresetWrite presetWrite, IniListTokenMutation? earlyLoadMutation)
     {
         var files = copied.Distinct(StringComparer.Ordinal).Select(path => new LinuxDeployedFile
         {
             Path = path,
             ExistedBeforeInstall = false,
             Sha256 = FileHash.Sha256Hex(path),
-            AllowUserChanges = Path.GetFileName(path).Equals(PresetName, StringComparison.OrdinalIgnoreCase)
+            AllowUserChanges = string.Equals(path, presetWrite.Path, StringComparison.Ordinal)
                                || Path.GetFileName(path).Equals(DeepFriedConfigName, StringComparison.OrdinalIgnoreCase)
         }).ToList();
         if (staged.SharedDx9Record is not null)
@@ -689,9 +700,12 @@ public sealed class Dlss5FeederFullDeploymentService
             [MetaIniEffectAdded] = JsonSerializer.Serialize(iniResult.AddedEffectPaths),
             [MetaIniTextureAdded] = JsonSerializer.Serialize(iniResult.AddedTexturePaths),
             [MetaIniHash] = FileHash.Sha256Hex(iniResult.Path),
-            [MetaPresetPreviousExists] = presetMutation.PreviousKeyExisted ? "1" : "0",
-            [MetaPresetPreviousValue] = presetMutation.PreviousValue ?? "",
-            [MetaPresetSetValue] = presetMutation.SetValue
+            // w14/nr (#275): the preset Feeder was added to; a preset RHI created is one of the record's files (removed with
+            // Feeder while unchanged), a merged one is put back with FeederPreset.Unmerge. No PresetPath change any more.
+            [MetaMvProvider] = staged.MvProvider.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [MetaPresetPath] = presetWrite.Path,
+            [MetaPresetCreated] = presetWrite.Created ? "1" : "0",
+            [MetaPresetChange] = presetWrite.Change is null ? "" : JsonSerializer.Serialize(presetWrite.Change)
         };
         foreach (var (part, sha256, verified) in staged.Downloads)
             VerifiedDownload.Record(metadata, sha256, verified, part);
@@ -792,10 +806,13 @@ public sealed class Dlss5FeederFullDeploymentService
         {
             if (record.Metadata.TryGetValue(MetaIniPath, out var iniPath) && !string.IsNullOrWhiteSpace(iniPath))
             {
-                var mutation = new PresetPathMutation(
-                    record.Metadata.GetValueOrDefault(MetaPresetPreviousExists) == "1",
-                    record.Metadata.GetValueOrDefault(MetaPresetPreviousValue),
-                    record.Metadata.GetValueOrDefault(MetaPresetSetValue) ?? @".\RHI-DLSS5-Feeder.ini");
+                // Installs before w14 (#275) pointed PresetPath at RHI's own RHI-DLSS5-Feeder.ini; newer ones leave it alone.
+                var mutation = record.Metadata.TryGetValue(MetaPresetSetValue, out var setValue) && !string.IsNullOrWhiteSpace(setValue)
+                    ? new PresetPathMutation(
+                        record.Metadata.GetValueOrDefault(MetaPresetPreviousExists) == "1",
+                        record.Metadata.GetValueOrDefault(MetaPresetPreviousValue),
+                        setValue)
+                    : null;
 
                 // Cleanup search-path tokens first. If Feeder had to create ReShade.ini and the
                 // file stayed untouched, this can remove it entirely. Otherwise restore only the
@@ -811,11 +828,14 @@ public sealed class Dlss5FeederFullDeploymentService
                     ReadStringList(record.Metadata.GetValueOrDefault(MetaIniTextureAdded)),
                     record.Metadata.GetValueOrDefault(MetaIniEffectKeyCreated) == "1",
                     record.Metadata.GetValueOrDefault(MetaIniTextureKeyCreated) == "1");
-                RestorePresetPath(iniPath, mutation);
+                if (mutation is not null) RestorePresetPath(iniPath, mutation);
                 if (record.Metadata.GetValueOrDefault(MetaLoadFromDllMainAdded) == "1")
                     RemoveLoadFromDllMainToken(iniPath, new IniListTokenMutation(true, DeepFriedAddonName));
                 if (File.Exists(iniTarget)) await scope.DeclareWrittenContentAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
             }
+
+            // w14/nr (#275): Feeder comes back out of a preset it was added to (the user's other effects stay).
+            if (await UnmergePresetAsync(scope, game, record).ConfigureAwait(false) is { } presetNote) preserved.Add(presetNote);
 
             if (restoreDx9)
             {
@@ -922,15 +942,111 @@ public sealed class Dlss5FeederFullDeploymentService
             throw new InvalidDataException($"Cached {displayName} runtime is unexpectedly small ({length} bytes).");
     }
 
-    internal static string BuildPresetText()
-        => "Techniques=Lumenite_Kernel@lumenite_Kernel.fx,DLSS5_Feed@DLSS5_Feed.fx\r\n" +
-           "TechniqueSorting=Lumenite_Kernel@lumenite_Kernel.fx,DLSS5_Feed@DLSS5_Feed.fx\r\n" +
-           "\r\n" +
-           "[DLSS5_Feed.fx]\r\n" +
-           "DEBUG_VIEW=0\r\n" +
-           "MV_SCALE=1.000000\r\n" +
-           "MV_SIGN=1.000000,1.000000\r\n" +
-           "PreprocessorDefinitions=DLSS5_MV_PROVIDER=3\r\n";
+    /// <summary>
+    /// w14/nr (#275): the Feeder row's description before an install (upstream 2.9.3's Feeder description: its own motion vectors
+    /// and the in-game menu, Alt+C). PT-BR in the UI's presentation table.
+    /// </summary>
+    public const string AvailableNote =
+        "DLSS5 Feeder Full: the Feeder with RenoDX DLSS5 or Deep Fried Chicken, its own SR/NR runtimes and shaders. New installs use the motion vectors built into Feeder 2.0 (no LumeniteFX download) and add the Feeder to the game's ReShade preset. Press Alt+C in the game for the Feeder menu.";
+
+    /// <summary>w14/nr (#275): the game's ReShade.ini names its preset by a Windows drive path, which RHI cannot map to a Linux file.</summary>
+    public const string PresetOutsideRefusal =
+        "The game's ReShade.ini names its preset (PresetPath) by a Windows drive path, so RHI cannot add DLSS5 Feeder to it. Choose a preset in the game's folder in ReShade first.";
+
+    /// <summary>w14/nr (#275): the Feeder row's motion-vector status (upstream 2.9.3's NR status tag), EN; PT-BR in the UI's fragment table.</summary>
+    public const string BuiltInMotionVectorsLabel = "Built-in motion vectors";
+    public const string LumeniteMotionVectorsLabel = "LumeniteFX motion vectors";
+    public const string ProviderMotionVectorsPrefix = "Motion vectors: provider ";
+
+    /// <summary>
+    /// w14/nr (#275): which motion vectors an installed Feeder uses, read from the preset it was added to (so a switch made in
+    /// Feeder's own menu, Alt+C, shows), else from the record. Installs from before Feeder 2.0 support used LumeniteFX.
+    /// Null for a legacy add-on-only record.
+    /// </summary>
+    public static string? MotionVectorsLabel(LinuxDeploymentRecord record)
+    {
+        if (!record.Metadata.TryGetValue(FullStackMetadata, out var full) || full != "1") return null;
+        var presetPath = record.Metadata.GetValueOrDefault(MetaPresetPath);
+        if (string.IsNullOrWhiteSpace(presetPath) && !string.IsNullOrWhiteSpace(record.BinaryDirectory))
+            presetPath = Path.Combine(record.BinaryDirectory, PresetName); // before #275: RHI's own preset
+        int? provider = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(presetPath)) provider = FeederPreset.ReadProvider(ReShadePresetFile.Read(presetPath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("dlss5-feeder", $"The Feeder preset could not be read for its motion vectors: {presetPath}", ex);
+        }
+        provider ??= int.TryParse(record.Metadata.GetValueOrDefault(MetaMvProvider), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out var recorded) ? recorded : FeederPreset.LumeniteProvider;
+        return provider.Value switch
+        {
+            FeederPreset.BuiltInProvider => BuiltInMotionVectorsLabel,
+            3 or 4 => LumeniteMotionVectorsLabel,
+            _ => ProviderMotionVectorsPrefix + provider.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+    }
+
+    /// <summary>w14/nr (#275): the preset Feeder was added to: created by RHI (one of the record's files) or merged into (with the change made).</summary>
+    internal sealed record FeederPresetWrite(string Path, bool Created, FeederPresetChange? Change);
+
+    /// <summary>
+    /// w14/nr (#275): DLSS5_Feed (and LumeniteFX's kernel before it, for providers 3/4) switched on in the game's own preset,
+    /// with the provider in <c>[DLSS5_Feed.fx]</c>; a missing preset is created. Upstream 2.9.3 (<c>cdff33f</c>). Journaled:
+    /// the preset's previous bytes come back on a rollback.
+    /// </summary>
+    private static async Task<FeederPresetWrite> MergePresetAsync(DeploymentScope scope, DetectedGame game, FeederInstallTargets t, int provider, List<string> copied)
+    {
+        var existing = ReShadePresetFile.Read(t.Preset);
+        if (existing is null)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(t.Preset)!);
+            await scope.PlaceBytesAsync(t.Preset, new UTF8Encoding(false).GetBytes(FeederPreset.Merge(null, provider)), CancellationToken.None).ConfigureAwait(false);
+            copied.Add(t.Preset);
+            return new FeederPresetWrite(t.Preset, true, null);
+        }
+
+        var target = ReShadePresetFile.WriteTarget(t.Preset, t.BinaryDirectory, game.InstallPath);
+        await scope.TrackAsync(target, CancellationToken.None).ConfigureAwait(false);
+        var (merged, change) = FeederPreset.MergeTracked(existing, provider);
+        if (!string.Equals(merged, existing, StringComparison.Ordinal))
+            ReShadePresetFile.Write(t.Preset, merged, t.BinaryDirectory, game.InstallPath);
+        await scope.DeclareWrittenContentAsync(target, CancellationToken.None).ConfigureAwait(false);
+        return new FeederPresetWrite(t.Preset, false, change);
+    }
+
+    /// <summary>
+    /// w14/nr (#275): takes Feeder back out of a preset the install merged into (journaled). Null when done or nothing to do;
+    /// otherwise the line the removal reports (the preset is gone, or cannot be written), with the preset left as it is.
+    /// </summary>
+    private static async Task<string?> UnmergePresetAsync(DeploymentScope scope, DetectedGame game, LinuxDeploymentRecord record)
+    {
+        if (!record.Metadata.TryGetValue(MetaPresetChange, out var json) || string.IsNullOrWhiteSpace(json)) return null;
+        if (!record.Metadata.TryGetValue(MetaPresetPath, out var presetPath) || string.IsNullOrWhiteSpace(presetPath)) return null;
+        FeederPresetChange? change;
+        try { change = JsonSerializer.Deserialize<FeederPresetChange>(json); }
+        catch (JsonException ex)
+        {
+            AppLog.Warn("dlss5-feeder", "The preset change in the Feeder record could not be read; the preset is left as it is", ex);
+            return presetPath;
+        }
+        if (change is null || !File.Exists(presetPath)) return null;
+        string target;
+        try { target = ReShadePresetFile.WriteTarget(presetPath, record.BinaryDirectory, game.InstallPath); }
+        catch (IOException ex)
+        {
+            AppLog.Warn("dlss5-feeder", "The preset Feeder was added to cannot be written; it is left as it is", ex);
+            return presetPath;
+        }
+        await scope.TrackAsync(target, CancellationToken.None).ConfigureAwait(false);
+        var text = await File.ReadAllTextAsync(presetPath, CancellationToken.None).ConfigureAwait(false);
+        var back = FeederPreset.Unmerge(text, change);
+        if (!string.Equals(back, text, StringComparison.Ordinal))
+            ReShadePresetFile.Write(presetPath, back, record.BinaryDirectory, game.InstallPath);
+        await scope.DeclareWrittenContentAsync(target, CancellationToken.None).ConfigureAwait(false);
+        return null;
+    }
 
     /// <summary>
     /// A release asset from the stamped download cache (<c>releases/&lt;version&gt;/&lt;asset&gt;</c>): reused while its

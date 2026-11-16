@@ -1480,3 +1480,47 @@ makes the check could-not-check and the update refuse, as for the proxy (#238). 
 Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
 MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
 release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane nr)
+
+### #275 — DLSS5 Feeder 2.0: built-in motion vectors, added to the preset, matching add-on/host pair (2.9.3)
+
+Upstream 2.9.3 `cdff33f` (`FeederPreset.cs`, following Feeder 2.0.0's own `Install-DLSS5Feeder.ps1`). Ported as
+`FeederPreset` and `ReShadePresetText` (pure text edits; upstream's `FeederPresetTests` run here unchanged) and
+`ReShadePresetFile` (which preset a game uses: `[GENERAL] PresetPath` in ReShade.ini relative to the game's binary
+folder, else `ReShadePreset.ini` there, any case).
+
+- **Motion vectors.** A new install reads the game's preset and the release's `DLSS5_Feed.fx`: a preset that already
+  names a provider keeps it; otherwise `DLSS5_MV_PROVIDER=5` (the estimator built into the shader since 2.0.0, found by
+  `float4 BaseLevel(` as Feeder's installer does), or 3 (LumeniteFX Kernel) with an older shader. LumeniteFX is
+  downloaded, placed and recorded only for providers 3 and 4. The provider is written in the preset's
+  `[DLSS5_Feed.fx] PreprocessorDefinitions`, never in ReShade.ini (Linux never wrote it there; upstream's clean-up of
+  its old global entry, `RemoveGlobalProvider`, is ported for completeness but has nothing to remove on Linux).
+  Existing installs keep their LumeniteFX stack; Feeder's own menu (Alt+C) can switch them.
+- **Added to the preset, not replacing it.** Before this, Linux wrote its own `RHI-DLSS5-Feeder.ini` and pointed
+  `PresetPath` at it, so the game's own preset stopped being used while Feeder was installed. Now Feeder's techniques
+  are merged into the preset the game already uses (only Techniques, TechniqueSorting and the one definition change;
+  with the built-in provider a LumeniteFX flow effect that was there only for the feed is switched off, as upstream);
+  `PresetPath` is not touched. The write is journaled (the previous bytes come back on a rollback or a crash) and goes
+  through ReShade.ini's link rule. A preset that did not exist is created and owned by the record (removed with Feeder
+  while unchanged, kept when the user changed it).
+- **Removal never deletes a preset that was there before Feeder.** Linux goes further than upstream, which leaves the
+  merged techniques in the preset: the record keeps what the install changed, and removal takes exactly that out again
+  (entries it added, a flow effect it switched off back on, the provider definition back to its previous value while it
+  still holds the value the install wrote). A preset nobody changed since comes back byte for byte; the user's later
+  edits stay. Installs from before this change still remove as before (their own preset file and `PresetPath` value).
+- **Matching add-on/host pair (32-bit).** Feeder 2.0 add-ons and `host64\dlss5-feed-host64.exe` refuse another
+  release's (IPC v12). Upstream fixed a shared staging copy that a pinned version could overwrite; Linux never shared
+  one: install and the version swap take `dlss5-feed.addon32` and the host from the same release zip and swap them
+  together. A test pins that one archive serves both.
+- **Status and description.** The Feeder row's "Managed by RHI Linux" note names the motion vectors — "Built-in motion
+  vectors" or "LumeniteFX motion vectors" — read from the preset, so a switch made in Feeder's menu shows (upstream's NR
+  status tag). The row's description before install says Feeder 2.0 has its own motion vectors and an in-game menu
+  (Alt+C). Linux has no Neural Rendering section text to change (the method rows are in Managed components).
+- **Check Neural Rendering (#248).** Every Feeder log signature the page reads (`feature 18` with `0xBAD00012`, the
+  depth probe's "depth is FLAT while the scene moves", "stopped: the DLSS evaluate crashed", `frame N delivered`,
+  `building:`, `holding the feature (re)build`, `swapchain colour space:`, `effect runtime … initialised`) is still in
+  the format strings of the 2.0.0 add-on (checked against `DLSS5-Feeder-2.0.0.zip`, commit `9bd0af3`).
+- Linux deviations: a `PresetPath` given as a Windows drive path (`C:\…`) refuses the install with a line saying so
+  (upstream writes wherever it points); upstream also sets `PresetPath=.\ReShadePreset.ini` when it is missing, Linux
+  relies on ReShade's own default for the same file.

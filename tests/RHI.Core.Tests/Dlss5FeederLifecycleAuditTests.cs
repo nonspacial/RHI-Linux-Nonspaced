@@ -197,6 +197,8 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         private const string UserPreset = @".\UserPreset.ini";
         public string Bin { get; }
         public string IniPath => Path.Combine(Bin, "ReShade.ini");
+        public string UserPresetPath => Path.Combine(Bin, "UserPreset.ini");
+        public string LumeniteUrl => "https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline";
         public string RecordsPath { get; }
         public string HdrPath => Path.Combine(Bin, "renodx-compatible-title.addon64");
         public byte[] HdrBytes { get; } = Pe(80 * 1024);
@@ -211,7 +213,7 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         /// <param name="journaled">#169: the app's journal (Wine never running) for the simulated-crash tests.</param>
         /// <param name="liveNr">w11/nr-gpu: the live manifest's three NR entries (310.8.3 (50xx) first) instead of one unlabelled one.</param>
         public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false, bool x86 = false, bool journaled = false,
-            bool liveNr = false)
+            bool liveNr = false, string? feederFx = null, string? userPreset = null)
         {
             Bin = Path.Combine(_root, "game");
             var prefix = Path.Combine(_root, "prefix");
@@ -228,6 +230,8 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
             File.WriteAllText(IniPath, "[GENERAL]\nPresetPath=" + UserPreset + "\nEffectSearchPaths=.\\user\\Shaders\\**\nTextureSearchPaths=.\\user\\Textures\\**\n[ADDON]\n" +
                 (preexistingEarlyLoad ? "LoadFromDllMain=deep-fried-chicken.addon64\n" : ""));
+            // w14/nr (#275): the user's own preset, already there before the Feeder (null = none yet).
+            if (userPreset is not null) File.WriteAllText(UserPresetPath, userPreset);
             Game = new DetectedGame { Name = "Synthetic Feeder audit", InstallPath = Bin, BinaryDirectory = Bin,
                 ExecutablePath = exe, PrefixPath = prefix, Source = "Audit", Runner = "Wine", GraphicsApi = dx9 ? GraphicsApi.DirectX9 : x86 ? GraphicsApi.DirectX11 : GraphicsApi.DirectX12 };
             RecordsPath = Path.Combine(_root, "deployments.json");
@@ -251,10 +255,12 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             _dfcHash = Hash(File.ReadAllBytes(_package));
             _renoAddon = Pe(70 * 1024);
             _renoHash = Hash(_renoAddon);
+            // w14/nr (#275): an older shader (no built-in estimator) unless a test passes Feeder 2.0's.
+            var fx = Encoding.UTF8.GetBytes(feederFx ?? new string('f', 1024));
             var feederArchive = x86
                 ? Zip(("addon32/dlss5-feed.addon32", Pe(70 * 1024, 0x14c)), ("host64/dlss5-feed-host64.exe", Pe(70 * 1024)),
-                    ("shaders/DLSS5_Feed.fx", Encoding.UTF8.GetBytes(new string('f', 1024))))
-                : Zip(("addon64/dlss5-feed.addon64", Pe(70 * 1024)), ("shaders/DLSS5_Feed.fx", Encoding.UTF8.GetBytes(new string('f', 1024))));
+                    ("shaders/DLSS5_Feed.fx", fx))
+                : Zip(("addon64/dlss5-feed.addon64", Pe(70 * 1024)), ("shaders/DLSS5_Feed.fx", fx));
             _feederHash = Hash(feederArchive);
             var lumeniteFiles = new List<(string, byte[])> { ("LumeniteFX/Shaders/lumenite_Kernel.fx", Encoding.UTF8.GetBytes(new string('k', 1024))),
                 ("LumeniteFX/Textures/lumenite_test.png", new byte[2048]) };
@@ -330,7 +336,7 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
                 Files = [new LinuxDeployedFile { Path = HdrPath, Sha256 = Hash(HdrBytes), ExistedBeforeInstall = false }] });
         }
 
-        public void AssertInstalled(Dlss5FeederConsumer consumer, string expectedEarlyLoad)
+        public void AssertInstalled(Dlss5FeederConsumer consumer, string expectedEarlyLoad, bool lumenite = true)
         {
             var dfc = consumer == Dlss5FeederConsumer.DeepFriedChicken;
             var record = Records.Find(Game, ManagedComponentKind.Dlss5Feeder);
@@ -340,29 +346,34 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
             Assert.Equal(dfc ? _dfcHash : _renoHash, record.Metadata["Feeder.ConsumerPackageSha256"]);
             Assert.Equal(expectedEarlyLoad, record.Metadata["Feeder.LoadFromDllMainAdded"]);
             Assert.All(record.Files, file => Assert.Equal(file.Sha256, Hash(File.ReadAllBytes(file.Path))));
-            foreach (var name in new[] { "dlss5-feed.addon64", "nvngx_dlss.dll", "nvngx_dlssnr.dll", "RHI-DLSS5-Feeder.ini" })
+            // w14/nr (#275): the game's own preset (PresetPath, UserPreset.ini here) holds the Feeder; no RHI-DLSS5-Feeder.ini.
+            foreach (var name in new[] { "dlss5-feed.addon64", "nvngx_dlss.dll", "nvngx_dlssnr.dll", "UserPreset.ini" })
                 Assert.True(File.Exists(Path.Combine(Bin, name)), name);
             foreach (var name in new[] { "deep-fried-chicken.addon64", "deep-fried-chicken-nvngx.dll", "deep-fried-chicken.cfg" })
                 Assert.Equal(dfc, File.Exists(Path.Combine(Bin, name)));
-            foreach (var name in new[] { "DLSS5_Feed.fx", "lumenite_Kernel.fx", "include/kernel.fxh", "ReShade.fxh", "ReShadeUI.fxh", "DrawText.fxh" })
+            foreach (var name in new[] { "DLSS5_Feed.fx", "ReShade.fxh", "ReShadeUI.fxh", "DrawText.fxh" })
                 Assert.True(File.Exists(Path.Combine(Bin, "reshade-shaders", "RHI", "DLSS5FeederFull", "Shaders", name)), name);
+            foreach (var name in new[] { "lumenite_Kernel.fx", "include/kernel.fxh" })
+                Assert.Equal(lumenite, File.Exists(Path.Combine(Bin, "reshade-shaders", "RHI", "DLSS5FeederFull", "Shaders", name)));
             Assert.Equal(!dfc, File.Exists(Path.Combine(Bin, "renodx-dlss5.addon64")));
             Assert.Equal(dfc, File.ReadAllText(IniPath).Contains("deep-fried-chicken.addon64", StringComparison.Ordinal));
             Assert.DoesNotContain(record.Files, file => file.Path == HdrPath);
             // Every download the record deploys, named the same way as in every other service (review w2-trust minor 6).
             DownloadRecordAssert.Recorded(record, _feederHash, VerifiedDownload.PublishedDigest);
-            DownloadRecordAssert.Recorded(record, _lumeniteHash, VerifiedDownload.RecordedOnly, Dlss5FeederFullDeploymentService.LumeniteDownloadPart);
+            if (lumenite) DownloadRecordAssert.Recorded(record, _lumeniteHash, VerifiedDownload.RecordedOnly, Dlss5FeederFullDeploymentService.LumeniteDownloadPart);
+            else DownloadRecordAssert.NotRecorded(record, Dlss5FeederFullDeploymentService.LumeniteDownloadPart);
             DownloadRecordAssert.Recorded(record, _headersHash, VerifiedDownload.RecordedOnly, Dlss5FeederFullDeploymentService.HeadersDownloadPart);
             if (dfc) DownloadRecordAssert.NotRecorded(record, Dlss5FeederFullDeploymentService.ConsumerDownloadPart); // the user's own package
             else DownloadRecordAssert.Recorded(record, _renoHash, VerifiedDownload.PublishedDigest, Dlss5FeederFullDeploymentService.ConsumerDownloadPart);
         }
 
-        public void AssertClean(bool keepEarlyLoad = false, bool keepConfig = false)
+        public void AssertClean(bool keepEarlyLoad = false, bool keepConfig = false, bool keepUserPreset = false)
         {
             Assert.Null(Records.Find(Game, ManagedComponentKind.Dlss5Feeder));
             foreach (var name in new[] { "dlss5-feed.addon64", "nvngx_dlss.dll", "nvngx_dlssnr.dll", "RHI-DLSS5-Feeder.ini",
                          "deep-fried-chicken.addon64", "deep-fried-chicken-nvngx.dll", "renodx-dlss5.addon64" })
                 Assert.False(File.Exists(Path.Combine(Bin, name)), name);
+            Assert.Equal(keepUserPreset, File.Exists(UserPresetPath));
             Assert.Equal(keepConfig, File.Exists(Path.Combine(Bin, "deep-fried-chicken.cfg")));
             var tree = Path.Combine(Bin, "reshade-shaders", "RHI", "DLSS5FeederFull");
             Assert.False(Directory.Exists(tree));

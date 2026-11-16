@@ -1807,6 +1807,15 @@ public static class UiLocalizationService
         // w13 final review m2: an AddonPath on a Windows drive the game's Wine prefix does not map (the value follows).
         (RHI.Platform.Linux.Deployment.AddonPathFolder.UnmappedPrefix,
             "O AddonPath do ReShade aponta para uma unidade do Windows que o RHI não encontra no prefixo Wine deste jogo, então nada foi alterado. Defina o AddonPath como uma pasta dentro do prefixo (C:\\…, Z:\\…) ou como uma pasta relativa: "),
+        // w14/nr rows
+        // #275: DLSS5 Feeder 2.0's motion vectors on its row; a preset named by a Windows drive path.
+        (RHI.Platform.Linux.Deployment.Dlss5FeederFullDeploymentService.BuiltInMotionVectorsLabel, "Vetores de movimento integrados"),
+        (RHI.Platform.Linux.Deployment.Dlss5FeederFullDeploymentService.LumeniteMotionVectorsLabel, "Vetores de movimento do LumeniteFX"),
+        (RHI.Platform.Linux.Deployment.Dlss5FeederFullDeploymentService.ProviderMotionVectorsPrefix, "Vetores de movimento: provedor "),
+        (RHI.Platform.Linux.Deployment.Dlss5FeederFullDeploymentService.AvailableNote,
+            "DLSS5 Feeder Full: o Feeder com RenoDX DLSS5 ou Deep Fried Chicken, seus próprios runtimes SR/NR e shaders. Instalações novas usam os vetores de movimento integrados ao Feeder 2.0 (sem baixar o LumeniteFX) e adicionam o Feeder ao preset do ReShade do jogo. Pressione Alt+C no jogo para abrir o menu do Feeder."),
+        (RHI.Platform.Linux.Deployment.Dlss5FeederFullDeploymentService.PresetOutsideRefusal,
+            "O ReShade.ini do jogo indica o preset (PresetPath) por um caminho de unidade do Windows, então o RHI não pode adicionar o DLSS5 Feeder a ele. Escolha antes um preset na pasta do jogo, no ReShade."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

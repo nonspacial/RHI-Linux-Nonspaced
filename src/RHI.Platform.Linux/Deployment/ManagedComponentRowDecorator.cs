@@ -558,7 +558,7 @@ internal sealed class ManagedComponentRowDecorator
                                 ? "Troca de método: instalar o Feeder Full removerá transacionalmente primeiro o método ShortFuse/DX11 Bridge atualmente gerenciado pelo RHI."
                                 : feederArchitecture == PeArchitecture.X86
                                     ? "DLSS5 Feeder 32-bit: selecione RenoDX DLSS5 para usar addon32 + host64. Deep Fried Chicken permanece restrito ao layout 64-bit comprovado."
-                                    : "DLSS5 Feeder Full: Feeder + Deep Fried Chicken ou RenoDX DLSS5 com runtimes SR/NR e pilha de shaders isolada.";
+                                    : Dlss5FeederFullDeploymentService.AvailableNote; // w14/nr (#275): Feeder 2.0's motion vectors and Alt+C menu
                         }
                     }
                 }
@@ -783,6 +783,8 @@ internal sealed class ManagedComponentRowDecorator
                                 ? $" {consumerVersion}"
                                 : "";
                             consumer = $" · {consumerName}{consumerVersionText}";
+                            // w14/nr (#275): Feeder 2.0's built-in motion vectors or LumeniteFX, as the preset has it now.
+                            if (Dlss5FeederFullDeploymentService.MotionVectorsLabel(record) is { } motion) consumer += $" · {motion}";
                         }
                         component.Note = $"Managed by RHI Linux{channel}{consumer}{(string.IsNullOrWhiteSpace(record.Version) ? "" : $" · {record.Version}")}.";
                     }

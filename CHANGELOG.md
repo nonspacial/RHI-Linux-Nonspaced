@@ -13,7 +13,14 @@ upstream's release leaves beta; until then its builds carry a beta label (such a
 
 ## In progress
 
-Not on `main` yet: nothing at the moment.
+Not on `main` yet:
+
+- Wave 14 — nr
+  - DLSS5 Feeder 2.0 (#275): new installs use the motion vectors built into Feeder 2.0, so LumeniteFX is no longer
+    downloaded for it; games that already use LumeniteFX keep it. Feeder is added to the game's own ReShade preset
+    instead of replacing it, so your other effects and their settings stay, and removing Feeder takes out only what it
+    added (a preset that was there before is never deleted). The Feeder row shows "Built-in motion vectors" or
+    "LumeniteFX motion vectors" and mentions the Feeder menu (Alt+C).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
