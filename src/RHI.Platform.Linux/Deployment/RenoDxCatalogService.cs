@@ -245,11 +245,13 @@ public sealed class RenoDxCatalogService
         // This is what links titles such as Hogwarts Legacy to Marat's UE-Extended build.
         string? overrideUrl = null;
         string? overrideEngineHint = null;
+        string? manifestEngineHint = null;
         if (_upstreamManifest is not null)
         {
             try
             {
                 var gameOverride = await _upstreamManifest.ResolveGameOverrideAsync(game, cancellationToken).ConfigureAwait(false);
+                manifestEngineHint = gameOverride?.EngineHint;
                 if (!string.IsNullOrWhiteSpace(gameOverride?.SnapshotUrl))
                 {
                     overrideUrl = gameOverride.SnapshotUrl;
@@ -285,11 +287,34 @@ public sealed class RenoDxCatalogService
             // Upstream (MainViewModel.BuildCards.cs, "Manifest snapshot override") only swaps the download URL of the
             // card's mod and keeps its maintainer: the database author of the named match — also an entry that has
             // no download of its own — else the generic engine fallback's maintainer.
-            var credited = named ?? MatchNamed(_authorEntries, gameNorm) ?? GenericFallback(indexedFiles);
+            var credited = named ?? MatchNamed(_authorEntries, gameNorm)
+                ?? GenericFallback(indexedFiles, await KnownUnrealAsync(game, manifestEngineHint).ConfigureAwait(false));
             return SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint, credited?.Author, credited?.DiscussionUrl);
         }
 
-        return named ?? GenericFallback(indexedFiles);
+        return named ?? GenericFallback(indexedFiles, await KnownUnrealAsync(game, manifestEngineHint).ConfigureAwait(false));
+    }
+
+    /// <summary>#287: upstream's UE-Extended database (<c>RenoDXdb-unreal.json</c>), for <see cref="KnownUnrealAsync"/>; optional.</summary>
+    public RenoDxUnrealDatabaseService? UnrealDatabase { get; set; }
+
+    private static readonly Regex Unreal4Or5 = new(@"^Unreal Engine [45](\.|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// #287 (upstream 2.9.1 <c>1f8a32e</c>, <c>KnownUnrealFromData</c>): RHI's own data says the game is UE4/UE5 — it has an
+    /// entry in the UE-Extended database, or its engine hint (the manifest's, or the one the scan read from the game) is
+    /// "Unreal Engine 4…" / "Unreal Engine 5…". Upstream uses it when the file scan said Unknown or UE3 (a stray .u/.upk file,
+    /// a game scanned while it was still downloading), so the engine tag and the generic Unreal mod cannot disagree.
+    /// </summary>
+    internal async Task<bool> KnownUnrealAsync(DetectedGame game, string? manifestEngineHint)
+    {
+        if (Unreal4Or5.IsMatch(manifestEngineHint?.Trim() ?? "") || Unreal4Or5.IsMatch(game.EngineHint?.Trim() ?? "")) return true;
+        if (UnrealDatabase is null) return false;
+        try { return await UnrealDatabase.FindAsync(game.Name).ConfigureAwait(false) is not null; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            return false; // the database is an enrichment layer
+        }
     }
 
     private static RenoDxModEntry SnapshotOverrideEntry(DetectedGame game, string url, string? engineHint, string? author, string? discussionUrl = null)
@@ -322,11 +347,12 @@ public sealed class RenoDxCatalogService
     }
 
     // Upstream's generic fallback mods carry their engine maintainer (MainViewModel.Init.cs: ShortFuse / Voosh).
-    private static RenoDxModEntry? GenericFallback(IReadOnlyList<string> indexedFiles)
+    // #287: knownUnreal = RHI's data says UE4/UE5 (KnownUnrealAsync), used when the files do not look like Unreal.
+    private static RenoDxModEntry? GenericFallback(IReadOnlyList<string> indexedFiles, bool knownUnreal = false)
     {
         if (LooksLikeUnity(indexedFiles))
             return new RenoDxModEntry("Generic Unity", GenericUnityUrl64, GenericUnityUrl32, "Generic RenoDX Unity addon", true, Author: ModAuthorCredit.GenericUnityAuthor);
-        if (LooksLikeUnreal(indexedFiles))
+        if (LooksLikeUnreal(indexedFiles) || knownUnreal)
             return new RenoDxModEntry("Generic Unreal", GenericUnrealUrl, null, "Generic RenoDX Unreal addon", true, Author: ModAuthorCredit.GenericUnrealAuthor);
         return null;
     }

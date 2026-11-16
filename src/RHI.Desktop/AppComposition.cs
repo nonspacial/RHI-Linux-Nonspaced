@@ -407,6 +407,7 @@ internal sealed class AppComposition
         reshade.IniDefaults = ReShadePresetService.KeepingSelection(reshade.IniDefaults, records); // #206: a regenerated ReShade.ini keeps RHI's preset
         // w8/renodx rows
         renodx.UnrealDatabase = renodxUnrealDatabase; // #218: UE-Extended's install settings (Method, Upgrades)
+        renodxCatalog.UnrealDatabase = renodxUnrealDatabase; // #287: a game in it gets the Unreal mod when the scan missed the engine
         // w8/commit-point rows
         // w10/dlss-presets rows
         // w10/archives rows

@@ -24,6 +24,25 @@ public static class RenoDxDownloadFallback
             candidates.Add($"https://clshortfuse.github.io/renodx/{fileName}");
         }
 
+        // The generic Unreal add-on: ShortFuse's GitHub release, then his Pages.
+        if (fileName.Equals("renodx-unrealengine.addon64", StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add($"https://github.com/clshortfuse/renodx/releases/download/snapshot/{fileName}");
+            candidates.Add($"https://clshortfuse.github.io/renodx/{fileName}");
+        }
+
+        // #287 (upstream 2.8.9 ef62d59): an add-on on a modder's own site (<owner>.github.io/<repo>/<file>, such as Marat's
+        // UE-Extended) falls back to the same file in that modder's GitHub snapshot release, for networks that cannot reach
+        // github.io; then to ShortFuse's release.
+        if (uri.Host.EndsWith(".github.io", StringComparison.OrdinalIgnoreCase))
+        {
+            var owner = uri.Host[..^".github.io".Length];
+            var segments = uri.AbsolutePath.Trim('/').Split('/');
+            if (owner.Length > 0 && !owner.Contains('.') && segments.Length == 2)
+                candidates.Add($"https://github.com/{owner}/{segments[0]}/releases/download/snapshot/{fileName}");
+            candidates.Add($"https://github.com/clshortfuse/renodx/releases/download/snapshot/{fileName}");
+        }
+
         return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 }

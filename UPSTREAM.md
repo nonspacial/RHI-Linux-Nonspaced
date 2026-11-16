@@ -1529,3 +1529,32 @@ before could see it replaced before it copies it, as two installs at once alread
 fails and is undone rather than deploying a mix. Not ported: upstream's Zenteon+ link is a Patreon file link, which
 the shader-pack download policy (GitHub, GitLab) refuses, so Zenteon+ shows in the list but does not download; adding
 patreon.com as a trusted host is an owner decision.
+
+### #287 — RenoDX: GitHub fallback for modder-hosted add-ons, second-download names, Unreal mod for known UE4/UE5 games
+
+- **GitHub fallback** (upstream 2.8.9 `ef62d59`). An add-on at `<owner>.github.io/<repo>/<file>` (Marat's UE-Extended and
+  other modders' sites) that cannot be reached is downloaded from `github.com/<owner>/<repo>/releases/download/snapshot/<file>`,
+  then from ShortFuse's snapshot release; the generic Unreal add-on falls back to ShortFuse's release and Pages, as
+  upstream. The same candidate list carries #268's Unity links (`RenoDxDownloadFallback`). Only network failures
+  (unreachable, timeout, an HTTP error) move on to the next link; every link passes the RenoDX download policy, and a file
+  that is not a PE add-on still fails the install. The record keeps the catalogue's link, so the update check asks that
+  link; while it stays unreachable the check says it could not check.
+- **Second-download names** (upstream 2.9.3 `870f4a9`, `AddonFileNames`, same pattern: ` (1)`, `(2)`, ` - Copy`,
+  ` - Copy (2)`). A dropped or watched `renodx-x (1).addon64` installs as `renodx-x.addon64` and is recorded under that
+  name. An install or update that finds a second download of the add-on it is placing no longer refuses it as a foreign
+  RenoDX add-on. Linux deviation: upstream deletes such copies; RHI never deletes a user's file, so it renames each to
+  `<name>.rhi-duplicate` (ReShade loads only `.addon`, `.addon32` and `.addon64`) inside the install's journaled
+  operation (a failed install puts it back), names it in the result and keeps the list on the RenoDX record
+  (`RenoDX.DuplicatesSetAside`). Removing RenoDX leaves those copies as they are. A second download of another mod is
+  still refused as a foreign add-on. Not applicable: upstream's "Download from Discord" state for an unrecognised
+  add-on (and its clearing after uninstall) never existed here; the Linux probe already counted any `renodx*` add-on as
+  RenoDX, second downloads included.
+- **Unreal mod for known UE4/UE5 games** (upstream 2.9.1 `1f8a32e`, the half #260 above deferred). When no named mod
+  matches and the game's files do not look like Unreal, the generic Unreal mod is still offered when RHI's data says
+  UE4/UE5: the manifest's engine hint, or the game's own engine hint (`Unreal Engine 4…` / `Unreal Engine 5…`; `Unreal
+  Engine 3` does not count), or an entry in the UE-Extended database (`RenoDXdb-unreal.json`). A Unity game stays
+  Unity, as upstream. Linux deviation: upstream also changes the engine tag to Unreal; here only the RenoDX choice
+  changes. A game known only from the UE-Extended database keeps its engine hint, so the Unreal-only extras that read
+  the hint (RenoDX's Engine.ini line, the UE-Extended switch) stay off until a manifest or scan hint says Unreal.
+- **Unreal warnings in Info** (2.8.9): not applicable; the Linux Info dialog never showed upstream's "Common Unreal
+  Engine mod warnings" block.

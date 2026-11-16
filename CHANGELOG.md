@@ -25,6 +25,11 @@ Not on `main` yet.
   come as a branch archive (most of them) now update when their author changes them; before, the first download was
   kept for good. Packs the online manifest adds (SD Shaders, UltrawideSideGlass) update like the others, and
   UltrawideSideGlass, a single `.fx` file, now installs at all (#265).
+- RenoDX add-ons hosted on a modder's own site (such as UE-Extended) install from the same file on the modder's
+  GitHub when the site cannot be reached. A second download of an add-on (`renodx-x (1).addon64`) no longer blocks an
+  install or update: it is renamed so ReShade does not load it twice (the file is kept), and a dropped one installs
+  under the add-on's own name. Games that RHI's data lists as Unreal Engine 4 or 5 get the generic Unreal mod even when
+  the folder scan did not recognise the engine (#287).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
