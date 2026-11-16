@@ -1444,6 +1444,10 @@ package) is refused and both names are shown; upstream takes whichever GitHub li
 (`/releases/latest` on 2026-11-16) is a test fixture; the lists of v0.1.37.2, v0.1.36, v0.1.30 and v0.1.28 are pinned in
 the tests.
 
+Not ported: `1f8a32e` also treats a game as Unreal when the scan says Unknown or UE3 but the game is listed in the
+UE-Extended database or its manifest entry carries a UE4/UE5 engine hint (Phantom Blade Zero). That half is deferred to
+Forgejo issue #287 (wave 14).
+
 ### #261 — DLSSG 20/30 FG Unlock installs the 0.4.x release package (#238 follow-up)
 
 Upstream 2.8.9 `68856af` (its ⚙ settings dialog is a separate item and not ported here). Since 0.4.0
