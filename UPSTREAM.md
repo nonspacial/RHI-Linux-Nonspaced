@@ -2245,7 +2245,7 @@ use another mapping.
   the XeSS upscaler, custom scale with Custom). Number boxes check their range and go back to the saved value when it is
   out of range. Greyed out until RHI's RTX Encore is installed. Pinned against upstream's own editor tests.
   Linux deviations: Smooth Motion is left out (it needs NVIDIA's Windows driver and does not run under Wine/Proton);
-  the rows have labels but not upstream's long per-row tooltips yet; the "game is running" warning is not shown.
+  the rows have labels but not upstream's long per-row tooltips yet; the "game is running" warning came with lane extras-fg-2.
 - Intel XeSS files (shared service above): the game's own `libxess.dll`, `libxess_fg.dll` and `libxell.dll` (any
   folder under the game, Intel's version resource, links, `OptiScaler.ini` folders, `rtx-encore-runtimes`,
   `RTXMFG-XeSS` and files another RHI component placed skipped; at most 16 levels and 20 000 folders) are replaced in
@@ -2350,3 +2350,25 @@ library-updates lane's #293 section above.
 - Not ported: the RTX Encore `native:` rewrite, the DLSS search-root widening for migrated games and the DLSS skip-list
   reset (Linux's DLSS search has no skip list and already covers the game root), and upstream's per-component inventory
   (the records already list every file RHI placed).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane extras-fg-2)
+
+**20/30 FG Unlock on RTX 30 (#281).** Upstream 2.8.9 dropped the GPU-generation setting (the mod 0.4.x finds an RTX 20
+or 30 card itself) and offers the 20/30 FG Unlock, Universal MFG Unlocker and MFG Unlock rows on every card: in 2.9.4
+the card (`GpuInfoService`) is read only for HSF and the BFI presenter. RHI Linux now matches. The install and the
+saved preferences no longer refuse "RTX 30 Series" (they sent RTX 30 owners to Universal MFG), both generations are
+accepted and narrow nothing, and the Extras rows of both unlocks are offered for RTX 20, 30, 40, 50 and non-NVIDIA
+cards alike (`FgUnlockGpuGenerationTests`, one case per card through the NVIDIA facts seam). The rows' notes are
+upstream 2.9.4's descriptions ("RTX 20 and 30 series GPUs"; Universal MFG "RTX 40 and RTX 30 Series GPUs (RTX 20
+experimental), plus XeMFG on any GPU") with the Linux facts (Proton/VKD3D experimental, the proxy name), in EN and
+PT-BR; they no longer name a card generation from a setting the ⚙ no longer has. The messages say "20/30 FG Unlock"
+instead of "legacy RTX 20 FG Unlock", and so does the row (upstream's name). Linux deviation: none in behaviour; the
+row notes are the Linux stand-in for upstream's tooltips. The post-2.9.4 grouping of Extras by what the game needs
+(upstream `22865df`, 2.9.5) is not ported.
+
+**RTX Encore ⚙ "game is running" warning (#280, the part extras-fg left out).** Upstream 2.9.0 warns at the top of RTX
+Encore's ⚙ while the game runs ("Changes apply the next time it starts, and RTX Encore's in-game menu may overwrite
+them while it's open"), after the "not installed" / "no rtx-encore.jsonc yet" notes. RHI Linux shows the same warning
+in the same place, in EN and PT-BR. Linux deviation: "running" is RHI Linux's existing probe (the one Update All defers
+running games with: the game's executable in a `/proc/<pid>/cmdline`), read when the ⚙ opens, not upstream's tracked
+launch state; a game started outside RHI counts too. The per-row long tooltips are still not ported.

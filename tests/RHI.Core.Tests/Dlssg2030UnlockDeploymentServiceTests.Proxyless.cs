@@ -6,7 +6,7 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Core.Tests;
 
-// w12 final review M1: RTX 20 FG Unlock's record without its proxy DLL's name — Remove follows the check's advice through
+// w12 final review M1: 20/30 FG Unlock's record without its proxy DLL's name — Remove follows the check's advice through
 // (proxy and INI that still hold RHI's bytes go, the override is restored, the record is dropped), then Install works; a
 // changed INI stays and is named (EN + PT-BR, path last); a crash before the record is gone is put back by the next start.
 public sealed partial class Dlssg2030UnlockDeploymentServiceTests
@@ -36,12 +36,12 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         var remove = await service.RemoveAsync(fixture.Game);
 
         Assert.True(remove.Success, remove.Message);
-        Assert.Equal("RTX 20 FG Unlock" + ProxylessRecordRemoval.RemovedSuffix, remove.Message);
+        Assert.Equal("20/30 FG Unlock" + ProxylessRecordRemoval.RemovedSuffix, remove.Message);
         Assert.False(File.Exists(proxy));
         Assert.False(File.Exists(ini));
         Assert.Null(Override(fixture, "winmm"));
         Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
-        Assert.StartsWith("RTX 20 FG Unlock removido. O registro do RHI", UiLocalizationService.PresentFor("pt-BR", remove.Message), StringComparison.Ordinal);
+        Assert.StartsWith("20/30 FG Unlock removido. O registro do RHI", UiLocalizationService.PresentFor("pt-BR", remove.Message), StringComparison.Ordinal);
 
         var install = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll");
 
@@ -69,7 +69,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         Assert.True(remove.Success, remove.Message);
         Assert.False(File.Exists(proxy));
         Assert.Equal(userIni, File.ReadAllBytes(ini));
-        Assert.Equal("RTX 20 FG Unlock" + ProxylessRecordRemoval.RemovedSuffix + ProxylessRecordRemoval.NotDeletedPrefix + ini, remove.Message);
+        Assert.Equal("20/30 FG Unlock" + ProxylessRecordRemoval.RemovedSuffix + ProxylessRecordRemoval.NotDeletedPrefix + ini, remove.Message);
         Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
         var pt = UiLocalizationService.PresentFor("pt-BR", remove.Message);
         Assert.EndsWith(" Arquivos que o RHI não apagou: " + ini, pt, StringComparison.Ordinal);

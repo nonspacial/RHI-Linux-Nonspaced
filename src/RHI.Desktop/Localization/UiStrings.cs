@@ -1749,6 +1749,8 @@ internal static class UiStrings
         ("Enc.NoFile", "Este jogo ainda não tem um rtx-encore.jsonc. Mudar uma configuração cria um só com ela; o RTX Encore completa o resto com os padrões dele na primeira vez que o jogo abrir.", "This game has no rtx-encore.jsonc yet. Changing a setting creates one with just that setting; RTX Encore adds the rest with its defaults the first time the game starts."),
         ("Enc.XessInstalled", "Os arquivos do Intel XeSS SDK para o upscaler XeSS e o motor XeFG estão instalados ({0} deles substituem as cópias do próprio jogo, que voltam quando você remove o RTX Encore).", "Intel XeSS SDK files for the XeSS upscaler and XeFG engine are installed ({0} of them replace the game's own copies, which are restored when you remove RTX Encore)."),
         ("Enc.XessMissing", "Os arquivos do Intel XeSS SDK (libxess.dll, libxess_fg.dll, libxell.dll) não estão todos instalados. Atualize ou reinstale o RTX Encore para adicioná-los.", "Intel XeSS SDK files (libxess.dll, libxess_fg.dll, libxell.dll) aren't all installed. Update or reinstall RTX Encore to add them."),
+        // w14/extras-fg-2 rows (#280: upstream's RTX Encore ⚙ warning while the game runs)
+        ("Enc.GameRunning", "O jogo está aberto. As mudanças valem na próxima vez que ele iniciar, e o menu do RTX Encore no jogo pode sobrescrevê-las enquanto estiver aberto.", "The game is running. Changes apply the next time it starts, and RTX Encore's in-game menu may overwrite them while it's open."),
         ("Enc.Recommended", "Nome recomendado para este jogo: {0}", "Recommended name for this game: {0}"),
         ("Enc.Mode", "Modo", "Mode"),
         ("Enc.Multiplier", "Multiplicador", "Multiplier"),

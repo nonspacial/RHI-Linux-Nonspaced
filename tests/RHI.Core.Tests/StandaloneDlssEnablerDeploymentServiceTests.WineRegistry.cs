@@ -4,7 +4,7 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Core.Tests;
 
-// The proxy services (DLSS Enabler, RTX 20 FG Unlock, Universal MFG share this shape): refused while Wine runs (#24),
+// The proxy services (DLSS Enabler, 20/30 FG Unlock, Universal MFG share this shape): refused while Wine runs (#24),
 // override journaled with the record as commit point (#23), removal keeps a later value and a failed removal puts
 // RHI's value back only where it restored it (#30).
 public sealed partial class StandaloneDlssEnablerDeploymentServiceTests

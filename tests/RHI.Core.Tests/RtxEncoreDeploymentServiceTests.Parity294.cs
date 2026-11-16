@@ -291,6 +291,6 @@ public sealed partial class RtxEncoreDeploymentServiceTests
         var notInstalled = FgSettingsBuilder.RtxEncore(null).SelectMany(section => section.Rows).ToArray();
         foreach (var row in notInstalled) row.Refresh();
         Assert.All(notInstalled, row => Assert.False(row.IsEnabled));
-        Assert.Contains(ComponentDialogLine.Warning(UiLocalizationService.Text("Enc.NotInstalled")), FgSettingsBuilder.RtxEncoreLines(false, false, null, null));
+        Assert.Contains(ComponentDialogLine.Warning(UiLocalizationService.Text("Enc.NotInstalled")), FgSettingsBuilder.RtxEncoreLines(false, false, null, null, gameRunning: false));
     }
 }

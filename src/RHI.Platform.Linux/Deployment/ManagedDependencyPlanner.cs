@@ -157,14 +157,14 @@ internal sealed class ManagedDependencyPlanner
             return ComponentOperationResult.Fail("RenoDX HDR já está ativo e este jogo não permite coexistência RenoDX/Luma pelo manifesto. Nenhuma dependência foi alterada.");
 
         if (target == ManagedComponentKind.MfgAdaUnlock && _records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null)
-            return ComponentOperationResult.Fail("RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Unlock.");
+            return ComponentOperationResult.Fail("20/30 FG Unlock já está ativo. Remova-o antes de instalar MFG Unlock.");
         if (target == ManagedComponentKind.MfgAdaUnlock && _records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
             return ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar MFG Unlock.");
 
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.OptiScaler) is not null)
             return ComponentOperationResult.Fail("OptiScaler já está ativo. ShortFuse não reescreve automaticamente essa cadeia ReShade/OptiScaler.");
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null)
-            return ComponentOperationResult.Fail("RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar ShortFuse.");
+            return ComponentOperationResult.Fail("20/30 FG Unlock já está ativo. Remova-o antes de instalar ShortFuse.");
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
             return ComponentOperationResult.Fail("Universal MFG Experimental já está ativo. Remova-o antes de instalar ShortFuse.");
         // w4/encore (#158): never switch away from RTX Encore's Neural Rendering file; the user removes it first. Refused

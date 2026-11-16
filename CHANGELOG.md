@@ -187,6 +187,15 @@ Wave 14 — library-folders
   Restore automatic detection ask, and when RHI corrects a folder itself (the online manifest) the mods move on their
   own. Nothing moves while the game is running, a file you changed is never overwritten, and a failed move is undone.
 
+Wave 14 — extras-fg-2
+
+- **20/30 FG Unlock on RTX 30** (upstream 2.8.9+): RTX 30 owners are no longer sent to Universal MFG Unlocker; 20/30
+  FG Unlock installs on RTX 20 and 30 alike, and the mod finds the card itself. Both rows are offered on every card, as
+  upstream's are. Their notes now give upstream's description instead of a "legacy RTX 20" path or a card generation
+  you never picked, and every message calls the mod 20/30 FG Unlock (#281).
+- **RTX Encore ⚙ warns while the game is running** (upstream 2.9.0): changes apply the next time it starts, and RTX
+  Encore's in-game menu may overwrite them while it's open (#280).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

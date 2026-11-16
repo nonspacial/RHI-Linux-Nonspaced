@@ -256,7 +256,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.LumaFramework => "Luma Framework",
         ManagedComponentKind.OptiScaler => "OptiScaler",
         ManagedComponentKind.UltimateAsiLoader => "Ultimate ASI Loader",
-        ManagedComponentKind.Dlssg2030Unlock => "RTX 20 FG Unlock",
+        ManagedComponentKind.Dlssg2030Unlock => "20/30 FG Unlock",
         ManagedComponentKind.DlssEnablerStandalone => "DLSS Enabler (Standalone)",
         ManagedComponentKind.Rtx40MfgStandalone => Rtx40MfgStandaloneDeploymentService.DisplayName, // #278
         ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)

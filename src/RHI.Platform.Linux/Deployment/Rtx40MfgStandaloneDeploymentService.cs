@@ -46,6 +46,13 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
 
     public static readonly IReadOnlyList<string> GpuGenerations = [GpuGenRtx40, GpuGenRtx30];
 
+    /// <summary>
+    /// w14/extras-fg-2 (#281): the row's note before install, upstream 2.9.4's description (no card generation: the ⚙ has
+    /// none since #278, and the row is offered on every card as upstream's); the proxy name follows.
+    /// </summary>
+    public const string AvailableNotePrefix = "DLSS Multi Frame Generation beyond 2x (up to 6x) on RTX 40 and RTX 30 Series GPUs (RTX 20 experimental), "
+        + "plus XeSS frame generation (XeMFG) on any GPU. DirectX 12, Vulkan experimental. RHI checks the files and protects existing ones. Proxy: ";
+
     // Universal RTXMFG README supported filenames. Keep the complete upstream
     // authority list here even though Bink chaining is deliberately not automated on Linux yet.
     public static readonly IReadOnlyList<string> ProxyNames =
@@ -194,7 +201,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         if (ResolveArchitecture(game) != PeArchitecture.X64)
             return "Universal MFG exige um executável Windows x64.";
         if (game.EffectiveGraphicsApi is not (GraphicsApi.DirectX12 or GraphicsApi.Vulkan))
-            return "Universal MFG em RTX 40 usa DirectX 12 como caminho principal e Vulkan experimental; DirectX 11 não é elegível.";
+            return "Universal MFG usa DirectX 12 como caminho principal e Vulkan experimental; DirectX 11 não é elegível.";
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o Universal MFG.";
         if (ResolveBinaryDirectory(game) is null)
@@ -835,7 +842,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     private string? FindFrameGenerationConflict(DetectedGame game)
     {
         if (_records.Find(game, ManagedComponentKind.MfgAdaUnlock) is not null) return "MFG Unlock";
-        if (_records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null) return "RTX 20 FG Unlock legado";
+        if (_records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null) return "20/30 FG Unlock";
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null) return "ShortFuse";
         return null;
     }

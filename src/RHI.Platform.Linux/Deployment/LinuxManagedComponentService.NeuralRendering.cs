@@ -231,7 +231,7 @@ public sealed partial class LinuxManagedComponentService
         CancellationToken cancellationToken)
     {
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null)
-            return ComponentOperationResult.Fail("RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar ShortFuse.");
+            return ComponentOperationResult.Fail("20/30 FG Unlock já está ativo. Remova-o antes de instalar ShortFuse.");
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
             return ComponentOperationResult.Fail("Universal MFG Experimental já está ativo. Remova-o antes de instalar ShortFuse.");
         if (target == ManagedComponentKind.Dlss5Feeder)

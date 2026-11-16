@@ -198,7 +198,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         var remove = await service.RemoveAsync(fixture.Game);
 
         Assert.True(remove.Success, remove.Message);
-        Assert.Equal("RTX 20 FG Unlock" + ProxylessRecordRemoval.RemovedSuffix, remove.Message);
+        Assert.Equal("20/30 FG Unlock" + ProxylessRecordRemoval.RemovedSuffix, remove.Message);
         Assert.False(Directory.Exists(Path.Combine(fixture.Bin, "dlssg_sm86")));
         Assert.Equal(["Game.exe"], Directory.GetFiles(fixture.Bin).Select(Path.GetFileName));
     }

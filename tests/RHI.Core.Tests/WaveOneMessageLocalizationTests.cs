@@ -54,7 +54,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return LumaFrameworkDeploymentService.RollbackIncompletePrefix + E;
         yield return $"Universal MFG update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
         yield return $"DLSS Enabler Standalone update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
-        yield return $"RTX 20 FG Unlock legado update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-2";
+        yield return $"20/30 FG Unlock update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-2";
         yield return $"RE Framework update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-1";
         // Launch options refused on a store hand-off (wave 2, #46).
         yield return RHI.Platform.Linux.Launch.LinuxGameLauncher.HandoffProfileRefused;
@@ -188,7 +188,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"{ShortFuseDeploymentService.RemovedUalKeptMessage} {ShortFuseDeploymentService.UalKeptPrefix}{E}";
         yield return $"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {E}";
         yield return $"Universal MFG removal failed and was rolled back as far as possible: {E}";
-        yield return $"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {E}";
+        yield return $"20/30 FG Unlock removal failed and was rolled back as far as possible: {E}";
         yield return $"Ultimate ASI Loader removal failed and was rolled back as far as possible: {E}";
         yield return $"ShortFuse install failed and was rolled back as far as possible: {E}";
         yield return $"ReLimiter removal failed: {E}";

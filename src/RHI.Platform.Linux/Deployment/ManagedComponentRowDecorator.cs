@@ -496,7 +496,7 @@ internal sealed class ManagedComponentRowDecorator
                         if (managedDlssg2030 is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Unlock; os métodos de desbloqueio de Frame Generation são mutuamente exclusivos no RHI-Linux.";
+                            component.Note = "20/30 FG Unlock já está ativo. Remova-o antes de instalar MFG Unlock; os métodos de desbloqueio de Frame Generation são mutuamente exclusivos no RHI-Linux.";
                         }
                         else if (managedRtx40Mfg is not null)
                         {
@@ -595,30 +595,25 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedRtx40Mfg is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar RTX 20 FG Unlock legado.";
+                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar 20/30 FG Unlock.";
                         }
                         else if (managedMfgAdaUnlock is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar RTX 20 FG Unlock legado.";
+                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar 20/30 FG Unlock.";
                         }
                         else if (managedShortFuse is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "ShortFuse já gerencia a pilha DLSS/Frame Generation. Remova-o antes de usar o RTX 20 FG Unlock legado.";
+                            component.Note = "ShortFuse já gerencia a pilha DLSS/Frame Generation. Remova-o antes de usar o 20/30 FG Unlock.";
                         }
                         else
                         {
-                            var preferences = _dlssg2030.GetPreferences(game);
-                            component.Note = $"Legado/Experimental sob Proton/VKD3D: RTX 20 / SM75, proxy {preferences.ProxyName}. RTX 30 migrou para Universal MFG. Exige jogo x64 DirectX 12; o componente RTX 20 usa uma fonte upstream fixada para manter comportamento reproduzível.";
+                            // w14/extras-fg-2 (#281): offered on every card, as upstream; the mod detects RTX 20/30 itself.
+                            component.Note = Dlssg2030UnlockDeploymentService.AvailableNotePrefix + _dlssg2030.GetPreferences(game).ProxyName;
                         }
                     }
-                    else if (record is not null)
-                    {
-                        var gpu = record.Metadata.GetValueOrDefault("FG2030.GpuGeneration") ?? Dlssg2030UnlockDeploymentService.GpuGenRtx30;
-                        var proxy = record.Metadata.GetValueOrDefault("FG2030.ProxyName") ?? Dlssg2030UnlockDeploymentService.DefaultProxyName;
-                        component.Note = $"FG Unlock legado gerenciado pelo RHI · {gpu} · {proxy}. Registros RTX 30 antigos continuam removíveis/atualizáveis, mas novas instalações RTX 30 usam Universal MFG.";
-                    }
+                    // An installed row's note is the "Managed by RHI Linux" line below (#281: the old per-card note here was never shown).
                 }
 
                 if (component.Kind == ManagedComponentKind.DlssEnablerStandalone)
@@ -663,7 +658,7 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedDlssg2030 is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar Universal MFG.";
+                            component.Note = "20/30 FG Unlock já está ativo. Remova-o antes de instalar Universal MFG.";
                         }
                         else if (managedShortFuse is not null)
                         {
@@ -672,19 +667,11 @@ internal sealed class ManagedComponentRowDecorator
                         }
                         else
                         {
-                            component.Note = preferences.GpuGeneration == Rtx40MfgStandaloneDeploymentService.GpuGenRtx30
-                                ? $"Universal MFG Experimental · RTX 30 · DirectX 12 · proxy {preferences.ProxyName}. O suporte RTX 30 é experimental upstream; o RHI valida integridade/arquitetura, protege arquivos existentes e Backspace abre o menu."
-                                : $"Universal MFG Experimental · RTX 40 · proxy {preferences.ProxyName}. DirectX 12 é o caminho principal e Vulkan permanece experimental; o RHI valida integridade/arquitetura e protege arquivos existentes.";
+                            // w14/extras-fg-2 (#281): upstream's description, no card generation (offered on every card).
+                            component.Note = Rtx40MfgStandaloneDeploymentService.AvailableNotePrefix + preferences.ProxyName;
                         }
                     }
-                    else if (record is not null)
-                    {
-                        var gpu = record.Metadata.GetValueOrDefault("UniversalMFG.GpuGeneration") ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40;
-                        var proxy = record.Metadata.GetValueOrDefault("UniversalMFG.ProxyName")
-                                    ?? record.Metadata.GetValueOrDefault("RTX40MFG.ProxyName")
-                                    ?? Rtx40MfgStandaloneDeploymentService.DefaultProxyName;
-                        component.Note = $"Universal MFG Experimental gerenciado pelo RHI · {gpu} · proxy {proxy}. Update/removal são protegidos por hash e preservam o override Wine anterior.";
-                    }
+                    // An installed row's note is the "Managed by RHI Linux" line below (#281: the old per-card note here was never shown).
                 }
 
                 // Not for RHI's own install (its file may be gone): that row stays, removable, whatever the game is now.
@@ -711,7 +698,7 @@ internal sealed class ManagedComponentRowDecorator
                     else if (managedDlssg2030 is not null)
                     {
                         component.ActionAllowed = false;
-                        component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar ShortFuse.";
+                        component.Note = "20/30 FG Unlock já está ativo. Remova-o antes de instalar ShortFuse.";
                     }
                     else if (Find(ManagedComponentKind.ReShade) is null && reShadePresent && managedOptiScaler is null)
                     {
