@@ -1185,6 +1185,8 @@ public sealed partial class ReShadeChannelTests : IDisposable
         public string StableVersion { get; set; } = "9.9.9";
         public byte[]? NightlyPayload { get; set; }
         public int RequestCount { get; private set; }
+        /// <summary>Requests to reshade.me only (#267: a shader sync may HEAD a pack's archive, never ReShade's site).</summary>
+        public int ReShadeSiteRequests { get; private set; }
         public HttpStatusCode HomeStatus { get; set; } = HttpStatusCode.OK;
         public bool HomeHasLink { get; set; } = true;
         public bool HomeUnreachable { get; set; }
@@ -1197,6 +1199,7 @@ public sealed partial class ReShadeChannelTests : IDisposable
         {
             RequestCount++;
             var uri = request.RequestUri!;
+            if (uri.Host.Equals("reshade.me", StringComparison.OrdinalIgnoreCase)) ReShadeSiteRequests++;
             if (ShaderZip is not null && uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
                 (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("codeload.github.com", StringComparison.OrdinalIgnoreCase)))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(ShaderZip) });

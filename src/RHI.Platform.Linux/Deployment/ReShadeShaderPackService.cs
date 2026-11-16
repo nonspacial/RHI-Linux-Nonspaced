@@ -949,7 +949,7 @@ public sealed class ReShadeShaderPackService
                     || !Path.GetExtension(name).Equals(extension, StringComparison.OrdinalIgnoreCase))
                     name = SafePackDirectoryName(pack.Id) + extension;
                 Directory.CreateDirectory(Path.Combine(raw, "Shaders"));
-                File.Copy(temp, Path.Combine(raw, "Shaders", name));
+                AtomicFile.Copy(temp, Path.Combine(raw, "Shaders", name));
             }
             else
             {

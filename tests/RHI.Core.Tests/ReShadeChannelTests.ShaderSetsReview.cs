@@ -249,7 +249,8 @@ public sealed partial class ReShadeChannelTests
         var record = store.Find(game, ManagedComponentKind.ReShade)!;
         var dll = ProxyPayloadLocator.ReShadePayload(record)!.Path;
         var dllBytes = File.ReadAllBytes(dll);
-        var requests = handler.RequestCount;
+        var siteRequests = handler.ReShadeSiteRequests;
+        var requestsBefore = handler.RequestCount;
         handler.StableVersion = "6.2.0";
         var managed = ManagedComponents(store, service);
         managed.ShaderSets = sets;
@@ -262,7 +263,9 @@ public sealed partial class ReShadeChannelTests
         var after = store.Find(game, ManagedComponentKind.ReShade)!;
         Assert.Equal((record.Version, record.SourceUrl, record.Metadata["ReShade.Channel"]), (after.Version, after.SourceUrl, after.Metadata["ReShade.Channel"]));
         Assert.Equal(dllBytes, File.ReadAllBytes(dll));
-        Assert.Equal(requests, handler.RequestCount); // the seeded pack is staged; reshade.me is never asked
+        // The seeded pack is staged (#267: its archive may be asked for a newer build, with a HEAD); reshade.me is never asked.
+        Assert.Equal(siteRequests, handler.ReShadeSiteRequests);
+        Assert.False(handler.RequestCount > requestsBefore + 2, $"{handler.RequestCount - requestsBefore} requests");
         Assert.Equal(["CrosireMaster"], service.GetInstalledOptions(game).ShaderPackIds);
         Assert.Contains("RHI", File.ReadAllText(ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!)));
     }
