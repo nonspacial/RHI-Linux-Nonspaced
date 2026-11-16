@@ -122,6 +122,9 @@ Not on `main` yet:
   four known forks stay as a fallback, and a fork the manifest drops keeps working in the games that have it. Forks are
   listed by name, as upstream lists them. Saved choices, Default version, release pins and installed games all keep the
   version they had.
+- **OptiScaler presets remember their version** (upstream): a preset saved on F5 (or any version) switches the game to
+  that version when you apply it. RHI asks first, because that reinstalls OptiScaler; your OptiScaler.ini settings are
+  kept and a copy goes to RHI's data folder. Presets saved before this build keep the game's version.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

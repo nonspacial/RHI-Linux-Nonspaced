@@ -339,6 +339,63 @@ public sealed class OptiScalerPresetsTests : IDisposable
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
+    // #273 (owner rule 2026-11-16, upstream OsPreset.OsVariant): a slot keeps its version; applying it switches the game to
+    // that version, after asking, because that reinstalls OptiScaler.
+    [Fact]
+    public async Task APresetSavedOnAnotherVersion_AsksBeforeSwitching_AndAppliesNothingWhenDeclined()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = await AddManagedOptiScalerGameAsync(fx, "Switcher", "[FrameGen]\nFGInput=auto\nFGOutput=auto\n");
+        var presets = fx.Vm.OptiScalerPresets;
+        presets.Store = new OptiScalerPresetStore(Path.Combine(_root, "presets-switch.json"));
+        var asked = new List<string>();
+        var answer = false;
+        fx.Vm.ConfirmAsync = (title, message, accept) => { asked.Add(message); return Task.FromResult(answer); };
+
+        presets.SaveSlot(0);
+        Assert.Equal("Nightly", presets.Store.Load().Slots[0]!.Variant); // saved with the game's version
+
+        var slots = presets.Store.Load();
+        slots.Slots[0]!.Variant = "Stable";
+        slots.Slots[0]!.Settings["FGOutput"] = "dlssg";
+        slots.Slots[0]!.Name = "On Stable";
+        presets.Store.Save(slots);
+        presets.Store = new OptiScalerPresetStore(presets.Store.FilePath);
+
+        var declined = await presets.ApplyAsync(0);
+
+        Assert.Equal("Preset On Stable was not applied.", declined);
+        Assert.Equal("The preset On Stable was saved on OptiScaler Stable. Applying it reinstalls OptiScaler in this game as Stable. "
+                     + "Your OptiScaler.ini settings are kept, and a copy goes to RHI's data folder.", Assert.Single(asked));
+        Assert.Contains("FGOutput=auto", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
+        Assert.Equal(OptiScalerVariant.Nightly, fx.Managed.GetInstalledOptiScalerVariant(game));
+
+        // Accepted: the switch runs (here it cannot finish: the fixture is offline) and the settings are not applied over it.
+        answer = true;
+        var failed = await presets.ApplyAsync(0);
+        Assert.DoesNotContain("applied", failed, StringComparison.Ordinal);
+        Assert.Equal(2, asked.Count);
+
+        // A preset on the game's own version, or from before presets kept one, never asks.
+        slots = presets.Store.Load();
+        slots.Slots[1] = new OptiScalerPreset { Name = "Old", Settings = new(StringComparer.Ordinal) { ["FGInput"] = "upscaler" } };
+        presets.Store.Save(slots);
+        presets.Store = new OptiScalerPresetStore(presets.Store.FilePath);
+        if (fx.Managed.GetInstalledOptiScalerVariant(game) is not null)
+            Assert.StartsWith("Preset \"Old\" applied", await presets.ApplyAsync(1), StringComparison.Ordinal);
+        Assert.Equal(2, asked.Count);
+    }
+
+    [Fact]
+    public void Store_KeepsTheVersion_AndDropsOneThatIsNotAVersion()
+    {
+        var store = new OptiScalerPresetStore(Path.Combine(_root, "presets-version.json"));
+        store.Save(new OptiScalerPresetSlots { Slots = [new OptiScalerPreset { Variant = "Venom" }, new OptiScalerPreset { Variant = "../x" }] });
+        var slots = store.Load();
+        Assert.Equal("Fork:venom", slots.Slots[0]!.Variant);
+        Assert.Null(slots.Slots[1]!.Variant);
+    }
+
     private static async Task<DetectedGame> AddManagedOptiScalerGameAsync(ViewModelFixture fx, string name, string ini,
         OptiScalerVariant? variantOrNightly = null)
     {

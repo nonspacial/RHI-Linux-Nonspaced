@@ -17,6 +17,20 @@ public sealed partial class OptiScalerDeploymentService
     public string FreshIniBackupDirectory { get; set; } = Path.Combine(LinuxPaths.DataHome, "rhi-linux", "optiscaler-ini-backups");
 
     /// <summary>
+    /// A copy of the game's OptiScaler.ini in RHI's data folder (<see cref="FreshIniBackupDirectory"/>, one folder per game,
+    /// a dated name, never overwritten): before a fresh copy (#269), a version switch (#273) or Load saved ini (#272). Its path.
+    /// </summary>
+    public async Task<string> BackUpIniAsync(DetectedGame game, string ini, CancellationToken cancellationToken = default)
+    {
+        var folder = Path.Combine(FreshIniBackupDirectory, string.Concat(LinuxDeploymentRecordStore.GameKey(game).Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_')));
+        Directory.CreateDirectory(folder);
+        var backup = Path.Combine(folder, $"OptiScaler-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}.ini");
+        for (var i = 2; File.Exists(backup); i++) backup = Path.Combine(folder, $"OptiScaler-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{i}.ini");
+        await AtomicFile.CopyAsync(ini, backup, await FileHash.Sha256HexAsync(ini, cancellationToken).ConfigureAwait(false), cancellationToken, overwrite: false).ConfigureAwait(false);
+        return backup;
+    }
+
+    /// <summary>
     /// #269 (upstream 2.8.9 "Replace with a fresh copy…", fixed there to use the fresh-install template): replaces the game's
     /// OptiScaler.ini with the template a fresh install of its version would take — the user's template for the channel,
     /// GPU type and DLSS Inputs (#97) — then sets what RHI's install sets (LoadAsiPlugins on; LoadReshade on while RHI's
@@ -46,10 +60,7 @@ public sealed partial class OptiScalerDeploymentService
         {
             try
             {
-                var folder = Path.Combine(FreshIniBackupDirectory, string.Concat(LinuxDeploymentRecordStore.GameKey(game).Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_')));
-                Directory.CreateDirectory(folder);
-                backup = Path.Combine(folder, $"OptiScaler-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}.ini");
-                await AtomicFile.CopyAsync(ini, backup, await FileHash.Sha256HexAsync(ini, cancellationToken).ConfigureAwait(false), cancellationToken, overwrite: false).ConfigureAwait(false);
+                backup = await BackUpIniAsync(game, ini, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

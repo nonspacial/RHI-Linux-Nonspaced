@@ -13,6 +13,12 @@ namespace RHI.Platform.Linux.Settings;
 public sealed class OptiScalerPreset
 {
     public string? Name { get; set; }
+
+    /// <summary>
+    /// The OptiScaler version the preset was saved on (its id, upstream <c>OsPreset.OsVariant</c>); applying the preset
+    /// switches the game to it (owner rule 2026-11-16, #273). Null = presets saved before this field: the version stays.
+    /// </summary>
+    public string? Variant { get; set; }
     public Dictionary<string, string> Settings { get; set; } = new(StringComparer.Ordinal);
 }
 
@@ -31,6 +37,7 @@ public sealed class OptiScalerPresetSlots
         foreach (var slot in slots.Where(slot => slot is not null))
         {
             slot!.Name = string.IsNullOrWhiteSpace(slot.Name) ? null : slot.Name.Trim();
+            slot.Variant = RHI.Platform.Linux.Deployment.OptiScalerVariant.TryParse(slot.Variant, out var variant) ? variant.Id : null;
             slot.Settings = new Dictionary<string, string>(
                 (slot.Settings ?? []).Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && pair.Value is not null),
                 StringComparer.Ordinal);

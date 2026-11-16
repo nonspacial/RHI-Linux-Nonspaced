@@ -814,6 +814,13 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         finally { _loadingOptiScalerVariant = false; }
     }
 
+    /// <summary>#273: after a version switch the game's choice is that version, and the ⚙ dropdown shows it.</summary>
+    internal void RememberOptiScalerVariant(DetectedGame game, OptiScalerVariant variant)
+    {
+        TryPersist(() => _optiScalerVariantStore.Set(game, variant), "Ui.WhatGamePreferences", sessionOnly: false);
+        if (ReferenceEquals(SelectedGame, game)) LoadOptiScalerVariant(game);
+    }
+
     private void ResetOptiScalerVariant()
     {
         _loadingOptiScalerVariant = true;

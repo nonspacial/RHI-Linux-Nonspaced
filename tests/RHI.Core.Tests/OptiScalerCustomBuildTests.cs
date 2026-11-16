@@ -313,16 +313,84 @@ public sealed class OptiScalerCustomBuildTests : IDisposable
         Assert.Contains("[Upscalers]", File.ReadAllText(ini), StringComparison.Ordinal); // the template's text, not the package's (it has none)
     }
 
+    // ── Version switch (#273: presets carry the version) ─────────────────────
+
+    [Fact]
+    public async Task SwitchVersion_ReinstallsAsTheOtherVersion_AndKeepsTheUsersIniValues()
+    {
+        var a = (await Import(WriteBuild(Path.Combine(_root, "sa"), os10: true, marker: "A"), "Build A")).Build!;
+        var b = (await Import(WriteBuild(Path.Combine(_root, "sb"), os10: true, marker: "B", iniExtra: "[Menu]\nShortcutKey=0x2D\n"), "Build B")).Build!;
+        var (game, store) = Game("switch");
+        var managed = Managed(store, out var optiscaler);
+
+        Assert.True((await managed.InstallOptiScalerAsync(game, a.Variant)).Success);
+        var ini = Path.Combine(game.BinaryDirectory!, "OptiScaler.ini");
+        OptiScalerIniEditor.SetValuesInFile(ini, [("Plugins", "LoadReshade", "true"), ("Old", "OnlyInA", "1")]);
+
+        var switched = await managed.SwitchOptiScalerVersionAsync(game, b.Variant);
+
+        Assert.True(switched.Success, switched.Message);
+        Assert.StartsWith(LinuxManagedComponentService.SwitchedPrefix + "Custom: Build A → Custom: Build B.", switched.Message, StringComparison.Ordinal);
+        Assert.EndsWith(LinuxManagedComponentService.SwitchKeptSuffix + "1", switched.Message, StringComparison.Ordinal);
+        Assert.Equal(b.Variant, managed.GetInstalledOptiScalerVariant(game));
+        Assert.Contains("B", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "marker.dll")), StringComparison.Ordinal);
+        Assert.Equal("true", OptiScalerIniEditor.GetValueInFile(ini, "Plugins", "LoadReshade")); // the user's value
+        Assert.Equal("0x2D", OptiScalerIniEditor.GetValueInFile(ini, "Menu", "ShortcutKey")); // the new build's own key
+        Assert.Null(OptiScalerIniEditor.GetValueInFile(ini, "Old", "OnlyInA")); // the old build's key is not carried
+        Assert.Single(Directory.GetFiles(optiscaler.FreshIniBackupDirectory, "OptiScaler-*.ini", SearchOption.AllDirectories)); // a copy kept
+
+        Assert.StartsWith(LinuxManagedComponentService.SwitchSameVersionPrefix, (await managed.SwitchOptiScalerVersionAsync(game, b.Variant)).Message, StringComparison.Ordinal);
+        Assert.StartsWith(OptiScalerPackageProvider.UnknownVersionPrefix, (await managed.SwitchOptiScalerVersionAsync(game, OptiScalerVariant.Custom("gone"))).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SwitchVersion_WhenTheNewVersionCannotBeInstalled_PutsThePreviousOneBackWithTheSettings()
+    {
+        var a = (await Import(WriteBuild(Path.Combine(_root, "fa"), os10: true, marker: "A"), "Build A")).Build!;
+        var bareDll = Path.Combine(_root, "fbare", "OptiScaler.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(bareDll)!);
+        WritePe(bareDll, "optiscaler/OptiScaler bare");
+        var bare = (await Import(bareDll, "Bare")).Build!; // no INI and no template service: its install is refused
+        var (game, store) = Game("switch-fail");
+        var managed = Managed(store, out _);
+        Assert.True((await managed.InstallOptiScalerAsync(game, a.Variant)).Success);
+        var ini = Path.Combine(game.BinaryDirectory!, "OptiScaler.ini");
+        OptiScalerIniEditor.SetValuesInFile(ini, [("Plugins", "LoadReshade", "true")]);
+
+        var switched = await managed.SwitchOptiScalerVersionAsync(game, bare.Variant);
+
+        Assert.False(switched.Success);
+        Assert.StartsWith(LinuxManagedComponentService.SwitchInstallFailedPrefix, switched.Message, StringComparison.Ordinal);
+        Assert.EndsWith(LinuxManagedComponentService.SwitchRestoredNote, switched.Message, StringComparison.Ordinal);
+        Assert.Equal(a.Variant, managed.GetInstalledOptiScalerVariant(game));
+        Assert.Equal("true", OptiScalerIniEditor.GetValueInFile(ini, "Plugins", "LoadReshade"));
+    }
+
+    private LinuxManagedComponentService Managed(LinuxDeploymentRecordStore store, out OptiScalerDeploymentService optiscaler)
+    {
+        var provider = new OptiScalerPackageProvider(new HttpClient(new LinkHandler()), new ZipExtractor(), Path.Combine(_root, "cache"));
+        optiscaler = new OptiScalerDeploymentService(new TransactionalFileDeploymentService(), store, new WineDllOverrideService(), provider)
+        {
+            FreshIniBackupDirectory = Path.Combine(_root, "ini-backups-" + Guid.NewGuid().ToString("N"))
+        };
+        return new LinuxManagedComponentService(
+            records: store, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!, optiscaler: optiscaler,
+            relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!, dlssEnablerStandalone: null!,
+            rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!, ultimateAsiLoader: null!,
+            shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!,
+            neuralVersionPins: new RHI.Platform.Linux.Paths.NeuralAddonVersionPreferenceStore(Path.Combine(_root, "pins-" + Guid.NewGuid().ToString("N") + ".json")));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private Task<OptiScalerCustomImportResult> Import(string source, string name)
         => _store.ImportAsync(source, name, null, new HttpClient(new LinkHandler()), new ZipExtractor());
 
-    private static string WriteBuild(string root, bool os10, bool forwarder = false, string marker = "v1")
+    private static string WriteBuild(string root, bool os10, bool forwarder = false, string marker = "v1", string iniExtra = "")
     {
         Directory.CreateDirectory(root);
         WritePe(Path.Combine(root, "OptiScaler.dll"), "optiscaler/OptiScaler custom");
-        File.WriteAllText(Path.Combine(root, "OptiScaler.ini"), "[Plugins]\nLoadReshade=auto\n");
+        File.WriteAllText(Path.Combine(root, "OptiScaler.ini"), "[Plugins]\nLoadReshade=auto\n" + iniExtra);
         File.WriteAllText(Path.Combine(root, "marker.dll"), marker);
         if (os10)
         {
