@@ -2329,7 +2329,7 @@ use another mapping.
   in App.axaml or `ThemeResources.Bind`). A theme puts each brush, recoloured by upstream's mapper, into the app's
   resources, so open windows repaint at once. A test checks that no AXAML holds a literal colour and that every
   `Rhi…Brush` used exists, so the phase-2 layouts take their colours from the same keys.
-- Linux deviations: the card is in Settings › Interface (the Linux tab for upstream's General until the phase-2
+- Linux deviations: the card is in Settings › UX (the Linux tab for upstream's General until the phase-2
   Settings layout, #296). Custom colours are typed as `#RRGGBB` beside a live swatch: Avalonia's colour picker is a
   separate package this build does not ship (owner decision whether to add it). Import is a row under the buttons
   rather than a dialog. Fluent's own control templates (scroll bars, drop-down surfaces) keep Avalonia's dark colours,
