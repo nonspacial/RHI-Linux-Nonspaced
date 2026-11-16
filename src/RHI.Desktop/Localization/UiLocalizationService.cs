@@ -1185,6 +1185,18 @@ public static class UiLocalizationService
             "Download recusado: links do NR Cost Scaler devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // w3/vmsplit rows
         // w3/dllnames rows
+        // #293 install folder migration
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveRunningMessage, "Nada foi movido: o jogo está aberto. Feche-o e tente de novo."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveMissingPrefix, "Nada foi movido: falta um arquivo que o RHI instalou: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveChangedPrefix, "Nada foi movido: um arquivo que o RHI instalou mudou desde a instalação: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveTakenPrefix, "Nada foi movido: a nova pasta já tem este arquivo e a cópia .original dele: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveHeldPrefix, "Nada foi movido: outro componente que o RHI instalou já usa este arquivo na nova pasta: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveWineOverridePrefix, "Nada foi movido: a substituição do Wine deste componente cita outro executável; remova-o e instale de novo na nova pasta: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveNestedPrefix, "Nada foi movido: um arquivo que o RHI instalou já está dentro da nova pasta: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveLayerMessage, "Nada foi movido: remova antes o NR Cost Scaler e depois mude a pasta do jogo."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveFailedPrefix, "A mudança falhou e foi desfeita; nada foi alterado: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveDonePrefix, "Movido para a nova pasta: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.FolderMoveNothingMessage, "O RHI não tem nada instalado na pasta antiga."),
         // #124 Control UE: an earlier copy kept beside a DLL the user changed; a user change an update leaves alone.
         ("an earlier copy RHI kept from a previous Control UE install is in the way; move it aside and reinstall RenoDX to update this DLL: ",
             "uma cópia anterior que o RHI guardou de uma instalação anterior do Control UE está no caminho; mova-a para outro lugar e reinstale o RenoDX para atualizar esta DLL: "),

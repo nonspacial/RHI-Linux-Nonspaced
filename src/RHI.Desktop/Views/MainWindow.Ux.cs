@@ -65,6 +65,7 @@ public sealed partial class MainWindow
                 confirmVm.ConfirmAsync = (title, message, accept) => ShowConfirmationAsync(title, message, accept, height: 520);
                 confirmVm.ConfirmControlUeAsync = ShowControlUeConfirmationAsync; // w3/dllnames hook (#136)
                 confirmVm.ConfirmRemoveFromRhiAsync = ShowRemoveFromRhiAsync; // #293 Remove from RHI (optional uninstall)
+                confirmVm.ConfirmFolderMoveAsync = prompt => ShowConfirmationAsync(prompt.Title, prompt.Message, prompt.MoveText, height: double.NaN); // #293 folder move
                 confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
                 confirmVm.ShowNotesAsync = ShowGameNotesAsync;
                 confirmVm.Support.ShowReportDialogAsync = ShowGameReportDialogAsync; // #192 Copy game report

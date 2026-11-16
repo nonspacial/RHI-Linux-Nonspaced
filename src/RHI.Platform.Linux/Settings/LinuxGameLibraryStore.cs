@@ -398,6 +398,13 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
         _file.Save(state);
     }
 
+    /// <summary>#293: <paramref name="state"/> as a staged write of the library file (written with an install-folder move).</summary>
+    public StagedFileWrite StageSave(LinuxGameLibraryState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return _file.Stage(_ => state.Normalize())!;
+    }
+
     /// <summary>
     /// "Repair after move" (Refs #38, #147): favourite, hidden, edits (their paths rebased onto the new
     /// folder) and HDR settings stored under the game's old library key follow it; an edit under a key that

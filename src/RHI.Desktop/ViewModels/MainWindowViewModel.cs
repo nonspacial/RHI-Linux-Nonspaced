@@ -828,6 +828,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 ? TF("Vm.IndexingStoppedAtFilesSoSome", game.Name, outcome.FileCount)
                 : TF("Vm.ReadyFilesIndexedMs", game.Name, outcome.FileCount, outcome.ElapsedMilliseconds)
         };
+        // #293: a folder the manifest corrected takes the game's installs with it (upstream 2.9.2).
+        if (outcome.Kind is AnalysisOutcomeKind.Ready or AnalysisOutcomeKind.Cached)
+            UiExceptionGuard.Forget(AutoMoveInstallFolderAsync(game), "folder-move-auto");
     }
 
     /// <summary>
@@ -2184,6 +2187,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     Task<bool> ILibraryEditHost.RefreshWhenIdleAsync(IReadOnlySet<string>? onlyDetectors) => RefreshWhenIdleAsync(onlyDetectors);
     LinuxDeploymentRecordStore ILibraryEditHost.DeploymentRecords => _deploymentRecords;
     bool ILibraryEditHost.LibraryRepairRunning => LibraryRepairRunning;
+    // #293 install folder migration
+    IReadOnlyList<LinuxDeploymentRecord> ILibraryEditHost.InstallsIn(DetectedGame game, string? folder) => _managedComponents.InstallsIn(game, folder);
+    Task<bool> ILibraryEditHost.AskFolderMoveAsync(DetectedGame game, string oldDir, string newDir) => AskFolderMoveAsync(game, oldDir, newDir);
+    Task<InstallFolderMoveResult> ILibraryEditHost.MoveInstallFolderAsync(DetectedGame oldGame, DetectedGame newGame, string oldDir, string newDir,
+        Func<RHI.Platform.Linux.Persistence.StagedFileWrite?>? alongside) => MoveInstallFolderAsync(oldGame, newGame, oldDir, newDir, alongside);
+    RHI.Platform.Linux.Persistence.StagedFileWrite ILibraryEditHost.StageLibrary(LinuxGameLibraryState state) => _libraryStore.StageSave(state);
+    bool ILibraryEditHost.FolderChangeRunning { get => FolderChangeRunning; set => FolderChangeRunning = value; }
     void ILibraryEditHost.RaiseNotice(string message) => StatusText = _statusNotice.Raise(message);
     void ILibraryEditHost.ShowAllGames() => LibraryFilterMode = "All Games";
     void ILibraryEditHost.Select(DetectedGame game) => SelectedGame = game;

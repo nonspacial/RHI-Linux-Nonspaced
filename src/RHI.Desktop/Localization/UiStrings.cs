@@ -179,6 +179,16 @@ internal static class UiStrings
         ("CustomFolders.NotAdded", "Não adicionado — {0}: {1}", "Not added — {0}: {1}"),
         ("CustomFolders.NoneSelected", "Nenhum jogo selecionado.", "No game selected."),
         ("CustomFolders.AlreadyInLibrary", "\"{0}\" já está na sua biblioteca.", "\"{0}\" is already in your library."),
+        // #293 install folder migration
+        ("FolderMove.Title", "Mover os mods do jogo?", "Move the game's mods?"),
+        ("FolderMove.Question", "O RHI instalou {0} em {1}. Mover os mods, as configurações e os presets do jogo para a nova pasta, {2}? Nada é movido enquanto o jogo estiver aberto.", "RHI installed {0} in {1}. Move the game's mods, settings and presets to the new folder, {2}? Nothing is moved while the game is running."),
+        ("FolderMove.Move", "Mover", "Move"),
+        ("FolderMove.NotChanged", "Nada foi alterado: os componentes de {0} continuam em {1}. Para mudar a pasta, deixe o RHI movê-los ou remova-os antes.", "Nothing was changed: {0}'s components stay in {1}. To change the folder, let RHI move them or remove them first."),
+        ("FolderMove.Moving", "Movendo os mods de {0} para a nova pasta…", "Moving {0}'s mods to the new folder…"),
+        ("FolderMove.Done", "Mods de {0} movidos para {1}.", "Moved {0}'s mods to {1}."),
+        ("FolderMove.ResetUndone", "Nada foi alterado: {0} continua com a pasta que você escolheu. {1}", "Nothing was changed: {0} keeps the folder you chose. {1}"),
+        ("FolderMove.AutoWaiting", "Os mods de {0} continuam em {1} até o jogo ser fechado; o RHI os move na próxima vez.", "{0}'s mods stay in {1} until the game is closed; RHI moves them next time."),
+        ("FolderMove.AutoFailed", "Os mods de {0} não foram movidos para a nova pasta: {1}", "{0}'s mods were not moved to the new folder: {1}"),
         // #290 Block Steam updates
         ("Steam.BlockUpdates", "Bloquear atualizações da Steam", "Block Steam updates"),
         ("Steam.AllowUpdates", "Permitir atualizações da Steam", "Allow Steam updates"),
