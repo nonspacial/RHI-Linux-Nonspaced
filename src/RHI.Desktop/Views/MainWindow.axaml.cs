@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window
         InitializeResponsive();
         InitializeSectionSummaries();
         AttachDismissibleNotices(); // w14/extras-fg (#285)
+        AttachDisplayModes(); // w14/display-modes (#311)
         Opened += (_, _) => TooltipSweep.Apply(this); // w14/ui-settings (#302): upstream's tooltip sweep
         // The full title and subtitle are only offered as a tooltip when the header had to trim them.
         foreach (var name in new[] { "SelectedTitleText", "SelectedSourceText" })

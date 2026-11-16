@@ -259,6 +259,8 @@ public sealed partial class SettingsDialogView : UserControl
                 nameof(model.ShowHdrLaunchButton), "ShowHdrLaunchButton"), tip: T("Set.HdrButtonTip")),
             SettingsLayout.Row(T("Set.ResButton"), SettingsLayout.ShowHide(() => model.ShowResLaunchButton, v => model.ShowResLaunchButton = v, model,
                 nameof(model.ShowResLaunchButton), "ShowResLaunchButton"), tip: T("Set.ResButtonTip"))));
+        // w14/display-modes (#311, upstream 2.9.3 Settings › Display › Display modes): after the When a game starts card.
+        cards[SettingsSections.Display].Add(new DisplayModesSettingsCard(vm.DisplayModes, () => TopLevel.GetTopLevel(this) as Window).Control);
 
         // ── DLSS / Streamline ── (upstream: Defaults; Indicator, frame generation and batch deploy)
         Control Version(string label, VersionChoice choice) => SettingsLayout.Row(label,

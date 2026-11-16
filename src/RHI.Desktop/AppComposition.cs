@@ -386,6 +386,8 @@ internal sealed class AppComposition
         managedComponents.GitcUplift = new GitcUpliftDeploymentService(http, records, dlss, new ImmerseLaunchpadService(http), journal: journal);
         managedComponents.GitcUpliftEnableKey = () => settingsStore.Load().UpliftEnableKey;
         managedComponents.MfgUnlockFiles = new MfgUnlockFiles(intelXess, records, journal); // w14/extras-fg (#279)
+        // w14/display-modes rows
+        managedComponents.DisplayModeFiles = new RHI.Platform.Linux.DisplayModes.DisplayModeGameFiles(records, journal, managedComponents.IniWriteRefusal); // #311
         // w14/nr-2 rows
         // #317/#276: the DLSS5 Tool Neural Rendering method (stock or Foveated build; with the DX11 Bridge row: DLSS5 Tool + DX11 Bridge).
         managedComponents.Dlss5Tool = new Dlss5ToolDeploymentService(http, records, dlss, journal: journal);

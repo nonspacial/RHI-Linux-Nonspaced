@@ -2321,8 +2321,8 @@ public static class UiLocalizationService
 
     // Every UI string, by language: the XAML resource table above plus the code table in UiStrings. Built once; a key
     // defined twice throws here, so a duplicate fails every test instead of silently shadowing a translation.
-    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Select(e => (e.Key, e.PtBr)));
-    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Select(e => (e.Key, e.EnUs)));
+    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Concat(DisplayModeUiStrings.Entries).Select(e => (e.Key, e.PtBr)));
+    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Concat(DisplayModeUiStrings.Entries).Select(e => (e.Key, e.EnUs)));
 
     private static Dictionary<string, string> Merge(IReadOnlyDictionary<string, string> resources, IEnumerable<(string Key, string Value)> code)
     {

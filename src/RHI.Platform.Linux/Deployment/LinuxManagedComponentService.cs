@@ -102,14 +102,33 @@ public sealed partial class LinuxManagedComponentService : ILinuxManagedUpdateBa
         _dependencies = new ManagedDependencyPlanner(_records, _lumaPolicy);
     }
 
+    /// <summary>
+    /// w14/display-modes (#311, upstream <c>AuxInstallService.DisplayModeKeeper</c>): before an install or update, asked
+    /// for the game and the component; returns the step that puts the game's display mode values back afterwards (an
+    /// install writes Settings' keys and caps into ReShade.ini / relimiter.ini), or null. Set by the desktop.
+    /// </summary>
+    public Func<DetectedGame, ManagedComponentKind, Func<CancellationToken, Task<int>>?>? DisplayModeKeeper { get; set; }
+
     // Records the operation in the update history (when configured); refusals made before
     // anything is attempted (patch-target guards, dependency locks) are deliberately not wrapped.
-    private Task<ComponentOperationResult> Track(
+    private async Task<ComponentOperationResult> Track(
         DetectedGame game,
         ManagedComponentKind component,
         ComponentUpdateAction intent,
         Func<Task<ComponentOperationResult>> operation)
-        => _history is null ? operation() : _history.TrackAsync(game, component, intent, operation);
+    {
+        var keep = intent == ComponentUpdateAction.Remove ? null : DisplayModeKeeper?.Invoke(game, component); // #311
+        var result = await (_history is null ? operation() : _history.TrackAsync(game, component, intent, operation)).ConfigureAwait(false);
+        if (keep is not null)
+        {
+            try { await keep(CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                RHI.Core.Services.AppLog.Warn("display-modes", $"Could not put back the display mode values of {game.Name}", ex);
+            }
+        }
+        return result;
+    }
 
     public async Task PrepareGameAsync(
         DetectedGame game,

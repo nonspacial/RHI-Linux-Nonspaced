@@ -284,21 +284,27 @@
                              IsVisible="{Binding Runtime.ShowResolutionRow}"/>
                   <views:ResolutionToggleRow Grid.Row="10" Grid.Column="1" DataContext="{Binding Runtime}"/>
 
-                  <TextBlock Grid.Row="11" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
+                  <!-- w14/display-modes (#311): the display mode switch beside the HDR / resolution rows (a reusable view other
+                       page layouts host too); shown while Settings › Display & HDR › Display modes is on. -->
+                  <TextBlock Grid.Row="11" Grid.Column="0" Text="{l:T Dm.Label}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"
+                             IsVisible="{Binding DisplayModes.ShowSwitch}"/>
+                  <views:DisplayModeSwitchView x:Name="DisplayModeSwitch" Grid.Row="11" Grid.Column="1"/>
+
+                  <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
                   <!-- w11/nr-check (#234, owner pick A'): "Check…" right after the recommendation text, wrapping under it when the
                        line is too narrow; hidden where the page would have nothing to show. -->
-                  <WrapPanel Grid.Row="11" Grid.Column="1" Orientation="Horizontal" ItemSpacing="12" LineSpacing="6">
+                  <WrapPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" ItemSpacing="12" LineSpacing="6">
                     <TextBlock DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="{DynamicResource RhiButtonTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                     <Button x:Name="NeuralRenderingCheckButton" Classes="rhi" Padding="12,4" VerticalAlignment="Center"
                             Content="{Binding NrCheck.ButtonText}" Command="{Binding NrCheck.OpenCommand}" IsVisible="{Binding NrCheck.IsAvailable}"
                             ToolTip.Tip="{Binding NrCheck.ButtonTip}" ToolTip.ShowDelay="2000"/>
                   </WrapPanel>
 
-                  <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
-                  <TextBlock Grid.Row="12" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
+                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
 
-                  <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
-                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="{DynamicResource RhiMutedTextBrush}" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="14" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
+                  <TextBlock Grid.Row="14" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="{DynamicResource RhiMutedTextBrush}" TextWrapping="Wrap"/>
                 </views:LabelValuePanel>
               </StackPanel>
             </Border>

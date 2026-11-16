@@ -264,7 +264,9 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         if (op is null) return (Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning")), false);
         try
         {
-            var result = await run(Service, vm.UnattendedLibraryGames.ToList(), op.Token);
+            var games = vm.UnattendedLibraryGames.ToList();
+            // w14/display-modes hook (#311, upstream): a game in a display mode keeps its mode values through "write to all games".
+            var result = await vm.DisplayModes.KeepingAsync(games, RHI.Platform.Linux.DisplayModes.DisplayModeItemKeys.GameFileItems, () => run(Service, games, op.Token));
             return (Report(BatchSummary(what, result)), true);
         }
         catch (OperationCanceledException)
