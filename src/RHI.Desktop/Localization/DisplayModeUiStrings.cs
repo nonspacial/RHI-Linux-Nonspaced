@@ -171,6 +171,8 @@ internal static class DisplayModeUiStrings
         ("Dm.CogTip", "Configurações de modo de tela deste jogo: o modo dele e um modo Personalizado só para este jogo", "Display mode settings for this game: its mode, and a Custom mode just for this game"),
         ("Dm.MenuSettings", "Configurações de modo de tela…", "Display mode settings..."),
         ("Dm.MenuOff", "Desligado (configurações globais)", "Off (global settings)"),
+        ("Dm.MenuButton", "Modo de tela: {0}", "Display mode: {0}"),
+        ("Dm.MenuButtonTip", "Modo de tela. Clique para trocar.", "Display mode. Click to switch."),
         ("Dm.GameComponent", "Modo de tela", "Display Mode"),
         ("Dm.GameIntro", "Escolha o modo de tela de {0}. Seus modos de Configurações › Tela e HDR › Modos de tela valem para todo jogo. Abaixo você pode criar um modo Personalizado só para este jogo: ele aparece ao lado dos outros modos apenas aqui, e muda só o que você marcar nele. Desligado = sem modo: o jogo usa suas configurações globais.", "Pick the display mode for {0}. Your modes from Settings › Display & HDR › Display modes apply to every game. Below you can make a Custom mode just for this game: it shows beside your other modes only here, and changes only what you tick in it. Off = no mode: the game uses your global settings."),
         ("Dm.OffWarning", "Os modos de tela estão desligados. Ligue-os em Configurações › Tela e HDR para mostrar a troca nas páginas dos jogos.", "Display modes are off. Turn them on in Settings › Display & HDR to show the switch on game pages."),

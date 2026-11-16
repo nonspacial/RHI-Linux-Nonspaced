@@ -248,7 +248,8 @@ public sealed class DisplayModesPresenterTests : IDisposable
         var keys = DisplayModeItems.All.SelectMany(i => new[] { "Dm.Item." + i.Key, "Dm.Help." + i.Key })
             .Concat(DisplayModeItems.Groups.Select(g => "Dm.Group." + g))
             .Concat(Enum.GetNames<DisplayModeUnavailable>().Where(n => n != "None").Select(n => "Dm.Why." + n))
-            .Concat(Enum.GetNames<DisplayModeNameProblem>().Select(n => "Dm.Name." + n));
+            .Concat(Enum.GetNames<DisplayModeNameProblem>().Select(n => "Dm.Name." + n))
+            .Concat(["Dm.MenuButton", "Dm.MenuButtonTip", "Dm.CogTip", "Dm.MenuOff", "Dm.Label", "Dm.Off", "Dm.Custom"]);
         foreach (var language in new[] { "en-US", "pt-BR" })
         {
             UiLocalizationService.Apply(language);
