@@ -75,10 +75,12 @@ public sealed partial class RenoDxSettingsDialogViewModel : ObservableObject
         WindowTitle = TF("Win.RenoDxCompatibilityTitle", gameName ?? T("Win.Game"));
         Warning = string.IsNullOrWhiteSpace(snapshot.Warning) ? null : UiLocalizationService.Present(snapshot.Warning);
         IniPath = string.IsNullOrWhiteSpace(snapshot.IniPath) ? null : snapshot.IniPath;
+        // #297 (upstream's Compatibility card note): why there is nothing to change sits in the card; the warning, when there
+        // is one, is the line above the cards. The status line is for results only.
         if (!snapshot.HasRenoDxSection)
-            message = Warning ?? T("Win.RunGameOnceRenoDXInstalledGenerate");
+            EmptyReason = Warning is null ? T("Win.RunGameOnceRenoDXInstalledGenerate") : null;
         else if (snapshot.Settings.Count == 0)
-            message = T("Win.RenodxSectionExistsButNoCompatibility");
+            EmptyReason = T("Win.RenodxSectionExistsButNoCompatibility");
         Rows = snapshot.HasRenoDxSection
             ? snapshot.Settings.Select(setting => new RenoDxSettingRow(setting, set, line => Message = line)).ToArray()
             : [];
@@ -99,8 +101,16 @@ public sealed partial class RenoDxSettingsDialogViewModel : ObservableObject
     /// <summary>The #182 rows' presenter (hosted by the view); null in tests.</summary>
     public IniPresetsPresenter? IniPresets { get; }
 
-    /// <summary>Why there is nothing to change, or the last write's result.</summary>
-    [ObservableProperty] private string? message;
+    /// <summary>Why the Compatibility card has nothing to change (no [renodx] section, or one with no settings), or null.</summary>
+    public string? EmptyReason { get; }
+    public bool HasEmptyReason => EmptyReason is not null;
+
+    /// <summary>The last write's result: the status line inside the ⚙ (#297).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMessage))]
+    private string? message;
+
+    public bool HasMessage => !string.IsNullOrEmpty(Message);
 
     /// <summary>The 2 s tooltip of a setting: what it does, then its RenoDX key (and DirectX format for upgrades).</summary>
     internal static string CompatibilityTooltip(RenoDxCompatibilitySetting setting)

@@ -64,10 +64,12 @@ public sealed class HsfPresenter(LinuxManagedComponentService components)
     public Task InstallUniversalMfgAsync(MainWindowViewModel vm)
         => RunAsync(vm, "hsf-universal-mfg", "Hsf.InstallingMfg", (game, token) => components.InstallUniversalMfgForHsfAsync(game, token));
 
-    public Task SetLaunchpadAsync(MainWindowViewModel vm, bool on)
+    /// <summary>The ⚙'s iMMERSE Launchpad row (#297: saved on change); whether it was saved (the line is the status text).</summary>
+    public Task<bool> SetLaunchpadAsync(MainWindowViewModel vm, bool on)
         => RunAsync(vm, "hsf-launchpad", "Hsf.Saving", (game, token) => components.SetHsfLaunchpadAsync(game, on, token));
 
-    public Task SetRouteAsync(MainWindowViewModel vm, HsfRoute route)
+    /// <summary>The ⚙'s DirectX 12 mode row (#297: saved on change); whether it was saved (the line is the status text).</summary>
+    public Task<bool> SetRouteAsync(MainWindowViewModel vm, HsfRoute route)
         => RunAsync(vm, "hsf-route", "Hsf.Saving", (game, token) => components.SetHsfRouteAsync(game, route, token));
 
     /// <summary>Check for an update (the row's Check); the status line says what it found.</summary>
@@ -94,15 +96,15 @@ public sealed class HsfPresenter(LinuxManagedComponentService components)
         return result.Success && result.Message == "moved" ? T("Hsf.LaunchpadMoved") : null;
     }
 
-    private async Task RunAsync(MainWindowViewModel vm, string kind, string busyKey,
+    private async Task<bool> RunAsync(MainWindowViewModel vm, string kind, string busyKey,
         Func<DetectedGame, CancellationToken, Task<ComponentOperationResult>> action, bool offerMfg = false)
     {
-        if (vm.SelectedGame is not { } game) return;
+        if (vm.SelectedGame is not { } game) return false;
         using var op = vm.Operations.TryBegin(kind);
         if (op is null)
         {
             vm.StatusText = T("Vm.AnotherRHIOperationAlreadyRunning");
-            return;
+            return false;
         }
         vm.StatusText = TF(busyKey, game.Name);
         ComponentOperationResult result;
@@ -113,12 +115,13 @@ public sealed class HsfPresenter(LinuxManagedComponentService components)
         catch (OperationCanceledException) when (op.CancelRequested)
         {
             vm.StatusText = MainWindowViewModel.OperationCancelledText();
-            return;
+            return false;
         }
         var line = UiLocalizationService.Present(result.Message);
         // Upstream offers Universal MFG Unlocker on RTX 20/30/40 after installing HSF; here the row's button offers it.
         if (offerMfg && result.Success && components.OffersUniversalMfgWithHsf(game)) line += " " + T("Hsf.OfferMfg");
         vm.StatusText = line;
         await vm.ReprobeSelectedAsync(game);
+        return result.Success;
     }
 }

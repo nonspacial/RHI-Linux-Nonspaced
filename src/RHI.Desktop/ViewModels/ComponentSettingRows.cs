@@ -54,12 +54,27 @@ public sealed partial class ComponentSettingRow : ObservableObject
     /// <summary>The dialog-wide switch (the mod is installed, its file can be written).</summary>
     public bool Available { get; init; } = true;
 
+    /// <summary>#302: why <see cref="EnabledWhen"/> greys the row (e.g. "only used when Mode is Fixed").</summary>
+    public string? DisabledReason { get; init; }
+
+    /// <summary>#302: why the row is greyed while <see cref="Available"/> is false (e.g. "Install RTX Encore …").</summary>
+    public string? UnavailableReason { get; init; }
+
+    /// <summary>
+    /// #302: the control's 2 s tooltip, shown on a greyed control too — the explanation, led by why it is greyed when it is.
+    /// </summary>
+    public string? ControlTip => IsEnabled
+        ? Tip
+        : string.Join("\n\n", new[] { Available ? DisabledReason : UnavailableReason ?? DisabledReason, Tip }.Where(t => !string.IsNullOrWhiteSpace(t)));
+
     /// <summary>Called after a saved change (the dialog shows the message and re-evaluates every row's enabled state).</summary>
     internal Action<string>? Changed { get; set; }
 
     [ObservableProperty] private int selectedIndex;
     [ObservableProperty] private string numberText = "";
-    [ObservableProperty] private bool isEnabled = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ControlTip))]
+    private bool isEnabled = true;
 
     public void Refresh() => IsEnabled = Available && (EnabledWhen?.Invoke() ?? true);
 
@@ -100,10 +115,15 @@ public sealed partial class ComponentSettingRow : ObservableObject
     }
 }
 
-/// <summary>A section heading inside the ⚙'s settings list (upstream's section titles).</summary>
-public sealed record ComponentSettingSection(string Title, IReadOnlyList<ComponentSettingRow> Rows)
+/// <summary>
+/// A section of the ⚙'s settings list (upstream's section titles): one card. #297: <paramref name="Compact"/> lays the rows
+/// out two per row with the explanation as the tooltip (upstream <c>AddCompactGrid</c>, e.g. RTX Encore); otherwise each row
+/// has its name left, the option right and the explanation under it.
+/// </summary>
+public sealed record ComponentSettingSection(string Title, IReadOnlyList<ComponentSettingRow> Rows, bool Compact = false)
 {
     public bool HasTitle => Title.Length > 0;
+    public bool IsListed => !Compact;
 }
 
 /// <summary>w14/extras-fg: an "Open &lt;file&gt;" button of a ⚙ (the mod's ini, log or jsonc), disabled while the file is missing.</summary>

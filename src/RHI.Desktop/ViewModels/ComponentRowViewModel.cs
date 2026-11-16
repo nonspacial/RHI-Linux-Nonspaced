@@ -164,6 +164,9 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w14/extras-fg rows
     public string? GitHubInfoUrl => component.Availability == ComponentAvailability.Unsupported ? null : GitHubInfoUrlFor(component.Kind); // #285: ⓘ opens the mod's GitHub page
     public bool HasMfgUnlockSettings => component.Kind == ManagedComponentKind.MfgAdaUnlock && component.Availability is not ComponentAvailability.Unsupported; // #279: MFG Unlock ⚙
+    // w14/ui-settings (#297) rows
+    public bool HasEmptySettings => component.Kind == ManagedComponentKind.DofFix && component.Availability is not ComponentAvailability.Unsupported; // upstream 2.9.0: DOF Fix's ⚙ says it has no settings
+    public string EmptySettingsTip => RHI.Desktop.Views.CogDialog.TitleFor(component.DisplayName);
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 

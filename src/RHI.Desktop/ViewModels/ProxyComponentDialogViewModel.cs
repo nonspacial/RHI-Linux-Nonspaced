@@ -203,6 +203,12 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
     public IReadOnlyList<ComponentDialogLine> Lines { get; } = [];
     public bool HasLines => Lines.Count > 0;
 
+    /// <summary>
+    /// w14/ui-settings (#297): <see cref="Lines"/> as the ⚙'s cards — each heading starts a card (upstream <c>AddSection</c>),
+    /// the lines before the first heading are loose text above the settings (upstream <c>AddIntro</c> / <c>AddWarning</c>).
+    /// </summary>
+    public IReadOnlyList<ComponentLineCard> LineCards => ComponentLineCard.From(Lines);
+
     /// <summary>The proxy-name row shows (hidden while Universal MFG Unlocker is, or would be, an OptiScaler plugin).</summary>
     public bool HasProxy { get; } = true;
 
@@ -305,7 +311,24 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
 
     [ObservableProperty] private string? selectedGpu;
     [ObservableProperty] private string? selectedProxy;
-    [ObservableProperty] private string message = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMessage))]
+    private string message = "";
+
+    /// <summary>#297: the status line inside the ⚙ shows only while there is a result to say.</summary>
+    public bool HasMessage => !string.IsNullOrEmpty(Message);
+
+    /// <summary>#297: the choices card (GPU generation, DLL name, Neural Rendering file, installed line, Check / Update) shows.</summary>
+    public bool HasChoiceCard => HasGpu || HasProxy || HasNeuralRendering || HasCompatibility || IsInstalled || ShowsCheck;
+
+    /// <summary>#302: a choice locked while installed says why (2 s tooltip, shown on the greyed dropdown too).</summary>
+    public string? LockedTip => CanChoose ? null : T("Cog.GreyedLockedInstalled");
+
+    /// <summary>#302: the DLL-name dropdown's tooltip: why it is greyed when locked, then its explanation.</summary>
+    public string? ProxyChoiceTip => CanChoose ? ProxyTip : string.Join("\n\n", new[] { LockedTip, ProxyTip }.Where(t => !string.IsNullOrWhiteSpace(t)));
+
+    /// <summary>#297: the ⚙'s title, "&lt;Component&gt; Settings" (upstream's rule).</summary>
+    public string CogTitle => RHI.Desktop.Views.CogDialog.TitleFor(Title);
     [ObservableProperty] private bool canCheck = true;
     [ObservableProperty] private bool canUpdate;
     [ObservableProperty] private bool isUpdating;
@@ -460,4 +483,35 @@ public sealed record ComponentDialogLine(string Text, bool IsHeading, bool IsWar
     public static ComponentDialogLine Heading(string text) => new(text, true, false);
     public static ComponentDialogLine Plain(string text) => new(text, false, false);
     public static ComponentDialogLine Warning(string text) => new(text, false, true);
+}
+
+/// <summary>w14/ui-settings (#297): a card of a component ⚙'s notes — its heading (none for the loose lines above the settings) and lines.</summary>
+public sealed record ComponentLineCard(string? Heading, IReadOnlyList<ComponentDialogLine> Lines)
+{
+    public bool IsCard => Heading is not null;
+    public bool IsLoose => Heading is null;
+
+    internal static IReadOnlyList<ComponentLineCard> From(IReadOnlyList<ComponentDialogLine> lines)
+    {
+        var cards = new List<ComponentLineCard>();
+        string? heading = null;
+        var current = new List<ComponentDialogLine>();
+        void Close()
+        {
+            if (heading is not null || current.Count > 0) cards.Add(new(heading, current.ToArray()));
+            current.Clear();
+        }
+        foreach (var line in lines)
+        {
+            if (line.IsHeading)
+            {
+                Close();
+                heading = line.Text;
+                continue;
+            }
+            current.Add(line);
+        }
+        Close();
+        return cards;
+    }
 }
