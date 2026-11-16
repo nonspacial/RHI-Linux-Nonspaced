@@ -197,6 +197,10 @@ public static class DownloadSources
     /// <summary>#274/#277: iMMERSE Launchpad, from the martymcmodding/iMMERSE branch archive (codeload.github.com; no digest is published).</summary>
     public static readonly TrustedDownloadPolicy ImmerseLaunchpad = new(
         "iMMERSE Launchpad", "GitHub", [.. GitHubReleaseHosts, "codeload.github.com"], maxBytes: 64L * 1024 * 1024);
+    /// <summary>#276: FoveatedDLSS5 (maximedgoulet), a build of the DLSS5 Tool add-on; each download is checked against the
+    /// <c>renodx-dlss5.addon64.sha256</c> published beside it (fail-closed).</summary>
+    public static readonly TrustedDownloadPolicy FoveatedDlss5 = new(
+        "FoveatedDLSS5", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -233,5 +237,7 @@ public static class DownloadSources
 
         // w14/nr rows
         GitcUplift, ImmerseLaunchpad,
+        // w14/nr-2 rows
+        FoveatedDlss5,
     ];
 }

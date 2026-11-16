@@ -41,7 +41,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
 
             // API-driven add-ons expose their installed version in the picker.
             if (component.Kind is ManagedComponentKind.RenoDXUpgrade or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework or ManagedComponentKind.RtxEncore
-                or ManagedComponentKind.GitcUplift) // w14/nr (#274)
+                or ManagedComponentKind.GitcUplift // w14/nr (#274)
+                or ManagedComponentKind.Dlss5Tool) // w14/nr-2 (#317)
             {
                 // Show the version actually installed on disk. If no installed version is
                 // available yet, fall back to the newest resolved version as informational data.

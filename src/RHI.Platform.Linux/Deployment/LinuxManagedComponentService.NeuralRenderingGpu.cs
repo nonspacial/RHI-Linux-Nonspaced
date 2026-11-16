@@ -70,7 +70,7 @@ public sealed partial class LinuxManagedComponentService
 
     internal async Task<NrMovePlan> PlanNeuralRenderingMoveAsync(DetectedGame game, ManagedComponentKind owner, CancellationToken cancellationToken)
     {
-        if (owner is not (ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder) || NrDlss is not { } dlss)
+        if (owner is not (ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool) || NrDlss is not { } dlss) // #317
             return new(NrMoveKind.NotApplicable);
         var record = _records.Find(game, owner);
         if (record is null || ManagedFileSwap.FindFile(record, NeuralRenderingDllSwap.DllName) is null
@@ -113,7 +113,12 @@ public sealed partial class LinuxManagedComponentService
     }
 
     private DeploymentJournal? OwnerJournal(ManagedComponentKind owner)
-        => owner == ManagedComponentKind.ShortFuse ? _shortFuse?.Journal : _dlss5Feeder?.Journal;
+        => owner switch
+        {
+            ManagedComponentKind.ShortFuse => _shortFuse?.Journal,
+            ManagedComponentKind.Dlss5Tool => Dlss5Tool?.Journal, // w14/nr-2 (#317)
+            _ => _dlss5Feeder?.Journal
+        };
 
     // The one "changed outside RHI" rule for an owner's NR DLL (Update All's move planner and, #234 follow-up F1, the Check
     // Neural Rendering page): the owner's NR content (behind the NR Cost Scaler: nvngx_dlssnr_real.dll) still has the
@@ -197,9 +202,12 @@ public sealed partial class LinuxManagedComponentService
         }
 
         var pin = _neuralVersionPins.Get(game, owner);
-        var addonCheck = owner == ManagedComponentKind.ShortFuse
-            ? await _shortFuse.CheckManagedUpdateAsync(game, pin, cancellationToken).ConfigureAwait(false)
-            : await _dlss5Feeder.CheckUpdateAsync(game, pin, cancellationToken).ConfigureAwait(false);
+        var addonCheck = owner switch
+        {
+            ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, pin, cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.Dlss5Tool => await Dlss5Tool!.CheckUpdateAsync(game, pin, cancellationToken).ConfigureAwait(false), // #317
+            _ => await _dlss5Feeder.CheckUpdateAsync(game, pin, cancellationToken).ConfigureAwait(false)
+        };
         ComponentOperationResult? addon = null;
         if (addonCheck.UpdateAvailable)
         {
@@ -210,9 +218,12 @@ public sealed partial class LinuxManagedComponentService
         // Once the add-on swap has written, this unit runs to the end: the NR swap never sees a Cancel pressed after it
         // (its DLL is staged above, so nothing is downloaded from here on).
         var nrToken = addon is null ? cancellationToken : CancellationToken.None;
-        var nr = await TrackNeuralRenderingDll(game, owner, () => owner == ManagedComponentKind.ShortFuse
-            ? _shortFuse.SwapNeuralRenderingDllAsync(game, plan.To, nrToken)
-            : _dlss5Feeder.SwapNeuralRenderingDllAsync(game, plan.To, nrToken)).ConfigureAwait(false);
+        var nr = await TrackNeuralRenderingDll(game, owner, () => owner switch
+        {
+            ManagedComponentKind.ShortFuse => _shortFuse.SwapNeuralRenderingDllAsync(game, plan.To, nrToken),
+            ManagedComponentKind.Dlss5Tool => Dlss5Tool!.SwapNeuralRenderingDllAsync(game, plan.To, nrToken), // #317
+            _ => _dlss5Feeder.SwapNeuralRenderingDllAsync(game, plan.To, nrToken)
+        }).ConfigureAwait(false);
         if (addon is null) return nr;
         // A landed line keeps its note first (LandedLine reads it from the start of the message).
         return nr with

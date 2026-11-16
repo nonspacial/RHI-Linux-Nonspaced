@@ -169,7 +169,7 @@ internal sealed class ManagedDependencyPlanner
             return ComponentOperationResult.Fail("Universal MFG Experimental já está ativo. Remova-o antes de instalar ShortFuse.");
         // w4/encore (#158): never switch away from RTX Encore's Neural Rendering file; the user removes it first. Refused
         // here, before any dependency (ReShade) is installed.
-        if (target is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder
+        if (target is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool // w14/nr-2 (#317)
             && NeuralRenderingRuntimeOwnership.RtxEncoreOwner(_records, game) is { } encoreOwner)
             return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(encoreOwner));
 
@@ -184,7 +184,7 @@ internal sealed class ManagedDependencyPlanner
                 $"{DisplayDependencyName(target)}: {ProxyPayloadLocator.FindReShadeOnDisk(game.BinaryDirectory) ?? game.BinaryDirectory}");
         }
 
-        if (target == ManagedComponentKind.Dlss5Feeder &&
+        if (target is ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool && // w14/nr-2 (#317)
             NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } nrOwner)
             return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(nrOwner));
 

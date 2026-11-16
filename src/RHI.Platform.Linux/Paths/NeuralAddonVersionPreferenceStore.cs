@@ -106,6 +106,26 @@ public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
         }
     }
 
+    // w14/nr-2 (#276): the game's DLSS5 Tool build ("foveated"; absent = stock), upstream's per-game Foveated switch.
+    private const string FoveatedSuffix = "|Dlss5ToolFoveated";
+
+    public bool GetDlss5ToolFoveated(DetectedGame game)
+    {
+        lock (_gate)
+            return GameRecordIdentity.TryGet(LoadUnsafe(), game, out var value, FoveatedSuffix) && value == "foveated";
+    }
+
+    public void SetDlss5ToolFoveated(DetectedGame game, bool on)
+    {
+        lock (_gate)
+        {
+            var entries = LoadUnsafe();
+            if (on) GameRecordIdentity.Set(entries, game, "foveated", FoveatedSuffix);
+            else GameRecordIdentity.Remove(entries, game, FoveatedSuffix);
+            SaveUnsafe(entries);
+        }
+    }
+
     // Manifest labels carry spaces and brackets, e.g. "310.8.2 (20/30/40/50)"; only control characters are refused.
     private static bool IsSafeDllVersion(string value)
         => value.Length is > 0 and <= 128 && !value.Any(char.IsControl);
@@ -116,7 +136,8 @@ public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
     {
         // OptiScaler: the Nightly build pin (#156), stored under its own "|OptiScaler" suffix.
         if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.OptiScaler
-            or ManagedComponentKind.GitcUplift)) // w14/nr (#274): Uplift Version
+            or ManagedComponentKind.GitcUplift // w14/nr (#274): Uplift Version
+            or ManagedComponentKind.Dlss5Tool)) // w14/nr-2 (#317): DLSS5 Tool Version (stock or Foveated)
             throw new ArgumentOutOfRangeException(nameof(kind), kind, "Version pins are supported only for Neural Rendering add-ons.");
     }
 

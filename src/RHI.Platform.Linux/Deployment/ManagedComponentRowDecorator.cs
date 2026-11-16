@@ -122,8 +122,19 @@ internal sealed class ManagedComponentRowDecorator
                 ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or
                 ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or
                 ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework or
-                ManagedComponentKind.RtxEncore or ManagedComponentKind.GitcUplift) // w14/nr (#274)
+                ManagedComponentKind.RtxEncore or ManagedComponentKind.GitcUplift // w14/nr (#274)
+                or ManagedComponentKind.Dlss5Tool) // w14/nr-2 (#317)
             {
+                // w14/nr-2 (#317): renodx-dlss5.addon64 is also DLSS5 Feeder's neural consumer; under RHI's Feeder record it is
+                // the Feeder's file, not an external DLSS5 Tool (installing DLSS5 Tool switches the method, as upstream).
+                if (component.Kind == ManagedComponentKind.Dlss5Tool && record is null && managedDlss5Feeder is not null &&
+                    component.Availability == ComponentAvailability.Installed &&
+                    managedDlss5Feeder.Files.Any(file => Path.GetFileName(file.Path).Equals(Dlss5ToolDeploymentService.AddonFileName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    component.Availability = ComponentAvailability.Available;
+                    component.Note = Dlss5ToolDeploymentService.FeederOwnsNote;
+                }
+
                 if (component.Kind == ManagedComponentKind.REFramework && record is not null &&
                     component.Availability == ComponentAvailability.Available &&
                     record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path) && File.Exists(file.Path)))
@@ -171,7 +182,7 @@ internal sealed class ManagedComponentRowDecorator
                 // #236/#237/#238: RHI's record alone makes the row Installed, so Remove is offered after the user deleted
                 // the file (an update never puts it back, and Install refuses or would re-create it behind the record).
                 if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock
-                        or ManagedComponentKind.GitcUplift && record is not null && // w14/nr (#274): its record alone makes it Installed
+                        or ManagedComponentKind.GitcUplift or ManagedComponentKind.Dlss5Tool && record is not null && // w14/nr (#274), nr-2 (#317): its record alone makes it Installed
 
                     component.Availability == ComponentAvailability.Available)
                 {
@@ -201,6 +212,7 @@ internal sealed class ManagedComponentRowDecorator
                         : managedDlss5Bridge is not null ? "DLSS5 DX11 Bridge"
                         : managedShortFuse is not null ? "ShortFuse"
                         : Find(ManagedComponentKind.GitcUplift) is not null ? GitcUpliftDeploymentService.DisplayName // w14/nr (#274)
+                        : Find(ManagedComponentKind.Dlss5Tool) is not null ? Dlss5ToolDeploymentService.DisplayName // w14/nr-2 (#317)
                         : managedDofFix is not null ? "Universal UE DOF Fix"
                         : managedLumaFramework is not null ? "Luma Framework"
                         : null;
@@ -483,6 +495,29 @@ internal sealed class ManagedComponentRowDecorator
                     }
                 }
 
+                // w14/nr-2 (#317): DLSS5 Tool before install — where it cannot go, why (64-bit games with native DLSS, as upstream
+                // offers it); else what it is, and that it replaces the other method (not the DX11 Bridge it works with).
+                if (component.Kind == ManagedComponentKind.Dlss5Tool && component.Availability == ComponentAvailability.Available)
+                {
+                    var feederNote = component.Note == Dlss5ToolDeploymentService.FeederOwnsNote ? component.Note + " " : "";
+                    if (Dlss5ToolDeploymentService.IneligibleReason(game, nativeDlssBeforeManagedMethod) is { } toolRefusal)
+                    {
+                        component.ActionAllowed = false;
+                        component.Note = feederNote + toolRefusal;
+                    }
+                    else if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(managedOptiScaler) is { } toolNrOwner)
+                    {
+                        component.ActionAllowed = false;
+                        component.Note = NeuralRenderingRuntimeOwnership.RefusalFor(toolNrOwner);
+                    }
+                    else
+                    {
+                        component.Note = feederNote + Dlss5ToolDeploymentService.AvailableNote
+                            + (managedShortFuse is not null || managedDlss5Feeder is not null || Find(ManagedComponentKind.GitcUplift) is not null
+                                ? Dlss5ToolDeploymentService.SwitchMethodNote : "");
+                    }
+                }
+
                 if (component.Kind is ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge)
                 {
                     if (component.Availability == ComponentAvailability.Available && !reShadePresent &&
@@ -692,7 +727,7 @@ internal sealed class ManagedComponentRowDecorator
                     DecorateRtxEncore(game, component, components);
 
                 // w4/encore (#158): RTX Encore with its Neural Rendering file owns nvngx_dlssnr.dll (one owner, #157).
-                if (component.Kind is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder &&
+                if (component.Kind is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool && // #317
                     component.Availability == ComponentAvailability.Available &&
                     Find(ManagedComponentKind.RtxEncore) is { } encoreRecord && NeuralRenderingRuntimeOwnership.ListsRuntime(encoreRecord))
                 {
@@ -866,7 +901,13 @@ internal sealed class ManagedComponentRowDecorator
     {
         foreach (var component in components)
         {
-            if (component.Kind is not (ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.OptiScaler)
+            // w14/nr-2 (#317): a DX11 Bridge without its DLSS5 Tool (installed before the DLSS5 Tool methods) does nothing.
+            if (component.Kind == ManagedComponentKind.Dlss5Dx11Bridge && component.ManagedByRhi
+                && component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable
+                && _records.Find(game, ManagedComponentKind.Dlss5Tool) is null)
+                component.Note = AppendNote(component.Note, LinuxManagedComponentService.BridgeWithoutToolNote);
+            if (component.Kind is not (ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.OptiScaler
+                    or ManagedComponentKind.Dlss5Tool) // w14/nr-2 (#317)
                 || !component.ManagedByRhi
                 || component.Availability is not (ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable)) continue;
             if (component.Kind != ManagedComponentKind.OptiScaler && NeuralRenderingGpuPolicy.MadeForAnotherGeneration(nrPin, card))

@@ -127,6 +127,17 @@ Not on `main` yet:
     games". OpenGL games are set up so Uplift works with anti-aliasing on. It is the recommended method for 64-bit
     DX11, DX12 and Vulkan games without DLSS.
 
+- Wave 14 — nr-2
+  - DLSS5 Tool (#317): RenoDX's DLSS5 Tool is now a Neural Rendering method of its own, as in upstream RHI, for 64-bit
+    games with native DLSS. Install it from its row in Managed components; it brings NVIDIA's Neural Rendering file when
+    the game has none. DLSS5 Tool Version (under NR versions) follows the latest release or stays on one, and switching
+    version swaps the add-on in place. The DX11 Bridge row now installs "DLSS5 Tool + DX11 Bridge" (the bridge alone did
+    nothing); a bridge installed earlier says it needs DLSS5 Tool. Check Neural Rendering lists it.
+  - Foveated DLSS5 Tool (#276): a Foveated check box under NR versions installs FoveatedDLSS5 (by maximedgoulet) instead
+    of the stock add-on: full-resolution Neural Rendering in the middle of the screen, less around it, for a large
+    performance gain. Every download is checked against the hash published with it. Latest keeps it current, stock
+    updates never replace it, and switching while installed swaps the add-on in place.
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

@@ -16,7 +16,8 @@ public sealed class LocalizationTableTests
     {
         "Ui.ShadersAddons", "Ui.Links", "Ui.Motd", "Ui.DlssStreamline", "Ui.Extras", "Ui.UxTab", "Ui.Rtx40MfgTitle",
         "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra",
-        "Ui.UpliftVersion", "Ui.UpliftLaunchpad", "Ui.UpliftLink", "Uplift.CardTitle" // w14/nr (#274): product names
+        "Ui.UpliftVersion", "Ui.UpliftLaunchpad", "Ui.UpliftLink", "Uplift.CardTitle", // w14/nr (#274): product names
+        "Ui.Dlss5ToolFoveated", "Ui.Dlss5ToolFoveatedLink" // w14/nr-2 (#276): the build's and project's names
     };
 
     private static readonly Regex PortugueseLetters = new("[ãõçáâêôíúéóàÃÕÇÁÂÊÔÍÚÉÓÀ]");

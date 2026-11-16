@@ -41,7 +41,7 @@ public static class NeuralRenderingInstalledVersion
     /// <summary>The record's metadata key that names its NR version (null for a component that owns none).</summary>
     public static string? MetadataKey(ManagedComponentKind owner) => owner switch
     {
-        ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder => NeuralRenderingDllSwap.MetaDllVersion,
+        ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool => NeuralRenderingDllSwap.MetaDllVersion, // #317
         ManagedComponentKind.OptiScaler => OptiScalerDeploymentService.DlssNrRuntimeVersionMetadataKey,
         _ => null
     };

@@ -373,6 +373,9 @@ internal sealed class AppComposition
         // on/off key comes from Settings at install time.
         managedComponents.GitcUplift = new GitcUpliftDeploymentService(http, records, dlss, new ImmerseLaunchpadService(http), journal: journal);
         managedComponents.GitcUpliftEnableKey = () => settingsStore.Load().UpliftEnableKey;
+        // w14/nr-2 rows
+        // #317/#276: the DLSS5 Tool Neural Rendering method (stock or Foveated build; with the DX11 Bridge row: DLSS5 Tool + DX11 Bridge).
+        managedComponents.Dlss5Tool = new Dlss5ToolDeploymentService(http, records, dlss, journal: journal);
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows

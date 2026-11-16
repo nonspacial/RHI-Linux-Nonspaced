@@ -208,6 +208,8 @@ public sealed class LinuxUpdateAllService
         // w14 lane rows: Update All families (each row ends with a comma)
         // w14/nr rows
         ManagedComponentKind.GitcUplift, // #274: Latest follows new releases (add-on, helper and effects together); a pin stays
+        // w14/nr-2 rows
+        ManagedComponentKind.Dlss5Tool, // #317: Latest follows its build's releases (#276: Foveated follows Foveated); a pin stays
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);
@@ -389,6 +391,7 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.Dlssg2030Unlock => 16, // #238
         ManagedComponentKind.UltimateAsiLoader => 17, // #238
         ManagedComponentKind.GitcUplift => 18, // w14/nr (#274): after the other Neural Rendering methods
+        ManagedComponentKind.Dlss5Tool => 11, // w14/nr-2 (#317): with the DX11 Bridge it works with
         _ => 99
     };
 }

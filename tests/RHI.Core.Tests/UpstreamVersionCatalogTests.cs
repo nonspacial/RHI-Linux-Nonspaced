@@ -71,13 +71,15 @@ public sealed class UpstreamVersionCatalogTests
 
         Assert.Equal(NeuralCatalogOutcome.Loaded, await catalog.NeuralVersions.EnsureAsync());
         Assert.Equal(NeuralCatalogOutcome.NotNeeded, await catalog.NeuralVersions.EnsureAsync());
-        Assert.All(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.ShortFuse, ManagedComponentKind.GitcUplift },
-            kind => Assert.Equal(1, fetches[kind])); // w14/nr (#274): GITC Uplift's list too
+        Assert.All(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.ShortFuse, ManagedComponentKind.GitcUplift,
+                ManagedComponentKind.Dlss5Tool },
+            kind => Assert.Equal(1, fetches[kind])); // w14/nr (#274): GITC Uplift's list too; w14/nr-2 (#317): DLSS5 Tool's
         Assert.Equal("5.0", catalog.UalLatest.TryGetFresh(PeArchitecture.X64));
 
         Assert.Equal(NeuralCatalogOutcome.Loaded, await catalog.FullRefreshAsync());
 
-        Assert.Equal(4, fetches.Count);
+        Assert.Equal(5, fetches.Count);
+        Assert.Equal("v2", applied!.Dlss5Tool!.Single().Tag); // w14/nr-2 (#317)
         Assert.All(fetches.Values, count => Assert.Equal(2, count));
         Assert.Equal("v2", applied!.ShortFuse.Single().Tag);
         Assert.Null(catalog.UalLatest.TryGetFresh(PeArchitecture.X64));
@@ -120,7 +122,7 @@ public sealed class UpstreamVersionCatalogTests
         Assert.Equal(NeuralCatalogOutcome.Loaded, await starter.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.True(catalog.IsLoaded);
         Assert.Equal(1, applied);
-        Assert.Equal(4, lists.Calls); // Feeder, DX11 Bridge, ShortFuse and (w14/nr #274) GITC Uplift
+        Assert.Equal(5, lists.Calls); // Feeder, DX11 Bridge, ShortFuse, (w14/nr #274) GITC Uplift and (w14/nr-2 #317) DLSS5 Tool
     }
 
     [Fact]
@@ -135,8 +137,8 @@ public sealed class UpstreamVersionCatalogTests
 
         starterCancel.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starter);
-        for (var i = 0; i < 200 && lists.Calls < 8; i++) await Task.Delay(10);
-        Assert.Equal(8, lists.Calls); // the forced joiner started its own load (four lists each, w14/nr #274)
+        for (var i = 0; i < 200 && lists.Calls < 10; i++) await Task.Delay(10);
+        Assert.Equal(10, lists.Calls); // the forced joiner started its own load (five lists each, w14/nr #274, nr-2 #317)
         lists.Release("v2");
 
         Assert.Equal(NeuralCatalogOutcome.Loaded, await forced.WaitAsync(TimeSpan.FromSeconds(10)));

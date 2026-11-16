@@ -43,10 +43,13 @@ public enum ManagedComponentKind
     // value, so another wave-14 lane's new kind cannot take the same number unnoticed; renumber at the merge if wanted.
     Hsf = 30,
 
-    // w14 lane rows: new component kinds (next free value 25; each row ends with a comma)
+    // w14 lane rows: new component kinds (next free value 26; each row ends with a comma)
     // w14/nr rows
     // #274: GITC Uplift, a Neural Rendering method (ReShade add-on + helper, its NR DLL in a GITC-Uplift subfolder).
     GitcUplift = 24,
+    // w14/nr-2 rows
+    // #317: DLSS5 Tool (RenoDX's renodx-dlss5.addon64 as the Neural Rendering method; Foveated build switch #276).
+    Dlss5Tool = 25,
 }
 
 public enum ComponentAvailability

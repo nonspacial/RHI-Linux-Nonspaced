@@ -125,6 +125,9 @@ public static class ComponentProbe
         // w14/nr (#274): GITC Uplift (a Neural Rendering method), after the other rows so their order stays as it was.
         result = [.. result, Make(ManagedComponentKind.GitcUplift, GitcUpliftDisplayName,
             files.Contains("gitc-uplift.addon64") || files.Contains("gitc-uplift.addon32"))];
+        // w14/nr-2 (#317): DLSS5 Tool (RenoDX's renodx-dlss5.addon64 as the method; DLSS5 Feeder's consumer is the same file,
+        // the row decorator tells them apart by RHI's records).
+        result = [.. result, Make(ManagedComponentKind.Dlss5Tool, Dlss5ToolDisplayName, files.Contains("renodx-dlss5.addon64"))];
 
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {
@@ -157,6 +160,7 @@ public static class ComponentProbe
     public const string Dlss5BridgeDisplayName = "DLSS5 DX11 Bridge";
     public const string ShortFuseDisplayName = "ShortFuse / DLSS Frame Generation";
     public const string GitcUpliftDisplayName = "GITC Uplift"; // w14/nr (#274)
+    public const string Dlss5ToolDisplayName = "DLSS5 Tool"; // w14/nr-2 (#317)
 
     /// <summary>
     /// The Managed components row a Neural Rendering method or runtime owner shows as (the Check Neural Rendering page's
@@ -170,6 +174,7 @@ public static class ComponentProbe
         ManagedComponentKind.ShortFuse => ShortFuseDisplayName,
         ManagedComponentKind.RtxEncore => RtxEncoreDisplayName,
         ManagedComponentKind.GitcUplift => GitcUpliftDisplayName, // w14/nr (#274)
+        ManagedComponentKind.Dlss5Tool => Dlss5ToolDisplayName, // w14/nr-2 (#317)
         _ => null
     };
 

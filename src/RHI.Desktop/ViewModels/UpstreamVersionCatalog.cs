@@ -155,7 +155,8 @@ public sealed record NeuralVersionLists(
     IReadOnlyList<GitHubReleaseVersion> Dlss5Feeder,
     IReadOnlyList<GitHubReleaseVersion> Dlss5Bridge,
     IReadOnlyList<GitHubReleaseVersion> ShortFuse,
-    IReadOnlyList<GitHubReleaseVersion>? GitcUplift = null); // w14/nr (#274): Uplift Version (empty when its list could not be read)
+    IReadOnlyList<GitHubReleaseVersion>? GitcUplift = null, // w14/nr (#274): Uplift Version (empty when its list could not be read)
+    IReadOnlyList<GitHubReleaseVersion>? Dlss5Tool = null); // w14/nr-2 (#317): DLSS5 Tool Version, stock releases (empty when unread)
 
 public enum NeuralCatalogOutcome
 {
@@ -224,8 +225,19 @@ public sealed class NeuralVersionCatalog(
         var bridge = list(ManagedComponentKind.Dlss5Dx11Bridge, cancellationToken);
         var shortFuse = list(ManagedComponentKind.ShortFuse, cancellationToken);
         var uplift = UpliftListAsync(cancellationToken); // w14/nr (#274): never fails the other lists
-        await Task.WhenAll(feeder, bridge, shortFuse, uplift);
-        apply(new NeuralVersionLists(feeder.Result, bridge.Result, shortFuse.Result, uplift.Result));
+        var dlss5Tool = OptionalListAsync(ManagedComponentKind.Dlss5Tool, "DLSS5 Tool", cancellationToken); // w14/nr-2 (#317): the same
+        await Task.WhenAll(feeder, bridge, shortFuse, uplift, dlss5Tool);
+        apply(new NeuralVersionLists(feeder.Result, bridge.Result, shortFuse.Result, uplift.Result, dlss5Tool.Result));
+    }
+
+    private async Task<IReadOnlyList<GitHubReleaseVersion>> OptionalListAsync(ManagedComponentKind kind, string name, CancellationToken cancellationToken)
+    {
+        try { return await list(kind, cancellationToken); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RHI.Core.Services.AppLog.Warn("nr-versions", $"The {name} version list could not be read", ex);
+            return [];
+        }
     }
 
     private async Task<IReadOnlyList<GitHubReleaseVersion>> UpliftListAsync(CancellationToken cancellationToken)

@@ -19,7 +19,7 @@ public sealed class NeuralRenderingSwitchTests
     public void ShortFuseSwitch_CleansFeederAndBridgeOnly()
     {
         var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.ShortFuse);
-        Assert.Equal(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift }, conflicts.ToArray());
+        Assert.Equal(new[] { ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift, ManagedComponentKind.Dlss5Tool }, conflicts.ToArray());
         Assert.DoesNotContain(ManagedComponentKind.ReShade, conflicts);
     }
 
@@ -27,13 +27,23 @@ public sealed class NeuralRenderingSwitchTests
     public void FeederSwitch_CleansShortFuseAndBridgeOnly()
     {
         var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.Dlss5Feeder);
-        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift }, conflicts.ToArray());
+        // w14/nr-2 (#317): the DLSS5 Tool goes too (the Feeder deploys its own renodx-dlss5.addon64 as its consumer).
+        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.GitcUplift, ManagedComponentKind.Dlss5Tool }, conflicts.ToArray());
     }
 
     [Fact]
     public void BridgeSwitch_CleansShortFuseAndFeederOnly()
     {
         var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.Dlss5Dx11Bridge);
+        // w14/nr-2 (#317): never the DLSS5 Tool — with it, the bridge is upstream's "DLSS5 Tool + DX11 Bridge".
+        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.GitcUplift }, conflicts.ToArray());
+    }
+
+    [Fact]
+    public void Dlss5ToolSwitch_CleansShortFuseFeederAndUplift_KeepsTheBridgeItWorksWith()
+    {
+        // w14/nr-2 (#317): upstream's DLSS5 Tool and DLSS5 Tool + DX11 Bridge methods; switching removes the other methods.
+        var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.Dlss5Tool);
         Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.GitcUplift }, conflicts.ToArray());
     }
 
@@ -42,7 +52,7 @@ public sealed class NeuralRenderingSwitchTests
     {
         // w14/nr (#274): one Neural Rendering method at a time; installing Uplift removes RHI's other method first (upstream).
         var conflicts = LinuxManagedComponentService.NeuralRenderingConflictsFor(ManagedComponentKind.GitcUplift);
-        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge }, conflicts.ToArray());
+        Assert.Equal(new[] { ManagedComponentKind.ShortFuse, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.Dlss5Dx11Bridge, ManagedComponentKind.Dlss5Tool }, conflicts.ToArray());
     }
 
     [Fact]
@@ -63,6 +73,19 @@ public sealed class NeuralRenderingSwitchTests
     {
         var game = new DetectedGame { ForcedArchitecture = PeArchitecture.X64, GraphicsApi = GraphicsApi.DirectX11 };
         Assert.Equal(ManagedComponentKind.Dlss5Dx11Bridge, LinuxManagedComponentService.RecommendedNeuralRenderingMethod(game, hasNativeDlss: true));
+    }
+
+    // w14/nr-2 (#317, upstream 2.9.4 SectionUi): games with DLSS on DX11 or Vulkan default to "DLSS5 Tool + DX11 Bridge"
+    // (the DX11 Bridge row, which now installs the DLSS5 Tool with the bridge); DX12 keeps ShortFuse; DLSS5 Tool alone is
+    // never the default.
+    [Theory]
+    [InlineData(GraphicsApi.DirectX11, ManagedComponentKind.Dlss5Dx11Bridge)]
+    [InlineData(GraphicsApi.Vulkan, ManagedComponentKind.Dlss5Dx11Bridge)]
+    [InlineData(GraphicsApi.DirectX12, ManagedComponentKind.ShortFuse)]
+    public void Recommendation_WithNativeDlss_FollowsUpstreamsDlss5ToolRules(GraphicsApi api, ManagedComponentKind expected)
+    {
+        var game = new DetectedGame { ForcedArchitecture = PeArchitecture.X64, GraphicsApi = api };
+        Assert.Equal(expected, LinuxManagedComponentService.RecommendedNeuralRenderingMethod(game, hasNativeDlss: true));
     }
 
     // w14/nr (#274, upstream 18088a3): GITC Uplift only where DLSS5 Feeder was the default and all of Uplift works.

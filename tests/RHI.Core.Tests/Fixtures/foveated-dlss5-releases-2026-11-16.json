@@ -1,0 +1,65 @@
+[
+ {
+  "tag_name": "v0.4.0",
+  "name": "FoveatedDLSS5 v0.4.0",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-11-08T05:32:22Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5.addon64",
+    "size": 2298880,
+    "digest": "sha256:49e69a120a573200dd76fbe087510d01f51b94f95ffbb907608a0b242d7f7d75",
+    "browser_download_url": "https://github.com/maximedgoulet/FoveatedDLSS5/releases/download/v0.4.0/renodx-dlss5.addon64"
+   },
+   {
+    "name": "renodx-dlss5.addon64.sha256",
+    "size": 88,
+    "digest": "sha256:945aaad1ce5f70d9dc3cc893fb834935ab3b28527ec09f042faa260fc89c2308",
+    "browser_download_url": "https://github.com/maximedgoulet/FoveatedDLSS5/releases/download/v0.4.0/renodx-dlss5.addon64.sha256"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.3.0",
+  "name": "FoveatedDLSS5 v0.3.0",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-11-08T03:10:00Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5.addon64",
+    "size": 2290688,
+    "digest": "sha256:46e0d9b2535373f3f97f83617b225fc7288466ff35b1bc5a0084c8a065bf1073",
+    "browser_download_url": "https://github.com/maximedgoulet/FoveatedDLSS5/releases/download/v0.3.0/renodx-dlss5.addon64"
+   },
+   {
+    "name": "renodx-dlss5.addon64.sha256",
+    "size": 88,
+    "digest": "sha256:2ac14503f9cd3dd614bd7096a6f9541ab1bfae7e32061ddf6895215879e31a46",
+    "browser_download_url": "https://github.com/maximedgoulet/FoveatedDLSS5/releases/download/v0.3.0/renodx-dlss5.addon64.sha256"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.1.0",
+  "name": "FoveatedDLSS5 v0.1.0",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-10-19T23:36:02Z",
+  "assets": [
+   {
+    "name": "renodx-dlss5.addon64",
+    "size": 2219008,
+    "digest": "sha256:bd6efa7848b4fd377953261f1688b8b407e646c2c45b68a8aac30c1a0dd8a4a9",
+    "browser_download_url": "https://github.com/maximedgoulet/FoveatedDLSS5/releases/download/v0.1.0/renodx-dlss5.addon64"
+   },
+   {
+    "name": "renodx-dlss5.addon64.sha256",
+    "size": 88,
+    "digest": "sha256:aa25e6ad77fcd05535ddcf1ae7262c45c91935e721ed813f173b38cddbacf67c",
+    "browser_download_url": "https://github.com/maximedgoulet/FoveatedDLSS5/releases/download/v0.1.0/renodx-dlss5.addon64.sha256"
+   }
+  ]
+ }
+]

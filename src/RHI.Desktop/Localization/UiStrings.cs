@@ -1623,6 +1623,8 @@ internal static class UiStrings
         ("Uplift.KeyWritten", "Tecla do Uplift definida como {0} em {1} jogo(s).", "Uplift key set to {0} in {1} game(s)."),
         ("Uplift.KeyFailed", " {0} ficaram como estavam; primeiro: {1} — {2}", " {0} were left as they were; first: {1} — {2}"),
         ("Uplift.KeyCancelled", "Gravação da tecla do Uplift cancelada.", "Writing the Uplift key was cancelled."),
+        ("Vm.Dlss5ToolSwitchingFoveated", "Trocando o DLSS5 Tool para a versão Foveated...", "Switching DLSS5 Tool to the Foveated build..."),
+        ("Vm.Dlss5ToolSwitchingStock", "Trocando o DLSS5 Tool para a versão padrão...", "Switching DLSS5 Tool to the stock build..."),
         ("Vm.GITCUpliftRecommended", "GITC Uplift · recomendado para jogos DX11/DX12/Vulkan de 64 bits sem DLSS", "GITC Uplift · recommended for 64-bit DX11/DX12/Vulkan games without DLSS"),
     ];
 }
