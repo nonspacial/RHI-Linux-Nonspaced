@@ -19,6 +19,9 @@ Wave 14 — library-updates
 
 - **The RHI-Linux update check no longer says "You have the newest version" after GitHub's hourly request limit was
   reached** (upstream 2.9.4). It says the limit is reached and that a GitHub token raises it, or that it could not check.
+- **Hidden games are left alone by everything that runs over the whole library** (upstream 2.8.9): Update All, automatic
+  component updates, Follow newest DLSS / Streamline and Settings' "Apply to all games" buttons. To update a hidden game,
+  show it again or use its own buttons.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

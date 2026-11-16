@@ -62,7 +62,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     private async Task UpdateAllAsync()
     {
         if (!CanUpdateAll) return;
-        var games = Host.AllGames.ToArray();
+        var games = Host.UnattendedGames.ToArray(); // #291: hidden games left out
         using var op = BeginOperation("update-all");
         if (op is null) return;
         try
@@ -147,7 +147,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     private async Task RunBackgroundComponentPassAsync(CancellationToken cancellationToken)
     {
         if (!Host.Settings.AutoUpdateComponents || IsBusy) return;
-        var games = Host.AllGames.ToArray();
+        var games = Host.UnattendedGames.ToArray(); // #291: hidden games left out
         if (!await Task.Run(() => _updateAll.HasManagedTargets(games), cancellationToken)) return;
         using var op = Host.Operations.TryBegin("background-update", linkedToken: cancellationToken);
         if (op is null) return;
@@ -204,7 +204,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         } while (claimed is null);
         using var op = claimed;
         // The library may have been refreshed meanwhile: the game as it is now, or nothing when it is gone.
-        var game = Host.AllGames.FirstOrDefault(candidate => Key(candidate) == Key(deferred));
+        var game = Host.UnattendedGames.FirstOrDefault(candidate => Key(candidate) == Key(deferred)); // #291: hidden since
         if (game is null) return false;
         try
         {
@@ -289,7 +289,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         await Host.Operations.WhenIdleAsync(cancellationToken);
         using var op = Host.Operations.TryBegin("dlss-follow", linkedToken: cancellationToken);
         if (op is null) return;
-        var games = Host.AllGames.ToArray();
+        var games = Host.UnattendedGames.ToArray(); // #291: hidden games left out
         // File indexes the selection analysis already built; the service builds the rest itself, off the UI thread.
         var cached = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (var game in games)

@@ -20,6 +20,14 @@ public readonly record struct GameLibraryFilterFacts(bool Installed, bool RenoDx
 /// <summary>Pure filtering/search contract shared by the Linux UI and regression tests.</summary>
 public static class GameLibraryFilter
 {
+    /// <summary>
+    /// #291 (upstream 2.8.9): the games a library-wide change may touch without the user picking the game: Update All,
+    /// the automatic component pass, Follow newest DLSS / Streamline and Settings' "Apply to all games" buttons. Hidden
+    /// games (favourites too) are left out; their own buttons still work.
+    /// </summary>
+    public static IReadOnlyList<DetectedGame> Unattended(IEnumerable<DetectedGame> games)
+        => games.Where(game => !game.IsHidden).ToArray();
+
     /// <param name="customQuery">
     /// The active saved custom filter's search (Refs #193, upstream <c>CustomFilter</c>): a second search pass on top of
     /// the search box and the filter tab, independent of both. Null or blank = none.

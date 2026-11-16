@@ -1495,3 +1495,16 @@ token raises it) or that it could not check, and offers no release page. An answ
 earlier (the cache's ordinary reuse) still counts. Every other caller of the cache keeps the stand-in answers as before.
 The start-up check stays quiet unless a newer release is found, as upstream. Not part of this lane: upstream 2.9.4's
 handling of an expired or revoked token.
+
+### #291 — Hidden games are left out of library-wide changes (2.8.9)
+
+As upstream 2.8.9: a hidden game is never changed by anything that runs over the whole library. Left out are Update
+All (and its availability: the button is off when only hidden games have RHI components), the automatic component pass
+and its after-the-game-closed pass (#242; a game hidden while it waited is dropped), Follow newest DLSS / Streamline
+(#177, the Linux form of upstream's automatic DLSS / Streamline updates), and every Settings "Apply to all games" or
+"Deploy to all" button: ReShade settings, ReLimiter settings, peak brightness, the INI mass deploy (and the counts their
+questions name) and the OptiScaler overlay key. The game's own buttons still work. One rule
+(`GameLibraryFilter.Unattended`) decides it for every caller. Linux deviation: upstream's Update All already skipped
+hidden games; here it did not, so it changes with this port. Not changed: games set to the global shader / add-on set
+still follow it when the global set is saved (a choice the game itself made, not an apply-to-all), and the DLSS batch
+dialog lists every game because the user ticks each one.

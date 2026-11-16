@@ -59,13 +59,13 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     public string Save(LinuxAppSettings settings) => vm.Settings.SaveLinuxSettings(settings);
 
     /// <summary>How many library games a mass deploy of <paramref name="kind"/>'s INI would write (RHI manages the component).</summary>
-    public int DeployCandidates(ManagedComponentKind kind) => Service.DeployTargets(vm.AllLibraryGames.ToList(), kind).Count;
+    public int DeployCandidates(ManagedComponentKind kind) => Service.DeployTargets(vm.UnattendedLibraryGames.ToList(), kind).Count;
 
     /// <summary>
     /// How many of those hold a relimiter.ini / DisplayCommander.ini that changed since RHI wrote it (the mass deploy's
     /// question names them: each is kept as a backup beside it; review finding 2).
     /// </summary>
-    public int DeployChangedCount(ManagedComponentKind kind) => Service.ChangedAddonInis(vm.AllLibraryGames.ToList(), kind);
+    public int DeployChangedCount(ManagedComponentKind kind) => Service.ChangedAddonInis(vm.UnattendedLibraryGames.ToList(), kind);
 
     /// <summary>The mass deploy's question: games it writes, and how many of them hold an add-on INI that changed since RHI wrote it.</summary>
     /// <param name="Error">Set (and on the status bar) when a game's file could not be read; nothing is asked then.</param>
@@ -78,7 +78,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     /// </summary>
     public async Task<DeployQuestion> DeployQuestionAsync(ManagedComponentKind kind)
     {
-        var games = vm.AllLibraryGames.ToList();
+        var games = vm.UnattendedLibraryGames.ToList();
         var service = Service;
         try
         {
@@ -201,7 +201,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         if (op is null) return (Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning")), false);
         try
         {
-            var result = await run(Service, vm.AllLibraryGames.ToList(), op.Token);
+            var result = await run(Service, vm.UnattendedLibraryGames.ToList(), op.Token);
             return (Report(BatchSummary(what, result)), true);
         }
         catch (OperationCanceledException)
@@ -532,7 +532,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     /// </summary>
     public string? ApplyToAllQuestion(IniApplyAll what, LinuxAppSettings settings)
     {
-        var games = vm.AllLibraryGames.ToList();
+        var games = vm.UnattendedLibraryGames.ToList();
         var (label, count) = what switch
         {
             IniApplyAll.ReShadeSettings => (UiLocalizationService.Text("Ini.ReShadeSettingsWhat"), Service.ReShadeSettingsTargets(games).Count),

@@ -120,7 +120,7 @@ public sealed class OptiScalerPresetsPresenter
         if (string.IsNullOrWhiteSpace(key)) return UiLocalizationService.Text("Shell.MenuKeyChooseFirst");
         using var op = _shell.Operations.TryBegin("optiscaler-menu-key");
         if (op is null) return UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning");
-        var games = _shell.AllLibraryGames.ToArray();
+        var games = _shell.UnattendedLibraryGames.ToArray(); // #291: hidden games left out
         try
         {
             var result = await Task.Run(() => _managed.ApplyOptiScalerMenuKeyToAll(games, key, op.Token));

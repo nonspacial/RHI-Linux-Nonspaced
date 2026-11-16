@@ -21,6 +21,8 @@ internal interface IPanelHost
     LinuxAppSettings Settings { get; }
     /// <summary>Every game in the library (filtered or not).</summary>
     IReadOnlyList<DetectedGame> AllGames { get; }
+    /// <summary>#291: the games a library-wide change may touch (hidden games left out).</summary>
+    IReadOnlyList<DetectedGame> UnattendedGames { get; }
     SelectedGameSession Session { get; }
     OperationCoordinator Operations { get; }
     OperationScope? BeginOperation(string kind, bool cancellable = true, CancellationToken linkedToken = default);
