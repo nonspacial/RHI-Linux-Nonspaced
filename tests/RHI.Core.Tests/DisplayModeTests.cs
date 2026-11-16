@@ -464,6 +464,7 @@ public sealed class DisplayModeTests : IDisposable
     [Theory]
     [InlineData(DisplayModeItemKeys.Hdr, "HDR10")]
     [InlineData(DisplayModeItemKeys.Resolution, "huge")]
+    [InlineData(DisplayModeItemKeys.Resolution, "Off:huge")]
     [InlineData(DisplayModeItemKeys.DriverFpsCap, "10")]
     [InlineData(DisplayModeItemKeys.MfgMode, "fixed:9")]
     [InlineData(DisplayModeItemKeys.DlssSrScale, "20")]

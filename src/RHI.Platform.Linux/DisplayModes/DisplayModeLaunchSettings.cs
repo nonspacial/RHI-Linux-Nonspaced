@@ -70,10 +70,10 @@ public static class DisplayModeLaunchSettings
         return itemKey switch
         {
             DisplayModeItemKeys.Hdr => LinuxHdrModes.Normalize(v.HdrMode),
-            // Off keeps the chosen size ("Off:2560x1440"), so turning a mode off puts both back.
+            // The exact state ("Off:", "Off:2560x1440", "On:", "3840x2160"), so turning a mode off puts the size back too.
             DisplayModeItemKeys.Resolution => !v.ResolutionToggle
-                ? v.Resolution is { } kept ? DisplayModeItems.ResolutionOff + ":" + kept : DisplayModeItems.ResolutionOff
-                : v.Resolution ?? DisplayModeItems.ResolutionOn,
+                ? DisplayModeItems.ResolutionOff + ":" + v.Resolution
+                : v.Resolution ?? DisplayModeItems.ResolutionOn + ":",
             DisplayModeItemKeys.DriverFpsCap => v.FpsLimit is { } fps ? fps.ToString(CultureInfo.InvariantCulture) : DisplayModeItems.FpsGlobal,
             DisplayModeItemKeys.MfgMode => NvidiaFrameGenerationModes.Normalize(n.FrameGenerationMode) switch
             {
@@ -99,6 +99,18 @@ public static class DisplayModeLaunchSettings
         return problem;
     }
 
+    private static (bool On, string? Size)? ExactResolution(string value)
+    {
+        foreach (var (prefix, on) in new[] { (DisplayModeItems.ResolutionOff + ":", false), (DisplayModeItems.ResolutionOn + ":", true) })
+        {
+            if (!value.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            var size = value[prefix.Length..];
+            if (size.Length == 0) return (on, null);
+            return DisplayResolution.Parse(size) is { } parsed ? (on, parsed.ToString()) : null;
+        }
+        return null;
+    }
+
     private static string? Set(DisplayModeLaunchValues v, string itemKey, string value)
     {
         const string NotTaken = "This value is not one RHI can set: ";
@@ -110,14 +122,10 @@ public static class DisplayModeLaunchSettings
                 v.HdrMode = value;
                 return null;
             case DisplayModeItemKeys.Resolution:
+                // A mode's Off / On leave the game's size as it is; a game's own exact state ("Off:", "Off:WxH", "On:") sets it too.
                 if (value == DisplayModeItems.ResolutionOff) v.ResolutionToggle = false;
-                else if (value.StartsWith(DisplayModeItems.ResolutionOff + ":", StringComparison.Ordinal)
-                         && DisplayResolution.Parse(value[(DisplayModeItems.ResolutionOff.Length + 1)..]) is { } keptSize)
-                {
-                    v.ResolutionToggle = false;
-                    v.Resolution = keptSize.ToString();
-                }
                 else if (value == DisplayModeItems.ResolutionOn) v.ResolutionToggle = true;
+                else if (ExactResolution(value) is { } exact) (v.ResolutionToggle, v.Resolution) = exact;
                 else if (DisplayResolution.Parse(value) is { } size) { v.ResolutionToggle = true; v.Resolution = size.ToString(); }
                 else return NotTaken + value;
                 return null;

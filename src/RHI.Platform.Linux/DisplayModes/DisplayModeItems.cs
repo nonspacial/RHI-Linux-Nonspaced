@@ -37,6 +37,9 @@ public static class DisplayModeItemKeys
 
     /// <summary>Items kept in relimiter.ini.</summary>
     public static readonly IReadOnlyList<string> ReLimiterItems = [UlTargetFps, UlOsdKey];
+
+    /// <summary>Every item kept in a game file (ReShade.ini, relimiter.ini, DisplayCommander.ini).</summary>
+    public static readonly IReadOnlyList<string> GameFileItems = [.. ReShadeIniItems, .. ReLimiterItems, DcFpsLimit];
 }
 
 /// <summary>How an item's value is edited.</summary>
@@ -97,6 +100,9 @@ public sealed class DisplayModeItem
                 return t.Length == 0 ? null : t;
             case DisplayModeValueKind.ReShadeKey:
                 return ReShadeKey(t);
+            case DisplayModeValueKind.ReLimiterKey:
+                return RHI.Platform.Linux.Deployment.ReLimiterIniEditor.TryParseHotkey(t, out var binding)
+                    ? RHI.Platform.Linux.Deployment.ReLimiterIniEditor.HotkeyName(binding) : null;
             default:
                 return t;
         }
@@ -183,8 +189,8 @@ public static class DisplayModeItems
     public const string FrameGenerationFixedPrefix = "fixed:";
 
     /// <summary>
-    /// Resolution: "Off", "On" (the size chosen on the game page), or "WIDTHxHEIGHT". A game's own value read while its
-    /// switch is off keeps its size: "Off:WIDTHxHEIGHT" (shown as Off).
+    /// Resolution: a mode's "Off", "On" (the size chosen on the game page), or "WIDTHxHEIGHT". A game's own value is its
+    /// exact state, size included: "Off:", "Off:WIDTHxHEIGHT", "On:" (shown as Off / On) or "WIDTHxHEIGHT".
     /// </summary>
     public const string ResolutionOff = "Off";
     public const string ResolutionOn = "On";
