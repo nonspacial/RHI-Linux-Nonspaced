@@ -58,11 +58,11 @@ public sealed class OptiScalerNightlyBuildRow : UserControl
         };
         _cancel.Classes.Add("rhi");
         var line = new ComboWithActions(_combo, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _apply, _cancel } });
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("280,*"), ColumnSpacing = 12 };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions($"{CogLayout.LabelColumnWidth},*"), ColumnSpacing = CogLayout.ColumnGap }; // #297: the ⚙ row layout
         Grid.SetColumn(line, 1);
         row.Children.Add(label);
         row.Children.Add(line);
-        _note = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = 0.58 };
+        _note = new TextBlock { Classes = { "cogHelp" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(CogLayout.LabelColumnWidth + CogLayout.ColumnGap, 0, 0, 2) }; // #297: the explanation under the row
         Content = new StackPanel { Spacing = 6, Children = { row, _note } };
 
         presenter.PropertyChanged += (_, _) => Sync();

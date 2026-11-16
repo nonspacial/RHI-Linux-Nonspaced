@@ -348,7 +348,7 @@ public static class ComponentIniDialog
     private static void LumaSection(CogDialog cog, IniPresetsPresenter presenter)
     {
         var snapshot = presenter.LumaSettings();
-        cog.AddSection(T("Cog.UnrealEngine"));
+        cog.AddSection("Unreal Engine"); // a product name, as upstream's section
         var hdrItems = OptionLists.LumaHdrMode.Items;
         cog.AddCombo(T("Ini.LumaHdr"), T("Ini.LumaHdrTip"), hdrItems, IndexOf(hdrItems, OptionLists.LumaHdrMode.Display(snapshot?.Hdr ?? LumaHdrMode.Default)), async i =>
         {

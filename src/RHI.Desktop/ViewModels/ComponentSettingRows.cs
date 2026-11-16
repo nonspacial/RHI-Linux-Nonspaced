@@ -100,10 +100,15 @@ public sealed partial class ComponentSettingRow : ObservableObject
     }
 }
 
-/// <summary>A section heading inside the ⚙'s settings list (upstream's section titles).</summary>
-public sealed record ComponentSettingSection(string Title, IReadOnlyList<ComponentSettingRow> Rows)
+/// <summary>
+/// A section of the ⚙'s settings list (upstream's section titles): one card. #297: <paramref name="Compact"/> lays the rows
+/// out two per row with the explanation as the tooltip (upstream <c>AddCompactGrid</c>, e.g. RTX Encore); otherwise each row
+/// has its name left, the option right and the explanation under it.
+/// </summary>
+public sealed record ComponentSettingSection(string Title, IReadOnlyList<ComponentSettingRow> Rows, bool Compact = false)
 {
     public bool HasTitle => Title.Length > 0;
+    public bool IsListed => !Compact;
 }
 
 /// <summary>w14/extras-fg: an "Open &lt;file&gt;" button of a ⚙ (the mod's ini, log or jsonc), disabled while the file is missing.</summary>

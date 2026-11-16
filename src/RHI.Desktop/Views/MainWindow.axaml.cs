@@ -352,19 +352,14 @@ public sealed partial class MainWindow : Window
         await ShowComponentDialogAsync(new ProxyComponentDialogViewModel(vm, ProxyComponentDialogKind.RtxEncore));
     });
 
-    /// <summary>A component dialog: the window's content is its view model, laid out by its data template (App.axaml).</summary>
+    /// <summary>
+    /// A component dialog: the shared ⚙ frame (#297, Views/Cog/CogDialog.cs) around its view model, laid out by its data
+    /// template (App.axaml).
+    /// </summary>
     private async Task ShowComponentDialogAsync(ProxyComponentDialogViewModel model)
     {
-        var dialog = new Window
-        {
-            Title = model.WindowTitle,
-            Width = model.Width,
-            Height = model.Height,
-            MinWidth = model.MinWidth,
-            MinHeight = model.MinHeight,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = model }
-        };
+        var dialog = CogWindow.Create(model.CogTitle, (DataContext as MainWindowViewModel)?.SelectedGame?.Name, new ContentControl { Content = model },
+            height: model.Height, width: Math.Max(CogWindow.DefaultWidth, model.Width));
         dialog.Closed += (_, _) => model.Dispose();
         await ShowFittedDialogAsync(dialog);
     }
@@ -377,16 +372,8 @@ public sealed partial class MainWindow : Window
         var snapshot = await vm.GetRenoDxCompatibilitySettingsAsync();
         // The layout is the view model's data template (Views/Dialogs/RenoDxSettingsDialogView.axaml; epic #89).
         var model = RenoDxSettingsDialogViewModel.For(vm, snapshot);
-        var dialog = new Window
-        {
-            Title = model.WindowTitle,
-            Width = 660,
-            Height = 620,
-            MinWidth = 560,
-            MinHeight = 360,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = model }
-        };
+        // #297: the shared ⚙ frame (title, scroll, status inside, Close).
+        var dialog = CogWindow.Create(CogDialog.TitleFor("RenoDX"), vm.SelectedGame?.Name, new ContentControl { Content = model }, height: 680);
         await ShowFittedDialogAsync(dialog);
     });
 
@@ -397,16 +384,9 @@ public sealed partial class MainWindow : Window
 
         // The layout is the view model's data template (Views/Dialogs/OptiScalerSettingsDialogView.axaml; epic #89).
         var model = new OptiScalerSettingsDialogViewModel(vm, vm.GetOptiScalerAdvancedSettings());
-        var dialog = new Window
-        {
-            Title = model.WindowTitle,
-            Width = 720,
-            Height = 760,
-            MinWidth = 620,
-            MinHeight = 420,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = model }
-        };
+        // #297: the shared ⚙ frame (title, scroll, status inside, Close).
+        var dialog = CogWindow.Create(CogDialog.TitleFor("OptiScaler"), vm.SelectedGame?.Name, new ContentControl { Content = model },
+            height: 780, width: 740);
         // #187: after a preset is applied the dialog reopens, so every dropdown shows the applied values.
         model.ReopenRequested += () => { dialog.Close(); OptiScalerSettings_Click(sender, e); };
         dialog.Closed += (_, _) => model.Dispose();

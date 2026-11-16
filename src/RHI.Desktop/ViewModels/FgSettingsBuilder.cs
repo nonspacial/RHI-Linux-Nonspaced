@@ -242,13 +242,14 @@ public static class FgSettingsBuilder
         };
         return
         [
-            new ComponentSettingSection(T("Win.FrameGeneration"), frameGeneration),
-            new ComponentSettingSection(T("Enc.SectionXefg"), xefg),
-            new ComponentSettingSection(T("Enc.SectionQuality"), quality),
-            new ComponentSettingSection(T("Enc.SectionHud"), hud),
-            new ComponentSettingSection(T("Enc.SectionUpscaling"), upscaling),
-            new ComponentSettingSection("Neural Rendering", neural),
-            new ComponentSettingSection(T("Enc.SectionCompatibility"), compatibility),
+            // #297: two per row, as upstream's RTX Encore ⚙ (AddCompactGrid).
+            new ComponentSettingSection(T("Win.FrameGeneration"), frameGeneration, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionXefg"), xefg, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionQuality"), quality, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionHud"), hud, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionUpscaling"), upscaling, Compact: true),
+            new ComponentSettingSection("Neural Rendering", neural, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionCompatibility"), compatibility, Compact: true),
         ];
     }
 

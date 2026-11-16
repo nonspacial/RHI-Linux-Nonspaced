@@ -255,10 +255,12 @@ public static class UiLocalizationService
         ["Cog.ActionFailed"] = "{0} falhou: {1}",
         ["Cog.LumaNotUnreal"] = "As configurações do Luma são para jogos Unreal Engine. Este jogo não tem nada para configurar aqui.",
         ["Cog.Files"] = "Arquivos",
-        ["Cog.UnrealEngine"] = "Unreal Engine",
         ["Cog.OpenReLimiterLog"] = "Abrir log do ReLimiter",
         ["Cog.HsfThisGame"] = "Este jogo",
-        ["Cog.OpenHelperLog"] = "Abrir log do auxiliar"
+        ["Cog.OpenHelperLog"] = "Abrir log do auxiliar",
+        ["Cog.Compatibility"] = "Compatibilidade",
+        ["Cog.RdxCompatibilityNote"] = "Estes valores são lidos e gravados na seção [renodx] do reshade.ini do jogo. Só mude se as instruções do mod pedirem. Passe o mouse sobre uma configuração para ver os detalhes.",
+        ["Cog.Version"] = "Versão"
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -507,10 +509,12 @@ public static class UiLocalizationService
         ["Cog.ActionFailed"] = "{0} failed: {1}",
         ["Cog.LumaNotUnreal"] = "Luma's settings are for Unreal Engine games. This game has nothing to set here.",
         ["Cog.Files"] = "Files",
-        ["Cog.UnrealEngine"] = "Unreal Engine",
         ["Cog.OpenReLimiterLog"] = "Open ReLimiter log",
         ["Cog.HsfThisGame"] = "This game",
-        ["Cog.OpenHelperLog"] = "Open helper log"
+        ["Cog.OpenHelperLog"] = "Open helper log",
+        ["Cog.Compatibility"] = "Compatibility",
+        ["Cog.RdxCompatibilityNote"] = "These values are read from and saved to the [renodx] section of the game's reshade.ini. Only change them if the mod's instructions tell you to. Hover a setting for details.",
+        ["Cog.Version"] = "Version"
     };
 
 

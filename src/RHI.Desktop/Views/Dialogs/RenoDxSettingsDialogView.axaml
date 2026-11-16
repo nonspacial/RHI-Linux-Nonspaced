@@ -1,50 +1,55 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:views="using:RHI.Desktop.Views"
              xmlns:l="using:RHI.Desktop.Localization"
              x:Class="RHI.Desktop.Views.Dialogs.RenoDxSettingsDialogView"
              x:DataType="vm:RenoDxSettingsDialogViewModel">
-  <!-- The RenoDX ⚙ dialog (epic #89). The #182 peak-brightness rows are the ini-presets lane's control (code-behind). -->
-  <StackPanel Spacing="10" Margin="18">
-    <TextBlock Text="{l:T Win.CompatibilitySettings}" FontSize="18" FontWeight="SemiBold"/>
-    <TextBlock Text="{l:T Win.ChangesWrittenImmediatelySelectedGameRenodx}" TextWrapping="Wrap" Opacity="0.72"/>
-    <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Opacity="0.8" IsVisible="{Binding HasWarning}"/>
-    <Panel x:Name="PeakSlot" IsVisible="False"/>
-    <!-- w8/renodx (#217): Engine.ini On/Off rows (label wraps beside the dropdown at any width; key name only in the tooltip). -->
-    <ItemsControl ItemsSource="{Binding EngineIniRows}" IsVisible="{Binding HasEngineIniRows}">
-      <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <StackPanel Spacing="10"/>
-        </ItemsPanelTemplate>
-      </ItemsControl.ItemsPanel>
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="vm:RenoDxEngineIniRow">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap" FontWeight="SemiBold"
-                       ToolTip.Tip="{Binding Tooltip}" ToolTip.ShowDelay="2000"/>
-            <ComboBox Grid.Column="1" MinWidth="120" Margin="12,0,0,0" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}"
-                      IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="{Binding Name}"
-                      ToolTip.Tip="{Binding Tooltip}" ToolTip.ShowDelay="2000"/>
-          </Grid>
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
-    <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding HasRows}">
-      <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <StackPanel Spacing="10"/>
-        </ItemsPanelTemplate>
-      </ItemsControl.ItemsPanel>
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="vm:RenoDxSettingRow">
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <TextBlock Text="{Binding Label}" Width="360" VerticalAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding Tooltip}"/>
-            <ComboBox Width="210" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}"/>
-          </StackPanel>
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
-    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.78"/>
-    <TextBlock Text="{Binding IniPath}" FontSize="10" Opacity="0.55" TextWrapping="Wrap" IsVisible="{Binding HasIniPath}"/>
+  <!-- The RenoDX ⚙ (epic #89) on the shared ⚙ layout (#297, upstream 2.9.0 RdxCogButton_Click): the first card holds
+       UE-Extended and the maximum nits (code-behind, Views/Cog/RenoDxCogRows.cs) and the Engine.ini rows (#217); the
+       Compatibility card keeps upstream's compact two-per-row grid, the explanation in each setting's tooltip. -->
+  <StackPanel Spacing="14">
+    <TextBlock Text="{l:T Win.ChangesWrittenImmediatelySelectedGameRenodx}" TextWrapping="Wrap" Classes="cogIntro"/>
+    <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Classes="cogWarning" IsVisible="{Binding HasWarning}"/>
+    <views:CogCard x:Name="MainCard" IsVisible="False">
+      <StackPanel x:Name="MainRows" Spacing="10"/>
+      <!-- w8/renodx (#217): Engine.ini On/Off rows (key name only in the explanation / tooltip). -->
+      <ItemsControl ItemsSource="{Binding EngineIniRows}" IsVisible="{Binding HasEngineIniRows}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="10"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:RenoDxEngineIniRow">
+            <views:CogRow Label="{Binding Label}" Help="{Binding Tooltip}">
+              <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="{Binding Name}"/>
+            </views:CogRow>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </views:CogCard>
+    <views:CogCard Header="{l:T Cog.Compatibility}">
+      <TextBlock Text="{l:T Cog.RdxCompatibilityNote}" TextWrapping="Wrap" Classes="cogNote"/>
+      <TextBlock Text="{Binding EmptyReason}" TextWrapping="Wrap" Classes="cogNote" IsVisible="{Binding HasEmptyReason}"/>
+      <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding HasRows}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <views:CogCompactGrid/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:RenoDxSettingRow">
+            <views:CogCell Label="{Binding Label}" Help="{Binding Tooltip}">
+              <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}"/>
+            </views:CogCell>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </views:CogCard>
+    <TextBlock Text="{Binding IniPath}" TextWrapping="Wrap" Classes="cogNote" IsVisible="{Binding HasIniPath}"/>
+    <!-- #297: results and errors inside the ⚙ (upstream's status line). -->
+    <TextBlock Name="CogStatus" Text="{Binding Message}" TextWrapping="Wrap" Classes="cogStatus" IsVisible="{Binding HasMessage}"/>
   </StackPanel>
 </UserControl>
