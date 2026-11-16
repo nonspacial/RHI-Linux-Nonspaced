@@ -165,6 +165,17 @@ public sealed class LinuxGameLibraryState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<LinuxRemovedGame>? RemovedGames { get; set; }
 
+    /// <summary>
+    /// #300 (upstream 2.9.2): the user's game collections, in their order; members by library key. Null when there are
+    /// none, so the file keeps the shape older builds wrote.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LinuxGameCollection>? GameCollections { get; set; }
+
+    /// <summary>#300: the collection the game list shows (remembered across launches), or null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActiveCollection { get; set; }
+
     public bool IsRemoved(string key) => RemovedGames?.Any(entry => string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase)) == true;
 
     public LinuxGameLibraryState Normalize()
@@ -205,6 +216,8 @@ public sealed class LinuxGameLibraryState
             .DistinctBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
         RemovedGames = removed.Count == 0 ? null : removed;
+        GameCollections = LinuxGameCollections.Normalize(GameCollections); // #300
+        ActiveCollection = LinuxGameCollections.NormalizeActive(GameCollections, ActiveCollection);
         return this;
     }
 
@@ -254,6 +267,7 @@ public sealed class LinuxGameLibraryState
             changed |= Move(GameEdits, old, key);
             changed |= Move(HdrProfiles, old, key);
         }
+        changed |= LinuxGameCollections.ReplaceKeys(GameCollections, OlderKeys(game), key); // #300: collections follow the game
         return changed;
     }
 
@@ -381,6 +395,7 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
                 changed = true;
             }
             changed |= move.MoveLibraryEntries(state.HdrProfiles);
+            changed |= LinuxGameCollections.ReplaceKeys(state.GameCollections, move.OldLibraryKeys, move.NewLibraryKey); // #300
             return changed ? state.Normalize() : null;
         });
     }

@@ -217,6 +217,14 @@
       <Setter Property="Foreground" Value="#B8C9E0"/>
     </Style>
 
+    <!-- #300: the active collection chip; #193's custom filter chips use the same look. -->
+    <Style Selector="Button.chip.active">
+      <Setter Property="Background" Value="#2B4A78"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="TextBlock.error">
+      <Setter Property="Foreground" Value="#F08A8A"/>
+    </Style>
     <Style Selector="TextBox">
       <Setter Property="Background" Value="{DynamicResource RhiControlBrush}"/>
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>

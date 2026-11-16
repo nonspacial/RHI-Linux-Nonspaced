@@ -181,6 +181,11 @@ Wave 14 — extras-fg
   are hidden (sifu shows only Sifu), and the best match comes first (resident evil 4 puts Resident Evil 4 on top).
   Stores, runners, engines, graphics APIs, authors and folders match whole words only: st no longer lists every Steam
   game; type steam, unreal, dx12 or vulkan to list those games.
+- **Game collections** (upstream 2.9.2): make your own lists of games, like Racing or Souls-likes. Right-click a game
+  and choose **Add to collection** (tick a collection, or New collection…); a game can be in as many as you like.
+  Your collections show as buttons under the filter tabs: click one to show only its games, click it again to show
+  everything. Right-click one to rename, move or delete it; deleting a collection never removes any games. Picking a
+  filter tab leaves the collection, and RHI remembers the one you had open.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

@@ -66,6 +66,7 @@ public sealed partial class MainWindow
                 confirmVm.ConfirmControlUeAsync = ShowControlUeConfirmationAsync; // w3/dllnames hook (#136)
                 confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
                 confirmVm.ShowNotesAsync = ShowGameNotesAsync;
+                confirmVm.Collections.AskNewCollectionAsync = NewCollectionAsync; // #300 game menu's New collection…
                 confirmVm.Support.ShowReportDialogAsync = ShowGameReportDialogAsync; // #192 Copy game report
                 if (confirmVm.UpdatePolicy is { } updatePolicy) updatePolicy.ShowInclusionAsync = ShowUpdateInclusionAsync; // w5/update-policy hook (#178)
                 confirmVm.NrCheck.ShowDialogAsync = ShowNeuralRenderingCheckAsync; // w11/nr-check hook (#234)

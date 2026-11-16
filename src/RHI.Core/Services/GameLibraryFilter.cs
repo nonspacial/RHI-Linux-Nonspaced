@@ -32,16 +32,23 @@ public static class GameLibraryFilter
     /// The active saved custom filter's search (Refs #193, upstream <c>CustomFilter</c>): a second search pass on top of
     /// the search box and the filter tab, independent of both. Null or blank = none.
     /// </param>
+    /// <param name="inCollection">
+    /// #300 (upstream 2.9.2): the active game collection's membership test, or null. It replaces the filter tab: the
+    /// collection's games are shown, hidden ones excepted (upstream <c>MatchesCollection</c>); the search and the custom
+    /// filter still narrow it.
+    /// </param>
     public static bool Matches(
         DetectedGame game,
         GameLibraryFilterMode mode,
         string? search,
         GameLibraryFilterFacts facts,
-        string? customQuery = null)
+        string? customQuery = null,
+        Func<DetectedGame, bool>? inCollection = null)
     {
         ArgumentNullException.ThrowIfNull(game);
         if (!MatchesSearch(game, search)) return false;
         if (!MatchesSearch(game, customQuery)) return false;
+        if (inCollection is not null) return !game.IsHidden && inCollection(game);
 
         if (mode == GameLibraryFilterMode.Hidden) return game.IsHidden;
         if (mode == GameLibraryFilterMode.Favourites) return game.IsFavourite; // upstream intentionally includes hidden favourites
@@ -85,11 +92,12 @@ public static class GameLibraryFilter
         GameLibraryFilterMode mode,
         string? search,
         Func<DetectedGame, GameLibraryFilterFacts>? facts,
-        string? customQuery = null)
+        string? customQuery = null,
+        Func<DetectedGame, bool>? inCollection = null)
     {
         ArgumentNullException.ThrowIfNull(games);
         var shown = games
-            .Where(game => Matches(game, mode, search, facts?.Invoke(game) ?? default, customQuery))
+            .Where(game => Matches(game, mode, search, inCollection is null ? facts?.Invoke(game) ?? default : default, customQuery, inCollection))
             .OrderBy(game => game.DisplayName(), StringComparer.CurrentCultureIgnoreCase)
             .ToList();
         if (string.IsNullOrWhiteSpace(search)) return shown;

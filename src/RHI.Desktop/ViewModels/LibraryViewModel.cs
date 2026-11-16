@@ -87,9 +87,11 @@ public sealed class LibraryViewModel
     /// clearing the list).
     /// </summary>
     /// <param name="customQuery">The active saved custom filter's search (Refs #193); null = none.</param>
-    public void ApplyFilter(GameLibraryFilterMode mode, string? search, Func<DetectedGame, GameLibraryFilterFacts>? facts, string? customQuery = null)
+    /// <param name="inCollection">#300: the active collection's membership test (it replaces the filter tab); null = none.</param>
+    public void ApplyFilter(GameLibraryFilterMode mode, string? search, Func<DetectedGame, GameLibraryFilterFacts>? facts, string? customQuery = null,
+        Func<DetectedGame, bool>? inCollection = null)
     {
-        var wanted = GameLibraryFilter.Filter(_all, mode, search, facts, customQuery)
+        var wanted = GameLibraryFilter.Filter(_all, mode, search, facts, customQuery, inCollection)
             .Select(game => _rows[game])
             .ToList();
         var wantedSet = wanted.ToHashSet(ReferenceEqualityComparer.Instance);

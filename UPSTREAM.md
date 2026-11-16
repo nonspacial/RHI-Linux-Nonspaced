@@ -2293,3 +2293,24 @@ use another mapping.
   manifest's author override).
 - Upstream's rules give the same near misses: "steam" also shows Stellar Blade ("stell" is two letters off), ranked
   above the Steam games found by their store.
+
+### #300 — Game collections (2.9.2)
+
+- Ported from upstream's `GameCollectionStore`, `MainViewModel.Collections` and `MainWindow.Collections`: create (with
+  the game when made from its menu), rename (the active collection stays active), move left/right, delete (the games
+  stay; the list goes back to all games), membership ticks in the game menu's **Add to collection** (under Hide, as
+  upstream) with **New collection…**, and upstream's name rules (trimmed, 1–40 characters, no control characters, not
+  a built-in filter's name, unique in any case). A chip shows only the collection's games, hidden ones excepted, and
+  puts the filter tab back to All underneath; the search and a custom filter still narrow it; any filter tab leaves the
+  collection; the active one is remembered across launches; an empty collection says why (no games yet, none match
+  the search, or hidden / no longer detected).
+- Storage: in the library file (`~/.local/share/rhi-linux/game-library.json`, `GameCollections` and
+  `ActiveCollection`) through its store: atomic, verified writes, an unreadable file copied aside and never overwritten;
+  each change saves a copy and adopts it once on disk, and nothing is written during Repair after move. Not written
+  while there are none, so the file keeps its older shape.
+- Linux deviations: members are kept by the game's library key (the key favourites and hidden use), not upstream's
+  "GameName|Store", so an Edit game display name change needs no migration and the collections follow the game when an
+  older key is adopted or Repair after move gives it a new one. The built-in names refused also cover the Linux filter
+  tabs (Unreal, Unity, Other, RenoDX, Luma) and their PT-BR words. Classic layout only for now: Spotlight's placement
+  beside the search box and the controller's right-stick switching come with the phase-2 layouts (#305, #308). The chip
+  row is the Avalonia `CollectionsRow` under the filter tabs, above #193's saved custom filters.

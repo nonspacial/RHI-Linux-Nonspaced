@@ -87,6 +87,8 @@
               <Button Classes="chip" Content="Luma" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Luma"/>
               <Button Classes="chip" Content="{DynamicResource Ui.Hidden}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Hidden"/>
             </WrapPanel>
+            <!-- #300 game collections: one chip per collection, then "+ Collection" (upstream 2.9.2, under the filter switch). -->
+            <views:CollectionsRow x:Name="CollectionsRow"/>
             <!-- #193 saved custom filters: "Save as filter" and one chip per saved filter (hidden while there is neither). -->
             <views:CustomFilterRow/>
             </StackPanel>
@@ -116,6 +118,10 @@
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
+          <!-- #300: why a shown collection's list is empty (upstream's empty-list message). -->
+          <TextBlock x:Name="CollectionEmptyText" Grid.Row="3" Margin="16,12,16,0" VerticalAlignment="Top" TextWrapping="Wrap"
+                     FontSize="12" Foreground="#6B7A8E" IsHitTestVisible="False"
+                     Text="{Binding Collections.EmptyText}" IsVisible="{Binding Collections.HasEmptyText}"/>
         </Grid>
       </Border>
 
