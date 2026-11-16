@@ -185,7 +185,12 @@ public static class LaunchArguments
         if (words is ["steam", "-applaunch", var a] && a == id) return new(LaunchArgumentsRoute.Steam, $"steam -applaunch {id}");
         if (words is ["flatpak", "run", "com.valvesoftware.Steam", "-applaunch", var f] && f == id)
             return new(LaunchArgumentsRoute.Steam, $"flatpak run com.valvesoftware.Steam -applaunch {id}");
-        if (words is ["xdg-open", var link] && link == "steam://rungameid/" + id)
+        var link = "steam://rungameid/" + id;
+        // The link handed to the Steam program itself starts the same client, which takes -applaunch instead.
+        if (words is ["steam", var l] && l == link) return new(LaunchArgumentsRoute.Steam, $"steam -applaunch {id}");
+        if (words is ["flatpak", "run", "com.valvesoftware.Steam", var fl] && fl == link)
+            return new(LaunchArgumentsRoute.Steam, $"flatpak run com.valvesoftware.Steam -applaunch {id}");
+        if (words is ["xdg-open", var x] && x == link)
             return onPath("steam") ? new(LaunchArgumentsRoute.Steam, $"steam -applaunch {id}") : new(LaunchArgumentsRoute.SteamLinkOnly);
         return new(LaunchArgumentsRoute.Launcher);
     }

@@ -94,6 +94,8 @@ public sealed class LaunchArgumentsTests : IDisposable
     [InlineData("steam -applaunch 1234", "steam -applaunch 1234")]
     [InlineData("flatpak run com.valvesoftware.Steam -applaunch 1234", "flatpak run com.valvesoftware.Steam -applaunch 1234")]
     [InlineData("xdg-open steam://rungameid/1234", "steam -applaunch 1234")] // upstream: -applaunch when arguments are set
+    [InlineData("steam steam://rungameid/1234", "steam -applaunch 1234")]
+    [InlineData("flatpak run com.valvesoftware.Steam steam://rungameid/1234", "flatpak run com.valvesoftware.Steam -applaunch 1234")]
     public void Steam_GoesThroughApplaunch_WithTheArgumentsAfterTheAppId(string command, string expected)
     {
         var game = Steam(command);
