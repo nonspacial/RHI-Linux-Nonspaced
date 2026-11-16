@@ -67,12 +67,21 @@ jobs:
         run: |
           test -f "artifacts/appimage/RHI-Linux-${TAG}-x86_64.AppImage" \
             || { echo "Tag $TAG does not match <Version> in Directory.Build.props" >&2; exit 1; }
+      # Release tags (not betas, which get no packages) also get the .tar.gz, .deb, .rpm and one SHA256SUMS, packaged
+      # from the AppImage's own publish so every download holds the same build.
+      - name: Build .tar.gz, .deb and .rpm
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+        run: packaging/build-packages.sh --out artifacts/appimage --from-publish artifacts/appimage/AppDir/usr/bin
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: RHI-Linux-AppImage
           path: |
             artifacts/appimage/*.AppImage
             artifacts/appimage/*.AppImage.sha256
+            artifacts/appimage/*.tar.gz
+            artifacts/appimage/*.deb
+            artifacts/appimage/*.rpm
+            artifacts/appimage/SHA256SUMS
           if-no-files-found: error
 
   release:
@@ -95,7 +104,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           (cd dist && sha256sum --check ./*.sha256)
+          if [[ -f dist/SHA256SUMS ]]; then (cd dist && sha256sum --check SHA256SUMS); fi
           prerelease=()
           [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
-          gh release create "$TAG" dist/*.AppImage dist/*.sha256 \
+          shopt -s nullglob
+          files=(dist/*.AppImage dist/*.sha256 dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS*)
+          gh release create "$TAG" "${files[@]}" \
             --draft --verify-tag "${prerelease[@]}" --title "RHI Linux $TAG" --generate-notes
