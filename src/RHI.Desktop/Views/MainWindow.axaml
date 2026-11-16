@@ -147,8 +147,13 @@
                 </Border>
               </StackPanel>
               <StackPanel VerticalAlignment="Center">
-                <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"
-                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}"/>
+                <!-- Upstream 2.9.4 Game settings: a ⚙ beside the title (Block Steam updates; Remove from RHI until Management is ported). -->
+                <DockPanel>
+                  <Button x:Name="GameSettingsButton" DockPanel.Dock="Right" Classes="rhi" Content="⚙" Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                          IsVisible="{Binding ShowGameSettings}" ToolTip.Tip="{Binding GameSettingsTitle}" Click="GameSettings_Click"/>
+                  <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"
+                             TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}"/>
+                </DockPanel>
                 <TextBlock x:Name="SelectedSourceText" views:DetailHeaderPanel.Role="Subtitle" Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"
                            TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedSource}"/>
               </StackPanel>
@@ -159,10 +164,6 @@
                       Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"
                       ToolTip.Tip="{Binding FavouriteActionTip}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-              <Button x:Name="RemoveFromRhiButton" views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding RemoveFromRhiText}" Command="{Binding RemoveFromRhiCommand}"
-                      IsVisible="{Binding CanRemoveFromRhi}" ToolTip.Tip="{Binding RemoveFromRhiTip}"/>
-              <Button x:Name="BlockSteamUpdatesButton" views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding BlockSteamUpdatesText}" Command="{Binding ToggleSteamUpdatesCommand}"
-                      IsVisible="{Binding CanBlockSteamUpdates}" ToolTip.Tip="{Binding BlockSteamUpdatesTip}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
                       ToolTip.Tip="{DynamicResource Ui.EditTip}"/>
               <!-- Only manually added games can be removed; hide the button for everything else. -->

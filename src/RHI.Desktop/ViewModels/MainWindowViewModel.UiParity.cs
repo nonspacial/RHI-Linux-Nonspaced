@@ -84,5 +84,6 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(FavouriteActionTip));
         OnPropertyChanged(nameof(StoreBadgeOpensCommunity));
         OnPropertyChanged(nameof(StoreBadgeToolTip));
+        NotifyGameSettings(); // upstream 2.9.4 Game settings cog
     }
 }

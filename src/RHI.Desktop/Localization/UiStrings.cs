@@ -2028,5 +2028,8 @@ internal static class UiStrings
         ("Qs.TroubleTitle", "Solução de problemas", "Troubleshooting"),
         ("Qs.TroubleBody", "Se faltam jogos, um jogo mudou de pasta ou arquivos DLSS foram adicionados ou removidos, use Atualizar. Reparar após mover aparece quando o RHI ainda aponta para a pasta antiga de um jogo.", "If games are missing, a game has moved, or DLSS files were added or removed, use Refresh. Repair after move appears when RHI still points at a game's old folder."),
         ("Qs.TroubleTip", "Downloads ou verificações falhando? Adicione um token do GitHub (Configurações).\nPara relatar um problema, use Copiar registros em Configurações → Suporte e Copiar relatório do jogo (clique com o botão direito no jogo).", "Downloads or update checks failing? Add a GitHub token (Settings).\nTo report a problem, use Copy logs in Settings → Support and Copy game report (right-click the game)."),
+        // Upstream 2.9.4 Game settings: the ⚙ beside the game's title.
+        ("Gs.Title", "Configurações do jogo", "Game settings"),
+        ("Gs.Intro", "Configurações que valem só para este jogo.", "Settings that apply to this game only."),
     ];
 }
