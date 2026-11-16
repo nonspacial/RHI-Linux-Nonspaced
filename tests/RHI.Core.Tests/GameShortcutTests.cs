@@ -417,11 +417,21 @@ public sealed class InstanceHandoffTests : IDisposable
         Assert.False(File.Exists(Path.Combine(real, "handoff.sock")));
     }
 
-    /// <summary>Sends one raw line of exactly <paramref name="lineBytes"/> bytes (a valid request padded by an unknown field).</summary>
+    /// <summary>
+    /// Sends one raw line of exactly <paramref name="lineBytes"/> bytes (a valid request padded by an unknown field). The
+    /// listener answers before it hands the request on (the sending RHI never waits for the running one to act), so an
+    /// accepted request is counted once its handler has run (#316: read straight after "ok\n" it raced the listener thread).
+    /// A refused request never reaches the handler.
+    /// </summary>
     private async Task<(string Answer, int Handled)> SendLineOf(int lineBytes)
     {
         var handled = 0;
-        using var listener = InstanceHandoff.Listen(_ => Interlocked.Increment(ref handled), Socket);
+        var ran = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var listener = InstanceHandoff.Listen(_ =>
+        {
+            Interlocked.Increment(ref handled);
+            ran.TrySetResult();
+        }, Socket);
         var head = "{\"Kind\":\"Launch\",\"Value\":\"steam:1\",\"Pad\":\"";
         var line = head + new string('x', lineBytes - head.Length - 2) + "\"}";
         Assert.Equal(lineBytes, Encoding.UTF8.GetByteCount(line));
@@ -430,8 +440,10 @@ public sealed class InstanceHandoffTests : IDisposable
         client.Send(Encoding.UTF8.GetBytes(line + "\n"));
         var buffer = new byte[16];
         var read = await client.ReceiveAsync(buffer, SocketFlags.None).WaitAsync(TimeSpan.FromSeconds(10));
+        var answer = Encoding.UTF8.GetString(buffer, 0, read);
+        if (answer == "ok\n") await ran.Task.WaitAsync(TimeSpan.FromSeconds(10));
         listener!.Dispose();
-        return (Encoding.UTF8.GetString(buffer, 0, read), Volatile.Read(ref handled));
+        return (answer, Volatile.Read(ref handled));
     }
 
     [Fact]
@@ -492,7 +504,7 @@ public sealed class GameShortcutLaunchTests : IDisposable
 
     private static async Task SettleAsync(ViewModelFixture fx)
     {
-        for (var i = 0; i < 200 && fx.Vm.IsSelectionProbeBusy; i++) await Task.Delay(25);
+        await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromSeconds(60));
     }
 
     [Fact]

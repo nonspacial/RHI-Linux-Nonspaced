@@ -18,7 +18,7 @@ public sealed class ReFrameworkStoragePresenterTests
     private static async Task SelectAsync(ViewModelFixture fx)
     {
         fx.Vm.SelectedGame = fx.Vm.Games.Single().Game;
-        for (var i = 0; i < 400 && fx.Vm.IsSelectionProbeBusy; i++) await Task.Delay(25);
+        await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromSeconds(60));
         Assert.False(fx.Vm.IsSelectionProbeBusy);
     }
 
