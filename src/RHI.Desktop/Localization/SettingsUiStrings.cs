@@ -123,5 +123,25 @@ internal static class SettingsUiStrings
         ("Set.ClearCacheAsk", "Limpar o cache do RHI-Linux? Pacotes e shaders baixados são apagados e baixados de novo quando necessários. Componentes instalados nos jogos não mudam.", "Clear RHI-Linux's cache? Downloaded packages and shaders are deleted and downloaded again when needed. Components installed in games are not changed."),
         ("Set.ResetSettingsTip", "Volta todas as configurações aos padrões. Não toca em nada instalado nos jogos.", "Puts every setting back to its default. Nothing installed in games is touched."),
         ("Set.ResetSettingsAsk", "Voltar todas as configurações aos padrões? Isto não pode ser desfeito. Nada instalado nos jogos muda.", "Put every setting back to its default? This can't be undone. Nothing installed in games changes."),
+
+        // #302: upstream 2.8.9's tooltip sweep (main window)
+        ("Tip.FilterAll", "Todos os jogos encontrados, exceto os ocultos.", "Every game found, except hidden ones."),
+        ("Tip.FilterFavourites", "Só os jogos marcados como favoritos.", "Only the games you marked as favourites."),
+        ("Tip.FilterInstalled", "Jogos com um componente instalado pelo RHI.", "Games with a component RHI installed."),
+        ("Tip.FilterUnreal", "Jogos em Unreal Engine.", "Unreal Engine games."),
+        ("Tip.FilterUnity", "Jogos em Unity.", "Unity games."),
+        ("Tip.FilterOther", "Jogos em outros motores, ou de motor desconhecido.", "Games on other engines, or an unknown engine."),
+        ("Tip.FilterRenoDx", "Jogos que têm um mod HDR do RenoDX.", "Games that have a RenoDX HDR mod."),
+        ("Tip.FilterLuma", "Jogos que têm um mod do Luma Framework.", "Games that have a Luma Framework mod."),
+        ("Tip.FilterHidden", "Jogos que você ocultou. Mostrar um jogo o traz de volta à lista.", "Games you hid. Showing a game brings it back to the list."),
+        ("Tip.SectionRuntime", "Como o jogo inicia: executável, prefixo Wine/Proton, API gráfica e HDR.", "How the game starts: executable, Wine/Proton prefix, graphics API and HDR."),
+        ("Tip.SectionDlss", "As DLLs de DLSS e Streamline do jogo: versões, trocas e presets.", "The game's DLSS and Streamline DLLs: versions, swaps and presets."),
+        ("Tip.SectionReShade", "Os shaders e add-ons do ReShade deste jogo.", "This game's ReShade shaders and addons."),
+        ("Tip.SectionComponents", "Os componentes que o RHI instala, atualiza e remove neste jogo.", "The components RHI installs, updates and removes in this game."),
+        ("Tip.SectionExtras", "Desbloqueios de geração de quadros, ASI Loader e outros extras.", "Frame generation unlocks, ASI Loader and other extras."),
+        ("Tip.SectionSummary", "O que a seção recolhida contém. API = API gráfica forçada; os números são as versões instaladas.", "What the collapsed section holds. API = forced graphics API; the numbers are the installed versions."),
+        ("Tip.DlssSummary", "Padrões que Aplicar padrões coloca no jogo. SR = Super Resolution (nvngx_dlss.dll), RR = Ray Reconstruction (nvngx_dlssd.dll), FG = Frame Generation (nvngx_dlssg.dll), NR = Neural Rendering (nvngx_dlssnr.dll), SL = Streamline; — = não muda.", "The defaults Apply defaults puts on the game. SR = Super Resolution (nvngx_dlss.dll), RR = Ray Reconstruction (nvngx_dlssd.dll), FG = Frame Generation (nvngx_dlssg.dll), NR = Neural Rendering (nvngx_dlssnr.dll), SL = Streamline; — = not changed."),
+        ("Tip.GraphicsApi", "A API gráfica que o jogo usa (DirectX 9/11/12, Vulkan, OpenGL), detectada no executável ou nos dados do RHI. Decide qual DLL do ReShade é usada.", "The graphics API the game uses (DirectX 9/11/12, Vulkan, OpenGL), detected from its executable or RHI's data. It decides which ReShade DLL is used."),
+        ("Tip.EngineArchitecture", "O motor do jogo e se o executável é de 32 ou 64 bits. Componentes de 64 bits não carregam num jogo de 32 bits.", "The game's engine, and whether its executable is 32-bit or 64-bit. 64-bit components don't load in a 32-bit game."),
     ];
 }

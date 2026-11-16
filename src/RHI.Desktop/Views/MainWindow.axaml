@@ -369,7 +369,7 @@
                   <!-- w7/nvapi-launch (#211): a ResponsiveRow (was a Grid) so the third button, NVIDIA settings…, moves under the
                        summary when narrow; shown only where the NVIDIA settings apply. -->
                   <views:ResponsiveRow Columns="*,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="1" MinStarWidth="160">
-                    <TextBlock Text="{Binding DlssDefaultsSummary}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="DlssDefaultsSummaryText" Text="{Binding DlssDefaultsSummary}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     <Button Grid.Column="1" Classes="rhi" Content="{DynamicResource Ui.ApplyDefaults}" Command="{Binding QuickApplyDlssDefaultsCommand}"
                             IsEnabled="{Binding CanQuickApplyDlssDefaults}" Padding="12,6"
                             ToolTip.Tip="{DynamicResource Ui.ApplyDefaultsTip}"/>

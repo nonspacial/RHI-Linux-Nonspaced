@@ -278,6 +278,38 @@ public sealed class SettingsLayoutParityTests
         Assert.All(rows, g => Assert.Equal(1, Grid.GetColumn(g.Children[1])));
     }
 
+    [Fact]
+    public void TooltipSweep_EveryFilterAndSection_HasItsTooltip_InBothLanguages()
+    {
+        // #302 (upstream 2.8.9): the library filters and the game panel's sections explain themselves.
+        foreach (var filter in new[] { "All Games", "Favourites", "Installed", "Unreal", "Unity", "Other", "RenoDX", "Luma", "Hidden" })
+        {
+            var key = RHI.Desktop.Views.TooltipSweep.FilterTipKey(filter);
+            Assert.NotNull(key);
+            Assert.NotEqual(key, UiLocalizationService.TextFor("en-US", key!));
+            Assert.NotEqual(key, UiLocalizationService.TextFor("pt-BR", key!));
+        }
+        foreach (var section in new[] { "Runtime", "DlssStreamline", "ReShadeProfile", "ManagedComponents", "Extras" })
+            Assert.NotNull(RHI.Desktop.Views.TooltipSweep.SectionTipKey(section));
+        Assert.Null(RHI.Desktop.Views.TooltipSweep.FilterTipKey("Collection:x")); // unknown chips keep whatever they have
+    }
+
+    [Fact]
+    public async Task TooltipSweep_KeepsATooltipAControlAlreadyHas()
+    {
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var panel = new StackPanel();
+        var own = new Button { Classes = { "chip" }, CommandParameter = "Hidden" };
+        ToolTip.SetTip(own, "mine");
+        var bare = new Button { Classes = { "chip" }, CommandParameter = "Favourites" };
+        panel.Children.Add(own);
+        panel.Children.Add(bare);
+        RHI.Desktop.Views.TooltipSweep.Apply(panel);
+        Assert.Equal("mine", ToolTip.GetTip(own));
+        Assert.Equal(UiLocalizationService.Text("Tip.FilterFavourites"), ToolTip.GetTip(bare));
+    }
+
     private static LinuxAppSettings Saved(ViewModelFixture fx) => new LinuxSettingsStore(fx.Settings.SettingsPath).Load();
 
     private sealed class TempDir : IDisposable
