@@ -142,4 +142,23 @@ public sealed class ProxyComponentDialogTests
         for (var i = 0; i < 200 && fx.Vm.IsSelectionProbeBusy; i++) await Task.Delay(25);
         return fx.Vm.SelectedGame!;
     }
+
+    // w13 final review m5: since #261 the 0.4 package picks its kernels itself and RHI writes no Router=; the dialog's
+    // notes say so in both languages instead of the retired "Router=SM75" / "SM75 proxy" wording.
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pt-BR")]
+    public void Dlssg2030Notes_DescribeThePackageDetectingTheCard_NotTheRetiredRouter(string language)
+    {
+        var route = UiLocalizationService.TextFor(language, "Ui.Dlssg2030RouteNote");
+        var compatibility = UiLocalizationService.TextFor(language, "Ui.Dlssg2030CompatibilityNote");
+
+        foreach (var note in new[] { route, compatibility })
+        {
+            Assert.DoesNotContain("Router=SM75", note, StringComparison.Ordinal);
+            Assert.DoesNotContain("SM75", note, StringComparison.Ordinal);
+        }
+        Assert.Contains("Router=", route, StringComparison.Ordinal);
+        Assert.Contains("0.4", route, StringComparison.Ordinal);
+    }
 }
