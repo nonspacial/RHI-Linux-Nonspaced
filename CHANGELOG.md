@@ -22,6 +22,10 @@ Wave 14 — library-updates
 - **Hidden games are left alone by everything that runs over the whole library** (upstream 2.8.9): Update All, automatic
   component updates, Follow newest DLSS / Streamline and Settings' "Apply to all games" buttons. To update a hidden game,
   show it again or use its own buttons.
+- **Automatic updates run every 4 hours, every hour with a GitHub token, and count across restarts** (upstream
+  2.8.9/2.9.2): a start runs them at once only when the last run is 4 hours (1 hour) ago or more, and saving Settings no
+  longer starts an extra run.
+- **The Ultra+ and ultrawide fix lists are checked every 4 hours** instead of once a day, also while RHI stays open.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

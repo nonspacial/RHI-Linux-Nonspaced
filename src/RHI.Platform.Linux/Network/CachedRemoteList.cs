@@ -34,7 +34,9 @@ internal sealed class CachedRemoteList<T> where T : class
     private DateTimeOffset _retryAfter = DateTimeOffset.MinValue;
     private volatile Loaded? _loaded;
 
-    private sealed record Loaded(IReadOnlyList<T> Entries, IReadOnlyDictionary<string, T> ByKey);
+    /// <param name="FreshFrom">#292: the time the copy's freshness counts from (its download, or the last failed try
+    /// less the freshness plus <see cref="FailureRetryDelay"/>, so a list offline is asked again after that pause).</param>
+    private sealed record Loaded(IReadOnlyList<T> Entries, IReadOnlyDictionary<string, T> ByKey, DateTimeOffset FreshFrom = default);
 
     public CachedRemoteList(string name, string url, TrustedDownloadPolicy policy, Func<string, IReadOnlyList<T>> parse,
         Func<T, string?> nameOf, Func<T, bool> usable, string cachePath, TimeSpan freshness, TimeProvider time, HttpClient http,
@@ -68,7 +70,9 @@ internal sealed class CachedRemoteList<T> where T : class
     {
         lock (_sync)
         {
-            if (_loaded is not null) return Task.CompletedTask; // a Full Refresh running meanwhile is not waited for
+            // #292: a loaded copy is used until it is older than the freshness, then downloaded again while it stays in use
+            // (a list loaded once used to be kept for the whole session). A Full Refresh running meanwhile is not waited for.
+            if (_loaded is { } loaded && _time.GetUtcNow() - loaded.FreshFrom < _freshness) return Task.CompletedTask;
             if (_load is null)
             {
                 if (_time.GetUtcNow() < _retryAfter) return Task.CompletedTask;
@@ -115,15 +119,17 @@ internal sealed class CachedRemoteList<T> where T : class
     private async Task<Loaded?> LoadCoreAsync(bool refresh, CancellationToken cancellationToken)
     {
         var cached = ReadCache();
-        if (!refresh && cached is not null && _time.GetUtcNow() - cached.FetchedAtUtc < _freshness && Index(cached.Entries!) is { } fresh) return fresh;
+        if (!refresh && cached is not null && _time.GetUtcNow() - cached.FetchedAtUtc < _freshness && Index(cached.Entries!) is { } fresh)
+            return fresh with { FreshFrom = cached.FetchedAtUtc };
         try
         {
             var text = await TrustedDownload.GetStringAsync(_http, _url, _policy, cancellationToken: cancellationToken).ConfigureAwait(false);
             var entries = _parse(text);
             if (entries.Count > 0 && Index(entries) is { } live)
             {
-                Persist(new CacheFile { FetchedAtUtc = _time.GetUtcNow(), Entries = [.. live.Entries] });
-                return live;
+                var now = _time.GetUtcNow();
+                Persist(new CacheFile { FetchedAtUtc = now, Entries = [.. live.Entries] });
+                return live with { FreshFrom = now };
             }
             AppLog.Warn("game-links", $"{_name} list had no games; keeping the last good copy");
         }
@@ -132,7 +138,9 @@ internal sealed class CachedRemoteList<T> where T : class
         {
             AppLog.Warn("game-links", $"{_name} list download failed; using the last good copy if there is one", ex);
         }
-        return cached?.Entries is { Count: > 0 } stale ? Index(stale) : null;
+        return cached?.Entries is { Count: > 0 } stale && Index(stale) is { } kept
+            ? kept with { FreshFrom = _time.GetUtcNow() - _freshness + FailureRetryDelay }
+            : null;
     }
 
     private Loaded? Index(IReadOnlyList<T> entries)

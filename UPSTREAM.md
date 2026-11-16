@@ -1508,3 +1508,24 @@ questions name) and the OptiScaler overlay key. The game's own buttons still wor
 hidden games; here it did not, so it changes with this port. Not changed: games set to the global shader / add-on set
 still follow it when the global set is saved (a choice the game itself made, not an apply-to-all), and the DLSS batch
 dialog lists every game because the user ticks each one.
+
+### #292 — Update cadence across restarts, hourly with a token, link lists every 4 h, Refresh rescans (2.8.9–2.9.3)
+
+- **Cadence.** The automatic pass (component updates and Follow newest DLSS / Streamline) runs every 4 hours, every
+  hour while a GitHub token is in use (upstream 2.9.2; the interval is read before each wait, so adding or removing a
+  token changes the next one). The time of the last pass that ran to the end is kept in
+  `~/.local/share/rhi-linux/update-check.json` (a cache: unreadable means "never", and it is replaced). A start waits
+  what is left of the interval since that pass, or runs at once when it is over (upstream 2.8.9: "at least every 4
+  hours, even if you restart RHI"). Linux difference: before this, every start ran a pass at once and any Settings save
+  with automatic updates on ran another; now only turning automatic updates or a Follow toggle on runs one at once.
+  A manual Update All counts as a pass and restarts the countdown, as upstream's manual check does. The hidden
+  `UpdateCheckIntervalHours` setting (always 4) is no longer read. A token GitHub rejected counts as no token.
+  Upstream's floor of 5 minutes before the first periodic check has no counterpart: its launch check runs separately,
+  here the first pass is that check.
+- **Ultra+ and ultrawide fix lists** are kept 4 hours instead of a day, and a list loaded earlier in the session is
+  asked again once it is older than that (the copy in use stays until the new one is in; a list that cannot be fetched
+  is asked again after 5 minutes). The HDR Gaming Database list stays at a day. Full Refresh already downloaded every
+  list again (#174), as upstream 2.8.9 now does.
+- **Refresh rescans the selected game** (upstream 2.9.3 `5b0054b`): Refresh here was always the full refresh (every
+  detector, every cached analysis dropped), so DLSS a game update added or removed already showed at once. Pinned by a
+  test, no code change.

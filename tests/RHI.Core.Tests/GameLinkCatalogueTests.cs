@@ -75,7 +75,7 @@ public sealed class GameLinkCatalogueTests : IDisposable
         => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, type) };
 
     /// <summary>Serves every list; counts requests per host.</summary>
-    private static Fake Lists(Func<HttpRequestMessage, HttpResponseMessage?>? fallback = null) => new(request => ListResponse(request, fallback));
+    internal static Fake Lists(Func<HttpRequestMessage, HttpResponseMessage?>? fallback = null) => new(request => ListResponse(request, fallback));
 
     private static HttpResponseMessage ListResponse(HttpRequestMessage request, Func<HttpRequestMessage, HttpResponseMessage?>? fallback = null)
         => request.RequestUri!.AbsoluteUri switch
@@ -169,12 +169,12 @@ public sealed class GameLinkCatalogueTests : IDisposable
 
         var counting = Lists();
         var second = new GameLinkCatalogue(new HttpClient(counting), CacheDir, timeProvider: clock);
-        clock.Now += TimeSpan.FromHours(23);
+        clock.Now += TimeSpan.FromHours(3); // #292: the Ultra+ and ultrawide lists are kept 4 h, the HDR database a day
         await second.LoadAsync();
-        Assert.Empty(counting.Requests); // younger than 24 h: no request
+        Assert.Empty(counting.Requests); // younger than 4 h: no request
         Assert.Equal("https://theultraplace.com/games/codevein2/", second.UltraPlusPageFor(Named("CODE VEIN II")));
 
-        clock.Now += TimeSpan.FromHours(2);
+        clock.Now += TimeSpan.FromHours(22);
         var broken = new Fake(_ => Text("<html>nothing here</html>", "text/html"));
         var third = new GameLinkCatalogue(new HttpClient(broken), CacheDir, timeProvider: clock);
         await third.LoadAsync();
@@ -802,5 +802,46 @@ public sealed class GameLinksCardMenuTests : IDisposable
         await Asked(GameLinkCatalogue.HdrDatabaseReadmeUrl).WaitAsync(TimeSpan.FromSeconds(30));
         await Asked(OptiScalerWikiCatalogue.CompatibilityListUrl).WaitAsync(TimeSpan.FromSeconds(30)); // the ⓘ dialogs' lists
         await Asked(RenoDxUnrealDatabaseService.LiveUrl).WaitAsync(TimeSpan.FromSeconds(30));
+    }
+}
+
+/// <summary>#292 (upstream 2.8.9): the Ultra+ and ultrawide fix lists are asked again every 4 hours, also while RHI stays open.</summary>
+public sealed class GameLinkListCadenceTests : IDisposable
+{
+    private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-link-cadence-" + Guid.NewGuid().ToString("N"))).FullName;
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+    }
+
+    private sealed class Clock(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task ModLists_AreAskedAgainAfterFourHours_InTheSameSession_TheHdrDatabaseAfterADay()
+    {
+        var clock = new Clock(DateTimeOffset.Parse("2026-11-16T12:00:00Z"));
+        var http = GameLinkCatalogueTests.Lists();
+        var links = new GameLinkCatalogue(new System.Net.Http.HttpClient(http), Path.Combine(_root, "links"), timeProvider: clock);
+        await links.LoadAsync();
+        int Asked(string url) => http.Requests.Count(request => request.RequestUri!.AbsoluteUri == url);
+        Assert.Equal(1, Asked(GameLinkCatalogue.UltraPlusGamesUrl));
+
+        clock.Now += TimeSpan.FromHours(3);
+        await links.LoadAsync();
+        Assert.Equal(1, Asked(GameLinkCatalogue.UltraPlusGamesUrl)); // fresh
+
+        clock.Now += TimeSpan.FromHours(1) + TimeSpan.FromMinutes(1);
+        await links.LoadAsync();
+        Assert.Equal(2, Asked(GameLinkCatalogue.UltraPlusGamesUrl));
+        Assert.Equal(2, Asked(GameLinkCatalogue.LyallReposUrl));
+        Assert.Equal(2, Asked(GameLinkCatalogue.RoseReadmeUrl));
+        Assert.Equal(2, Asked(GameLinkCatalogue.P1xelReadmeUrl));
+        Assert.Equal(1, Asked(GameLinkCatalogue.HdrDatabaseReadmeUrl)); // a day
+        Assert.True(links.UltraPlusLoaded);
     }
 }

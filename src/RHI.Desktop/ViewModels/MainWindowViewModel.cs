@@ -476,7 +476,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         ShaderPackPrefetch = StartShaderPackPrefetch(() => PrefetchShaderPacksAsync(cancel));
     }
 
-    void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate);
+    // #292: a start runs a pass at once only when the last one (kept between launches) is an interval or more ago.
+    void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate: false);
     bool IStartupSteps.AutoUpdateComponents => _settings.AutoUpdateComponents;
 
     /// <summary>#194: the start-up shader-pack prefetch (null while CacheAllShaders is off); a test seam.</summary>
