@@ -104,6 +104,35 @@ public static class AddonPathFolder
         => PathIdentity.AreSame(a, b)
            || (FileIdentity.TryGet(a) is { } left && FileIdentity.TryGet(b) is { } right && left == right);
 
+    /// <summary>
+    /// w13 final review nit (DLSSG's <c>EnsureFolderAsync</c> pattern): creates <paramref name="folder"/> and every missing
+    /// folder above it, outermost first, each journaled before it is made (<see cref="CreatedDirectoryCompensator"/>), so a
+    /// rollback or a crash before the commit removes it again once its files are gone. Every folder made is added to
+    /// <paramref name="created"/> for <see cref="RemoveCreated"/> (the rollback of a scope without a journal).
+    /// </summary>
+    public static async Task CreateJournaledAsync(string folder, DeploymentOperation? operation, List<string> created, CancellationToken cancellationToken)
+    {
+        var missing = new Stack<string>();
+        for (var current = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+             !string.IsNullOrEmpty(current) && !Directory.Exists(current);
+             current = Path.GetDirectoryName(current))
+            missing.Push(current);
+        while (missing.TryPop(out var path))
+        {
+            if (operation is not null)
+                await operation.AddCompensationAsync(CreatedDirectoryCompensator.KindName, CreatedDirectoryCompensator.Describe(path), cancellationToken).ConfigureAwait(false);
+            AtomicFile.CreateDirectoryDurable(path);
+            created.Add(path);
+        }
+    }
+
+    /// <summary>After a rollback: the folders <see cref="CreateJournaledAsync"/> made, deepest first, each only when empty; never a link.</summary>
+    public static void RemoveCreated(IEnumerable<string> created)
+    {
+        foreach (var folder in created.Distinct(StringComparer.Ordinal).OrderByDescending(path => path.Length))
+            if (new DirectoryInfo(folder) is { Exists: true, LinkTarget: null }) FileCleanup.TryDeleteEmptyDirectory(folder);
+    }
+
     /// <summary>True when ReShade's add-on folder for <paramref name="binaryDirectory"/> is not that folder itself.</summary>
     public static bool UsesAddonPath(string binaryDirectory, string deployDirectory)
         => !string.Equals(Trim(binaryDirectory), Trim(deployDirectory), StringComparison.Ordinal);

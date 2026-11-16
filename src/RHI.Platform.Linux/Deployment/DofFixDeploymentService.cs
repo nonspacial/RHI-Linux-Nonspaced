@@ -21,6 +21,10 @@ public sealed class DofFixDeploymentService
 {
     public const string AddonFileName = "renodx-universal_ue-dof-fix.addon64";
     public const string DisplayName = "DOF Fix";
+
+    /// <summary>A DOF Fix add-on RHI's record does not list is in the way (PT-BR presentation pair).</summary>
+    public const string NotOwnedMessage =
+        "Universal UE DOF Fix already exists on disk but is not owned by RHI Linux. The external add-on is protected from overwrite.";
     public const string TagPrefix = "ue-dof-fix-";
     public const string GitHubApiUrl = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100";
     public const string DefaultDownloadBaseUrl = "https://github.com/RankFTW/rhi-repo/releases/download";
@@ -150,7 +154,7 @@ public sealed class DofFixDeploymentService
         var existingRecord = GetRecord(game);
         var existingPath = FindExistingAddonPath(deployDir);
         if (existingPath is not null && existingRecord is null)
-            return ComponentOperationResult.Fail("Universal UE DOF Fix already exists on disk but is not owned by RHI Linux. The external add-on is protected from overwrite.");
+            return ComponentOperationResult.Fail(NotOwnedMessage);
         if (existingRecord is not null && existingPath is not null && !AddonPathFolder.SameFile(existingPath, target))
             return ComponentOperationResult.Fail("The RHI-managed DOF Fix path changed outside RHI. Update is blocked to avoid creating a case-variant duplicate.");
 
@@ -158,7 +162,9 @@ public sealed class DofFixDeploymentService
         {
             var owned = existingRecord.Files.FirstOrDefault(file =>
                 !string.IsNullOrWhiteSpace(file.Path) && AddonPathFolder.SameFile(file.Path, target));
-            if (owned?.Sha256 is not { Length: > 0 })
+            // w13 final review nit: a file at the target the record does not list (AddonPath set since) is not RHI's.
+            if (owned is null) return ComponentOperationResult.Fail(NotOwnedMessage);
+            if (owned.Sha256 is not { Length: > 0 })
                 return ComponentOperationResult.Fail("Existing RHI DOF Fix record has no ownership hash. Update is blocked conservatively.");
             var currentHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(currentHash, owned.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -190,9 +196,12 @@ public sealed class DofFixDeploymentService
         await using var scope = opened!;
         // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the add-on with no record).
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        var createdFolders = new List<string>();
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."));
+            // w13 final review nit: a missing AddonPath folder is created inside the operation, so a rollback removes it.
+            await AddonPathFolder.CreateJournaledAsync(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."),
+                scope.Operation, createdFolders, cancellationToken).ConfigureAwait(false);
             var deployedHash = await scope.PlaceCopyAsync(cached.Path, target, cancellationToken).ConfigureAwait(false);
             foreach (var old in movedFrom)
                 await scope.DeleteAsync(old.Path, cancellationToken).ConfigureAwait(false);
@@ -231,6 +240,7 @@ public sealed class DofFixDeploymentService
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             if (rollback.Committed) return DeploymentScope.Landed("Universal UE DOF Fix", changedFiles: target);
+            if (rollback.RolledBack) AddonPathFolder.RemoveCreated(createdFolders);
             if (rollback.Success) throw;
             throw new IOException($"{ex.Message}{DeploymentScope.RollbackNote(rollback)}", ex);
         }

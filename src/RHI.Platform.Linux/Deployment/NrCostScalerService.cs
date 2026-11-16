@@ -167,6 +167,7 @@ public sealed class NrCostScalerService
         await using var journaled = operation;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         string[] installed;
+        var createdFolders = new List<string>();
         try
         {
             var placed = new List<(string Source, string Target)> { (staged.Proxy, proxyPath), (staged.Ini, iniPath) };
@@ -182,7 +183,8 @@ public sealed class NrCostScalerService
             {
                 var sha = FileHash.Sha256Hex(source);
                 await operation.RecordWriteAsync(target, sha, CancellationToken.None).ConfigureAwait(false);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                // w13 final review nit: a missing AddonPath folder is created inside the operation, so a rollback removes it.
+                await AddonPathFolder.CreateJournaledAsync(Path.GetDirectoryName(target)!, operation, createdFolders, CancellationToken.None).ConfigureAwait(false);
                 await AtomicFile.CopyAsync(source, target, sha, CancellationToken.None, overwrite: false).ConfigureAwait(false);
                 // The INI holds the user's scale; RHI removes it with the scaler whatever it says now.
                 files.Add(new LinuxDeployedFile { Path = target, Sha256 = sha, ExistedBeforeInstall = false, AllowUserChanges = target == iniPath });
@@ -208,6 +210,7 @@ public sealed class NrCostScalerService
         {
             var rollback = await operation.RollbackAsync().ConfigureAwait(false);
             if (rollback.Committed) return DeploymentScope.Landed("NR Cost Scaler");
+            if (rollback.RolledBack) AddonPathFolder.RemoveCreated(createdFolders);
             AppLog.Warn("nr-cost-scaler", "NR Cost Scaler install failed; rolled back" + (rollback.Failures.Count > 0 ? ": " + string.Join("; ", rollback.Failures) : ""), ex);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
@@ -351,6 +354,7 @@ public sealed class NrCostScalerService
         await using var scope = opened!;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var updated = LinuxDeploymentRecordStore.Clone(record);
+        var createdFolders = new List<string>();
         try
         {
             LinuxDeployedFile Entry(string path) => updated.Files.First(f => string.Equals(f.Path, path, StringComparison.Ordinal));
@@ -359,7 +363,8 @@ public sealed class NrCostScalerService
             if (staged.Addon is not null)
             {
                 var moving = addon is not null && !string.Equals(addon.Path, addonPath, StringComparison.Ordinal);
-                Directory.CreateDirectory(Path.GetDirectoryName(addonPath)!);
+                // w13 final review nit: a missing AddonPath folder is created inside the operation, so a rollback removes it.
+                await AddonPathFolder.CreateJournaledAsync(Path.GetDirectoryName(addonPath)!, scope.Operation, createdFolders, CancellationToken.None).ConfigureAwait(false);
                 var sha = await scope.PlaceCopyAsync(staged.Addon, addonPath, CancellationToken.None, overwrite: addon is not null && !moving).ConfigureAwait(false);
                 if (moving)
                 {
@@ -387,6 +392,7 @@ public sealed class NrCostScalerService
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             if (rollback.Committed) return DeploymentScope.Landed("NR Cost Scaler");
+            if (rollback.RolledBack) AddonPathFolder.RemoveCreated(createdFolders);
             AppLog.Warn("nr-cost-scaler", "NR Cost Scaler update failed; rolled back" + (rollback.Failures.Count > 0 ? ": " + string.Join("; ", rollback.Failures) : ""), ex);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }

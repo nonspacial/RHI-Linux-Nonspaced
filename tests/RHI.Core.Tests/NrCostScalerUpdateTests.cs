@@ -320,6 +320,45 @@ public sealed class NrCostScalerUpdateTests : IDisposable
         Assert.False(File.Exists(Addon));
     }
 
+    // w13 final review nit: the AddonPath folder RHI creates is journaled, so a rolled-back install takes it away again.
+    [Fact]
+    public async Task Install_RolledBack_RemovesTheAddonPathFoldersItCreated()
+    {
+        File.WriteAllBytes(Proxy, OwnerRuntime);
+        _records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(_game), GameName = _game.Name, Component = ManagedComponentKind.ShortFuse, BinaryDirectory = Bin, Version = "1.0",
+            Files = [new LinuxDeployedFile { Path = Proxy, Sha256 = Convert.ToHexString(SHA256.HashData(OwnerRuntime)) }]
+        });
+        File.WriteAllText(Path.Combine(Bin, "ReShade.ini"), "[ADDON]\nAddonPath=new\\addons\n");
+        var journal = SimulatedDeath.NewJournal(Path.Combine(_root, "journal-compensated"), _records).Journal;
+        var service = new NrCostScalerService(new HttpClient(new GameLinkCatalogueTests.Fake(Answer)), _records, journal, Path.Combine(_root, "cache"));
+        _records.SaveFaultForTesting = () => new IOException("disk full");
+
+        var result = await service.InstallAsync(_game);
+
+        Assert.False(result.Success);
+        Assert.False(Directory.Exists(Path.Combine(Bin, "new")));
+        Assert.Equal(OwnerRuntime, File.ReadAllBytes(Proxy));
+    }
+
+    // w13 final review nit: the same for an update that moves the add-on into a new AddonPath folder.
+    [Fact]
+    public async Task Update_RolledBack_RemovesTheAddonPathFoldersItCreated()
+    {
+        await InstalledAsync();
+        File.WriteAllText(Path.Combine(Bin, "ReShade.ini"), "[ADDON]\nAddonPath=new\\addons\n");
+        var journal = SimulatedDeath.NewJournal(Path.Combine(_root, "journal-compensated"), _records).Journal;
+        var service = new NrCostScalerService(new HttpClient(new GameLinkCatalogueTests.Fake(Answer)), _records, journal, Path.Combine(_root, "cache"));
+        _records.SaveFaultForTesting = () => new IOException("disk full");
+
+        var result = await service.UpdateAsync(_game);
+
+        Assert.False(result.Success);
+        Assert.False(Directory.Exists(Path.Combine(Bin, "new")));
+        Assert.True(File.Exists(Addon));
+    }
+
     private sealed class NeverRunning : IGameRunningProbe
     {
         public bool IsRunning(DetectedGame game) => false;

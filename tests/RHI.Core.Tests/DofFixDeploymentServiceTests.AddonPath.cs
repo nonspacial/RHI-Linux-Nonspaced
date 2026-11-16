@@ -188,4 +188,44 @@ public sealed partial class DofFixDeploymentServiceTests
         Assert.NotNull(records.Find(game, ManagedComponentKind.DofFix));
         Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
     }
+
+    // w13 final review nit: a file at the AddonPath target that the record does not list is someone else's, and the
+    // refusal says so (not "the record has no ownership hash").
+    [Fact]
+    public async Task Update_AUsersFileAtTheAddonPathTarget_IsRefusedAsNotRhis()
+    {
+        var (service, _, game, http) = CancelFixture("addonpath-foreign-target");
+        using var _http = http;
+        Assert.True((await service.InstallAsync(game)).Success);
+        SetAddonPath(game, ".\\addons");
+        var users = Path.Combine(game.BinaryDirectory!, "addons", DofFixDeploymentService.AddonFileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(users)!);
+        File.WriteAllText(users, "the user's own build");
+
+        var update = await service.UpdateAsync(game);
+
+        Assert.False(update.Success);
+        Assert.Equal(DofFixDeploymentService.NotOwnedMessage, update.Message);
+        Assert.Equal("the user's own build", File.ReadAllText(users));
+    }
+
+    // w13 final review nit: the AddonPath folder RHI creates is journaled, so a rolled-back install takes it away again.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Install_RolledBack_RemovesTheAddonPathFoldersItCreated(bool journaled)
+    {
+        var (unjournaled, records, game, http) = CancelFixture("addonpath-rollback-" + journaled);
+        using var _ = http;
+        var service = journaled
+            ? new DofFixDeploymentService(http, records, new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json"),
+                Path.Combine(_root, "cache-addonpath-rollback-j"), SimulatedDeath.NewJournal(Path.Combine(_root, "addonpath-rollback-journal"), records).Journal)
+            : unjournaled;
+        SetAddonPath(game, ".\\new\\addons");
+        records.SaveFaultForTesting = () => new IOException("disk full");
+
+        await Assert.ThrowsAsync<IOException>(() => service.InstallAsync(game));
+
+        Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "new")));
+    }
 }

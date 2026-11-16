@@ -1798,6 +1798,9 @@ public static class UiLocalizationService
         // #255: an add-on RHI put in reshade.ini's AddonPath folder; a same-named file in the game folder is not RHI's.
         (RHI.Platform.Linux.Deployment.AddonPathFolder.LeftInGameFolderPrefix,
             "Não é do RHI, então ficou na pasta do jogo (o ReShade carrega add-ons do AddonPath do reshade.ini, não de lá): "),
+        // w13 final review nit: a DOF Fix add-on at the target that RHI's record does not list.
+        (RHI.Platform.Linux.Deployment.DofFixDeploymentService.NotOwnedMessage,
+            "O Universal UE DOF Fix já existe no disco, mas não pertence ao RHI Linux. O add-on externo está protegido contra sobrescrita."),
         // w13 final review m1: the add-on is recorded outside the AddonPath folder; the update check names the move.
         (RHI.Platform.Linux.Deployment.AddonPathFolder.MoveDueSuffix,
             " não está na pasta do AddonPath do reshade.ini, de onde o ReShade carrega add-ons; Atualizar o move para lá."),
