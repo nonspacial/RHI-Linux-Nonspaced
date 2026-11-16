@@ -120,6 +120,32 @@ public sealed partial class GitHubReShadeAddonDeploymentServiceTests : IDisposab
         Assert.Contains(AddonPathFolder.LeftInGameFolderPrefix + old, again.Message);
     }
 
+    // w13 final review m3: AddonPath reaching the game folder through a link names RHI's own copy; the update must not
+    // delete the add-on it just wrote as "the old copy".
+    [Fact]
+    public async Task Update_AddonPathLinksToTheGameFolder_KeepsTheAddon()
+    {
+        var game = CreateGame();
+        WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
+        var payload = MakePePayload(150 * 1024);
+        var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest);
+        using var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri.Contains("api.github")
+            ? JsonResponse(json)
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) }));
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "addonpath-link-records.json"));
+        var service = NewReLimiter(http, store);
+        Assert.True((await service.InstallAsync(game)).Success);
+        var addon = Path.Combine(game.BinaryDirectory!, "relimiter.addon64");
+        Directory.CreateSymbolicLink(Path.Combine(game.BinaryDirectory!, "addons"), game.BinaryDirectory!);
+        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "reshade.ini"), "[ADDON]\nAddonPath=addons\n");
+
+        var update = await service.UpdateAsync(game);
+
+        Assert.True(update.Success, update.Message);
+        Assert.True(File.Exists(addon));
+    }
+
     [Fact]
     public async Task Install_ProtectsExternalTarget()
     {

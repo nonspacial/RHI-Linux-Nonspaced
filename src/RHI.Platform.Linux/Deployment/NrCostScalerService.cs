@@ -314,6 +314,8 @@ public sealed class NrCostScalerService
         // #255: the add-on moves to reshade.ini's AddonPath folder when that is set or changed after the install.
         var (addonPath, addonPathRefusal) = CompanionAddonPath(directory, game.PrefixPath);
         if (addonPathRefusal is not null) return ComponentOperationResult.Fail(addonPathRefusal);
+        // w13 final review m3: the AddonPath target reached another way (a linked folder) is RHI's own add-on: not a move.
+        if (addon is not null && AddonPathFolder.SameFile(addon.Path, addonPath)) addonPath = addon.Path;
         if ((addon is null || !string.Equals(addon.Path, addonPath, StringComparison.Ordinal)) && (File.Exists(addonPath) || Directory.Exists(addonPath)))
             return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + addonPath);
         var iniIsRhis = File.Exists(ini.Path) && ini.Sha256 is { Length: > 0 } && FileHash.HexEquals(FileHash.Sha256Hex(ini.Path), ini.Sha256);
@@ -402,7 +404,7 @@ public sealed class NrCostScalerService
         var addon = record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals(CompanionAddonName, StringComparison.OrdinalIgnoreCase));
         if (addon is null) return false;
         var (path, refusal) = CompanionAddonPath(record.BinaryDirectory, game.PrefixPath);
-        return refusal is null && !string.Equals(addon.Path, path, StringComparison.Ordinal);
+        return refusal is null && !AddonPathFolder.SameFile(addon.Path, path);
     }
 
     /// <summary>

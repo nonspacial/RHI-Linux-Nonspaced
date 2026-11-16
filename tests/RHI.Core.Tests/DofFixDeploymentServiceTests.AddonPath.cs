@@ -167,4 +167,25 @@ public sealed partial class DofFixDeploymentServiceTests
         Assert.Equal(moved, records.Find(game, ManagedComponentKind.DofFix)!.Files.Single().Path);
         Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
     }
+
+    // w13 final review m3: AddonPath reaching the game folder through a link names RHI's own file; the move's delete of
+    // "the old copy" must not delete the add-on it just wrote.
+    [Fact]
+    public async Task Update_AddonPathLinksToTheGameFolder_KeepsTheAddon()
+    {
+        var (service, records, game, http) = CancelFixture("addonpath-symlink");
+        using var _ = http;
+        Assert.True((await service.InstallAsync(game)).Success);
+        var addon = Path.Combine(game.BinaryDirectory!, DofFixDeploymentService.AddonFileName);
+        Directory.CreateSymbolicLink(Path.Combine(game.BinaryDirectory!, "addons"), game.BinaryDirectory!);
+        SetAddonPath(game, "addons");
+
+        Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
+        var update = await service.UpdateAsync(game);
+
+        Assert.True(update.Success, update.Message);
+        Assert.True(File.Exists(addon));
+        Assert.NotNull(records.Find(game, ManagedComponentKind.DofFix));
+        Assert.False((await service.CheckUpdateAsync(game)).UpdateAvailable);
+    }
 }

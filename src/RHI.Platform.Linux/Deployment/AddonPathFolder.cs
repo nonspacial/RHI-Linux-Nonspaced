@@ -1,3 +1,5 @@
+using RHI.Core.Deployment;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Detection.Launchers;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -91,6 +93,16 @@ public static class AddonPathFolder
         }
         return null;
     }
+
+    /// <summary>
+    /// w13 final review m3: true when <paramref name="a"/> and <paramref name="b"/> reach the same file — the same path
+    /// once every symlinked folder is resolved, or the same device and inode (a hard link, a bind mount). An AddonPath that
+    /// reaches the game folder through a link names RHI's own copy, so a move-on-update must not delete it as "the old
+    /// copy" after writing the new one there.
+    /// </summary>
+    public static bool SameFile(string a, string b)
+        => PathIdentity.AreSame(a, b)
+           || (FileIdentity.TryGet(a) is { } left && FileIdentity.TryGet(b) is { } right && left == right);
 
     /// <summary>True when ReShade's add-on folder for <paramref name="binaryDirectory"/> is not that folder itself.</summary>
     public static bool UsesAddonPath(string binaryDirectory, string deployDirectory)

@@ -154,8 +154,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         // Protect any same-family external/legacy add-on before network access.
         foreach (var candidate in FindComponentAddonFiles(deployDir, _definition.Kind))
         {
-            if (existingManaged is not null &&
-                Path.GetFullPath(candidate).Equals(Path.GetFullPath(existingManaged.Path), StringComparison.Ordinal))
+            if (existingManaged is not null && AddonPathFolder.SameFile(candidate, existingManaged.Path))
                 continue;
             return ComponentOperationResult.Fail($"External {_definition.DisplayName} installation detected at {candidate}. RHI Linux will not overwrite, remove or stack it automatically.");
         }
@@ -216,8 +215,9 @@ public sealed class GitHubReShadeAddonDeploymentService
                 createdConfigSha = FileHash.Sha256Hex(createdConfig);
             }
 
+            // w13 final review m3: never the target itself reached another way (AddonPath linking to the game folder).
             if (existingManaged is not null &&
-                !Path.GetFullPath(existingManaged.Path).Equals(Path.GetFullPath(target), StringComparison.Ordinal) &&
+                !AddonPathFolder.SameFile(existingManaged.Path, target) &&
                 File.Exists(existingManaged.Path))
             {
                 await scope.DeleteAsync(existingManaged.Path, cancellationToken).ConfigureAwait(false);

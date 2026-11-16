@@ -81,9 +81,8 @@ public sealed class DofFixDeploymentService
         if (string.IsNullOrWhiteSpace(gameDir)) return false;
         var folder = AddonPathFolder.Resolve(gameDir, game.PrefixPath);
         if (folder.Refusal is not null) return false;
-        var target = Path.GetFullPath(Path.Combine(folder.Folder, AddonFileName));
-        return record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path)
-                                        && !Path.GetFullPath(file.Path).Equals(target, StringComparison.Ordinal));
+        var target = Path.Combine(folder.Folder, AddonFileName);
+        return record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path) && !AddonPathFolder.SameFile(file.Path, target));
     }
 
     public Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -152,14 +151,13 @@ public sealed class DofFixDeploymentService
         var existingPath = FindExistingAddonPath(deployDir);
         if (existingPath is not null && existingRecord is null)
             return ComponentOperationResult.Fail("Universal UE DOF Fix already exists on disk but is not owned by RHI Linux. The external add-on is protected from overwrite.");
-        if (existingRecord is not null && existingPath is not null &&
-            !Path.GetFullPath(existingPath).Equals(Path.GetFullPath(target), StringComparison.Ordinal))
+        if (existingRecord is not null && existingPath is not null && !AddonPathFolder.SameFile(existingPath, target))
             return ComponentOperationResult.Fail("The RHI-managed DOF Fix path changed outside RHI. Update is blocked to avoid creating a case-variant duplicate.");
 
         if (existingRecord is not null && File.Exists(target))
         {
             var owned = existingRecord.Files.FirstOrDefault(file =>
-                Path.GetFullPath(file.Path).Equals(Path.GetFullPath(target), StringComparison.Ordinal));
+                !string.IsNullOrWhiteSpace(file.Path) && AddonPathFolder.SameFile(file.Path, target));
             if (owned?.Sha256 is not { Length: > 0 })
                 return ComponentOperationResult.Fail("Existing RHI DOF Fix record has no ownership hash. Update is blocked conservatively.");
             var currentHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
@@ -168,10 +166,11 @@ public sealed class DofFixDeploymentService
         }
 
         // #255: RHI's copy at another path (the game folder, before AddonPath was set) moves to the add-on folder; it is
-        // deleted only while it still holds what RHI placed.
+        // deleted only while it still holds what RHI placed, and never when it is the target itself reached another way
+        // (w13 final review m3: AddonPath linking to the game folder; the copy overwrote it, the delete would remove it).
         var movedFrom = existingRecord?.Files
             .Where(file => !string.IsNullOrWhiteSpace(file.Path) && File.Exists(file.Path)
-                           && !Path.GetFullPath(file.Path).Equals(Path.GetFullPath(target), StringComparison.Ordinal))
+                           && !AddonPathFolder.SameFile(file.Path, target))
             .ToArray() ?? [];
         foreach (var old in movedFrom)
         {

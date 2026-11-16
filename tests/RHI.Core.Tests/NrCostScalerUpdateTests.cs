@@ -299,6 +299,27 @@ public sealed class NrCostScalerUpdateTests : IDisposable
         Assert.False((await service.CheckUpdateAsync(_game)).UpdateAvailable);
     }
 
+    // w13 final review m3: AddonPath reaching the binary folder through a link names RHI's own add-on: not a move, and
+    // the update never deletes the file it just wrote.
+    [Fact]
+    public async Task Update_AddonPathLinksToTheBinaryFolder_UpdatesTheAddonInPlace()
+    {
+        var service = await InstalledAsync();
+        Directory.CreateSymbolicLink(Path.Combine(Bin, "addons"), Bin);
+        File.WriteAllText(Path.Combine(Bin, "ReShade.ini"), "[ADDON]\nAddonPath=addons\n");
+        Assert.False((await service.CheckUpdateAsync(_game)).UpdateAvailable);
+        _tag = "v1.0.7";
+        _zip = Package("v1.0.7");
+
+        var update = await service.UpdateAsync(_game);
+
+        Assert.True(update.Success, update.Message);
+        Assert.Equal("MZ addon v1.0.7", File.ReadAllText(Addon));
+        var removed = await service.RemoveAsync(_game);
+        Assert.True(removed.Success, removed.Message);
+        Assert.False(File.Exists(Addon));
+    }
+
     private sealed class NeverRunning : IGameRunningProbe
     {
         public bool IsRunning(DetectedGame game) => false;

@@ -1291,8 +1291,8 @@ public sealed class RenoDxDeploymentService
         AttributesToSkip = 0
     };
 
-    private static bool PathsEqual(string left, string right)
-        => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.Ordinal);
+    /// <summary>w13 final review m3: one file, however it is reached (a linked AddonPath folder), so a move never deletes its target.</summary>
+    private static bool PathsEqual(string left, string right) => AddonPathFolder.SameFile(left, right);
 
     private static bool IsAuxiliaryRenoDxAddon(string fileName)
         => fileName.Contains("dlss5", StringComparison.OrdinalIgnoreCase) ||

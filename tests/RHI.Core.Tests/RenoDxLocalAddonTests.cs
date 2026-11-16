@@ -82,6 +82,23 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         Assert.Equal(sourceBytes, File.ReadAllBytes(source));
     }
 
+    // w13 final review m3: AddonPath reaching the binary folder through a link names RHI's own add-on; installing over it
+    // must not delete the file it just wrote as "the old copy".
+    [Fact]
+    public async Task Reinstall_AddonPathLinksToTheBinaryFolder_KeepsTheAddon()
+    {
+        Assert.True((await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64"))).Success);
+        var target = Path.Combine(Bin, "renodx-foogame.addon64");
+        Directory.CreateSymbolicLink(Path.Combine(Bin, "addons"), Bin);
+        File.WriteAllText(Path.Combine(Bin, "reshade.ini"), "[ADDON]\nAddonPath=addons\n");
+
+        var again = await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64", size: 4096));
+
+        Assert.True(again.Success, again.Message);
+        Assert.True(File.Exists(target));
+        Assert.Equal(4096, new FileInfo(target).Length);
+    }
+
     [Fact]
     public async Task TheAddonsOwnBitnessMustMatchTheGame_WithAPlainReason()
     {
