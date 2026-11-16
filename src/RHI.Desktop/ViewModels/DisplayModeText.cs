@@ -21,9 +21,40 @@ public static class DisplayModeText
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
 
-    public static string Label(DisplayModeItem item) => T("Dm.Item." + item.Key);
-    public static string Help(DisplayModeItem item) => T("Dm.Help." + item.Key);
-    public static string Group(DisplayModeGroup group) => T("Dm.Group." + group);
+    // Every item's name and help key, written out so the key checks see each one.
+    private static readonly IReadOnlyDictionary<string, (string Label, string Help)> ItemKeys = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase)
+    {
+        [DisplayModeItemKeys.RdxPeakNits] = ("DmItem.RdxPeakNits", "DmHelp.RdxPeakNits"),
+        [DisplayModeItemKeys.RdxGameNits] = ("DmItem.RdxGameNits", "DmHelp.RdxGameNits"),
+        [DisplayModeItemKeys.RdxUiNits] = ("DmItem.RdxUiNits", "DmHelp.RdxUiNits"),
+        [DisplayModeItemKeys.UlTargetFps] = ("DmItem.UlTargetFps", "DmHelp.UlTargetFps"),
+        [DisplayModeItemKeys.DcFpsLimit] = ("DmItem.DcFpsLimit", "DmHelp.DcFpsLimit"),
+        [DisplayModeItemKeys.DriverFpsCap] = ("DmItem.DriverFpsCap", "DmHelp.DriverFpsCap"),
+        [DisplayModeItemKeys.MfgMode] = ("DmItem.MfgMode", "DmHelp.MfgMode"),
+        [DisplayModeItemKeys.DlssSrPreset] = ("DmItem.DlssSrPreset", "DmHelp.DlssSrPreset"),
+        [DisplayModeItemKeys.DlssSrScale] = ("DmItem.DlssSrScale", "DmHelp.DlssSrScale"),
+        [DisplayModeItemKeys.DlssRrPreset] = ("DmItem.DlssRrPreset", "DmHelp.DlssRrPreset"),
+        [DisplayModeItemKeys.DlssRrScale] = ("DmItem.DlssRrScale", "DmHelp.DlssRrScale"),
+        [DisplayModeItemKeys.RsPreset] = ("DmItem.RsPreset", "DmHelp.RsPreset"),
+        [DisplayModeItemKeys.RsOverlayKey] = ("DmItem.RsOverlayKey", "DmHelp.RsOverlayKey"),
+        [DisplayModeItemKeys.RsScreenshotKey] = ("DmItem.RsScreenshotKey", "DmHelp.RsScreenshotKey"),
+        [DisplayModeItemKeys.RsGamepadNav] = ("DmItem.RsGamepadNav", "DmHelp.RsGamepadNav"),
+        [DisplayModeItemKeys.UlOsdKey] = ("DmItem.UlOsdKey", "DmHelp.UlOsdKey"),
+        [DisplayModeItemKeys.Hdr] = ("DmItem.Hdr", "DmHelp.Hdr"),
+        [DisplayModeItemKeys.Resolution] = ("DmItem.Resolution", "DmHelp.Resolution"),
+    };
+
+    public static string Label(DisplayModeItem item) => ItemKeys.TryGetValue(item.Key, out var k) ? T(k.Label) : item.Key;
+    public static string Help(DisplayModeItem item) => ItemKeys.TryGetValue(item.Key, out var k) ? T(k.Help) : "";
+
+    public static string Group(DisplayModeGroup group) => T(group switch
+    {
+        DisplayModeGroup.HdrAndBrightness => "DmGroup.HdrAndBrightness",
+        DisplayModeGroup.FrameRate => "DmGroup.FrameRate",
+        DisplayModeGroup.Image => "DmGroup.Image",
+        DisplayModeGroup.Controls => "DmGroup.Controls",
+        _ => "DmGroup.Launch"
+    });
 
     /// <summary>The name of a mode ("Custom" and "Off" in the UI language; the user's own names as typed).</summary>
     public static string ModeName(string? modeId, string? name)
@@ -37,9 +68,9 @@ public static class DisplayModeText
         {
             case DisplayModeValueKind.Choice:
                 if (item.Choices == DisplayModeChoices.Resolution && value.StartsWith(DisplayModeItems.ResolutionOff, StringComparison.Ordinal))
-                    return T("Dm.Choice.Off");
+                    return T("DmChoice.Off");
                 if (item.Choices == DisplayModeChoices.Resolution && value.StartsWith(DisplayModeItems.ResolutionOn, StringComparison.Ordinal))
-                    return T("Dm.Choice.ResolutionOn");
+                    return T("DmChoice.ResolutionOn");
                 return Choices(item).FirstOrDefault(c => c.Value.Equals(value, StringComparison.OrdinalIgnoreCase))?.Label ?? value;
             case DisplayModeValueKind.ReShadeKey:
                 return ReShadeHotkeyCodec.TryParse(value, out var binding) ? binding.ToDisplayText() : value;
@@ -47,7 +78,7 @@ public static class DisplayModeText
                 return value.Length == 0 ? T("Dm.None") : value;
             case DisplayModeValueKind.Number:
             case DisplayModeValueKind.Decimal:
-                if (item.AllowZero && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && d == 0) return T("Dm.Choice.Off");
+                if (item.AllowZero && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && d == 0) return T("DmChoice.Off");
                 return item.Unit is null ? value : $"{value} {item.Unit}";
             default:
                 return value;
@@ -60,19 +91,19 @@ public static class DisplayModeText
         switch (item.Choices)
         {
             case DisplayModeChoices.OffOn01:
-                return [new("0", T("Dm.Choice.Off")), new("1", T("Dm.Choice.On"))];
+                return [new("0", T("DmChoice.Off")), new("1", T("DmChoice.On"))];
             case DisplayModeChoices.FpsLimit:
                 return DisplayModeItems.FpsLimitValues.Select(v => new DisplayModeChoice(v, v switch
                 {
-                    DisplayModeItems.FpsGlobal => T("Dm.Choice.FollowGlobal"),
-                    "0" => T("Dm.Choice.Off"),
+                    DisplayModeItems.FpsGlobal => T("DmChoice.FollowGlobal"),
+                    "0" => T("DmChoice.Off"),
                     _ => $"{v} FPS"
                 })).ToList();
             case DisplayModeChoices.FrameGeneration:
                 return DisplayModeItems.FrameGenerationValues.Select(v => new DisplayModeChoice(v, v switch
                 {
-                    DisplayModeItems.FrameGenerationOff => T("Dm.Choice.Off"),
-                    DisplayModeItems.FrameGenerationDynamic => T("Dm.Choice.Dynamic"),
+                    DisplayModeItems.FrameGenerationOff => T("DmChoice.Off"),
+                    DisplayModeItems.FrameGenerationDynamic => T("DmChoice.Dynamic"),
                     _ => (int.Parse(v[DisplayModeItems.FrameGenerationFixedPrefix.Length..], CultureInfo.InvariantCulture) + 1) + "x"
                 })).ToList();
             case DisplayModeChoices.SrPreset:
@@ -81,11 +112,11 @@ public static class DisplayModeText
                 return Presets(OptionLists.DlssPresets(DlssPresetCatalogue.Current.RayReconstruction));
             case DisplayModeChoices.RenderScale:
                 return DisplayModeItems.RenderScaleValues.Select(v => new DisplayModeChoice(v,
-                    v == "0" ? T("Dm.Choice.GameDecides") : OptionLists.NvidiaRenderScale.Display(uint.Parse(v, CultureInfo.InvariantCulture)))).ToList();
+                    v == "0" ? T("DmChoice.GameDecides") : OptionLists.NvidiaRenderScale.Display(uint.Parse(v, CultureInfo.InvariantCulture)))).ToList();
             case DisplayModeChoices.HdrMode:
                 return OptionLists.HdrMode.Values.Select(v => new DisplayModeChoice(v, OptionLists.HdrMode.Display(v))).ToList();
             case DisplayModeChoices.Resolution:
-                var list = new List<DisplayModeChoice> { new(DisplayModeItems.ResolutionOff, T("Dm.Choice.Off")), new(DisplayModeItems.ResolutionOn, T("Dm.Choice.ResolutionOn")) };
+                var list = new List<DisplayModeChoice> { new(DisplayModeItems.ResolutionOff, T("DmChoice.Off")), new(DisplayModeItems.ResolutionOn, T("DmChoice.ResolutionOn")) };
                 foreach (var size in (resolutions ?? OptionLists.GameResolution.Values).Distinct(StringComparer.OrdinalIgnoreCase))
                     if (DisplayResolution.Parse(size) is { } parsed) list.Add(new(parsed.ToString(), parsed.ToString()));
                 return list;
@@ -98,11 +129,31 @@ public static class DisplayModeText
         => list.Values.Select(v => new DisplayModeChoice(v.ToString(CultureInfo.InvariantCulture), list.Display(v))).ToList();
 
     /// <summary>Why an item cannot be used for a game now.</summary>
-    public static string Reason(DisplayModeUnavailable reason) => T("Dm.Why." + reason);
+    public static string Reason(DisplayModeUnavailable reason) => reason switch
+    {
+        DisplayModeUnavailable.None => "",
+        DisplayModeUnavailable.NoGameFolder => T("DmWhy.NoGameFolder"),
+        DisplayModeUnavailable.NoReShadeIni => T("DmWhy.NoReShadeIni"),
+        DisplayModeUnavailable.ReShadeNotManaged => T("DmWhy.ReShadeNotManaged"),
+        DisplayModeUnavailable.RenoDxNotManaged => T("DmWhy.RenoDxNotManaged"),
+        DisplayModeUnavailable.ReLimiterNotManaged => T("DmWhy.ReLimiterNotManaged"),
+        DisplayModeUnavailable.NoReLimiterIni => T("DmWhy.NoReLimiterIni"),
+        DisplayModeUnavailable.DisplayCommanderNotManaged => T("DmWhy.DisplayCommanderNotManaged"),
+        DisplayModeUnavailable.NvidiaNotOffered => T("DmWhy.NvidiaNotOffered"),
+        DisplayModeUnavailable.FpsLimitNotOffered => T("DmWhy.FpsLimitNotOffered"),
+        DisplayModeUnavailable.HdrNotOffered => T("DmWhy.HdrNotOffered"),
+        _ => T("DmWhy.ResolutionNotOffered")
+    };
 
     /// <summary>A mode name problem.</summary>
     public static string NameProblem(DisplayModeNameProblem problem)
-        => problem == DisplayModeNameProblem.TooLong ? TF("Dm.Name.TooLong", DisplayModeStore.MaxNameLength) : T("Dm.Name." + problem);
+        => problem switch
+        {
+            DisplayModeNameProblem.TooLong => TF("DmName.TooLong", DisplayModeStore.MaxNameLength),
+            DisplayModeNameProblem.Empty => T("DmName.Empty"),
+            DisplayModeNameProblem.Reserved => T("DmName.Reserved"),
+            _ => T("DmName.Taken")
+        };
 
     /// <summary>One line for the status bar (upstream <c>SwitchResult.Summary</c>).</summary>
     public static string Summary(DisplayModeService.SwitchResult result)

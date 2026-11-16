@@ -245,10 +245,10 @@ public sealed class DisplayModesPresenterTests : IDisposable
     [Fact]
     public void EveryItemGroupAndReason_HasEnglishAndPortugueseText()
     {
-        var keys = DisplayModeItems.All.SelectMany(i => new[] { "Dm.Item." + i.Key, "Dm.Help." + i.Key })
-            .Concat(DisplayModeItems.Groups.Select(g => "Dm.Group." + g))
-            .Concat(Enum.GetNames<DisplayModeUnavailable>().Where(n => n != "None").Select(n => "Dm.Why." + n))
-            .Concat(Enum.GetNames<DisplayModeNameProblem>().Select(n => "Dm.Name." + n))
+        var keys = DisplayModeItems.All.SelectMany(i => new[] { "DmItem." + i.Key, "DmHelp." + i.Key })
+            .Concat(DisplayModeItems.Groups.Select(g => "DmGroup." + g))
+            .Concat(Enum.GetNames<DisplayModeUnavailable>().Where(n => n != "None").Select(n => "DmWhy." + n))
+            .Concat(Enum.GetNames<DisplayModeNameProblem>().Select(n => "DmName." + n))
             .Concat(["Dm.MenuButton", "Dm.MenuButtonTip", "Dm.CogTip", "Dm.MenuOff", "Dm.Label", "Dm.Off", "Dm.Custom"]);
         foreach (var language in new[] { "en-US", "pt-BR" })
         {

@@ -198,7 +198,7 @@ internal static class DisplayModeValueEditor
                 var placeholder = item.Kind switch
                 {
                     DisplayModeValueKind.Number or DisplayModeValueKind.Decimal => item.AllowZero
-                        ? $"{unsetLabel} ({item.Min:0}–{item.Max:0}, 0 = {T("Dm.Choice.Off")})" : $"{unsetLabel} ({item.Min:0}–{item.Max:0})",
+                        ? $"{unsetLabel} ({item.Min:0}–{item.Max:0}, 0 = {T("DmChoice.Off")})" : $"{unsetLabel} ({item.Min:0}–{item.Max:0})",
                     DisplayModeValueKind.ReLimiterKey => T("Dm.KeyPlaceholder"),
                     _ => unsetLabel
                 };

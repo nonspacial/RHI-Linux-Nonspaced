@@ -448,7 +448,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonStoreUnavailableException)
         {
             RHI.Core.Services.AppLog.Warn("display-modes", "Could not save display-modes.json", ex);
-            return TF("Dm.NotSaved", ex.Message);
+            return TF("Dm.NotSaved", UiLocalizationService.Present(ex.Message));
         }
     }
 

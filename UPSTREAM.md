@@ -2808,7 +2808,8 @@ Remove from RHI: upstream's Classic+ keeps it in the **Management** section (`De
 Copy Report) — Management is not Tabs-only. Linux has no Management section yet, so until it is ported Remove from RHI
 is the second row of the ⚙ panel (a red "Remove from RHI…" button that closes the panel and asks with the existing
 confirmation and uninstall offer), rather than staying a header action beside Favourite / Hide, which upstream never
-had. Upstream 2.9.3's other cog rows (RHI overlay, Display modes) are not ported (no overlay or display modes here).
+had. Upstream 2.9.3's RHI overlay row is not ported (no overlay here); its Display modes row came with #311 (lane
+display-modes).
 
 ### #317 follow-up — a DLSS5 Tool install brings the game's DLSS to the newest
 
@@ -2827,3 +2828,55 @@ a game whose update inclusion leaves DLSS out (#178) keeps its DLSS files, as Fo
 "pinned choice" the DLSS section respects; "hidden" versions are respected by using the section's "Latest"); a failure
 of this step never fails the install. The DLSS5 Tool row's note now says the install does this, instead of "for the
 newest DLSS use the DLSS section".
+
+## Parity notes (upstream 2.8.9–2.9.4, lane display-modes)
+
+### #311 — Display modes (Monitor / TV / Custom per game) (2.9.3)
+
+Ported from upstream's 2.9.4 end state (`0d9b39f`, `0002440`, `5f409de`, `0e75521`; no later change to the feature).
+
+- **What carries through.** Settings › Display & HDR › Display modes: Show on game pages (Off / On, off by default), the
+  modes (Monitor and TV to start, up to six; Edit… / Rename / Move up / Move down / Delete; Add mode; names up to 24
+  characters, "Custom" reserved, no duplicates) and Switch all games (a mode, or Off last). A mode's Edit… lists the
+  items in upstream's groups and order; a value applies to every game switched to that mode, and anything set in any
+  mode is swapped by every game. The switch: one button per mode beside the HDR and resolution rows (the game's own
+  highlighted; clicking it again turns the mode off), one "Display mode: …" button with a menu above four modes, and a
+  ⚙ with the game's display mode settings (current mode; Custom mode: create, tick what it changes and set values,
+  delete). The game menu has a Display mode submenu under Add to collection (Off, the modes, Display mode settings…),
+  and the game's ⚙ beside the title a Display modes row (Choose…). Upstream's rules: switching remembers a game's values
+  from before modes when it leaves Off; a mode without a value gives the normal value (the global setting, else the
+  value from before modes) and never inherits the previous mode's; Off writes the normal values; a game that is running
+  is refused ("Close … first"); Switch all skips hidden and running games; deleting a mode turns its games off.
+- **The swap on Linux.** RenoDX peak / game / UI brightness: every `[renodx-preset*]` section of ReShade.ini, both
+  spellings (`toneMapPeakNits` / `ToneMapPeakNits`) as upstream's Beta 3 fix. ReShade preset (`PresetPath`), overlay and
+  screenshot keys and `GamepadNavigation`: ReShade.ini (keys into every `ReShade*.ini`). ReLimiter `target_fps` /
+  `osd_toggle_key`: relimiter.ini beside the add-on and RE Framework's `_storage_` copy (0 removes `target_fps`, as
+  ReLimiter's Apply to all does). Display Commander `fps_limit`: DisplayCommander.ini. A missing ini is "no value", not 0.
+  The NVIDIA driver FPS limit maps to the per-game FPS limit (#310: `DXVK_FRAME_RATE` / `VKD3D_FRAME_RATE`; Follow global
+  = no limit of its own; the list is upstream's driver caps plus #310's VRR presets). DLSS frame generation (Off, 2x–6x,
+  Dynamic), the SR / RR presets and render scales: the game's NVIDIA settings (#211, dxvk-nvapi launch variables).
+  Windows HDR on launch: the game's HDR launch mode (Off / Gamescope / Native Wayland, #250/#251); resolution on launch:
+  the resolution switch (#191; Off, On with the game's size, or a size).
+- **Linux deviations.** RTX HDR peak brightness is not offered: RTX HDR is a Windows driver feature with no Wine/Proton
+  equivalent. The HDR display choice is not offered: RHI does not choose which display gets HDR (gamescope and the
+  Wayland session decide). Per-mode launch arguments are not ported yet: Linux has no per-game launch arguments to
+  replace (a direct launch runs the stored launch command; store clients take their own launch options), and appending
+  arguments to an arbitrary launch command is not safe; owner decision on #311. Upstream treats HDR and resolution as
+  launch-time values that the HDR / RES buttons show; on Linux a switch writes them into the game's launch settings in
+  the library file (as the page's own HDR and resolution rows do), so the page, the launch and the copied launch options
+  all show the mode's value, and Off puts back the game's own, size included. Only components RHI installed are written
+  (a ReShade, ReLimiter, Display Commander or RenoDX the user installed is left alone, as the INI ⚙ and the
+  "write to all" buttons do); an item that cannot be used for a game is skipped and the ⚙ says why. The FPS limit and
+  NVIDIA items need what the page needs for them (a launcher that takes variables; an NVIDIA GPU). Every ini change is
+  one journaled write on the owning component's record (RenoDX, ReShade, ReLimiter or Display Commander): a crash
+  before the record is saved puts the file back. A value the game already has is not written again (upstream rewrites
+  it; the file ends the same).
+- **Upstream's keep rule.** While a game is in a mode, ReShade / RenoDX / ReLimiter / Display Commander installs and
+  updates (every install and update path goes through one hook) and the Settings "write to all games" buttons (peak
+  brightness, ReShade settings, ReLimiter settings, INI deploys) read the game's swapped values first and write them
+  back afterwards; a fresh ini (ReLimiter installed while in a mode) gets the mode's value.
+- **Store.** `~/.config/rhi-linux/display-modes.json` (atomic JSON store; an unreadable file is set aside and never
+  saved over): the on/off switch, the modes and each game's state by its library key. Upstream keeps them in
+  settings.json. The ReShade.ini "keep updated" lock that upstream checks for global values has no Linux counterpart.
+- **For other page layouts.** The switch is a reusable view (`DisplayModeSwitchView`, attached with
+  `MainWindow.AttachDisplayModeSwitch`) over `DisplayModesPresenter`; the Tabs and Spotlight layouts host it the same way.

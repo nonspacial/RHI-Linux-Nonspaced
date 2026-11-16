@@ -46,6 +46,19 @@ internal static class GameSettingsView
             root.Children.Add(Row(T("Steam.BlockUpdates"), T("Steam.BlockUpdatesTip"), steam));
         }
 
+        // w14/display-modes (#311, upstream 2.9.3 AddDisplayModeRow): Display modes · Choose… opens the game's display mode settings.
+        if (vm.GameSettingsHasDisplayModesRow && vm.SelectedGame is { } dmGame && vm.DisplayModes.OpenGameSettings is { } openDisplayModes)
+        {
+            var choose = new Button { Name = "GameSettingsDisplayModes", Classes = { "rhi" }, Content = T("Dm.GsChoose") };
+            choose.Click += (_, _) =>
+            {
+                close();
+                _ = openDisplayModes(dmGame);
+            };
+            root.Children.Add(Row(T("Dm.CardTitle"), vm.DisplayModes.Enabled
+                ? UiLocalizationService.Format("Dm.GsDesc", vm.DisplayModes.ActiveModeName(dmGame)) : T("Dm.GsDescOff"), choose));
+        }
+
         Button? remove = null;
         if (vm.GameSettingsHasRemoveRow)
         {
