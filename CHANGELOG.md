@@ -8,14 +8,39 @@ listed in [`docs/download-trust.md`](docs/download-trust.md).
 
 Releases are published on [GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases). The first,
 `2.8.7`, is level with upstream RHI 2.8.7 and takes its number; later releases of this project alone add a fourth
-number (`2.8.7.1`). The port of the next upstream release takes that release's number (`2.8.8`) and is published only
-once upstream's release leaves beta; until then its builds carry a beta label (`2.8.8-beta.1`) and are not released yet.
+number (`2.8.7.1`). The port of an upstream release takes that release's number (`2.8.8`) and is published only once
+upstream's release leaves beta; until then its builds carry a beta label (such as `2.8.8-beta.1`) and are not published.
 
 ## In progress
 
-Not on `main` yet: wave 13 below (draft; it takes its date when it reaches `main`).
+Not on `main` yet: nothing at the moment.
 
-### Wave 13 (draft): the upstream RHI 2.8.8 release — Available mods, add-ons in reshade.ini's AddonPath
+## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
+
+- The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one
+  `SHA256SUMS`). It holds everything in the wave entries below, up to and including wave 13, and is level with the
+  upstream RHI 2.8.8 release (tag `RHI-2.8.8`). How each upstream feature was adapted for Linux:
+  [`UPSTREAM.md`](UPSTREAM.md).
+- The app now reports version `2.8.8`, so 2.8.7.1, 2.8.7 and the unpublished 2.8.8 beta builds announce this release
+  as newer.
+- Before going back to 2.8.7.1 or 2.8.7, read the notes at the top of the wave-13 and wave-12 entries below.
+
+## Wave 13 — 2026-11-16: the upstream RHI 2.8.8 release — Available mods, add-ons in reshade.ini's AddonPath
+
+> [!WARNING]
+> Before going back to 2.8.7.1 or 2.8.7, do these first as well as those in the wave-12 entry; they do not know what
+> this build added:
+>
+> - **Remove RTX 20 FG Unlock (DLSSG 20/30)** from every game where this build installed it or repaired it with
+>   Update. The older builds do not know the mod's release package: their Update and Update All put the old single DLL
+>   in place of the package's proxy, so frame generation stops starting again, and their Remove leaves the
+>   `dlssg_sm86` folder behind. Install it again once you are back on this build.
+> - **Remove the Universal UE DOF Fix from games whose `reshade.ini` sets an `AddonPath`.** This build moved it into
+>   that folder; the older builds' next DOF Fix update puts a new copy beside the executable, where ReShade ignores it,
+>   and forgets the copy in the AddonPath folder, which ReShade keeps loading and RHI no longer owns. Install it again
+>   once you are back on this build.
+>
+> The NR Cost Scaler's companion add-on needs nothing: the older builds find it through its install record.
 
 Mods list
 
@@ -58,11 +83,6 @@ Settings
 - **The GitHub token is recommended**, as upstream now says: without one GitHub allows 60 requests an hour and installs
   and update checks fail once they run out; with one, 5,000. The note says how to make one (a classic token with no
   scopes).
-
-## 2.8.8 beta 1 — not released yet
-
-- Installed builds only: it holds everything in the wave entries below, up to and including wave 12, is level with
-  upstream RHI 2.8.8 beta, and is published as 2.8.8 once upstream RHI 2.8.8 leaves beta.
 
 ## Wave 12 — 2026-10-28: Universal MFG again, shader headers, HDR controls where they apply, Epic in prefixes
 

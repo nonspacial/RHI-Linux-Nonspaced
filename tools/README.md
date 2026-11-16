@@ -2,7 +2,7 @@
 
 ## fj.py — local Forgejo tracker helper
 
-`fj.py` talks to the local Forgejo issue tracker for this fork (repo `infra/RHI-Linux`).
+`fj.py` talks to the local Forgejo issue tracker for this fork (repo `nope/RHI-Linux`).
 It uses only the Python standard library and reads every setting from the environment.
 It holds no secrets.
 
@@ -12,7 +12,7 @@ Keep the credentials in an env file outside the repository, mode `600`:
 
 ```sh
 FORGEJO_BASE=http://127.0.0.1:3000/api/v1
-FORGEJO_OWNER=infra
+FORGEJO_OWNER=nope
 FORGEJO_REPO=RHI-Linux
 FORGEJO_TOKEN=<token with write:issue>
 ```
