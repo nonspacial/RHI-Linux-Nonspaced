@@ -1541,3 +1541,25 @@ release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
   install, the XeMFG section with "XeSS files: installed / missing", and the ReShade-as-dxgi.dll warning at 5x/6x
   (Linux wording points at installing ReShade under another DLL name instead of upstream's DLL naming overrides).
   Upstream's "Open GitHub page" button is the row's ⓘ.
+
+### #279 — MFG Unlock (formerly MFG Ada Unlock): rename, frame-generation method, XeSS files with backup, DX11 warning (2.8.9/2.9.2)
+
+- The row, its ⚙ and RHI's own messages say **MFG Unlock**; the component key, records and the add-on file
+  (`renodx-mfgunlock.addon64`) are unchanged, and the upstream manifest's `packageName` ("MFG Ada Unlock") is no longer
+  shown (`KeepDisplayName`). The ⓘ opens the mod's GitHub page (#285).
+- New ⚙ (upstream's `BuildMfgAdaCogContent`): **Frame generation method** writes `[Backend] Selected` (`DLSSG`/`XeMFG`)
+  and `[DLSSG] XmxGenerator` (`0`/`1`) to `MFGAdaUnlock.ini` in the game's executable folder (the mod reads it from
+  there, not from the add-on folder); **DLSS-SR input (experimental)** writes `[Adapters] DlssSr` and is greyed out
+  unless the method is Intel XeMFG (CUDA). A missing file reads as the mod's defaults and a change creates it; other
+  lines and comments are kept. The help texts sit under each row, as upstream. **Open MFGAdaUnlock.ini** is greyed out
+  while the file does not exist.
+- Intel XeSS files (shared service above): `libxess_fg.dll` and `libxell.dll` go in the game's executable folder; a game
+  copy of another build is kept as `<file>.mfgada-original` and put back on removal; an identical copy is left alone.
+  The step runs as its own journaled operation after the add-on's install or update, with MFG Unlock's record as its
+  commit point (the add-on's update keeps the list when it rebuilds the record). Removal puts the game's copies back
+  first and refuses, removing nothing, when that cannot be done. Linux deviation: a download that fails never fails the
+  add-on's install; the message says so and Update adds the files.
+- ⚙ status: "ready", "missing (…)" or "a version MFG Unlock doesn't accept (…)", judged by RHI's pinned file or upstream's
+  accepted versions (libxess_fg 1.3.1.78, libxell 1.3.2.10 / 1.3.0.5) read from the PE version resource.
+- API warning, as upstream (only in the ⚙): any DirectX 12 among the game's APIs is fine; Vulkan gets the "experimental"
+  text; DirectX 8–11 or OpenGL get "won't work here". Linux reads the effective API list (manifest or detection).

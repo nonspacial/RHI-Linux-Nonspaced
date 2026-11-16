@@ -284,6 +284,14 @@ public sealed class IntelXessFiles
     /// <summary>Whether a record has placed (or deliberately recorded) XeSS files under <paramref name="prefix"/>.</summary>
     public static bool HasEntries(IReadOnlyDictionary<string, string> metadata, string prefix) => metadata.ContainsKey(MetadataKey(prefix));
 
+    /// <summary>Copies every component's XeSS entries from <paramref name="previous"/> into a record rebuilt by an update.</summary>
+    public static void CarryMetadata(LinuxDeploymentRecord? previous, LinuxDeploymentRecord rebuilt)
+    {
+        if (previous is null) return;
+        foreach (var (key, value) in previous.Metadata.Where(pair => pair.Key.EndsWith(".IntelXess", StringComparison.OrdinalIgnoreCase)))
+            rebuilt.Metadata.TryAdd(key, value);
+    }
+
     /// <summary>Marks a record as having had its XeSS step, even when nothing needed placing (an existing install is then not asked again).</summary>
     public static void MarkDone(IDictionary<string, string> metadata, string prefix, IReadOnlyList<IntelXessEntry> entries)
         => metadata[MetadataKey(prefix)] = JsonSerializer.Serialize(entries);

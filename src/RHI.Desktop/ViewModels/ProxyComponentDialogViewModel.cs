@@ -9,7 +9,7 @@ using RHI.Platform.Linux.Deployment;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>The component dialogs that share one layout: a proxy DLL (and GPU generation) choice, then check / update.</summary>
-public enum ProxyComponentDialogKind { Dlssg2030, DlssEnabler, UniversalMfg, RtxEncore }
+public enum ProxyComponentDialogKind { Dlssg2030, DlssEnabler, UniversalMfg, RtxEncore, MfgUnlock }
 
 /// <summary>
 /// The DLSS FG 20/30 unlock, standalone DLSS Enabler and Universal MFG settings dialogs (epic #89 unit 7): one view
@@ -81,6 +81,25 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 (Width, Height, MinWidth, MinHeight) = (660, 470, 540, 380);
                 break;
             }
+            case ProxyComponentDialogKind.MfgUnlock: // w14/extras-fg (#279): settings only, no proxy name
+            {
+                var record = shell.GetMfgUnlockRecord();
+                Title = "MFG Unlock"; // a product name, the same in every language
+                Intro = T("Mfgu.Intro");
+                ProxyLabel = "";
+                ProxyOptions = [];
+                HasProxy = false;
+                IsInstalled = record is not null;
+                ShowsCheck = false;
+                var content = FgSettingsBuilder.MfgUnlock(shell.SelectedGame!, record?.BinaryDirectory ?? shell.SelectedGame?.BinaryDirectory,
+                    record is null ? [] : shell.ManagedForFgSettings.MfgUnlockXessState(record.BinaryDirectory), record is not null, ShowMessage);
+                (Sections, Lines, FileButtons) = (content.Sections, content.Lines, content.Files);
+                CheckLabel = "";
+                UpdateLabel = "";
+                FooterNote = "";
+                (Width, Height, MinWidth, MinHeight) = (700, 560, 560, 420);
+                break;
+            }
             case ProxyComponentDialogKind.RtxEncore: // w4/encore (#158)
             {
                 var record = shell.GetRtxEncoreRecord();
@@ -133,6 +152,11 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
             }
         }
         WindowTitle = $"{Title} — {game}";
+        foreach (var row in Sections.SelectMany(section => section.Rows))
+        {
+            row.Changed = ShowMessage;
+            row.Refresh();
+        }
         _loading = false;
         _shell.Operations.PropertyChanged += OnOperationsChanged;
     }
@@ -146,6 +170,26 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
 
     /// <summary>The proxy-name row shows (hidden while Universal MFG Unlocker is, or would be, an OptiScaler plugin).</summary>
     public bool HasProxy { get; } = true;
+
+    /// <summary>w14/extras-fg: the mod's own settings (#279 MFG Unlock, #281 20/30 FG Unlock, #280 RTX Encore), by section.</summary>
+    public IReadOnlyList<ComponentSettingSection> Sections { get; } = [];
+    public bool HasSections => Sections.Count > 0;
+
+    /// <summary>w14/extras-fg: the "Open &lt;file&gt;" buttons (the mod's ini, log or jsonc).</summary>
+    public IReadOnlyList<ComponentFileButton> FileButtons { get; } = [];
+    public bool HasFileButtons => FileButtons.Count > 0;
+
+    /// <summary>Check / Update show (installed, and the dialog has them: MFG Unlock updates through its row and Update All).</summary>
+    public bool ShowsCheck { get => _showsCheck ?? IsInstalled; private init => _showsCheck = value; }
+    private readonly bool? _showsCheck;
+
+    /// <summary>A setting's or a file button's line; every row's enabled state and every button follow it.</summary>
+    private void ShowMessage(string message)
+    {
+        Message = message;
+        foreach (var row in Sections.SelectMany(section => section.Rows)) row.Refresh();
+        foreach (var button in FileButtons) button.Refresh();
+    }
 
     /// <summary>#278: Universal MFG Unlocker's ⚙ sections, in upstream's order.</summary>
     internal static IReadOnlyList<ComponentDialogLine> UniversalMfgLines(UniversalMfgStatus? status, bool installed)

@@ -257,7 +257,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail(wineRunning);
 
         if (_records.Find(game, ManagedComponentKind.MfgAdaUnlock) is not null)
-            return ComponentOperationResult.Fail("MFG Ada Unlock já está ativo. Remova-o antes de instalar o RTX 20 FG Unlock legado; os dois métodos de desbloqueio de Frame Generation não devem compartilhar o mesmo processo.");
+            return ComponentOperationResult.Fail("MFG Unlock já está ativo. Remova-o antes de instalar o RTX 20 FG Unlock legado; os dois métodos de desbloqueio de Frame Generation não devem compartilhar o mesmo processo.");
 
         if (_records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
             return ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar o RTX 20 FG Unlock legado; os dois métodos não devem disputar o mesmo pipeline de Frame Generation.");

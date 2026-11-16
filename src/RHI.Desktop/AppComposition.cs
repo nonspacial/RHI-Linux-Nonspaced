@@ -206,12 +206,13 @@ internal sealed class AppComposition
         var mfgAdaUnlock = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.MfgAdaUnlock,
             "mfgunlock",
-            "MFG Ada Unlock",
+            "MFG Unlock",
             "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases?per_page=1",
             128 * 1024,
             ExactAssetName64: "renodx-mfgunlock.addon64",
             DeployFileName64: "renodx-mfgunlock.addon64",
-            X64Only: true));
+            X64Only: true,
+            KeepDisplayName: true)); // #279: shown as MFG Unlock
         var dlssg2030Preferences = new Dlssg2030PreferenceStore();
         var dlssg2030 = new Dlssg2030UnlockDeploymentService(http, records, wineOverrides, dlssg2030Preferences, journal: journal);
         var dlssEnablerPreferences = new StandaloneDlssEnablerPreferenceStore();
@@ -356,6 +357,7 @@ internal sealed class AppComposition
             // w12/pins rows
             // w12/hdr-wsi rows
             );
+        managedComponents.MfgUnlockFiles = new MfgUnlockFiles(intelXess, records, journal); // w14/extras-fg (#279)
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows

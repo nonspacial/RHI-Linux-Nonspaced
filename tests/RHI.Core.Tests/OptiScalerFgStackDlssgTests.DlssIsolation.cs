@@ -189,7 +189,7 @@ public sealed partial class OptiScalerFgStackDlssgTests
         Assert.Contains(owned[expectedKind].Owned, unfiltered);
     }
 
-    // up-135 re-review minor 1: the Streamline component row (which also gates MFG Ada Unlock) counts only the game's
+    // up-135 re-review minor 1: the Streamline component row (which also gates MFG Unlock) counts only the game's
     // own Streamline, like the DLSS panel — never RHI's OptiScaler/Streamline stack.
     [Fact]
     public void ComponentProbe_StreamlineRowIgnoresTheOptiScalerStack()

@@ -78,7 +78,7 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-check rows
             // w12 lane rows: update checks (one arm each)
             // w12/mfg rows
-            ManagedComponentKind.MfgAdaUnlock => await _mfgAdaUnlock.CheckUpdateAsync(game, cancellationToken: cancellationToken).ConfigureAwait(false), // #237
+            ManagedComponentKind.MfgAdaUnlock => await CheckMfgUnlockUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #237; w14/extras-fg hook (#279)
             ManagedComponentKind.Dlssg2030Unlock => await _dlssg2030.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #238
             ManagedComponentKind.UltimateAsiLoader => await _ultimateAsiLoader.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #238
             // w12/shaders rows
@@ -158,7 +158,7 @@ public sealed partial class LinuxManagedComponentService
             // w11/nr-check rows
             // w12 lane rows: updates (one arm each)
             // w12/mfg rows
-            ManagedComponentKind.MfgAdaUnlock => _mfgAdaUnlock.UpdateAsync(game, cancellationToken: cancellationToken), // #237
+            ManagedComponentKind.MfgAdaUnlock => UpdateMfgUnlockAsync(game, cancellationToken), // #237; w14/extras-fg hook (#279)
             ManagedComponentKind.Dlssg2030Unlock => _dlssg2030.UpdateAsync(game, cancellationToken), // #238
             ManagedComponentKind.UltimateAsiLoader => _ultimateAsiLoader.UpdateAsync(game, cancellationToken), // #238
             // w12/shaders rows
@@ -248,10 +248,10 @@ public sealed partial class LinuxManagedComponentService
     private Task<ComponentOperationResult> InstallMfgAdaUnlockAsync(DetectedGame game, CancellationToken cancellationToken)
     {
         if (_records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null)
-            return Task.FromResult(ComponentOperationResult.Fail("RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Ada Unlock."));
+            return Task.FromResult(ComponentOperationResult.Fail("RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar MFG Unlock."));
         if (_records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
-            return Task.FromResult(ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar MFG Ada Unlock."));
-        return _mfgAdaUnlock.InstallAsync(game, cancellationToken);
+            return Task.FromResult(ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar MFG Unlock."));
+        return InstallMfgUnlockWithFilesAsync(game, cancellationToken); // w14/extras-fg hook (#279)
     }
 
     public Task<ComponentOperationResult> RemoveAsync(
@@ -293,7 +293,7 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.OptiScaler => RemoveOptiScalerMovingUniversalMfgAsync(game, cancellationToken), // w14/extras-fg hook (#278)
             ManagedComponentKind.ReLimiter => _relimiter.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.DisplayCommander => _displayCommander.RemoveAsync(game, cancellationToken),
-            ManagedComponentKind.MfgAdaUnlock => _mfgAdaUnlock.RemoveAsync(game, cancellationToken),
+            ManagedComponentKind.MfgAdaUnlock => RemoveMfgUnlockAsync(game, cancellationToken), // w14/extras-fg hook (#279)
             ManagedComponentKind.Dlssg2030Unlock => _dlssg2030.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.DlssEnablerStandalone => _dlssEnablerStandalone.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.RemoveAsync(game, cancellationToken),

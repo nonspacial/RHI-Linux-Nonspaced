@@ -60,7 +60,7 @@ public static class ComponentProbe
             && BinarySignatureInspector.LooksLikeRtxEncore(path));
 
         // RHI's own OptiScaler FG stack (OptiScaler/Streamline/sl.*) is not the game's Streamline: the DLSS panel and
-        // Universal MFG already ignore the OptiScaler/ folder, and MFG Ada Unlock needs the game's own integration.
+        // Universal MFG already ignore the OptiScaler/ folder, and MFG Unlock needs the game's own integration.
         var stackRoot = !string.IsNullOrWhiteSpace(game.InstallPath) ? game.InstallPath : game.BinaryDirectory;
         var ownStreamline = indexedFiles.Any(path =>
         {
@@ -83,7 +83,7 @@ public static class ComponentProbe
             Make(ManagedComponentKind.Streamline, "Streamline", ownStreamline),
             Make(ManagedComponentKind.ReLimiter, "ReLimiter", files.Any(IsReLimiterAddonFileName)),
             Make(ManagedComponentKind.DisplayCommander, "Display Commander", files.Any(IsDisplayCommanderAddonFileName)),
-            Make(ManagedComponentKind.MfgAdaUnlock, "MFG Ada Unlock", files.Any(IsMfgAdaUnlockAddonFileName)),
+            Make(ManagedComponentKind.MfgAdaUnlock, "MFG Unlock", files.Any(IsMfgAdaUnlockAddonFileName)),
             Make(ManagedComponentKind.Dlssg2030Unlock, "RTX 20 FG Unlock (Legacy Experimental)", dlssg2030Installed),
             // Standalone DLSS Enabler uses a generic proxy filename, so a bare version/dxgi/etc.
             // is not sufficient evidence. RHI ownership records upgrade this row to Installed later.

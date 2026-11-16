@@ -33,6 +33,14 @@ Wave 14 — extras-fg
     OptiScaler's ⚙.
   - Installing it where ReShade is warns that XeMFG standalone does not start while ReShade is loaded, with **Don't
     show this again**. The ⚙ explains XeMFG, says whether its files are there and warns about ReShade as `dxgi.dll`.
+- **MFG Unlock** (formerly MFG Ada Unlock, upstream 2.8.9/2.9.2): the row and its messages use the mod's new name;
+  your installs carry over. Its new ⚙ has the **Frame generation method** (NVIDIA DLSS-G, Intel XeMFG (CUDA), XeMFG via
+  DLSS-G (XMX)) and **DLSS-SR input (experimental)** for XeMFG (CUDA), saved in the game's `MFGAdaUnlock.ini`, and an
+  Open MFGAdaUnlock.ini button.
+  - Installing it also installs Intel's XeSS files its XeMFG modes need in the game folder. A game's own older copies
+    (Of Ash and Steel) are kept as `<file>.mfgada-original` and put back when you remove the mod. **Existing installs
+    get them with Update or Update All**, and the ⚙ says whether the right files are there.
+  - The ⚙ warns when the game can't use it: DirectX 11 and older don't work, Vulkan is experimental.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

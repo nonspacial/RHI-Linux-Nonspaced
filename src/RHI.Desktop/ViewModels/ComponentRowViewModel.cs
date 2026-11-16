@@ -161,6 +161,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w14 lane rows: component-row members (one member each)
     // w14/extras-fg rows
     public string? GitHubInfoUrl => component.Availability == ComponentAvailability.Unsupported ? null : GitHubInfoUrlFor(component.Kind); // #285: ⓘ opens the mod's GitHub page
+    public bool HasMfgUnlockSettings => component.Kind == ManagedComponentKind.MfgAdaUnlock && component.Availability is not ComponentAvailability.Unsupported; // #279: MFG Unlock ⚙
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 

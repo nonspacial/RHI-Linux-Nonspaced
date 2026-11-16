@@ -598,6 +598,8 @@
                                     Click="Rtx40MfgSettings_Click" ToolTip.Tip="{DynamicResource Ui.Rtx40MfgSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtxEncoreSettings}"
                                     Click="RtxEncoreSettings_Click" ToolTip.Tip="{DynamicResource Ui.RtxEncoreSettingsTip}" Padding="10,6"/>
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasMfgUnlockSettings}"
+                                    Click="MfgUnlockSettings_Click" ToolTip.Tip="{DynamicResource Mfgu.SettingsTip}" Padding="10,6"/><!-- w14/extras-fg (#279) -->
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasReFrameworkSettings}"
                                     Click="ReFrameworkSettings_Click" ToolTip.Tip="{Binding ReFrameworkSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasIniSettings}"

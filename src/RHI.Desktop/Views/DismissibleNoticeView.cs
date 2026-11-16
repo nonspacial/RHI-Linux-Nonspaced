@@ -51,31 +51,3 @@ internal static class DismissibleNoticeView
         return new Parts(root, dontShow, accept, cancel, link);
     }
 }
-
-public partial class MainWindow
-{
-    // w14/extras-fg hook (#285): the window answers the shell's "Don't show this again" notices.
-    private void AttachDismissibleNotices()
-        => DataContextChanged += (_, _) =>
-        {
-            if (DataContext is MainWindowViewModel vm) vm.ConfirmDismissibleAsync = ShowDismissibleNoticeAsync;
-        };
-
-    private async Task<DismissibleNoticeAnswer> ShowDismissibleNoticeAsync(DismissibleNotice notice)
-    {
-        var parts = DismissibleNoticeView.Build(notice, OpenProjectLink);
-        var dialog = new Window
-        {
-            Title = notice.Title,
-            Width = 600,
-            SizeToContent = SizeToContent.Height,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = parts.Root
-        };
-        parts.Cancel.Click += (_, _) => dialog.Close(false);
-        parts.Accept.Click += (_, _) => dialog.Close(true);
-        var accepted = await ShowFittedDialogAsync<bool>(dialog);
-        return new DismissibleNoticeAnswer(accepted, parts.DontShow.IsChecked == true);
-    }
-}

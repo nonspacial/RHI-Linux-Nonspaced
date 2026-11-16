@@ -11,7 +11,7 @@ namespace RHI.Core.Tests;
 
 /// <summary>
 /// Lane w12/mfg through the app's real services (<see cref="ViewModelFixture"/>, offline but for the fake releases each
-/// test serves): Universal MFG (#236), MFG Ada Unlock (#237), DLSSG 20/30 Unlock and Ultimate ASI Loader (#238) as Update
+/// test serves): Universal MFG (#236), MFG Unlock (#237), DLSSG 20/30 Unlock and Ultimate ASI Loader (#238) as Update
 /// All families — update, history, a game that was running caught up at the next pass, removed files never put back.
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("linux")]
@@ -188,7 +188,7 @@ public sealed class MfgUpdateAllTests
         Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")),
             Path.GetFileNameWithoutExtension(proxy), "Game.exe"));
     }
-    // ---- MFG Ada Unlock (#237) and DLSSG 20/30 (#238) rows ------------------------------------------------------------
+    // ---- MFG Unlock (#237) and DLSSG 20/30 (#238) rows ------------------------------------------------------------
 
     // A file the user removed is never put back by an update: the row stays Installed through RHI's record, offers Remove
     // (Install refused or re-created it behind the record before) and says why; Remove clears the record.

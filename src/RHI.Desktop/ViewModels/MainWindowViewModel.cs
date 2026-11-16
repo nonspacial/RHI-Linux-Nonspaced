@@ -201,6 +201,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w14/extras-fg rows
     /// <summary>#285/#278: install notices with "Don't show this again" (closed-source mods, Universal MFG's ReShade warning).</summary>
     public InstallNoticePresenter InstallNotices => InstallNoticePresenter.For(this, _managedComponents, () => new DismissedNoticeStore(Path.Combine(_settingsStore.ConfigRoot, "dismissed-notices.json")));
+    internal LinuxManagedComponentService ManagedForFgSettings => _managedComponents; // #279–#281: the FG unlocks' ⚙ read and write the mods' files
+    /// <summary>#279: RHI's MFG Unlock record for the selected game, or null.</summary>
+    public LinuxDeploymentRecord? GetMfgUnlockRecord() => SelectedGame is null ? null : _managedComponents.GetMfgUnlockRecord(SelectedGame);
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;

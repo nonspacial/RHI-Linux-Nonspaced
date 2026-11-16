@@ -9,7 +9,7 @@ using RHI.Platform.Linux.Deployment;
 namespace RHI.Core.Tests;
 
 /// <summary>
-/// #237 (upstream v2.8.8 Beta abf18c7, AddonPackService.RedeployToTrackedGames): MFG Ada Unlock is an Update All family
+/// #237 (upstream v2.8.8 Beta abf18c7, AddonPackService.RedeployToTrackedGames): MFG Unlock is an Update All family
 /// through the app's wiring (the manifest add-on pack over the generic GitHub add-on service), and an update never
 /// re-creates an add-on file removed outside RHI — for every caller of that service (ReLimiter, Display Commander, the
 /// DLSS5 DX11 Bridge's version switch). Crash tests over MFG Ada's update: Cancel at the write phase, death after the file
@@ -137,7 +137,7 @@ public sealed class MfgAdaUnlockUpdateTests : IDisposable
         var gate = new GateWatchingHandler(release);
         var http = new HttpClient(gate);
         var service = AddonService(kind, kind == ManagedComponentKind.MfgAdaUnlock ? "mfgunlock" : "dlss5-dx11-bridge",
-            kind == ManagedComponentKind.MfgAdaUnlock ? "MFG Ada Unlock" : "DLSS5 DX11 Bridge", http, records, root, journal);
+            kind == ManagedComponentKind.MfgAdaUnlock ? "MFG Unlock" : "DLSS5 DX11 Bridge", http, records, root, journal);
         var history = new ComponentUpdateLogStore(Path.Combine(root, "update-log.json"));
         var managed = new LinuxManagedComponentService(records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!,
             optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: service, dlssg2030: null!,
@@ -462,7 +462,7 @@ public sealed class MfgAdaUnlockUpdateTests : IDisposable
         var f = await InstalledAsync("correction-offline");
         File.Delete(f.Addon);
         var offline = new Offline();
-        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Unlock", new HttpClient(offline), f.Records,
             Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
 
         var check = await cold.CheckUpdateAsync(f.Game);
@@ -479,7 +479,7 @@ public sealed class MfgAdaUnlockUpdateTests : IDisposable
         var f = await InstalledAsync("correction-held-offline");
         using var hold = await FailedUndoHold.ArmAsync(f.Journal, f.Records, f.Game, ManagedComponentKind.MfgAdaUnlock, f.Addon, Release.Payload(0x35));
         var offline = new Offline();
-        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Unlock", new HttpClient(offline), f.Records,
             Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
 
         var check = await cold.CheckUpdateAsync(f.Game);
@@ -498,7 +498,7 @@ public sealed class MfgAdaUnlockUpdateTests : IDisposable
         var halfUndone = Release.Payload(0x37);
         using var hold = await FailedUndoHold.ArmAsync(f.Journal, f.Records, f.Game, ManagedComponentKind.MfgAdaUnlock, f.Addon, halfUndone);
         var offline = new Offline();
-        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Unlock", new HttpClient(offline), f.Records,
             Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
 
         var update = await cold.UpdateAsync(f.Game);
@@ -515,7 +515,7 @@ public sealed class MfgAdaUnlockUpdateTests : IDisposable
         var f = await InstalledAsync("followup-removed-update-offline");
         File.Delete(f.Addon);
         var offline = new Offline();
-        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Ada Unlock", new HttpClient(offline), f.Records,
+        var cold = AddonService(ManagedComponentKind.MfgAdaUnlock, "mfgunlock", "MFG Unlock", new HttpClient(offline), f.Records,
             Directory.CreateDirectory(Path.Combine(f.Root, "cold")).FullName, f.Journal);
 
         var update = await cold.UpdateAsync(f.Game);

@@ -248,7 +248,7 @@ public sealed partial class LinuxManagedComponentService
         ManagedComponentKind.RenoDXUpgrade => "RenoDX Upgrade",
         ManagedComponentKind.ReLimiter => "ReLimiter",
         ManagedComponentKind.DisplayCommander => "Display Commander",
-        ManagedComponentKind.MfgAdaUnlock => "MFG Ada Unlock",
+        ManagedComponentKind.MfgAdaUnlock => "MFG Unlock",
         ManagedComponentKind.Dlss5Feeder => "DLSS5 Feeder",
         ManagedComponentKind.Dlss5Dx11Bridge => "DLSS5 DX11 Bridge",
         ManagedComponentKind.ShortFuse => "ShortFuse",

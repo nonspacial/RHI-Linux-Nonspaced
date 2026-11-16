@@ -833,7 +833,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
 
     private string? FindFrameGenerationConflict(DetectedGame game)
     {
-        if (_records.Find(game, ManagedComponentKind.MfgAdaUnlock) is not null) return "MFG Ada Unlock";
+        if (_records.Find(game, ManagedComponentKind.MfgAdaUnlock) is not null) return "MFG Unlock";
         if (_records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null) return "RTX 20 FG Unlock legado";
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null) return "ShortFuse";
         return null;

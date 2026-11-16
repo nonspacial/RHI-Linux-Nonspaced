@@ -248,5 +248,5 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
                + (xessPlaced is not null ? IntelXessFiles.Notes(xessPlaced) : xessFailure is not null ? XessNotInstalledPrefix + xessFailure : "");
     }
 
-    private const string PrefixMissingMessage = "the game's Wine/Proton prefix was not found.";
+    public const string PrefixMissingMessage = "the game's Wine/Proton prefix was not found.";
 }

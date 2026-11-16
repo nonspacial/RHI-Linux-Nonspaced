@@ -104,7 +104,7 @@ public sealed class GitHubReShadeAddonDeploymentService
     /// <summary>
     /// The install over RHI's record, except that an update never re-creates an add-on file the user removed (#237, upstream
     /// abf18c7 "removed copies reinstalled"): only Remove, then Install, puts it back. Every caller (Update All for ReLimiter,
-    /// Display Commander, MFG Ada Unlock; the DLSS5 DX11 Bridge's version switch) gets that rule.
+    /// Display Commander, MFG Unlock; the DLSS5 DX11 Bridge's version switch) gets that rule.
     /// </summary>
     public async Task<ComponentOperationResult> UpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
     {
@@ -256,6 +256,7 @@ public sealed class GitHubReShadeAddonDeploymentService
                 }
             };
             UserIniService.CarryMetadata(record, installed, createdConfigSha); // w5/ini-presets hook (#181 review 2)
+            IntelXessFiles.CarryMetadata(record, installed); // w14/extras-fg hook (#279): the Intel files MFG Unlock placed stay listed
             _records.Upsert(scope.Stamp(installed));
         }
         catch (Exception ex)
@@ -516,7 +517,7 @@ public sealed class GitHubReShadeAddonDeploymentService
     {
         ManagedComponentKind.ReLimiter => "ReLimiter",
         ManagedComponentKind.DisplayCommander => "Display Commander",
-        ManagedComponentKind.MfgAdaUnlock => "MFG Ada Unlock",
+        ManagedComponentKind.MfgAdaUnlock => "MFG Unlock",
         ManagedComponentKind.Dlss5Feeder => "DLSS5 Feeder",
         ManagedComponentKind.Dlss5Dx11Bridge => "DLSS5 DX11 Bridge",
         _ => kind.ToString()

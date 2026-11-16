@@ -104,6 +104,39 @@ public static class LinuxDesktopOpener
         return false;
     }
 
+    // w14/extras-fg: the FG unlocks' "Open <file>" buttons (MFGAdaUnlock.ini, dlssg_sm86.ini and its log, rtx-encore.jsonc).
+    public const string FileMissingPrefix = "File does not exist: ";
+
+    /// <summary>Opens a regular file with the desktop's default application (the same openers as a folder).</summary>
+    public static bool TryOpenFile(string path, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            error = FileMissingPrefix + path;
+            return false;
+        }
+        Exception? lastError = null;
+        foreach (var startInfo in BuildCandidates(path))
+        {
+            try
+            {
+                var process = Process.Start(startInfo);
+                if (process is not null)
+                {
+                    process.Dispose();
+                    return true;
+                }
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                lastError = ex;
+            }
+        }
+        error = lastError?.Message ?? NoOpenerMessage;
+        return false;
+    }
+
     private static ProcessStartInfo Build(string executable, params string[] arguments)
     {
         var startInfo = new ProcessStartInfo
