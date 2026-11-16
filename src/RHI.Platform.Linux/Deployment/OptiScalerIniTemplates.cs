@@ -129,7 +129,7 @@ public sealed class OptiScalerIniTemplates
     internal static byte[] Shipped(OptiScalerVariant variant, OptiScalerTemplateChoice choice)
     {
         // Upstream's NVIDIA and AMD-with-DLSS files are the same bytes, and Nightly's three are one file.
-        var shared = variant == OptiScalerVariant.Nightly ? "" : UsesDlssInputs(choice) ? ".dlss" : ".nodlss";
+        var shared = variant == OptiScalerVariant.Nightly || OptiScalerForks.IsFork(variant) ? "" : UsesDlssInputs(choice) ? ".dlss" : ".nodlss";
         var name = $"OptiScalerTemplates.OptiScaler{Suffix(variant)}{shared}.ini";
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
                            ?? throw new InvalidOperationException("OptiScaler INI template missing from the build: " + name);
@@ -148,6 +148,7 @@ public sealed class OptiScalerIniTemplates
         OptiScalerVariant.Nightly => "_nightly",
         OptiScalerVariant.DlssNr => "_dlssnr",
         OptiScalerVariant.F5 => "_f5",
+        _ when OptiScalerForks.IsFork(variant) => "_nightly", // #271: forks are OptiScaler 10 builds (upstream: the Nightly template)
         _ => ""
     };
 }

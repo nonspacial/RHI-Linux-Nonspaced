@@ -37,6 +37,10 @@ Not on `main` yet: nothing at the moment.
   - Your four preset slots are one dropdown with Apply, Save current (Overwrite) and a … button to rename or clear.
   - New **Replace with a fresh copy…** at the bottom: asks first, then gives the game the same OptiScaler.ini as a
     fresh install (your GPU, DLSS Inputs and its version). The old file is kept in RHI's data folder.
+- More OptiScaler versions: the recommended forks Venom, NR PreSR MFG, Feeder NR and OpenNR sit beside Stable,
+  Nightly, DLSS NR and F5 DLSSNR. RHI downloads them from their GitHub releases and keeps them up to date like the
+  others; the Neural Rendering forks get NVIDIA's Neural Rendering file (#271, upstream 2.9.2/2.9.3). Custom OptiScaler
+  builds are not in this build yet.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

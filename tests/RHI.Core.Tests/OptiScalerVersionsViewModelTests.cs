@@ -65,7 +65,8 @@ public sealed class OptiScalerVersionsViewModelTests
     [Theory]
     [InlineData("F5", "F5")]
     [InlineData("dlssnr", "DlssNr")]
-    [InlineData("Venom", "Stable")] // unknown (a removed fork): Stable
+    [InlineData("Venom", "Venom")] // #271: a recommended fork
+    [InlineData("NoSuchFork", "Stable")] // unknown: Stable
     [InlineData("", "Stable")]
     public void DefaultVersion_Setting_IsNormalised(string saved, string expected)
     {

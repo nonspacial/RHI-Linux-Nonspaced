@@ -1324,6 +1324,8 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniReplacedPrefix, "O OptiScaler.ini foi substituído por uma cópia nova do seu modelo: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniBackupPrefix, " O arquivo anterior foi guardado em: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniFailedPrefix, "O OptiScaler.ini não foi substituído: "),
+        // #271 forks
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.ForkAssetElsewherePrefix, "O download do fork do OptiScaler não é uma das releases do GitHub dele, então não foi usado: "),
         // #270 versions
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleasePinnedCurrentPrefix, "O OptiScaler está fixado em uma release, então não é atualizado: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleasePinnedNotUpdatedPrefix, "O OptiScaler está fixado em uma release, então não foi atualizado: "),

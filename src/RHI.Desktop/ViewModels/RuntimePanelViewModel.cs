@@ -207,6 +207,10 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OptiScalerVariant.Nightly => "Win.OptiScalerChannelNightly",
         OptiScalerVariant.DlssNr => "Win.OptiScalerChannelDlssNr",
         OptiScalerVariant.F5 => "Win.OptiScalerChannelF5",
+        OptiScalerVariant.Venom => "Osf.Venom", // #271 forks
+        OptiScalerVariant.NrPreSrMfg => "Osf.NrPreSrMfg",
+        OptiScalerVariant.FeederNr => "Osf.FeederNr",
+        OptiScalerVariant.OpenNr => "Osf.OpenNr",
         _ => "Win.OptiScalerChannelStable",
     });
 

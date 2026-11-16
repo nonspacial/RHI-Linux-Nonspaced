@@ -26,7 +26,7 @@ public sealed partial class OptiScalerDeploymentService
     ];
 
     internal static bool SupportsManagedFgStack(LinuxDeploymentRecord record)
-        => GetInstalledVariant(record) is OptiScalerVariant.Nightly or OptiScalerVariant.DlssNr or OptiScalerVariant.F5;
+        => OptiScalerForks.IsOs10(GetInstalledVariant(record)); // Nightly, DLSS NR, F5 and the forks (#271)
 
     internal bool IsManagedFgStackEnabled(LinuxDeploymentRecord record)
         => record.Metadata.TryGetValue(FgStackEnabledMetadataKey, out var enabled)

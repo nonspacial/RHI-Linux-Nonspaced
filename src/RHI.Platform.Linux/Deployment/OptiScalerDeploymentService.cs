@@ -749,6 +749,7 @@ public sealed partial class OptiScalerDeploymentService
         OptiScalerVariant.Nightly => "Nightly",
         OptiScalerVariant.DlssNr => "DLSS NR",
         OptiScalerVariant.F5 => "F5 DLSSNR",
+        _ when OptiScalerForks.Get(variant) is { } fork => fork.Label, // #271
         _ => variant.ToString()
     };
 

@@ -181,7 +181,12 @@ public static class OptionLists
         new(Platform.Linux.Deployment.OptiScalerVariant.Stable, "Ui.OptionStable"),
         new(Platform.Linux.Deployment.OptiScalerVariant.Nightly, "Ui.OptionNightly", null, "Desenvolvimento", "Desenvolvimento (Nightly)"),
         new(Platform.Linux.Deployment.OptiScalerVariant.DlssNr, null, "DLSS NR"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.F5, null, "F5 DLSSNR")); // w3/sync #157
+        new(Platform.Linux.Deployment.OptiScalerVariant.F5, null, "F5 DLSSNR"), // w3/sync #157
+        // #271: the recommended forks after the built-ins (upstream OsVariants.All), by their names
+        new(Platform.Linux.Deployment.OptiScalerVariant.Venom, null, "Venom"),
+        new(Platform.Linux.Deployment.OptiScalerVariant.NrPreSrMfg, null, "NR PreSR MFG"),
+        new(Platform.Linux.Deployment.OptiScalerVariant.FeederNr, null, "Feeder NR"),
+        new(Platform.Linux.Deployment.OptiScalerVariant.OpenNr, null, "OpenNR"));
 
     public static readonly OptionList<LumaModePreference> LumaMode = new(LumaModePreference.Auto, null,
         new(LumaModePreference.Auto, "Ui.OptionAutomatic"),

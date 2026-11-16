@@ -1588,3 +1588,34 @@ pinned by tests.
   is copied to `~/.local/share/rhi-linux/optiscaler-ini-backups/` first. Upstream's mass "Deploy OptiScaler.ini" to
   every game has no Linux counterpart and is not added.
 - Upstream's `optiscaler_presets.json` as published with RHI 2.9.4 is a test fixture.
+
+### #271 — OptiScaler forks (manifest `osForks`); custom builds deferred (2.9.2/2.9.3)
+
+**Forks, ported.** Venom, NR PreSR MFG, Feeder NR and OpenNR sit after Stable, Nightly, DLSS NR and F5 DLSSNR in the
+⚙ version list and in the Default version setting, each with its manifest description as its tooltip and line. Each is
+installed, updated, pinned (#270 Release row) and removed like the built-ins:
+
+- Releases come from the fork's own GitHub repository only: newest by publish date with prereleases (upstream lists
+  them for forks, so Venom's dated nightlies count as its newest), drafts skipped; the asset is the best by upstream's
+  `ScoreAsset` (.7z or .zip; not "Optional-…", forwarder, troubleshooting, source, symbol or checksum files;
+  "optiscaler" in the name and .7z win), ties to the newest upload. The asset link must lie under
+  `https://github.com/<repo>/releases/download/`, else the release is refused. Downloads use the OptiScaler host policy,
+  GitHub's published digest and the per-tag stamped cache (`docs/download-trust.md`).
+- Every fork is an OptiScaler 10 build: the ⚙ gets the Streamline / DLSS Enabler and Reflex rows, OptiPatcher goes
+  to `OptiScaler/plugins` (#273) and a new install takes the Nightly INI template, as upstream.
+- NR PreSR MFG and Feeder NR are marked `needsNrDll` in the manifest: NVIDIA's `nvngx_dlssnr.dll` from the DLSS
+  manifest goes beside them under the one-owner rule (#157), like DLSS NR and F5. They do not need F5's forwarder.
+  OpenNR ships its own NR runtime and gets none.
+- Linux deviation: the fork list is upstream's manifest `osForks` as of RHI 2.9.4, built in, because the version list,
+  the per-game choice and the install records name each version by a fixed value. A fork upstream adds to its manifest
+  later needs an RHI Linux update; a fork removed upstream stays installable here. Upstream's `assetPattern`,
+  `includePrereleases` and `disabled` fields are unused (no current fork sets them).
+- The release lists of the four repositories as served on 2026-11-16 are test fixtures, with upstream's
+  `OsForkTests` asset cases.
+
+**Custom OptiScaler builds: deferred.** Settings › Components › Custom OptiScaler builds (add from a link, a zip, 7z
+or rar, a folder or an OptiScaler.dll, also by drag and drop; Replace, Rename, Remove; the "DLSS NR DLL" tick; never
+auto-updated; Replace offers to redeploy the games using it) is not in this wave. It needs version values that are not
+fixed at build time (the version list, per-game choice, Default version and install records), an import path through
+the archive checks for user-supplied files and links (a trust warning for links outside the download policy), and new
+Settings rows. Tracked on #271.

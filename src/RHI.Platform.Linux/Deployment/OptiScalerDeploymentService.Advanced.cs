@@ -172,7 +172,7 @@ public sealed partial class OptiScalerDeploymentService
             new(MenuShortcutKeySettingId, "Menu", "OptiScaler menu shortcut", Read("Menu", "ShortcutKey"), EnsureCurrent(ShortcutOptions, Read("Menu", "ShortcutKey")))
         };
 
-        if (variant is OptiScalerVariant.Nightly or OptiScalerVariant.DlssNr or OptiScalerVariant.F5)
+        if (OptiScalerForks.IsOs10(variant)) // Nightly, DLSS NR, F5 and the forks (#271)
         {
             var insertAt = rows.FindIndex(setting => setting.Id == "FGInput");
             if (insertAt < 0) insertAt = 0;
