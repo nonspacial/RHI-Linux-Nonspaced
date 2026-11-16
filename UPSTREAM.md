@@ -2383,10 +2383,9 @@ nothing to fix, under Linux + Wine/Proton.
   Here DXVK comes from the selected Wine/Proton runner (never downloaded by RHI), and Universal MFG Unlocker is
   downloaded only by its install, so there was nothing downloaded up front to stop.
 - **Epic client launch fixes** (2.9.0/2.9.2): start the Windows Epic Games Launcher before a direct exe launch and pass
-  its `namespace:item:app` id. Linux Epic games launch through Heroic, Legendary or Lutris (and #262's prefix rules);
-  revisit `18088a3` only if RHI Linux ever launches Epic URIs itself.
+  its `namespace:item:app` id. Linux Epic games launch through Heroic, Legendary or Lutris; revisit `18088a3` only if RHI Linux ever launches Epic URIs itself.
 - **Sign in with GitHub removal** (2.9.0): the browser sign-in was never ported; RHI Linux has always used a GitHub
-  token file (`github_api.txt`, #100), the method upstream now recommends.
+  token file (`github_api.txt`), the method upstream now recommends.
 - **Output colour / admin messages** (2.9.0): Windows' display colour-depth and digital vibrance settings through
   NVAPI with admin rights. Linux display colour belongs to the compositor; HDR output is #251's launch section.
 - **Admin Mode cursor** (2.9.0): the busy cursor while Windows elevates RHI. RHI Linux never runs elevated.
@@ -2399,7 +2398,7 @@ nothing to fix, under Linux + Wine/Proton.
   self-restart, so it has nothing to hold back while a game runs.
 - **RHI-Stats** (upstream's Windows usage statistics tool): not part of RHI Linux; RHI Linux sends no statistics.
 - **Upstream beta channel** (`RankFTW/rhi-beta`): Linux releases follow this fork's own release policy and its own
-  update check (#100), not upstream's beta feed.
+  update check, not upstream's beta feed.
 - **UE3 CPU/RAM after launch** (upstream 2.9.5 Beta 2, `539cf2f`, verified here): upstream watched a launched game by
   searching for processes under the game's folders, and for Remember Me (UE3, no project folder) its Unreal rule made
   that folder `steamapps\common`, so every Steam app counted as the game; its exit wait (`WaitForExitAsync` on
