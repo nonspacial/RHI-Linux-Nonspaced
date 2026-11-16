@@ -190,6 +190,23 @@ public static class DownloadSources
     /// </summary>
     public static readonly TrustedDownloadPolicy DxvkHdr = new(
         "DXVK HDR", "GitHub", GitHubReleaseHosts, maxBytes: 128L * 1024 * 1024);
+    // w14/optiscaler-2 rows
+    /// <summary>
+    /// #271 custom OptiScaler builds added from a link: the user's own choice of host (shown with a trust warning). HTTPS on
+    /// the host the user pasted, or GitHub's release hosts its links redirect to; 512 MB cap; no digest exists. Each link
+    /// gets its own policy (<see cref="OptiScalerCustomBuildFor"/>); this one names the source for the refusal text.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy OptiScalerCustomBuild = new(
+        "Custom OptiScaler build", "the link's own host or GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
+
+    /// <summary>The policy for one custom-build link: its own host plus GitHub's release hosts (same name and refusal text).</summary>
+    public static TrustedDownloadPolicy OptiScalerCustomBuildFor(Uri link)
+        => OptiScalerCustomBuild with { AllowedHosts = [.. OptiScalerCustomBuild.AllowedHosts, link.IdnHost.TrimEnd('.').ToLowerInvariant()] };
+
+    /// <summary>#272 ANR FG: Apex Compute's GitHub releases (its SHA256SUMS and GitHub's published digest are checked).</summary>
+    public static readonly TrustedDownloadPolicy AnrFg = new(
+        "ANR FG", "GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -223,5 +240,7 @@ public static class DownloadSources
         DxvkHdr,
         // w14/extras-addons rows
         Hsf,
+        // w14/optiscaler-2 rows
+        OptiScalerCustomBuild, AnrFg,
     ];
 }

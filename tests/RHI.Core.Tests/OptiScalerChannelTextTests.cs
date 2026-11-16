@@ -22,7 +22,7 @@ public sealed class OptiScalerChannelTextTests
             UiLocalizationService.Apply(language);
             var label = UiLocalizationService.Text("Win.ChannelVariant");
             var options = OptionLists.OptiScalerVariant.Options();
-            Assert.Equal(Enum.GetValues<OptiScalerVariant>().Length, options.Count);
+            Assert.Equal(OptiScalerVersions.All().Count, options.Count);
             Assert.All(options, option => Assert.Contains(option.Display, label, StringComparison.Ordinal));
 
             var descriptions = options.Select(option => RuntimePanelViewModel.OptiScalerChannelText(option.Value)).ToList();

@@ -26,10 +26,10 @@ public sealed class NeuralRenderingRuntimeOwnershipTests : IDisposable
     });
 
     [Theory]
-    [InlineData(OptiScalerVariant.Stable, false)]
-    [InlineData(OptiScalerVariant.Nightly, false)]
-    [InlineData(OptiScalerVariant.DlssNr, true)]
-    [InlineData(OptiScalerVariant.F5, true)]
+    [InlineData("Stable", false)]
+    [InlineData("Nightly", false)]
+    [InlineData("DlssNr", true)]
+    [InlineData("F5", true)]
     public void OnlyTheNrVariantsOfOptiScalerOwnTheRuntime(OptiScalerVariant variant, bool owns)
     {
         Record(ManagedComponentKind.OptiScaler, variant);

@@ -6,26 +6,12 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Deployment;
 
-public enum OptiScalerVariant
-{
-    Stable,
-    Nightly,
-    DlssNr,
-    /// <summary>janblade's F5 DLSSNR multi-pass fork with its bundled NR forwarder (#157, upstream 2.8.7).</summary>
-    F5,
-    // #271: the recommended forks (OptiScalerForks; upstream manifest osForks as of RHI 2.9.4). Appended, so saved values keep their meaning.
-    Venom,
-    NrPreSrMfg,
-    FeederNr,
-    OpenNr
-}
-
 /// <param name="Download">The verified release archive the package was extracted from (record metadata, #26); null when not downloaded through the provider.</param>
 public sealed record OptiScalerPackage(
     string Version,
     string SourceUrl,
     string RootDirectory,
-    OptiScalerVariant Variant = OptiScalerVariant.Stable,
+    OptiScalerVariant Variant = default,
     VerifiedDownload? Download = null);
 
 public interface IOptiScalerPackageProvider
@@ -103,13 +89,11 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
     public const string ReleasePinNotOfferedPrefix = "OptiScaler has no release list for this version: ";
 
     /// <summary>The GitHub repository a channel's releases come from (Stable, DLSS NR, F5); null for Nightly.</summary>
-    public static string? ReleaseRepository(OptiScalerVariant variant) => variant switch
-    {
-        OptiScalerVariant.Stable => "optiscaler/OptiScaler",
-        OptiScalerVariant.DlssNr => "wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass",
-        OptiScalerVariant.F5 => "janblade/OptiScaler-F5-DLSSNR-Multipass",
-        _ => OptiScalerForks.Get(variant)?.Repository
-    };
+    public static string? ReleaseRepository(OptiScalerVariant variant)
+        => variant == OptiScalerVariant.Stable ? "optiscaler/OptiScaler"
+            : variant == OptiScalerVariant.DlssNr ? "wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass"
+            : variant == OptiScalerVariant.F5 ? "janblade/OptiScaler-F5-DLSSNR-Multipass"
+            : OptiScalerForks.Get(variant)?.Repository; // a custom build has no releases (#271: never updated)
 
     /// <summary>The release list (GitHub's newest 30). DLSS NR's is the list the latest install already reads.</summary>
     public static string ReleaseListApiUrl(OptiScalerVariant variant)
@@ -155,24 +139,39 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
                          ?? throw new InvalidOperationException($"{NoRuntimeAssetPrefix}OptiScaler {VariantName(variant)}");
             return await GetReleaseAsync(variant, newest.Tag, cancellationToken).ConfigureAwait(false);
         }
-        var (apiUrl, responseIsList) = variant switch
-        {
-            OptiScalerVariant.Stable => (LatestReleaseApi, false),
-            OptiScalerVariant.Nightly => (NightlyReleasesApi, true),
-            OptiScalerVariant.DlssNr => (DlssNrReleasesApi, true),
-            OptiScalerVariant.F5 => (F5ReleasesApi, false),
-            _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null)
-        };
+        // #271: a custom build is the copy in RHI's data folder; nothing is downloaded and it is never updated.
+        if (variant.IsCustom) return CustomBuildPackage(variant);
+        var (apiUrl, responseIsList) =
+            variant == OptiScalerVariant.Stable ? (LatestReleaseApi, false)
+            : variant == OptiScalerVariant.Nightly ? (NightlyReleasesApi, true)
+            : variant == OptiScalerVariant.DlssNr ? (DlssNrReleasesApi, true)
+            : variant == OptiScalerVariant.F5 ? (F5ReleasesApi, false)
+            : throw new InvalidOperationException(UnknownVersionPrefix + variant.Id);
         return await FetchAsync(apiUrl, responseIsList, variant, expectedVersion: null, cancellationToken).ConfigureAwait(false);
     }
 
-    private static string VariantName(OptiScalerVariant variant) => OptiScalerForks.Get(variant)?.Label ?? variant.ToString();
+    private static string VariantName(OptiScalerVariant variant) => OptiScalerVersions.Label(variant);
+
+    /// <summary>#271: a version this RHI does not know (a fork the manifest never listed, a removed custom build); the id follows.</summary>
+    public const string UnknownVersionPrefix = "This OptiScaler version is not available in RHI any more: ";
+
+    /// <summary>
+    /// #271: the package of a custom build: its folder in RHI's data folder, recorded under its DLL version and origin. Its
+    /// OptiScaler.dll must still be a Windows DLL; an NR-ticked build is installed with nvngx_dlssnr.dll like DLSS NR.
+    /// </summary>
+    internal static OptiScalerPackage CustomBuildPackage(OptiScalerVariant variant)
+    {
+        var build = OptiScalerCustomBuilds.Get(variant) ?? throw new InvalidOperationException(UnknownVersionPrefix + variant.Id);
+        if (!BinarySignatureInspector.HasPeSignature(Path.Combine(build.Directory, "OptiScaler.dll"), 64 * 1024))
+            throw new InvalidOperationException(OptiScalerCustomBuildStore.NotWindowsDllMessage);
+        return new OptiScalerPackage(build.RecordedVersion, build.Origin, build.Directory, variant);
+    }
 
     /// <summary>A package asset name for <paramref name="variant"/>: the built-ins' rules, or upstream's ScoreAsset for a fork.</summary>
     private static bool IsPackageCandidate(string name, OptiScalerVariant variant)
     {
-        if (OptiScalerForks.IsFork(variant)) return OptiScalerForks.ScoreAsset(name) > 0;
-        var requiredExtension = variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5 ? ".zip" : ".7z";
+        if (OptiScalerForks.Get(variant) is { } fork) return OptiScalerForks.IsPackageAsset(fork, name);
+        var requiredExtension = variant == OptiScalerVariant.DlssNr || variant == OptiScalerVariant.F5 ? ".zip" : ".7z";
         return name.EndsWith(requiredExtension, StringComparison.OrdinalIgnoreCase)
                && name.Contains("optiscaler", StringComparison.OrdinalIgnoreCase) && !IsNonRuntimeAssetName(name);
     }
@@ -222,7 +221,9 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
         foreach (var release in doc.RootElement.EnumerateArray())
         {
             if (release.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) continue;
-            if (variant == OptiScalerVariant.Stable && release.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True) continue;
+            // Stable takes no prereleases (upstream); a fork takes them unless its manifest entry says includePrereleases: false.
+            var skipPrereleases = variant == OptiScalerVariant.Stable || OptiScalerForks.Get(variant) is { IncludePrereleases: false };
+            if (skipPrereleases && release.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True) continue;
             var tag = release.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
             if (!IsSafeReleaseTag(tag) || releases.Any(known => known.Tag == tag)) continue;
             if (!HasInstallablePackage(release, variant, tag!)) continue;
@@ -269,7 +270,7 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
     /// </summary>
     public (int Removed, long Bytes) RemoveOldNightlyBuilds(IReadOnlyCollection<string> keep)
     {
-        var root = Path.Combine(_cacheDir, OptiScalerVariant.Nightly.ToString().ToLowerInvariant());
+        var root = Path.Combine(_cacheDir, OptiScalerVariant.Nightly.CacheFolder);
         if (!Directory.Exists(root)) return (0, 0);
         var builds = Directory.GetDirectories(root)
             .Select(dir => (Dir: dir, Build: Path.GetFileName(dir).StartsWith(NightlyTagPrefix, StringComparison.OrdinalIgnoreCase) ? Path.GetFileName(dir)[NightlyTagPrefix.Length..] : ""))
@@ -317,14 +318,14 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
         string? expectedVersion,
         CancellationToken cancellationToken)
     {
-        var requiredExtension = OptiScalerForks.IsFork(variant) ? ".7z/.zip" : variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5 ? ".zip" : ".7z";
+        var requiredExtension = OptiScalerForks.IsFork(variant) ? ".7z/.zip" : variant == OptiScalerVariant.DlssNr || variant == OptiScalerVariant.F5 ? ".zip" : ".7z";
         var json = await TrustedDownload.GetStringAsync(_http, apiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
 
         var release = SelectRelease(doc.RootElement, responseIsList);
         var rawTag = release.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
         if (string.IsNullOrWhiteSpace(rawTag))
-            throw new InvalidOperationException($"GitHub release response did not contain an OptiScaler {variant} tag.");
+            throw new InvalidOperationException($"GitHub release response did not contain an OptiScaler {VariantName(variant)} tag.");
         var version = NormalizeVersion(rawTag, variant);
         if (expectedVersion is not null && !string.Equals(version, expectedVersion, StringComparison.Ordinal))
             throw new InvalidOperationException((variant == OptiScalerVariant.Nightly ? NightlyBuildMismatchPrefix : ReleaseMismatchPrefix) + rawTag);
@@ -345,7 +346,7 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
             candidates = [candidates.First(asset => asset.GetProperty("name").GetString() == f5)];
         }
         if (candidates.Count == 0)
-            throw new InvalidOperationException($"{NoRuntimeAssetPrefix}OptiScaler {variant} {rawTag} ({requiredExtension})");
+            throw new InvalidOperationException($"{NoRuntimeAssetPrefix}OptiScaler {VariantName(variant)} {rawTag} ({requiredExtension})");
 
         var selected = candidates
             .OrderByDescending(asset => OptiScalerForks.IsFork(variant) ? OptiScalerForks.ScoreAsset(asset.GetProperty("name").GetString() ?? "") : 0)
@@ -372,7 +373,7 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
 
         var variantRoot = variant == OptiScalerVariant.Stable
             ? _cacheDir
-            : Path.Combine(_cacheDir, variant.ToString().ToLowerInvariant());
+            : Path.Combine(_cacheDir, variant.CacheFolder);
         var versionDir = Path.Combine(variantRoot, Sanitize(rawTag));
         var archive = Path.Combine(versionDir, assetName);
         var extractDir = Path.Combine(versionDir, "extract");
@@ -410,11 +411,11 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
         }
 
         if (packageRoot is null)
-            throw new InvalidOperationException($"The official OptiScaler {variant} archive did not contain OptiScaler.dll and OptiScaler.ini in the same package root.");
+            throw new InvalidOperationException($"The official OptiScaler {VariantName(variant)} archive did not contain OptiScaler.dll and OptiScaler.ini in the same package root.");
         var dll = Path.Combine(packageRoot, "OptiScaler.dll");
         if (!BinarySignatureInspector.HasPeSignature(dll, 250_000) || !BinarySignatureInspector.LooksLikeOptiScaler(dll))
             throw new InvalidOperationException("The extracted OptiScaler.dll failed the local PE/signature-string sanity check.");
-        if (variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5 && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
+        if ((variant == OptiScalerVariant.DlssNr || variant == OptiScalerVariant.F5) && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
             throw new InvalidOperationException($"The OptiScaler {OptiScalerDeploymentService.VariantLabel(variant)} archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
         // #231 (wizardkof v0.9.25.0-beta.1 ValidatePackageRoot): F5's forwarder must be a real Windows DLL, and the package must
         // hold its OptiScaler/ backend folder (helper DLLs, after the backslash names are rebuilt); else nothing is installed.

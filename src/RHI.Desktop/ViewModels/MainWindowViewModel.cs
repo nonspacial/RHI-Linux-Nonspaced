@@ -160,6 +160,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
     public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
     public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
+    /// <summary>#271: Settings › Custom OptiScaler builds (w14/optiscaler-2).</summary>
+    public OptiScalerCustomBuildsPresenter OptiScalerCustomBuilds => OptiScalerCustomBuildsPresenter.For(this, _managedComponents);
 
     // w14/optiscaler rows
     /// <summary>#270: the OptiScaler ⚙ Release row for the selected game and channel (null without a selected game).</summary>

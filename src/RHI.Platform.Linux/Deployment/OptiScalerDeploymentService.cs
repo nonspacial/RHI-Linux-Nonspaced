@@ -124,6 +124,9 @@ public sealed partial class OptiScalerDeploymentService
             return new ManagedUpdateCheck(true, false, NightlyPinnedCurrentPrefix + pinned, record.Version, pinned);
         if (GetPinnedRelease(record) is { } pinnedRelease)
             return new ManagedUpdateCheck(true, false, ReleasePinnedCurrentPrefix + pinnedRelease, record.Version, record.Version);
+        // #271: a custom build is never checked for updates (upstream); Settings › Replace redeploys it on request.
+        if (GetInstalledVariant(record).IsCustom)
+            return new ManagedUpdateCheck(true, false, CustomBuildNotUpdatedPrefix + VariantLabel(GetInstalledVariant(record)), record.Version, record.Version);
         try
         {
             var variant = GetInstalledVariant(record);
@@ -165,6 +168,28 @@ public sealed partial class OptiScalerDeploymentService
             return ComponentOperationResult.Ok(NightlyPinnedNotUpdatedPrefix + pinned);
         if (GetPinnedRelease(record) is { } pinnedRelease)
             return ComponentOperationResult.Ok(ReleasePinnedNotUpdatedPrefix + pinnedRelease);
+        if (GetInstalledVariant(record).IsCustom) // #271: never updated by Update All or the background pass
+            return ComponentOperationResult.Ok(CustomBuildNotUpdatedPrefix + VariantLabel(GetInstalledVariant(record)));
+        return await UpdateCoreAsync(game, record, nightly: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>#271: a custom build is never updated automatically; its label follows.</summary>
+    public const string CustomBuildNotUpdatedPrefix = "Custom OptiScaler builds are never updated automatically: ";
+    /// <summary>#271: the game's OptiScaler is not the custom build being redeployed (its label follows).</summary>
+    public const string NotThisCustomBuildPrefix = "This game's OptiScaler is not the custom build ";
+    /// <summary>#271: a bare OptiScaler.dll needs the fresh-install INI template, which could not be prepared.</summary>
+    public const string CustomBuildNeedsIniMessage = "This custom OptiScaler build has no OptiScaler.ini and the INI template could not be prepared, so nothing was installed.";
+
+    /// <summary>
+    /// #271 (upstream 2.9.2 Replace › "Update the games using it?"): puts the replaced custom build's files into a game that
+    /// has it, through the update transaction (file checks, journal, rollback); OptiScaler.ini and every user file stay.
+    /// </summary>
+    public async Task<ComponentOperationResult> RedeployCustomBuildAsync(DetectedGame game, OptiScalerVariant build, CancellationToken cancellationToken = default)
+    {
+        var record = GetRecord(game);
+        if (record is null) return ComponentOperationResult.Fail("OptiScaler is not managed by RHI Linux for this game.");
+        if (!build.IsCustom || GetInstalledVariant(record) != build)
+            return ComponentOperationResult.Fail(NotThisCustomBuildPrefix + VariantLabel(build));
         return await UpdateCoreAsync(game, record, nightly: null, cancellationToken).ConfigureAwait(false);
     }
 
@@ -233,7 +258,7 @@ public sealed partial class OptiScalerDeploymentService
         var patcherSource = optiPatcher?.Download.Path ?? movedPatcher?.Path;
         try
         {
-            BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested);
+            BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested, iniWhenMissing: variant.IsCustom ? "" : null);
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
             if (patcherSource is not null) requested.Add((patcherSource, patcherTarget));
         }
@@ -528,7 +553,9 @@ public sealed partial class OptiScalerDeploymentService
                 overrideCreatedHere = true;
             }
 
-            BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested);
+            if (variant.IsCustom && iniTemplate is null && !File.Exists(Path.Combine(package.RootDirectory, "OptiScaler.ini")))
+                throw new InvalidOperationException(CustomBuildNeedsIniMessage);
+            BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested, iniWhenMissing: variant.IsCustom ? iniTemplate : null);
             if (iniTemplate is not null)
             {
                 var iniTarget = Path.GetFullPath(Path.Combine(binaryDirectory, "OptiScaler.ini"));
@@ -627,7 +654,7 @@ public sealed partial class OptiScalerDeploymentService
     }
 
     internal static OptiScalerVariant GetInstalledVariant(LinuxDeploymentRecord record)
-        => record.Metadata.TryGetValue(VariantMetadataKey, out var raw) && Enum.TryParse<OptiScalerVariant>(raw, true, out var parsed)
+        => record.Metadata.TryGetValue(VariantMetadataKey, out var raw) && OptiScalerVariant.TryParse(raw, out var parsed) // #271: old fork names read as their manifest ids
             ? parsed
             : OptiScalerVariant.Stable;
 
@@ -743,15 +770,7 @@ public sealed partial class OptiScalerDeploymentService
     public Task<IReadOnlyList<OptiScalerRelease>> ListReleasesAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
         => _packages.ListReleasesAsync(variant, cancellationToken);
 
-    internal static string VariantLabel(OptiScalerVariant variant) => variant switch
-    {
-        OptiScalerVariant.Stable => "Stable",
-        OptiScalerVariant.Nightly => "Nightly",
-        OptiScalerVariant.DlssNr => "DLSS NR",
-        OptiScalerVariant.F5 => "F5 DLSSNR",
-        _ when OptiScalerForks.Get(variant) is { } fork => fork.Label, // #271
-        _ => variant.ToString()
-    };
+    internal static string VariantLabel(OptiScalerVariant variant) => OptiScalerVersions.Label(variant); // #271
 
     private async Task<(string? Path, string? Version)> PrepareDlssNrRuntimeAsync(
         OptiScalerVariant variant,
@@ -1025,17 +1044,22 @@ public sealed partial class OptiScalerDeploymentService
         return record;
     }
 
+    /// <param name="iniWhenMissing">#271: a custom build may be a bare OptiScaler.dll: the INI an install puts beside it
+    /// (the fresh-install template); an update passes <c>""</c> (the game's own INI stays); null = the package must have one.</param>
     internal static void BuildDeploymentPlan(
         string packageRoot,
         string binaryDirectory,
         string proxyTarget,
-        List<(string Source, string Target)> requested)
+        List<(string Source, string Target)> requested,
+        string? iniWhenMissing = null)
     {
         var optiDll = Path.Combine(packageRoot, "OptiScaler.dll");
         var optiIni = Path.Combine(packageRoot, "OptiScaler.ini");
-        if (!File.Exists(optiDll) || !File.Exists(optiIni))
+        if (!File.Exists(optiDll) || (!File.Exists(optiIni) && iniWhenMissing is null))
             throw new InvalidOperationException("OptiScaler package root is incomplete.");
         requested.Add((optiDll, proxyTarget));
+        if (!File.Exists(optiIni) && iniWhenMissing is { Length: > 0 })
+            requested.Add((iniWhenMissing, Path.GetFullPath(Path.Combine(binaryDirectory, "OptiScaler.ini"))));
 
         foreach (var source in SafeFileEnumeration.Files(packageRoot))
         {

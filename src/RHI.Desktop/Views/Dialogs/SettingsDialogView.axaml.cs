@@ -132,6 +132,8 @@ public sealed partial class SettingsDialogView : UserControl
         // w12/nr-logs rows
         // w12/pins rows
         // w12/hdr-wsi rows
+        // w14/optiscaler-2 rows
+        Fill("OptiScalerCustomBuildsSlot", new OptiScalerCustomBuildsSettingsRows(vm.OptiScalerCustomBuilds).Control); // #271 (applies at once, not on Save)
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;

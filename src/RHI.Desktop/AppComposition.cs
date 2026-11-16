@@ -108,6 +108,9 @@ internal sealed class AppComposition
     // w14/optiscaler rows
     /// <summary>#269: the recommended OptiScaler presets (upstream's optiscaler_presets.json).</summary>
     public OptiScalerRecommendedPresets? OptiScalerRecommendedPresets { get; init; }
+    // w14/optiscaler-2 rows
+    /// <summary>#271: the app's download client, for custom OptiScaler builds added from a link.</summary>
+    public HttpClient? Http { get; init; }
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -122,6 +125,9 @@ internal sealed class AppComposition
             vm.OptiScalerPresets.RecommendedSource = presets;
             RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => presets.RefreshAsync()), "optiscaler-presets");
         }
+        vm.OptiScalerCustomBuilds.Http = Http; // w14/optiscaler-2 hook (#271): custom builds added from a link
+        // w14/optiscaler-2 hook (#271): the manifest's OptiScaler forks replace the built-in four once it is read.
+        RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => UpstreamManifest.RefreshOsForksAsync()), "optiscaler-forks");
         return vm;
     }
 
@@ -459,6 +465,7 @@ internal sealed class AppComposition
             ApiOverrideStore = apiOverrideStore,
             OptiScalerVariantStore = optiScalerVariantStore,
             OptiScalerRecommendedPresets = new OptiScalerRecommendedPresets(http), // w14/optiscaler (#269)
+            Http = http, // w14/optiscaler-2 (#271)
             SettingsStore = settingsStore,
             UpdateAll = new LinuxUpdateAllService(records, managedComponents),
             DlssDefaults = new LinuxDlssDefaultsService(dlss, records) { History = new ComponentHistory(updateLog) }, // #289

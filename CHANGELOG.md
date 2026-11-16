@@ -110,6 +110,19 @@ Not on `main` yet:
 - OptiScaler ⚙: FG Nvngx Override lists custom frame generation providers found in OptiScaler's custom folder by name
   (#272, upstream 2.9.3).
 
+### Wave 14 — optiscaler-2
+
+- **Custom OptiScaler builds** (#271, upstream 2.9.2): Settings › DLSS/Streamline › Custom OptiScaler builds. Add any
+  OptiScaler build from a download link, a zip/7z/rar, a folder or an OptiScaler.dll, or drop one on the card. It
+  appears as a version in every game's OptiScaler ⚙ and in Default version. RHI installs it like the other versions but
+  never updates it. Replace swaps its files and offers to update the games that use it (their OptiScaler.ini is kept);
+  Rename and Remove are next to it, with a **DLSS NR DLL** tick for Neural Rendering forks. Only add builds from people
+  you trust: the card says so.
+- The recommended OptiScaler forks now come from the online manifest, so a new fork appears without an app update. The
+  four known forks stay as a fallback, and a fork the manifest drops keeps working in the games that have it. Forks are
+  listed by name, as upstream lists them. Saved choices, Default version, release pins and installed games all keep the
+  version they had.
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

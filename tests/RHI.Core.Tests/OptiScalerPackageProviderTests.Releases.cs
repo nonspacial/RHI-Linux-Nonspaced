@@ -14,9 +14,9 @@ public sealed partial class OptiScalerPackageProviderTests
     private static string Fixture(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
 
     [Theory]
-    [InlineData(OptiScalerVariant.Stable, "releases-optiscaler-2026-11-16.json", "v0.9.4", "0.9.4")]
-    [InlineData(OptiScalerVariant.DlssNr, "releases-optiscaler-dlssnr-presr-multipass-2026-11-16.json", "v0.8.10", "0.8.10")]
-    [InlineData(OptiScalerVariant.F5, "releases-optiscaler-f5-dlssnr-multipass-2026-11-16.json", "v0.1.38", "0.1.38")]
+    [InlineData("Stable", "releases-optiscaler-2026-11-16.json", "v0.9.4", "0.9.4")]
+    [InlineData("DlssNr", "releases-optiscaler-dlssnr-presr-multipass-2026-11-16.json", "v0.8.10", "0.8.10")]
+    [InlineData("F5", "releases-optiscaler-f5-dlssnr-multipass-2026-11-16.json", "v0.1.38", "0.1.38")]
     public async Task ListReleases_TheRealLists_NewestFirst_OnlyReleasesWithAPackage(OptiScalerVariant variant, string fixture, string newestTag, string newestVersion)
     {
         using var http = new HttpClient(new MapHandler(new() { [OptiScalerPackageProvider.ReleaseListApiUrl(variant)] = Fixture(fixture) }));

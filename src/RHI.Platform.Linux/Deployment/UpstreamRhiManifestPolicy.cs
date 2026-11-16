@@ -110,6 +110,18 @@ public sealed class UpstreamLibraryPolicySnapshot
         => new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 }
 
+/// <summary>#271: one manifest <c>osForks</c> entry (upstream 2.9.4 <c>ManifestOsFork</c>).</summary>
+public sealed class UpstreamManifestOsFork
+{
+    [JsonPropertyName("label")] public string? Label { get; set; }
+    [JsonPropertyName("repo")] public string? Repo { get; set; }
+    [JsonPropertyName("assetPattern")] public string? AssetPattern { get; set; }
+    [JsonPropertyName("includePrereleases")] public bool? IncludePrereleases { get; set; }
+    [JsonPropertyName("needsNrDll")] public bool? NeedsNrDll { get; set; }
+    [JsonPropertyName("description")] public string? Description { get; set; }
+    [JsonPropertyName("disabled")] public bool? Disabled { get; set; }
+}
+
 internal sealed partial class UpstreamManifestDocument
 {
     [JsonPropertyName("blacklist")]
@@ -223,6 +235,10 @@ internal sealed partial class UpstreamManifestDocument
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
+    // w14/optiscaler-2 rows
+    /// <summary>#271: recommended OptiScaler forks (upstream 2.9.2+ manifest <c>osForks</c>, id → definition).</summary>
+    [JsonPropertyName("osForks")]
+    public Dictionary<string, UpstreamManifestOsFork?>? OsForks { get; set; }
     [JsonPropertyName("legacyReShadeAvailable")]
     public List<string>? LegacyReShadeAvailable { get; set; }
     [JsonPropertyName("legacyReShadeVersions")]

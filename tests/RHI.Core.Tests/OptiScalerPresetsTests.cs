@@ -340,8 +340,9 @@ public sealed class OptiScalerPresetsTests : IDisposable
     }
 
     private static async Task<DetectedGame> AddManagedOptiScalerGameAsync(ViewModelFixture fx, string name, string ini,
-        OptiScalerVariant variant = OptiScalerVariant.Nightly)
+        OptiScalerVariant? variantOrNightly = null)
     {
+        var variant = variantOrNightly ?? OptiScalerVariant.Nightly;
         var game = fx.Game(name);
         PeArchitectureDetectorTests.WritePe(game.ExecutablePath!, 0x8664);
         File.WriteAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini"), ini);

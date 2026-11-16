@@ -186,9 +186,9 @@ public sealed class OptiScalerAdvancedSettingsTests : IDisposable
 
     // #270 (upstream 2.9.0): DXGI Spoofing ([Spoofing] Dxgi) on every version, Auto / True / False, after the frame-rate limit.
     [Theory]
-    [InlineData(OptiScalerVariant.Stable)]
-    [InlineData(OptiScalerVariant.Nightly)]
-    [InlineData(OptiScalerVariant.F5)]
+    [InlineData("Stable")]
+    [InlineData("Nightly")]
+    [InlineData("F5")]
     public void DxgiSpoofing_IsOfferedOnEveryVersion_AndWritesSpoofingDxgi(OptiScalerVariant variant)
     {
         var (game, store, ini) = CreateGame("dxgi-" + variant, managed: true, variant);
@@ -366,7 +366,7 @@ public sealed class OptiScalerAdvancedSettingsTests : IDisposable
     private (DetectedGame Game, LinuxDeploymentRecordStore Store, string IniPath) CreateGame(
         string name,
         bool managed,
-        OptiScalerVariant variant = OptiScalerVariant.Stable)
+        OptiScalerVariant variant = default)
     {
         var gameRoot = Path.Combine(_root, name, "game");
         var bin = Path.Combine(gameRoot, "bin");

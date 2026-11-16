@@ -128,6 +128,7 @@
             <Panel x:Name="OptiScalerTemplatesSlot" IsVisible="False"/>
             <Panel x:Name="FollowNewestSlot" IsVisible="False"/>
             <Panel x:Name="OptiScalerMenuKeySlot" IsVisible="False"/>
+            <Panel x:Name="OptiScalerCustomBuildsSlot" IsVisible="False"/> <!-- w14/optiscaler-2 (#271): upstream's card at the end of Components -->
           </StackPanel>
         </ScrollViewer>
       </TabItem>

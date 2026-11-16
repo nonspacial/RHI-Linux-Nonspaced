@@ -1327,6 +1327,25 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniFailedPrefix, "O OptiScaler.ini não foi substituído: "),
         // #271 forks
         (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.ForkAssetElsewherePrefix, "O download do fork do OptiScaler não é uma das releases do GitHub dele, então não foi usado: "),
+        // w14/optiscaler-2 rows: #271 version identity and custom builds
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.UnknownVersionPrefix, "Esta versão do OptiScaler não está mais disponível no RHI: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.CustomBuildNotUpdatedPrefix, "Builds personalizadas do OptiScaler nunca são atualizadas automaticamente: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NotThisCustomBuildPrefix, "O OptiScaler deste jogo não é a build personalizada "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.CustomBuildNeedsIniMessage, "Esta build personalizada do OptiScaler não tem OptiScaler.ini e o modelo de INI não pôde ser preparado, então nada foi instalado."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.NotFoundMessage, "Esse arquivo, pasta ou link não foi encontrado."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.NotHttpsMessage, "Esse não é um link da web que o RHI possa baixar (ele deve começar com https://)."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.WebPageMessage, "Esse link abre uma página da web, não um arquivo. Use o link direto de download (botão direito no botão de download › Copiar link)."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.DownloadFailedPrefix, "O download falhou: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.NoDllMessage, "Nenhum OptiScaler.dll foi encontrado nele (procurado até 3 pastas abaixo)."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.NotWindowsDllMessage, "O OptiScaler.dll nele não é uma DLL do Windows, então não foi adicionado."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.TooLargeMessage, "Essa pasta é maior que uma build do OptiScaler, então não foi adicionada. Escolha a pasta que contém o OptiScaler.dll."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.NotOptiScalerNote, "Observação: este OptiScaler.dll não se identifica como OptiScaler. Ele foi adicionado mesmo assim; confira se é a build que você queria."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.CouldNotAddPrefix, "Não foi possível adicioná-la: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.UnknownBuildMessage, "Essa build personalizada do OptiScaler não existe mais."),
+        (RHI.Platform.Linux.Deployment.OptiScalerCustomBuildStore.NameRequiredMessage, "Dê um nome à build."),
+        ("Downloading...", "Baixando..."),
+        ("Unpacking...", "Descompactando..."),
+        ("Copying...", "Copiando..."),
         // #270 versions
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleasePinnedCurrentPrefix, "O OptiScaler está fixado em uma release, então não é atualizado: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleasePinnedNotUpdatedPrefix, "O OptiScaler está fixado em uma release, então não foi atualizado: "),
@@ -1506,6 +1525,9 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.HsfDeploymentService.AntiCheatWarning, "O HSF intercepta os gráficos do jogo: não o use em jogos online com anti-cheat, que podem banir você por isso."),
         (RHI.Platform.Linux.Deployment.ImmerseLaunchpadStep.MissingMessage, "O download do iMMERSE não tem o efeito Launchpad (MartysMods_LAUNCHPAD.fx); nada foi alterado."),
         (RHI.Platform.Linux.Deployment.DownloadSources.Hsf.RefusalPrefix, "Download recusado: links do HSF devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        // w14/optiscaler-2 rows
+        (RHI.Platform.Linux.Deployment.DownloadSources.OptiScalerCustomBuild.RefusalPrefix, "Download recusado: links de build personalizada do OptiScaler devem ser HTTPS em um host confiável (o próprio host do link ou o GitHub). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.AnrFg.RefusalPrefix, "Download recusado: links do ANR FG devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // w14/extras-addons rows (#282)
         (RHI.Platform.Linux.Deployment.DisplayCommanderSettingsService.NotManagedPrefix, "As configurações do Display Commander precisam do Display Commander instalado pelo RHI: "),
         (RHI.Platform.Linux.Deployment.DisplayCommanderSettingsService.InvalidValuePrefix, "O Display Commander não aceita este valor; nada foi alterado: "),

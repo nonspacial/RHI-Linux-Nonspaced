@@ -12,8 +12,8 @@ namespace RHI.Core.Tests;
 public sealed partial class OptiScalerDeploymentServiceTests
 {
     [Theory]
-    [InlineData(OptiScalerVariant.F5)]
-    [InlineData(OptiScalerVariant.DlssNr)]
+    [InlineData("F5")]
+    [InlineData("DlssNr")]
     public async Task NrGpu_Install_StagesLatestForThisCard_AndRecordsIt(OptiScalerVariant variant)
     {
         var (game, store) = CreateGame("nrgpu-" + variant, GraphicsApi.DirectX12);

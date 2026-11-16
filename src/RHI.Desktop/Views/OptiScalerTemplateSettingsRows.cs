@@ -101,13 +101,13 @@ internal sealed class OptiScalerTemplateSettingsRows
 
     public bool DlssInputs => OptionLists.OptiScalerDlssInputs.Value(_dlss.SelectedItem?.ToString());
 
-    /// <summary>#270: the Default version as saved (the channel's name: Stable, Nightly, DlssNr, F5).</summary>
+    /// <summary>#270/#271: the Default version as saved (its id: Stable, Nightly, DlssNr, F5, Fork:&lt;id&gt; or Custom:&lt;slug&gt;).</summary>
     public string DefaultVersion => OptionLists.OptiScalerVariant.Value(_defaultVersion.SelectedItem?.ToString()).ToString();
 
     public bool RemoveOldNightlyBuilds => _removeOldNightlies.IsChecked == true;
 
     private static string DefaultVersionDisplay(string saved)
-        => OptionLists.OptiScalerVariant.Display(Enum.TryParse<OptiScalerVariant>(saved, true, out var variant) ? variant : OptiScalerVariant.Stable);
+        => OptionLists.OptiScalerVariant.Display(OptiScalerVariant.ParseOr(saved, OptiScalerVariant.Stable)); // #271: any version id
 
     public void Reset(LinuxAppSettings defaults)
     {

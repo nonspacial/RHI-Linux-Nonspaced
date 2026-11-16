@@ -41,8 +41,8 @@ public sealed partial class OptiScalerPackageProviderTests : IDisposable
     }
 
     [Theory]
-    [InlineData(OptiScalerVariant.Nightly, OptiScalerPackageProvider.NightlyReleasesApi, "nightly-20260920", "OptiScaler-nightly.7z", "20260920")]
-    [InlineData(OptiScalerVariant.DlssNr, OptiScalerPackageProvider.DlssNrReleasesApi, "v0.7.7", "OptiScaler-DLSSNR.zip", "0.7.7")]
+    [InlineData("Nightly", OptiScalerPackageProvider.NightlyReleasesApi, "nightly-20260920", "OptiScaler-nightly.7z", "20260920")]
+    [InlineData("DlssNr", OptiScalerPackageProvider.DlssNrReleasesApi, "v0.7.7", "OptiScaler-DLSSNR.zip", "0.7.7")]
     public async Task GetLatestAsync_VariantUsesUpstreamChannelAndPreservesVariant(
         OptiScalerVariant variant, string apiUrl, string tag, string assetName, string expectedVersion)
     {

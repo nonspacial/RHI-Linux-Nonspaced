@@ -177,16 +177,50 @@ public static class OptionLists
         new("Detail", "Win.Detailed"),
         new("Compact", "Win.Compact"));
 
-    public static readonly OptionList<OptiScalerVariant> OptiScalerVariant = new(Platform.Linux.Deployment.OptiScalerVariant.Stable, null,
-        new(Platform.Linux.Deployment.OptiScalerVariant.Stable, "Ui.OptionStable"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.Nightly, "Ui.OptionNightly", null, "Desenvolvimento", "Desenvolvimento (Nightly)"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.DlssNr, null, "DLSS NR"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.F5, null, "F5 DLSSNR"), // w3/sync #157
-        // #271: the recommended forks after the built-ins (upstream OsVariants.All), by their names
-        new(Platform.Linux.Deployment.OptiScalerVariant.Venom, null, "Venom"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.NrPreSrMfg, null, "NR PreSR MFG"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.FeederNr, null, "Feeder NR"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.OpenNr, null, "OpenNR"));
+    /// <summary>
+    /// #271: every OptiScaler version as it stands now (upstream <c>OsVariants.All</c>): the built-ins, the recommended forks
+    /// (manifest <c>osForks</c>, by label) and the custom builds (by name). Built when read: the manifest and Settings ›
+    /// Components change the list while RHI runs.
+    /// </summary>
+    public static OptionList<OptiScalerVariant> OptiScalerVariant => OptiScalerVariantsWith(null);
+
+    /// <summary>
+    /// <see cref="OptiScalerVariant"/>, plus <paramref name="saved"/> when it is a version no longer listed (a removed custom
+    /// build or a dropped fork a game still has), labelled as upstream does ("Custom build (removed)").
+    /// </summary>
+    public static OptionList<OptiScalerVariant> OptiScalerVariantsWith(OptiScalerVariant? saved)
+    {
+        var entries = new List<OptionEntry<OptiScalerVariant>>
+        {
+            new(Platform.Linux.Deployment.OptiScalerVariant.Stable, "Ui.OptionStable"),
+            new(Platform.Linux.Deployment.OptiScalerVariant.Nightly, "Ui.OptionNightly", null, "Desenvolvimento", "Desenvolvimento (Nightly)"),
+            new(Platform.Linux.Deployment.OptiScalerVariant.DlssNr, null, "DLSS NR"),
+            new(Platform.Linux.Deployment.OptiScalerVariant.F5, null, "F5 DLSSNR"), // w3/sync #157
+        };
+        // #271: the recommended forks after the built-ins, by their manifest names; the old enum names read back too.
+        foreach (var fork in OptiScalerForks.All)
+            entries.Add(new(fork.Variant, null, fork.Label, LegacyForkName(fork.Id)));
+        foreach (var build in OptiScalerCustomBuilds.All)
+            entries.Add(CustomEntry(build.Variant, build.Name));
+        if (saved is { } extra && entries.All(entry => entry.Value != extra))
+            entries.Add(extra.IsCustom
+                ? new(extra, "Osc.CustomRemoved")
+                : new(extra, null, OptiScalerVersions.Label(extra)));
+        return new(Platform.Linux.Deployment.OptiScalerVariant.Stable, null, [.. entries]);
+    }
+
+    private static OptionEntry<OptiScalerVariant> CustomEntry(OptiScalerVariant variant, string name)
+        => new(variant, null, UiLocalizationService.Format("Osc.CustomLabel", name),
+            [.. Languages.Select(language => UiLocalizationService.FormatFor(language, "Osc.CustomLabel", name))]);
+
+    private static string LegacyForkName(string id) => id switch
+    {
+        "venom" => "Venom",
+        "nr-presr-mfg" => "NrPreSrMfg",
+        "feeder-nr" => "FeederNr",
+        "opennr" => "OpenNr",
+        _ => id
+    };
 
     public static readonly OptionList<LumaModePreference> LumaMode = new(LumaModePreference.Auto, null,
         new(LumaModePreference.Auto, "Ui.OptionAutomatic"),

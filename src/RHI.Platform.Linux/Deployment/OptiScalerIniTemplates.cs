@@ -119,7 +119,7 @@ public sealed class OptiScalerIniTemplates
     {
         var seeded = new List<string>();
         var key = CurrentChoice.MenuKey;
-        foreach (var variant in Enum.GetValues<OptiScalerVariant>())
+        foreach (var variant in TemplateVersions)
             foreach (var choice in new[] { new OptiScalerTemplateChoice(OptiScalerGpuType.Nvidia, true, key), new(OptiScalerGpuType.Amd, true, key), new(OptiScalerGpuType.Amd, false, key) })
                 seeded.Add(EnsureSeeded(variant, choice));
         return seeded.Distinct(StringComparer.Ordinal).ToList();
@@ -129,7 +129,7 @@ public sealed class OptiScalerIniTemplates
     internal static byte[] Shipped(OptiScalerVariant variant, OptiScalerTemplateChoice choice)
     {
         // Upstream's NVIDIA and AMD-with-DLSS files are the same bytes, and Nightly's three are one file.
-        var shared = variant == OptiScalerVariant.Nightly || OptiScalerForks.IsFork(variant) ? "" : UsesDlssInputs(choice) ? ".dlss" : ".nodlss";
+        var shared = Suffix(variant) == "_nightly" ? "" : UsesDlssInputs(choice) ? ".dlss" : ".nodlss";
         var name = $"OptiScalerTemplates.OptiScaler{Suffix(variant)}{shared}.ini";
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
                            ?? throw new InvalidOperationException("OptiScaler INI template missing from the build: " + name);
@@ -143,14 +143,17 @@ public sealed class OptiScalerIniTemplates
     private static string GpuPart(OptiScalerTemplateChoice choice)
         => choice.Gpu == OptiScalerGpuType.Nvidia ? "nvidia" : choice.DlssInputs ? "amd-dlss" : "amd-nodlss";
 
-    private static string Suffix(OptiScalerVariant variant) => variant switch
-    {
-        OptiScalerVariant.Nightly => "_nightly",
-        OptiScalerVariant.DlssNr => "_dlssnr",
-        OptiScalerVariant.F5 => "_f5",
-        _ when OptiScalerForks.IsFork(variant) => "_nightly", // #271: forks are OptiScaler 10 builds (upstream: the Nightly template)
-        _ => ""
-    };
+    /// <summary>One version per template family (forks and custom builds share Stable's or Nightly's).</summary>
+    private static readonly OptiScalerVariant[] TemplateVersions = [.. OptiScalerVariant.BuiltIns];
+
+    private static string Suffix(OptiScalerVariant variant)
+        => variant == OptiScalerVariant.Nightly ? "_nightly"
+            : variant == OptiScalerVariant.DlssNr ? "_dlssnr"
+            : variant == OptiScalerVariant.F5 ? "_f5"
+            // #271: forks are OptiScaler 10 builds (upstream: the Nightly template); a custom build takes Nightly's when it
+            // has the OptiScaler 10 layout, else Stable's.
+            : OptiScalerVersions.IsOs10(variant) ? "_nightly"
+            : "";
 }
 
 /// <summary>#187: the INI templates the global overlay key was written to, and the ones that kept their file (name, reason).</summary>
