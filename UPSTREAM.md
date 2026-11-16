@@ -1546,3 +1546,27 @@ writes for any change made outside the managed path; an update is written only w
 `ShouldRecord`), a failure always. A new component recorded through the managed path needs nothing but its name in
 `LinuxManagedComponentService.DisplayDependencyName` (or `ComponentHistory.NameFor`). Not applicable: DXVK (the runner's,
 never RHI's here). Nexus Mods files reach RHI as dropped add-ons or Luma packages and are recorded on those paths.
+
+### #295 — ⚙ and Settings saving fixes from 2.8.9, checked one by one
+
+- **Add-on watch folder that does not exist** (fixed): Settings saved any typed folder and the watcher then said it
+  could not open it. Save now keeps the previous folder, saves the rest and says the folder does not exist. An empty
+  box (Downloads) and an unchanged folder are saved as before.
+- **Invalid ReLimiter custom FPS** (fixed): an empty or out-of-range custom box was saved as "no cap" without a word.
+  It now keeps the saved cap and the line says the value must be a whole number from 20 to 1000.
+- **Keys saved on press, typed folders and peak brightness saved on blur** (Linux deviation, not ported here): the
+  Linux Settings dialog saves everything with its Save button, so no typed value is lost to a missing Enter. Save on
+  change comes with the Settings restyle (phase 2 of wave 14). The overlay, screenshot and ReLimiter OSD key editors
+  hand their value to that Save.
+- **A failed ⚙ save reverts and says why** (already so): the ⚙ presenters save through `ParityPersistence.TryPersist` or
+  the operation result; a refused save puts the control back to the saved value and shows the reason.
+- **"Deploy dxvk.conf" reporting success after a failed copy** (not applicable): Linux has no separate dxvk.conf deploy
+  button; DXVK HDR writes `dxvk.conf` journaled and its failure is the operation's failed result.
+- **Addon Manager switching an add-on back off silently after a failed download** (already so): the selection apply
+  returns the download failure as its result line.
+- **RE Framework "Delete _storage_" stuck on "Deleting…"** (already so): the button is restored in a `finally` and the
+  result line is shown.
+- **ReShade hotkey "Applied!" with no reshade.ini** (already so): the INI batch counts only games whose ReShade.ini was
+  written and reports the others.
+- **ReLimiter ⚙ with a separate add-on folder** (already so since #255): the ⚙ finds relimiter.ini in the AddonPath
+  folder.

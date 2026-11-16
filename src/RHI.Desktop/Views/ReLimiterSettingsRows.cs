@@ -22,9 +22,13 @@ internal sealed class ReLimiterSettingsRows
     private readonly ComboBox _dlssHooks;
     private readonly ComboBox _fps;
     private readonly NumericUpDown _customFps;
+    private readonly Action<string> _showStatus;
+    private int _savedFps;
 
     public ReLimiterSettingsRows(LinuxAppSettings settings, IniPresetsPresenter presenter, Action<string> showStatus)
     {
+        _showStatus = showStatus;
+        _savedFps = settings.ReLimiterTargetFps;
         _osdKey = new ReShadeHotkeyEditor(ReLimiterIniEditor.ToEditorValue(settings.ReLimiterOsdHotkey), "123,0,0,0");
         _shared = Combo("ReLimiterSharedPresets", settings.ReLimiterSharedPresets, "Ini.ReLimiterSharedPresetsTip");
         _dlssHooks = Combo("ReLimiterDlssHooks", settings.ReLimiterDlssHooks, "Ini.ReLimiterDlssHooksTip");
@@ -113,9 +117,11 @@ internal sealed class ReLimiterSettingsRows
         get
         {
             var selected = OptionLists.ReLimiterTargetFps.Value(_fps.SelectedItem?.ToString());
-            return selected == OptionLists.CustomTargetFps
-                ? ReLimiterIniEditor.NormalizeTargetFps((int)(_customFps.Value ?? 0))
-                : selected;
+            if (selected != OptionLists.CustomTargetFps) return selected;
+            // #295: an invalid custom value keeps the saved cap and says so (it used to become "no cap" silently).
+            var fps = IniPresetsPresenter.CustomTargetFps(_customFps.Value, _savedFps, out var problem);
+            if (problem is not null) _showStatus(problem);
+            return fps;
         }
     }
 
@@ -125,6 +131,7 @@ internal sealed class ReLimiterSettingsRows
         settings.ReLimiterSharedPresets = SharedPresets;
         settings.ReLimiterDlssHooks = DlssHooks;
         settings.ReLimiterTargetFps = TargetFps;
+        _savedFps = settings.ReLimiterTargetFps;
     }
 
     public void Reset(LinuxAppSettings defaults)

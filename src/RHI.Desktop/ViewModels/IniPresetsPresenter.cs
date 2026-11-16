@@ -52,6 +52,20 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         }
     }
 
+    /// <summary>
+    /// #295 (upstream 2.8.9 "Fixed an invalid ReLimiter custom FPS being ignored without a message"): the custom box's
+    /// value when it is a whole number from 20 to 1000, else <paramref name="saved"/> with the line that says why.
+    /// </summary>
+    public static int CustomTargetFps(decimal? typed, int saved, out string? problem)
+    {
+        problem = null;
+        if (typed is { } value && value == decimal.Truncate(value)
+            && value is >= ReLimiterIniEditor.MinTargetFps and <= ReLimiterIniEditor.MaxTargetFps)
+            return (int)value;
+        problem = UiLocalizationService.Format("Ini.ReLimiterCustomFpsInvalid", ReLimiterIniEditor.MinTargetFps, ReLimiterIniEditor.MaxTargetFps);
+        return saved;
+    }
+
     /// <summary>The saved settings (a copy).</summary>
     public LinuxAppSettings SavedSettings() => vm.Settings.GetLinuxSettingsSnapshot().Settings;
 

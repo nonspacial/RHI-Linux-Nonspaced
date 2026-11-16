@@ -164,11 +164,26 @@ public sealed class SettingsViewModel : PanelViewModel
     public string SaveLinuxSettings(LinuxAppSettings settings)
     {
         var previous = Host.Settings;
+        // #295 (upstream 2.8.9): a typed add-on watch folder that does not exist is not saved; the rest is.
+        string? watchRefused = null;
+        if (WatchFolderMissing(settings.AddonWatchFolder, previous.AddonWatchFolder))
+        {
+            watchRefused = UiLocalizationService.Format("Vm.WatchFolderMissing", settings.AddonWatchFolder.Trim());
+            settings.AddonWatchFolder = previous.AddonWatchFolder;
+        }
         if (TryPersist(() => _settingsStore.Save(settings), "Ui.WhatSettings", sessionOnly: false) is { } notSaved) return notSaved;
         var saved = _settingsStore.Load();
         var loopChanged = UpdatesViewModel.LoopSettingsChanged(previous, saved); // w5/update-policy hook (#177)
         _shell.AdoptSettings(saved, restartLoop: loopChanged, runImmediate: UpdatesViewModel.RunsImmediatelyAfterSave(previous, saved));
-        return UiLocalizationService.Format("Vm.SettingsSaved", _settingsStore.SettingsPath);
+        var line = UiLocalizationService.Format("Vm.SettingsSaved", _settingsStore.SettingsPath);
+        return watchRefused is null ? line : line + " " + watchRefused;
+    }
+
+    /// <summary>#295: a changed, non-empty watch folder that is not a folder on disk.</summary>
+    internal static bool WatchFolderMissing(string? typed, string? saved)
+    {
+        var folder = typed?.Trim() ?? "";
+        return folder.Length > 0 && !string.Equals(folder, saved?.Trim(), StringComparison.Ordinal) && !Directory.Exists(folder);
     }
 
     public string ResetLinuxSettings()

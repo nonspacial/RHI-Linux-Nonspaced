@@ -28,6 +28,9 @@ Wave 14 — library-updates
 - **The Ultra+ and ultrawide fix lists are checked every 4 hours** instead of once a day, also while RHI stays open.
 - **Update History lists DLSS and Streamline swaps and restores** made from the DLSS section, the DLSS batch and the
   DLSS defaults (upstream 2.9.3), with the version before and after.
+- **Settings no longer saves an add-on watch folder that does not exist**: it says so and saves the rest (upstream 2.8.9).
+- **An invalid ReLimiter custom FPS is no longer saved as "no cap" without a word**: the saved cap stays and RHI says the
+  value must be a whole number from 20 to 1000 (upstream 2.8.9).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
