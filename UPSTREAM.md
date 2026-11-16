@@ -2314,3 +2314,24 @@ use another mapping.
   tabs (Unreal, Unity, Other, RenoDX, Luma) and their PT-BR words. Classic layout only for now: Spotlight's placement
   beside the search box and the controller's right-stick switching come with the phase-2 layouts (#305, #308). The chip
   row is the Avalonia `CollectionsRow` under the filter tabs, above #193's saved custom filters.
+
+### #301 — Colour themes, custom colours, share/import codes (2.9.3)
+
+- Ported from upstream's `ThemePalette`, `ThemePresets`, `ThemeColorMapper` (Core `ThemePalette.cs`; upstream's
+  `ThemePaletteTests` and `ThemeShareCodeTests` run against it unchanged but for the colour type) and its Settings card:
+  the nine themes in upstream's order with its colours, applied live; Custom's nine colours (Look and Status colours),
+  first use starting from the theme that was showing, Start from a theme…, Reset to default, the contrast warning
+  (text under 4.5:1 on the background or the panels), Share theme / Import theme with upstream's `RHI-THEME:` code
+  (nine colours in a fixed order; a pasted message around it, case, `#` and spaces are fine), "Violet" opening as Kiro.
+  Settings keep `ColourTheme` and `CustomThemeColours` (upstream's format), saved when they change.
+- Linux mechanism: every colour the Avalonia views use is now a named brush resource (`Theming/ThemeResources`, one
+  list with the default look's colours; AXAML uses `{DynamicResource Rhi…Brush}`, code-built views use style classes
+  in App.axaml or `ThemeResources.Bind`). A theme puts each brush, recoloured by upstream's mapper, into the app's
+  resources, so open windows repaint at once. A test checks that no AXAML holds a literal colour and that every
+  `Rhi…Brush` used exists, so the phase-2 layouts take their colours from the same keys.
+- Linux deviations: the card is in Settings › Interface (the Linux tab for upstream's General until the phase-2
+  Settings layout, #296). Custom colours are typed as `#RRGGBB` beside a live swatch: Avalonia's colour picker is a
+  separate package this build does not ship (owner decision whether to add it). Import is a row under the buttons
+  rather than a dialog. Fluent's own control templates (scroll bars, drop-down surfaces) keep Avalonia's dark colours,
+  as upstream leaves WinUI's own resources alone. Upstream 2.9.5's theme polish is not ported: 2.9.5 is still in
+  beta (latest release RHI-2.9.4 on 2026-11-16).

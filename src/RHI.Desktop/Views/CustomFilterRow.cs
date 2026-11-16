@@ -31,18 +31,7 @@ public sealed class CustomFilterRow : ContentControl
     {
         IsVisible = false;
         Margin = new Thickness(0, 4, 0, 0);
-        Styles.Add(new Style(x => x.OfType<Button>().Class("chip").Class("active"))
-        {
-            Setters =
-            {
-                new Setter(Button.BackgroundProperty, new SolidColorBrush(Color.Parse("#2B4A78"))),
-                new Setter(Button.ForegroundProperty, Brushes.White)
-            }
-        });
-        Styles.Add(new Style(x => x.OfType<Button>().Class("chip").Class("customFilterSave"))
-        {
-            Setters = { new Setter(Button.ForegroundProperty, new SolidColorBrush(Color.Parse("#8FB8F0"))) }
-        });
+        // The active chip and "Save as filter" looks are App.axaml styles (Button.chip.active, Button.customFilterSave), #301.
         ToolTip.SetTip(_save, T("Shell.SaveAsFilterTip"));
         ToolTip.SetShowDelay(_save, MiddleEllipsisText.TooltipDelay);
         _save.Click += (_, _) =>
@@ -162,7 +151,7 @@ public sealed partial class MainWindow
         if (DataContext is not MainWindowViewModel vm || string.IsNullOrWhiteSpace(vm.SearchText)) return;
         var query = vm.SearchText.Trim();
         var name = new TextBox { Text = query, PlaceholderText = T("Shell.CustomFilterName"), MinWidth = 220, Name = "CustomFilterNameBox" };
-        var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Color.Parse("#F08A8A")), IsVisible = false };
+        var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Classes = { "error" }, IsVisible = false };
         var save = new Button { Content = T("Win.Save"), Padding = new Thickness(14, 7) };
         var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };

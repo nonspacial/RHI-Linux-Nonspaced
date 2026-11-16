@@ -186,6 +186,13 @@ Wave 14 — extras-fg
   Your collections show as buttons under the filter tabs: click one to show only its games, click it again to show
   everything. Right-click one to rename, move or delete it; deleting a collection never removes any games. Picking a
   filter tab leaves the collection, and RHI remembers the one you had open.
+- **Colour themes** (upstream 2.9.3): Settings › Interface › **Colour theme** — Default, OLED Black, Midnight Blue,
+  Ember, Forest, Kiro, Slate, High Contrast or Colour-blind Friendly. RHI changes colour straight away, no restart.
+  - **Custom** lets you choose your own colours: background, panels, text, accent, buttons and the status colours
+    (installed, update available, warning, error). It starts from the theme you had; Start from a theme… and Reset
+    to default are there too. RHI warns you if text would be hard to read.
+  - **Share theme** copies your colours as one line of text (`RHI-THEME:…`) and **Import theme** takes a code someone
+    shared. Codes from RHI on Windows work here and the other way round.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

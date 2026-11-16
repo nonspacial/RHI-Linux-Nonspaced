@@ -142,6 +142,8 @@
               <ComboBox ItemsSource="{Binding UiLanguages}" SelectedItem="{Binding UiLanguage}" Width="240"/>
               <TextBlock Text="{l:T Ui.LanguageNote}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
             </StackPanel>
+            <!-- #301 Colour theme (upstream Settings › General): applied and saved as it changes. -->
+            <Panel x:Name="ColourThemeSlot"/>
             <StackPanel Spacing="5">
               <TextBlock FontWeight="SemiBold" Text="{l:T Ui.ViewMode}"/>
               <ComboBox ItemsSource="{Binding ViewModes}" SelectedItem="{Binding ViewMode}" Width="190"/>

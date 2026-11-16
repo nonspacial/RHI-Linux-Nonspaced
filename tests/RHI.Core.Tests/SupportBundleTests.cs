@@ -284,7 +284,7 @@ public sealed class SupportBundleTests : IDisposable
         {
             Assert.NotNull(views[i].Foreground);
             if (blocks[i].Level is 1 or 2)
-                Assert.Same(Avalonia.Media.Brushes.LightSkyBlue, views[i].Foreground);
+                Assert.Contains("headingText", views[i].Classes); // #301: the theme's heading colour (App.axaml style)
             else
             {
                 Assert.False(views[i].IsSet(Avalonia.Controls.TextBlock.ForegroundProperty), blocks[i].Text);

@@ -58,6 +58,15 @@ public sealed partial class SettingsDialogView : UserControl
             current.OptiScalerRemoveOldNightlyBuilds = optiScalerTemplates.RemoveOldNightlyBuilds;
         }, optiScalerTemplates.Reset));
 
+        // w14/ui-logic rows
+        var themeRows = new ThemeSettingsRows(vm.Theme, model.CopyText); // #301 colour theme (saved as it changes)
+        Fill("ColourThemeSlot", themeRows.Control);
+        model.Host(new(current =>
+        {
+            current.ColourTheme = vm.Theme.ThemeId;
+            current.CustomThemeColours = vm.Theme.SavedCustomColours;
+        }, _ => { }));
+
         // w5 lane rows: Settings rows (build your row object here, put it in its slot, host its values)
         // w5/update-policy rows
         var updatePolicyRows = new UpdatePolicySettingsRows(settings); // #177 Follow newest DLSS / Streamline, #178 Update All includes

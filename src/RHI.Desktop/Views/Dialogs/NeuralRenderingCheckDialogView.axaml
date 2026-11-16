@@ -14,7 +14,7 @@
       <Setter Property="Opacity" Value="0.76"/>
     </Style>
     <Style Selector="TextBlock.nrc-warning">
-      <Setter Property="Foreground" Value="#D4A856"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiWarningBrush}"/>
     </Style>
     <Style Selector="TextBlock.nrc-warning.nrc-detail">
       <Setter Property="Opacity" Value="0.92"/>

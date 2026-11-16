@@ -40,7 +40,7 @@ public sealed partial class MainWindow
         top.Children.Add(count);
         top.Children.Add(search);
         top.Children.Add(header);
-        top.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")), Margin = new Thickness(0, 0, 0, 6) });
+        top.Children.Add(new Border { Height = 1, Classes = { "divider" }, Margin = new Thickness(0, 0, 0, 6) });
         var body = new StackPanel();
         body.Children.Add(list);
         body.Children.Add(empty);
@@ -161,13 +161,13 @@ public sealed partial class MainWindow
         var name = new TextBlock { Text = entry.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         ToolTip.SetTip(name, entry.Name);
         row.Children.Add(name);
-        AddModTick(row, entry.RenoDx, entry.RenoDxLink, "#5ECB7D", "RenoDX", 1, open);
-        AddModTick(row, entry.Luma, entry.HasLuma ? entry.LumaUrl : null, "#B898E8", "Luma", 2, open);
-        AddModTick(row, entry.HasUltraPlus ? HdrModAvailability.Available : HdrModAvailability.None, entry.UltraPlusUrl, "#6FB7E8", "Ultra+", 3, open);
+        AddModTick(row, entry.RenoDx, entry.RenoDxLink, "installedText", "RenoDX", 1, open);
+        AddModTick(row, entry.Luma, entry.HasLuma ? entry.LumaUrl : null, "updateText", "Luma", 2, open);
+        AddModTick(row, entry.HasUltraPlus ? HdrModAvailability.Available : HdrModAvailability.None, entry.UltraPlusUrl, "linkText", "Ultra+", 3, open);
         return row;
     }
 
-    private static void AddModTick(Grid row, HdrModAvailability availability, string? url, string availableColour, string modName, int column,
+    private static void AddModTick(Grid row, HdrModAvailability availability, string? url, string availableClass, string modName, int column,
         Action<string> open)
     {
         var block = new TextBlock
@@ -185,7 +185,7 @@ public sealed partial class MainWindow
         if (availability == HdrModAvailability.None)
             block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable(HdrModsSecondaryTextKey));
         else
-            block.Foreground = new SolidColorBrush(Color.Parse(availability == HdrModAvailability.Available ? availableColour : "#D4A856"));
+            block.Classes.Add(availability == HdrModAvailability.Available ? availableClass : "warningStatusText");
         var status = availability switch
         {
             HdrModAvailability.Available => T("Win.Available"),

@@ -53,6 +53,7 @@ public sealed class LocalizationKeyUsageTests
 
         var xaml = SourceFiles(desktop, "*.axaml").ToList();
         var styleKeys = xaml.SelectMany(f => XamlDefinedKey.Matches(File.ReadAllText(f)).Select(m => m.Groups[1].Value)).ToHashSet(StringComparer.Ordinal);
+        styleKeys.UnionWith(RHI.Desktop.Theming.ThemeResources.Defaults.Select(d => d.Key)); // #301: the theme brushes, put in at start-up
         foreach (var file in xaml)
             foreach (Match m in XamlResource.Matches(File.ReadAllText(file)))
                 if (!known.Contains(m.Groups[1].Value) && !styleKeys.Contains(m.Groups[1].Value))

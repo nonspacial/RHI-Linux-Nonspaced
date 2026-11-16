@@ -18,7 +18,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.DataTemplates>
             <DataTemplate DataType="vm:CatalogHeading">
-              <TextBlock Text="{Binding Text}" FontWeight="SemiBold" Foreground="#4DC9E6" Margin="0,8,0,0"/>
+              <TextBlock Text="{Binding Text}" FontWeight="SemiBold" Foreground="{DynamicResource RhiAccentBrush}" Margin="0,8,0,0"/>
             </DataTemplate>
             <DataTemplate DataType="vm:ShaderPackFileRow">
               <CheckBox Content="{Binding DisplayPath}" IsChecked="{Binding IsChecked}" Margin="0,2"/>

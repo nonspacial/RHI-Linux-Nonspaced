@@ -5,6 +5,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Media;
 using Avalonia.Threading;
 using RHI.Desktop.ViewModels;
+using RHI.Desktop.Theming;
 
 namespace RHI.Desktop.Views;
 
@@ -13,9 +14,6 @@ public sealed partial class MainWindow
     // Upstream 2.7.6 collapsed-section summaries. DlssStreamline already shows its summary line in
     // the header at all times; ReShadeProfile has no upstream counterpart.
     private static readonly string[] SummarySectionKeys = ["Runtime", "ManagedComponents", "Extras"];
-    private static readonly IBrush SummaryLabelBrush = new SolidColorBrush(Color.Parse("#A0AABB"));
-    private static readonly IBrush SummarySeparatorBrush = new SolidColorBrush(Color.Parse("#6B7A8E"));
-    private static readonly IBrush SummaryVersionBrush = new SolidColorBrush(Color.Parse("#5ECB7D"));
 
     private MainWindowViewModel? _summaryViewModel;
     private bool _summaryRefreshQueued;
@@ -82,10 +80,10 @@ public sealed partial class MainWindow
             block.Inlines.Clear();
             for (var i = 0; i < items.Count; i++)
             {
-                if (i > 0) block.Inlines.Add(new Run(DetailSectionSummaryPresenter.Separator) { Foreground = SummarySeparatorBrush });
-                block.Inlines.Add(new Run(items[i].Label) { Foreground = SummaryLabelBrush });
+                if (i > 0) block.Inlines.Add(ThemeResources.Bind(new Run(DetailSectionSummaryPresenter.Separator), Run.ForegroundProperty, "RhiMutedTextBrush"));
+                block.Inlines.Add(ThemeResources.Bind(new Run(items[i].Label), Run.ForegroundProperty, "RhiSecondaryTextBrush"));
                 if (items[i].Version is { } version)
-                    block.Inlines.Add(new Run(" " + version) { Foreground = SummaryVersionBrush });
+                    block.Inlines.Add(ThemeResources.Bind(new Run(" " + version), Run.ForegroundProperty, "RhiInstalledBrush"));
             }
             ToolTip.SetTip(block, items.Count == 0 ? null : DetailSectionSummaryPresenter.Text(items));
             block.IsVisible = items.Count > 0;

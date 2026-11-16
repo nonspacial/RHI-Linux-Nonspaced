@@ -99,6 +99,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         NotifyUxSettings();
         if (restartLoop) Updates.RestartBackgroundUpdateLoop(runImmediate);
         NotifyDlssDefaults();
+        AdoptTheme(); // #301
     }
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
