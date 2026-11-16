@@ -1318,6 +1318,19 @@ public static class UiLocalizationService
         (" OptiPatcher was not deployed; OptiScaler works without it: ", " O OptiPatcher não foi implantado; o OptiScaler funciona sem ele: "),
         ("OptiPatcher update available: ", "Atualização do OptiPatcher disponível: "),
         ("an OptiPatcher.asi RHI does not own is already in OptiScaler's plugins folder; it was left as it is.", "já existe na pasta plugins do OptiScaler um OptiPatcher.asi que não pertence ao RHI; ele foi deixado como está."),
+        // #269 Replace with a fresh copy
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniNotManagedMessage, "O OptiScaler não é gerenciado pelo RHI Linux neste jogo, então o OptiScaler.ini dele não foi substituído."),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniNoTemplateMessage, "O modelo de INI do OptiScaler não pôde ser preparado, então o OptiScaler.ini não foi substituído."),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniReplacedPrefix, "O OptiScaler.ini foi substituído por uma cópia nova do seu modelo: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniBackupPrefix, " O arquivo anterior foi guardado em: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FreshIniFailedPrefix, "O OptiScaler.ini não foi substituído: "),
+        // #270 versions
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleasePinnedCurrentPrefix, "O OptiScaler está fixado em uma release, então não é atualizado: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleasePinnedNotUpdatedPrefix, "O OptiScaler está fixado em uma release, então não foi atualizado: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleasePinWrongChannelMessage, "Uma release só pode ser fixada no OptiScaler Stable, DLSS NR e F5 DLSSNR; o Nightly tem sua própria opção de build."),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ReleaseTagInvalidPrefix, "Não é uma tag de release do OptiScaler que o RHI possa pedir: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.ReleaseMismatchPrefix, "O GitHub devolveu outra release do OptiScaler que não a fixada: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.ReleasePinNotOfferedPrefix, "O OptiScaler não tem lista de releases para esta versão: "),
         // #273
         ("OptiPatcher is in the game's plugins folder, which this OptiScaler build does not read; Update moves it to OptiScaler/plugins.",
             "O OptiPatcher está na pasta plugins do jogo, que esta versão do OptiScaler não lê; Atualizar o move para OptiScaler/plugins."),

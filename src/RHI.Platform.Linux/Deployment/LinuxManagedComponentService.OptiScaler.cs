@@ -125,6 +125,10 @@ public sealed partial class LinuxManagedComponentService
         _neuralVersionPins.Set(game, ManagedComponentKind.OptiScaler, tag is null ? null : $"{variant}{ReleasePinSeparator}{tag}");
     }
 
+    /// <summary>#269: "Replace with a fresh copy…" — the game's OptiScaler.ini becomes its fresh-install template.</summary>
+    public async Task<ComponentOperationResult> ReplaceOptiScalerIniWithFreshCopyAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => PatchTargetGuard(game) ?? await _optiscaler.ReplaceIniWithFreshCopyAsync(game, cancellationToken).ConfigureAwait(false);
+
     /// <summary>#270: the version RHI's installed OptiScaler records (null when not installed or unknown).</summary>
     public string? GetInstalledOptiScalerVersion(DetectedGame game) => _optiscaler.GetRecord(game)?.Version;
 

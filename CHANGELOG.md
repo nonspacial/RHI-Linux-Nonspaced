@@ -31,6 +31,12 @@ Not on `main` yet: nothing at the moment.
     not updated.
   - New **Remove old Nightly builds** setting (off by default): deletes old downloaded Nightly builds, keeping the
     newest and any a game uses.
+- OptiScaler's ⚙ opens with a Presets panel on every version, Stable included (#269, upstream 2.8.9):
+  - Recommended presets in one click: Real DLSS FG, DLSS Enabler FG and UMFG XeFG (which installs Universal MFG
+    Unlocker if it's missing). The one matching the game is ticked. New ones can arrive without an app update.
+  - Your four preset slots are one dropdown with Apply, Save current (Overwrite) and a … button to rename or clear.
+  - New **Replace with a fresh copy…** at the bottom: asks first, then gives the game the same OptiScaler.ini as a
+    fresh install (your GPU, DLSS Inputs and its version). The old file is kept in RHI's data folder.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

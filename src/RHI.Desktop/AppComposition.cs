@@ -105,6 +105,9 @@ internal sealed class AppComposition
     // w12/hdr-wsi rows
     /// <summary>#251: whether a game can use HDR (curated list, PCGamingWiki, the Microsoft Store record); the HDR section follows it.</summary>
     public RHI.Platform.Linux.Hdr.HdrSupportService? HdrSupport { get; init; }
+    // w14/optiscaler rows
+    /// <summary>#269: the recommended OptiScaler presets (upstream's optiscaler_presets.json).</summary>
+    public OptiScalerRecommendedPresets? OptiScalerRecommendedPresets { get; init; }
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -114,6 +117,11 @@ internal sealed class AppComposition
         vm.Resolution.Switcher = DisplayModes; // #191: also puts back a display switch an earlier run left behind
         vm.UpdatePolicy = UpdatePolicy; // w5/update-policy hook (#177)
         vm.Runtime.HdrSupport = HdrSupport; // w12/hdr-wsi hook (#251)
+        if (OptiScalerRecommendedPresets is { } presets) // w14/optiscaler hook (#269): read the newest list in the background
+        {
+            vm.OptiScalerPresets.RecommendedSource = presets;
+            RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => presets.RefreshAsync()), "optiscaler-presets");
+        }
         return vm;
     }
 
@@ -444,6 +452,7 @@ internal sealed class AppComposition
             ManagedComponents = managedComponents,
             ApiOverrideStore = apiOverrideStore,
             OptiScalerVariantStore = optiScalerVariantStore,
+            OptiScalerRecommendedPresets = new OptiScalerRecommendedPresets(http), // w14/optiscaler (#269)
             SettingsStore = settingsStore,
             UpdateAll = new LinuxUpdateAllService(records, managedComponents),
             DlssDefaults = new LinuxDlssDefaultsService(dlss, records),

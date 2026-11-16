@@ -102,7 +102,7 @@ public sealed class ShellDialogTests
         Assert.Equal(UiLocalizationService.Text("Win.InstalledVariantSelectorStaysLockedUntil"), dialog.VariantNote);
         Assert.True(dialog.HasWarning);
         Assert.Null(dialog.Message);
-        Assert.Null(dialog.Presets); // not a channel with presets (#187)
+        Assert.NotNull(dialog.Presets); // #269: the Presets panel shows on every version RHI manages
         Assert.Equal(["group G1", "s1", "s2", "divider", "group G2", "s3"], dialog.IniItems.Select(item => item switch
         {
             OptiScalerIniGroup g => "group " + g.Text,

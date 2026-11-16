@@ -1561,3 +1561,30 @@ pinned by tests.
   install and update and keeps each release in its own stamped cache folder, so an older cached build is never taken for
   the latest. Pinned by a provider test.
 - The release lists of Stable, DLSS NR and F5 as served on 2026-11-16 are test fixtures.
+
+### #269 — OptiScaler ⚙ Presets panel: recommended presets, slots dropdown, Replace with a fresh copy (2.8.9)
+
+- **Every version.** The Presets panel shows for every OptiScaler RHI manages, Stable included, and now sits near the top
+  of the ⚙, above the OptiScaler.ini settings (upstream opens the ⚙ on it). A preset setting the ⚙ does not offer on
+  that version (Stable has no Streamline row) is counted as not offered, as before.
+- **Recommended presets.** One button per preset with its description as the tooltip; the one matching the game's
+  current settings is ticked (every setting it sets that the ⚙ offers has that value, and Universal MFG Unlocker is
+  installed when the preset installs it). The list is upstream's `optiscaler_presets.json` (RankFTW/RHI `main`), read
+  in the background at start from raw.githubusercontent.com (64 KiB cap, `docs/download-trust.md`), cached at
+  `~/.cache/rhi-linux/optiscaler_presets.json`; until it is read once, and whenever it cannot be read, upstream's
+  built-in copies are used, so new presets arrive without an app update. Upstream field names map to the Linux ⚙
+  setting ids (`deployStreamline`/`deployDlssEnabler` → the Streamline / DLSS Enabler row, `streamlineVersion: latest`
+  → the newest Streamline the row offers, `fgEnabled`, `fgInput`, `fgOutput`, `fgNvngxReplacement`, `hudFix`,
+  `forceReflex`, `useGamesReflexMarkers`, `dxgiSpoofing`); unknown fields are ignored. A preset applies through the ⚙'s
+  own setting path, the stack first, and stops at the first setting that fails. UMFG XeFG then installs Universal MFG
+  Unlocker when the game lacks it, through that component's own install (its service is unchanged here). Linux
+  deviation: the ANR FG preset (2.9.3) is left out until RHI installs ANR FG (#272).
+- **Your presets.** The four slots are one dropdown with Apply, Save current (Overwrite for a slot in use) and a "…"
+  button to rename or clear the slot. Presets still carry no channel (#187, #273).
+- **Replace with a fresh copy….** At the bottom of the ⚙; asks first. The game's OptiScaler.ini becomes the template a
+  fresh install of its version takes (the user's template for its channel, GPU type and DLSS Inputs, #97), which is
+  upstream's 2.8.9 fix, then LoadAsiPlugins is turned on and, while RHI's ReShade is chained as ReShade64.dll,
+  LoadReshade, as the install does. Journaled; the record takes the new file's hash. Linux addition: the previous file
+  is copied to `~/.local/share/rhi-linux/optiscaler-ini-backups/` first. Upstream's mass "Deploy OptiScaler.ini" to
+  every game has no Linux counterpart and is not added.
+- Upstream's `optiscaler_presets.json` as published with RHI 2.9.4 is a test fixture.

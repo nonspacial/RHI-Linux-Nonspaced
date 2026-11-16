@@ -12,9 +12,10 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// The OptiScaler ⚙ Presets row (Refs #187, upstream's four slots): per slot a name box, Save (capture this game's
-/// current settings into the slot) and the slot's button that applies it here (hidden while the slot is empty). After an
-/// apply the ⚙ reopens so every dropdown shows the applied values.
+/// The OptiScaler ⚙ Presets panel (#269, upstream 2.8.9; the four slots from #187): the recommended presets as one-click
+/// buttons (the one matching the game is ticked, the description is the tooltip), then the user's four slots as one
+/// dropdown with Apply, Save current (Overwrite for a slot in use) and a "…" button to rename or clear the slot. After an
+/// apply the ⚙ reopens so every dropdown shows the applied values. All logic is the presenter's.
 /// </summary>
 internal static class OptiScalerPresetsRow
 {
@@ -27,80 +28,114 @@ internal static class OptiScalerPresetsRow
         ToolTip.SetTip(heading, T("Shell.PresetsTip"));
         ToolTip.SetShowDelay(heading, MiddleEllipsisText.TooltipDelay);
         panel.Children.Add(heading);
-        var slots = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
-        for (var i = 0; i < OptiScalerPresetsPresenter.SlotCount; i++)
-            slots.Children.Add(Slot(presets, snapshot, i, show, reopen));
-        panel.Children.Add(slots);
-        return panel;
-    }
 
-    private static Control Slot(OptiScalerPresetsPresenter presets, OptiScalerAdvancedSnapshot snapshot, int index, Action<string> show, Action reopen)
-    {
-        var name = new TextBox
+        var busy = new List<Button>();
+        async Task RunAsync(Func<Task<string>> action)
         {
-            Text = presets.Slot(index)?.Name ?? "",
-            PlaceholderText = UiLocalizationService.Format("Shell.PresetSlot", index + 1),
-            MinWidth = 120, Width = 150, Name = $"OptiScalerPresetName{index + 1}"
-        };
-        var save = new Button { Content = T("Win.Save"), Padding = new Thickness(8, 4), Name = $"OptiScalerPresetSave{index + 1}" };
-        ToolTip.SetTip(save, T("Shell.PresetSaveTip"));
-        ToolTip.SetShowDelay(save, MiddleEllipsisText.TooltipDelay);
-        var apply = new Button
+            foreach (var button in busy) button.IsEnabled = false;
+            try
+            {
+                show(await action());
+                reopen();
+            }
+            finally { foreach (var button in busy) button.IsEnabled = true; }
+        }
+
+        // Recommended presets
+        var recommended = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
+        var recommendedLabel = new TextBlock { Text = T("Osp.Recommended"), Opacity = 0.78 };
+        ToolTip.SetTip(recommendedLabel, T("Osp.RecommendedTip"));
+        ToolTip.SetShowDelay(recommendedLabel, MiddleEllipsisText.TooltipDelay);
+        foreach (var preset in presets.Recommended)
         {
-            Content = presets.Label(index).Replace("_", "__", StringComparison.Ordinal),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Padding = new Thickness(8, 4),
-            IsVisible = presets.Slot(index) is not null,
-            Name = $"OptiScalerPresetApply{index + 1}"
-        };
+            var pill = new Button
+            {
+                Content = (presets.IsActive(preset) ? "✓ " : "") + preset.Name.Replace("_", "__", StringComparison.Ordinal),
+                Padding = new Thickness(14, 4),
+                CornerRadius = new CornerRadius(15),
+                Name = "OptiScalerRecommended" + preset.Id
+            };
+            ToolTip.SetTip(pill, UiLocalizationService.Present(preset.Description));
+            ToolTip.SetShowDelay(pill, MiddleEllipsisText.TooltipDelay);
+            pill.Click += (_, _) => UiExceptionGuard.Forget(RunAsync(() => presets.ApplyRecommendedAsync(preset)), "OptiScalerRecommendedPreset");
+            busy.Add(pill);
+            recommended.Children.Add(pill);
+        }
+        panel.Children.Add(recommendedLabel);
+        panel.Children.Add(recommended);
+
+        // Your presets: one dropdown, Apply, Save current / Overwrite, "…" (rename or clear)
+        var slots = new ComboBox { ItemsSource = presets.SlotLabels, SelectedIndex = 0, MinWidth = 180, Name = "OptiScalerPresetSlot" };
+        var apply = new Button { Content = T("Win.Apply"), Padding = new Thickness(10, 4), Name = "OptiScalerPresetApply" };
         ToolTip.SetTip(apply, T("Shell.PresetApplyTip"));
-        ToolTip.SetShowDelay(apply, MiddleEllipsisText.TooltipDelay);
+        var save = new Button { Padding = new Thickness(10, 4), Name = "OptiScalerPresetSave" };
+        ToolTip.SetTip(save, T("Shell.PresetSaveTip"));
+        var more = new Button { Content = "…", Padding = new Thickness(10, 4), Name = "OptiScalerPresetMore" };
+        ToolTip.SetTip(more, T("Osp.More"));
+        foreach (var control in new Control[] { apply, save, more }) ToolTip.SetShowDelay(control, MiddleEllipsisText.TooltipDelay);
+        busy.AddRange([apply, save]);
 
+        int Index() => Math.Clamp(slots.SelectedIndex, 0, OptiScalerPresetsPresenter.SlotCount - 1);
         void Refresh()
         {
-            apply.Content = presets.Label(index).Replace("_", "__", StringComparison.Ordinal);
-            apply.IsVisible = presets.Slot(index) is not null;
+            var index = Index();
+            slots.ItemsSource = presets.SlotLabels;
+            slots.SelectedIndex = index;
+            var used = presets.Slot(index) is not null;
+            apply.IsVisible = used;
+            save.Content = T(used ? "Osp.Overwrite" : "Osp.SaveCurrent");
         }
+        slots.SelectionChanged += (_, _) =>
+        {
+            if (slots.SelectedIndex < 0) return;
+            var used = presets.Slot(Index()) is not null;
+            apply.IsVisible = used;
+            save.Content = T(used ? "Osp.Overwrite" : "Osp.SaveCurrent");
+        };
+        apply.Click += (_, _) => UiExceptionGuard.Forget(RunAsync(() => presets.ApplyAsync(Index())), "OptiScalerPresetApply");
+        save.Click += (_, _) =>
+        {
+            show(presets.SaveSlot(Index()));
+            Refresh();
+        };
+
+        var name = new TextBox { MinWidth = 160, Name = "OptiScalerPresetName" };
+        var rename = new Button { Content = T("Parity.ShaderProfileRename"), Padding = new Thickness(10, 4) };
+        var clear = new Button { Content = T("Win.Clear"), Padding = new Thickness(10, 4) };
+        var flyoutRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        flyoutRow.Children.Add(name);
+        flyoutRow.Children.Add(rename);
+        flyoutRow.Children.Add(clear);
+        var flyout = new Flyout { Content = flyoutRow };
+        more.Flyout = flyout;
+        flyout.Opened += (_, _) => name.Text = presets.Slot(Index())?.Name ?? "";
         void Rename()
         {
-            if (string.Equals(name.Text?.Trim() ?? "", presets.Slot(index)?.Name ?? "", StringComparison.Ordinal)) return;
-            if (presets.Rename(index, name.Text) is { } refused) show(refused);
+            if (presets.Rename(Index(), name.Text) is { } refused) show(refused);
             Refresh();
+            flyout.Hide();
         }
-        name.LostFocus += (_, _) => Rename();
+        rename.Click += (_, _) => Rename();
         name.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter) return;
-            e.Handled = true;
+            e.Handled = true; // Enter must not close the ⚙
             Rename();
         };
-        save.Click += (_, _) =>
+        clear.Click += (_, _) =>
         {
-            Rename();
-            show(presets.SaveSlot(index));
+            var index = Index();
+            show(presets.Clear(index) ?? UiLocalizationService.Format("Osp.Cleared", index + 1));
             Refresh();
+            flyout.Hide();
         };
-        apply.Click += (_, _) => UiExceptionGuard.Forget(ApplyAsync(), "OptiScalerPresetApply");
-        async Task ApplyAsync()
-        {
-            apply.IsEnabled = save.IsEnabled = false;
-            try
-            {
-                var line = await presets.ApplyAsync(index);
-                show(line);
-                reopen();
-            }
-            finally { apply.IsEnabled = save.IsEnabled = true; }
-        }
 
-        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 4 };
-        top.Children.Add(name);
-        top.Children.Add(save);
-        Grid.SetColumn(save, 1);
-        var slot = new StackPanel { Spacing = 4, Width = 210 };
-        slot.Children.Add(top);
-        slot.Children.Add(apply);
-        return slot;
+        var yours = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 6, LineSpacing = 6 };
+        foreach (var control in new Control[] { slots, apply, save, more }) yours.Children.Add(control);
+        panel.Children.Add(new TextBlock { Text = T("Osp.Yours"), Opacity = 0.78 });
+        panel.Children.Add(yours);
+        Refresh();
+        return panel;
     }
 }
 

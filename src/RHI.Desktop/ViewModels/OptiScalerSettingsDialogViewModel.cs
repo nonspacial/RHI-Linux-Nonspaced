@@ -262,6 +262,27 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
     public string? IniPath { get; }
     public bool HasIniPath => IniPath is not null;
 
+    // #269 "Replace with a fresh copy…" (was "Deploy OptiScaler.ini" upstream): at the bottom, asks first.
+    public bool CanReplaceIni => Snapshot.ManagedByRhi;
+    [ObservableProperty] private bool isConfirmingFreshIni;
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void AskReplaceIni() => IsConfirmingFreshIni = true;
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void CancelReplaceIni() => IsConfirmingFreshIni = false;
+
+    /// <summary>Replaces the game's OptiScaler.ini with its fresh-install template; on success the ⚙ reopens with the new values.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private async Task ReplaceIniAsync()
+    {
+        IsConfirmingFreshIni = false;
+        var (replaced, line) = await _shell.ReplaceOptiScalerIniWithFreshCopyAsync();
+        Message = line;
+        _shell.StatusText = line; // stays on the game page when the ⚙ reopens
+        if (replaced) RequestReopen();
+    }
+
     /// <summary>The #187 presets (hosted by the view), or null when the channel has none.</summary>
     public OptiScalerPresetsPresenter? Presets { get; }
 
