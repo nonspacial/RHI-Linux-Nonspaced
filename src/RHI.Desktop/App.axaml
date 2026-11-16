@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RHI.Desktop.ViewModels"
              xmlns:dialogs="using:RHI.Desktop.Views.Dialogs"
+             xmlns:views="using:RHI.Desktop.Views"
+             xmlns:l="using:RHI.Desktop.Localization"
              x:Class="RHI.Desktop.App"
              RequestedThemeVariant="Dark">
   <Application.Resources>
@@ -13,95 +15,159 @@
 
   <!-- Component dialogs bound from data templates (epic #89 unit 7): a dialog window's content is its view model. -->
   <Application.DataTemplates>
+    <!-- w14/ui-settings (#297): the FG unlocks', DLSS Enabler's and RTX Encore's ⚙ on the shared ⚙ layout (Views/Cog): loose
+         intro / warning text, cards, each setting's name left with its option beside it and the explanation under it (RTX
+         Encore's sections two per row, as upstream), the Files card, and the status line inside the ⚙. The frame (title,
+         scroll, Close) is CogWindow's. -->
     <DataTemplate DataType="vm:ProxyComponentDialogViewModel" x:DataType="vm:ProxyComponentDialogViewModel">
-      <StackPanel Spacing="12" Margin="18">
-        <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"/>
-        <TextBlock Text="{Binding Intro}" TextWrapping="Wrap" Opacity="0.76"/>
-        <TextBlock Text="{Binding RouteNote}" TextWrapping="Wrap" Foreground="{DynamicResource RhiWarningTextBrush}" IsVisible="{Binding HasRouteNote}"/>
-        <Grid ColumnDefinitions="220,*" ColumnSpacing="12" IsVisible="{Binding HasGpu}">
-          <TextBlock Text="{Binding GpuLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-          <ComboBox Grid.Column="1" ItemsSource="{Binding GpuOptions}" SelectedItem="{Binding SelectedGpu}" MinWidth="{Binding GpuMinWidth}"
-                    IsEnabled="{Binding CanChoose}"/>
-        </Grid>
-        <Grid ColumnDefinitions="220,*" ColumnSpacing="12" IsVisible="{Binding HasProxy}">
-          <TextBlock Text="{Binding ProxyLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-          <!-- #284: names in use are greyed with their component; ASI Loader's Hooked name is marked. -->
-          <ComboBox Grid.Column="1" ItemsSource="{Binding ProxyNameOptions}" SelectedItem="{Binding SelectedProxyItem}" MinWidth="{Binding ProxyMinWidth}"
-                    IsEnabled="{Binding CanChoose}" IsVisible="{Binding !ShowsProxyAsText}" ToolTip.Tip="{Binding ProxyTip}"
-                    DisplayMemberBinding="{Binding Display, DataType=vm:ProxyNameItem}">
-            <ComboBox.Styles>
-              <Style Selector="ComboBoxItem" x:DataType="vm:ProxyNameItem">
-                <Setter Property="IsEnabled" Value="{Binding IsFree}"/>
-                <Setter Property="ToolTip.Tip" Value="{Binding Tip}"/>
-              </Style>
-            </ComboBox.Styles>
-          </ComboBox>
-          <!-- RTX Encore installed: its name cannot change, so it is plain text, not a dead dropdown (#158). -->
-          <TextBlock Grid.Column="1" Text="{Binding SelectedProxy}" VerticalAlignment="Center" IsVisible="{Binding ShowsProxyAsText}"/>
-        </Grid>
-        <!-- w4/encore (#158): RTX Encore's Neural Rendering file; only that dialog has it. -->
-        <CheckBox Content="{Binding NeuralRenderingLabel}" IsChecked="{Binding NeuralRenderingChosen}" IsVisible="{Binding HasNeuralRendering}"
-                  IsEnabled="{Binding CanChangeNeuralRendering}" ToolTip.Tip="{Binding NeuralRenderingTip}"/>
-        <TextBlock Text="{Binding CompatibilityText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding HasCompatibility}"/>
-        <!-- w14/extras-fg: headings, notes and gold warnings (Universal MFG Unlocker's plugin and XeMFG sections, #278). -->
-        <ItemsControl ItemsSource="{Binding Lines}" IsVisible="{Binding HasLines}">
+      <StackPanel Spacing="14">
+        <TextBlock Text="{Binding Intro}" TextWrapping="Wrap" Classes="cogIntro"/>
+        <TextBlock Text="{Binding RouteNote}" TextWrapping="Wrap" Classes="cogWarning" IsVisible="{Binding HasRouteNote}"/>
+        <views:CogCard IsVisible="{Binding HasChoiceCard}">
+          <views:CogRow Label="{Binding GpuLabel}" IsVisible="{Binding HasGpu}">
+            <ComboBox ItemsSource="{Binding GpuOptions}" SelectedItem="{Binding SelectedGpu}" IsEnabled="{Binding CanChoose}"
+                      ToolTip.Tip="{Binding LockedTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+          </views:CogRow>
+          <views:CogRow Label="{Binding ProxyLabel}" Help="{Binding ProxyTip}" IsVisible="{Binding HasProxy}">
+            <Panel>
+              <!-- #284: names in use are greyed with their component; ASI Loader's Hooked name is marked. -->
+              <ComboBox ItemsSource="{Binding ProxyNameOptions}" SelectedItem="{Binding SelectedProxyItem}" HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding CanChoose}" IsVisible="{Binding !ShowsProxyAsText}"
+                        ToolTip.Tip="{Binding ProxyChoiceTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"
+                        DisplayMemberBinding="{Binding Display, DataType=vm:ProxyNameItem}">
+                <ComboBox.Styles>
+                  <Style Selector="ComboBoxItem" x:DataType="vm:ProxyNameItem">
+                    <Setter Property="IsEnabled" Value="{Binding IsFree}"/>
+                    <Setter Property="ToolTip.Tip" Value="{Binding Tip}"/>
+                  </Style>
+                </ComboBox.Styles>
+              </ComboBox>
+              <!-- RTX Encore installed: its name cannot change, so it is plain text, not a dead dropdown (#158). -->
+              <TextBlock Text="{Binding SelectedProxy}" VerticalAlignment="Center" Classes="cogLabel" IsVisible="{Binding ShowsProxyAsText}"/>
+            </Panel>
+          </views:CogRow>
+          <!-- w4/encore (#158): RTX Encore's Neural Rendering file; only that dialog has it. -->
+          <views:CogRow Label="{Binding NeuralRenderingLabel}" Help="{Binding NeuralRenderingTip}" IsVisible="{Binding HasNeuralRendering}">
+            <CheckBox IsChecked="{Binding NeuralRenderingChosen}" IsEnabled="{Binding CanChangeNeuralRendering}"/>
+          </views:CogRow>
+          <TextBlock Text="{Binding CompatibilityText}" TextWrapping="Wrap" Classes="cogNote" IsVisible="{Binding HasCompatibility}"/>
+          <TextBlock Text="{Binding InstalledText}" TextWrapping="Wrap" Classes="cogNote" IsVisible="{Binding IsInstalled}"/>
+          <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" IsVisible="{Binding ShowsCheck}">
+            <Button Classes="rhi secondary" Content="{Binding CheckLabel}" Command="{Binding CheckCommand}" IsEnabled="{Binding CanCheck}"/>
+            <Button Classes="rhi" Content="{Binding UpdateLabel}" Command="{Binding UpdateCommand}" IsEnabled="{Binding CanUpdate}"/>
+            <!-- The main window's overlay Cancel is behind this modal dialog: its own Cancel stops its update. -->
+            <Button Classes="rhi secondary" Content="{DynamicResource Ui.CancelOperation}" Command="{Binding Operations.CancelCommand}"
+                    IsVisible="{Binding ShowCancel}"/>
+          </WrapPanel>
+        </views:CogCard>
+        <!-- w14/extras-fg: notes and gold warnings; a heading starts its own card (Universal MFG Unlocker's plugin and XeMFG, #278). -->
+        <ItemsControl ItemsSource="{Binding LineCards}" IsVisible="{Binding HasLines}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Spacing="14"/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ComponentDialogLine">
-              <StackPanel Margin="0,0,0,8">
-                <TextBlock Text="{Binding Text}" FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding IsHeading}" Margin="0,4,0,0"/>
-                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding IsPlain}"/>
-                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource RhiWarningTextBrush}" IsVisible="{Binding IsWarning}"/>
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <TextBlock Text="{Binding InstalledText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding IsInstalled}"/>
-        <!-- w14/extras-fg: the mod's own settings by section (dropdowns or number boxes, help text under each), then its files. -->
-        <ItemsControl ItemsSource="{Binding Sections}" IsVisible="{Binding HasSections}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ComponentSettingSection">
-              <StackPanel Spacing="8" Margin="0,0,0,10">
-                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding HasTitle}"/>
-                <ItemsControl ItemsSource="{Binding Rows}">
+            <DataTemplate x:DataType="vm:ComponentLineCard">
+              <Panel>
+                <views:CogCard Header="{Binding Heading}" IsVisible="{Binding IsCard}">
+                  <ItemsControl ItemsSource="{Binding Lines}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><StackPanel Spacing="8"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ComponentDialogLine">
+                        <Panel>
+                          <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Classes="cogIntro" IsVisible="{Binding IsPlain}"/>
+                          <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Classes="cogWarning" IsVisible="{Binding IsWarning}"/>
+                        </Panel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </views:CogCard>
+                <ItemsControl ItemsSource="{Binding Lines}" IsVisible="{Binding IsLoose}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Spacing="8"/></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ComponentSettingRow">
-                      <StackPanel Margin="0,0,0,8">
-                        <Grid ColumnDefinitions="220,*" ColumnSpacing="12">
-                          <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                          <ComboBox Grid.Column="1" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" MinWidth="240"
-                                    IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsChoice}"/>
-                          <TextBox Grid.Column="1" Text="{Binding NumberText, UpdateSourceTrigger=LostFocus}" Width="120" HorizontalAlignment="Left"
-                                   IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsNumber}"/>
-                        </Grid>
-                        <TextBlock Text="{Binding Tip}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" Margin="0,4,0,0"/>
-                      </StackPanel>
+                    <DataTemplate x:DataType="vm:ComponentDialogLine">
+                      <Panel>
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Classes="cogIntro" IsVisible="{Binding IsPlain}"/>
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Classes="cogWarning" IsVisible="{Binding IsWarning}"/>
+                      </Panel>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-              </StackPanel>
+              </Panel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <ItemsControl ItemsSource="{Binding FileButtons}" IsVisible="{Binding HasFileButtons}">
+        <!-- w14/extras-fg: the mod's own settings, one card per section; a change is saved at once and a refused one goes back. -->
+        <ItemsControl ItemsSource="{Binding Sections}" IsVisible="{Binding HasSections}">
           <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+            <ItemsPanelTemplate><StackPanel Spacing="14"/></ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ComponentFileButton">
-              <Button Classes="rhi" Content="{Binding Label}" Command="{Binding OpenFileCommand}" IsEnabled="{Binding Exists}" Margin="0,0,8,8"/>
+            <DataTemplate x:DataType="vm:ComponentSettingSection">
+              <views:CogCard Header="{Binding Title}">
+                <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding IsListed}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Spacing="10"/></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ComponentSettingRow">
+                      <views:CogRow Label="{Binding Label}" Help="{Binding Tip}">
+                        <Panel>
+                          <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" HorizontalAlignment="Stretch"
+                                    IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsChoice}"
+                                    ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                          <TextBox Text="{Binding NumberText, UpdateSourceTrigger=LostFocus}" Width="120" HorizontalAlignment="Left"
+                                   IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsNumber}"
+                                   ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                        </Panel>
+                      </views:CogRow>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding Compact}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><views:CogCompactGrid/></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ComponentSettingRow">
+                      <views:CogCell Label="{Binding Label}" Help="{Binding Tip}">
+                        <Panel>
+                          <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" HorizontalAlignment="Stretch"
+                                    IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsChoice}"
+                                    ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                          <TextBox Text="{Binding NumberText, UpdateSourceTrigger=LostFocus}" HorizontalAlignment="Stretch"
+                                   IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsNumber}"
+                                   ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                        </Panel>
+                      </views:CogCell>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </views:CogCard>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ShowsCheck}">
-          <Button Classes="rhi" Content="{Binding CheckLabel}" Command="{Binding CheckCommand}" IsEnabled="{Binding CanCheck}"/>
-          <Button Classes="rhi" Content="{Binding UpdateLabel}" Command="{Binding UpdateCommand}" IsEnabled="{Binding CanUpdate}"/>
-          <!-- The main window's overlay Cancel is behind this modal dialog: its own Cancel stops its update. -->
-          <Button Classes="rhi" Content="{DynamicResource Ui.CancelOperation}" Command="{Binding Operations.CancelCommand}"
-                  IsVisible="{Binding ShowCancel}"/>
-        </StackPanel>
-        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.82"/>
-        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" IsVisible="{Binding FooterIsPlain}"/>
-        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource RhiWarningTextBrush}" Opacity="0.78" IsVisible="{Binding FooterIsWarning}"/>
+        <!-- Upstream's Files card: Open <the mod's ini / log / jsonc>, disabled while the file is missing. -->
+        <views:CogCard Header="{l:T Cog.Files}" IsVisible="{Binding HasFileButtons}">
+          <ItemsControl ItemsSource="{Binding FileButtons}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8"/></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ComponentFileButton">
+                <Button Classes="rhi secondary cogOpenFile" Content="{Binding Label}" Command="{Binding OpenFileCommand}" IsEnabled="{Binding Exists}"
+                        ToolTip.Tip="{Binding Path}" ToolTip.ShowDelay="2000"/>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </views:CogCard>
+        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" Classes="cogNote" IsVisible="{Binding FooterIsPlain}"/>
+        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" Classes="cogWarning" IsVisible="{Binding FooterIsWarning}"/>
+        <!-- #297: results and errors inside the ⚙ (upstream's status line). -->
+        <TextBlock Name="CogStatus" Text="{Binding Message}" TextWrapping="Wrap" Classes="cogStatus" IsVisible="{Binding HasMessage}"/>
       </StackPanel>
     </DataTemplate>
     <!-- Dialogs moved out of the main window's code-behind (epic #89): Views/Dialogs/*.axaml. -->
@@ -329,6 +395,186 @@
     </Style>
     <Style Selector="TextBlock.secondary">
       <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+
+    <!-- w14/ui-settings (#296/#297): the Settings page's one layout (upstream Themes/DarkTheme.xaml Settings* styles), from
+         the theme resources only so colour themes apply. -->
+    <Style Selector="Border.settingsCard">
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="18,16"/>
+    </Style>
+    <Style Selector="Border.settingsRow">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding" Value="0,2"/>
+    </Style>
+    <Style Selector="Border.settingsFooter">
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="0,1,0,0"/>
+      <Setter Property="Padding" Value="16,8"/>
+    </Style>
+    <Style Selector="TextBlock.settingsHelp">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.settingsCardTitle">
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.settingsResultContext">
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+    <Style Selector="Button.settingsNav">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="MinHeight" Value="38"/>
+      <Setter Property="Padding" Value="14,8"/>
+    </Style>
+    <Style Selector="Button.settingsNav.active">
+      <Setter Property="Background" Value="{DynamicResource RhiControlPressedBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="Button.settingsResult">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
+    <Style Selector="Button.settingsPrimary">
+      <Setter Property="Background" Value="{DynamicResource RhiControlPressedBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+
+    <!-- w14/ui-settings (#297): the shared component ⚙ layout (Views/Cog: CogDialog, CogWindow, CogCard, CogRow, CogCell). -->
+    <Style Selector="TextBlock.cogTitle">
+      <Setter Property="FontSize" Value="20"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="Border.cogCard">
+      <Setter Property="Background" Value="{DynamicResource RhiCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="18,16"/>
+    </Style>
+    <Style Selector="TextBlock.cogHeading">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="LetterSpacing" Value="0.6"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogLabel">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogHelp">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogIntro">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogEmpty">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogWarning">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiWarningTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogNote">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogStatus">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogStatus.success">
+      <Setter Property="Foreground" Value="{DynamicResource RhiInstalledBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.cogStatus.error">
+      <Setter Property="Foreground" Value="{DynamicResource RhiRemoveForegroundBrush}"/>
+    </Style>
+    <Style Selector="Border.cogButtonBar">
+      <Setter Property="Background" Value="{DynamicResource RhiToolbarBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="0,1,0,0"/>
+    </Style>
+    <Style Selector="Button.rhi.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.rhi.secondary:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource RhiDisabledTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiDisabledBorderBrush}"/>
+    </Style>
+    <!-- w14/ui-settings (small) rows -->
+    <!-- #309 (upstream 2.8.9 ApplyFavouriteButtonStyle): a quiet Favourite button, amber text once favourited. -->
+    <Style Selector="Button.rhi.favourite">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.rhi.favourite.on">
+      <Setter Property="Foreground" Value="{DynamicResource RhiWarningBrush}"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): a greyed library name means ReShade isn't installed for that game. -->
+    <Style Selector="TextBlock.libraryName">
+      <Setter Property="Foreground" Value="{DynamicResource RhiGameRowTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.libraryName.noReShade">
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): the store badge opens the game's Steam Community page when its app id is known. -->
+    <Style Selector="Border.storeLink">
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <!-- #309 (upstream 2.9.0): a link inside the message of the day's text. -->
+    <Style Selector="Button.motdLink">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.motdLink:pointerover">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <!-- #309 (upstream 2.8.9): the Quick Start's step badges and tip boxes. -->
+    <Style Selector="Border.quickStartBadge">
+      <Setter Property="Background" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.quickStartBadge">
+      <Setter Property="Foreground" Value="{DynamicResource RhiBackgroundBrush}"/>
+    </Style>
+    <Style Selector="Border.quickStartTip">
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
+    <!-- #309 (upstream 2.9.2): What's New's version list. -->
+    <Style Selector="Button.whatsNewItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Padding" Value="10,6"/>
+    </Style>
+    <Style Selector="Button.whatsNewItem.selected">
+      <Setter Property="Background" Value="{DynamicResource RhiControlHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
   </Application.Styles>
 </Application>

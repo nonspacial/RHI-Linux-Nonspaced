@@ -30,6 +30,7 @@ public static class ThemeResources
         ("RhiPanelInsetBrush", "#0D141C"),
         ("RhiSelectedTabBrush", "#14212A"),
         ("RhiGameRowBrush", "#151C28"),
+        ("RhiCardBrush", "#161C26"), // w14/ui-settings (#296/#297): Settings' and the ⚙ windows' cards
         // Lines
         ("RhiBorderBrush", "#1E2630"),
         ("RhiCardBorderBrush", "#1E2430"),

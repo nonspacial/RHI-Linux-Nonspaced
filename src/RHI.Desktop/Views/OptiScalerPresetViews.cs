@@ -157,7 +157,7 @@ internal sealed class OptiScalerMenuKeyRow
             SelectedItem = OptionLists.OptiScalerMenuKey.Display(settings.OptiScalerMenuKey),
             MinWidth = 230
         };
-        var apply = new Button { Content = UiLocalizationService.Text("Ini.ApplyToAllGames"), Padding = new Thickness(12, 6), Name = "OptiScalerMenuKeyApplyAll" };
+        var apply = new Button { Content = UiLocalizationService.Text("Set.WriteOsKeyToAll"), Padding = new Thickness(12, 6), Name = "OptiScalerMenuKeyApplyAll" };
         ToolTip.SetTip(apply, UiLocalizationService.Text("Shell.MenuKeyApplyAllTip"));
         ToolTip.SetShowDelay(apply, MiddleEllipsisText.TooltipDelay);
         apply.IsVisible = Key.Length > 0;
@@ -174,15 +174,11 @@ internal sealed class OptiScalerMenuKeyRow
             finally { apply.IsEnabled = true; }
         }
 
-        var label = new TextBlock { Text = UiLocalizationService.Text("Shell.MenuKey"), FontWeight = FontWeight.SemiBold };
-        ToolTip.SetTip(label, UiLocalizationService.Text("Shell.MenuKeyTip"));
-        ToolTip.SetShowDelay(label, MiddleEllipsisText.TooltipDelay);
-        var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
-        row.Children.Add(_key);
-        row.Children.Add(apply);
-        var panel = new StackPanel { Spacing = 6 };
-        panel.Children.Add(label);
-        panel.Children.Add(row);
+        // #296 (upstream Components › ReLimiter and OptiScaler › OptiScaler): "Overlay key" row, then its write button.
+        apply.Classes.Add("settingsPrimary");
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(SettingsLayout.Row(UiLocalizationService.Text("Set.OverlayKey"), _key, tip: UiLocalizationService.Text("Shell.MenuKeyTip")));
+        panel.Children.Add(SettingsLayout.Block(apply));
         Control = panel;
     }
 

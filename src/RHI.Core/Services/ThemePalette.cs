@@ -1,4 +1,4 @@
-// #301 (upstream 2.9.3 ThemePalette.cs, ported): colour themes (Settings › Interface › Colour theme): the colours a
+// #301 (upstream 2.9.3 ThemePalette.cs, ported): colour themes (Settings › General › Colour theme): the colours a
 // theme picks, the built-in presets, the share code, and ThemeColorMapper, which turns any colour of RHI's default dark
 // look into the theme's version. Pure logic (no Avalonia objects); the desktop's ThemeResources applies it to the
 // app's brush resources.

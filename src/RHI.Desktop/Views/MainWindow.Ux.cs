@@ -41,6 +41,7 @@ public sealed partial class MainWindow
 
     private void InitializeLinuxUx()
     {
+        InitializeStatusBar(); // #298
         // The state to come back to from a minimised window (and from the tray when it was minimised first). Changes
         // while hidden in the tray are the window manager's, not the user's (e.g. dropping maximised on withdraw).
         PropertyChanged += (_, e) =>
@@ -600,7 +601,7 @@ public sealed partial class MainWindow
     private async Task ShowMotdAsync(LinuxMotdMessage message)
     {
         var close = new Button { Content = "OK", HorizontalAlignment = HorizontalAlignment.Right, Padding = new Thickness(14, 7) };
-        var text = new TextBlock { Text = message.Text, TextWrapping = TextWrapping.Wrap, MaxWidth = 680 };
+        var text = MotdView.Build(message.Text, OpenProjectLink); // #309: links in the message open in the browser (upstream 2.9.0)
         var panel = new Grid { RowDefinitions = new RowDefinitions("*,Auto"), Margin = new Thickness(18) };
         panel.Children.Add(new ScrollViewer { Content = text, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
         panel.Children.Add(close); Grid.SetRow(close, 1);

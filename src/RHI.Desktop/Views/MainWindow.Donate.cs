@@ -162,22 +162,28 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
         };
-        var link = author.DonationUrl.AbsoluteUri;
-        // "Ko-fi" for ko-fi.com links (all of upstream's), the site's host otherwise, so the label never misnames a link.
-        var kofi = new Button { Content = author.LinkLabel, FontSize = 11, Padding = new Thickness(10, 4), VerticalAlignment = VerticalAlignment.Center };
-        ToolTip.SetTip(kofi, link);
-        ToolTip.SetShowDelay(kofi, MiddleEllipsisText.TooltipDelay);
-        AutomationProperties.SetName(kofi, TF("Win.On", author.Name, author.LinkLabel));
-        kofi.Click += (_, _) =>
+        // #309 (upstream 2.9.2): Ko-fi and Patreon side by side when the manifest has both. "Ko-fi" / "Patreon" for those
+        // sites, the site's host otherwise, so the label never misnames a link.
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var (label, url) in author.Links)
         {
-            // Same opener as the Links dialog: http(s) only, argument list, no shell.
-            if (!LinuxDesktopOpener.TryOpenUri(link, out var error))
-                status.Text = ErrorLineText.LinkNotOpened(link, error);
-        };
+            var link = url.AbsoluteUri;
+            var button = new Button { Content = label, FontSize = 11, Padding = new Thickness(10, 4), VerticalAlignment = VerticalAlignment.Center };
+            ToolTip.SetTip(button, link);
+            ToolTip.SetShowDelay(button, MiddleEllipsisText.TooltipDelay);
+            AutomationProperties.SetName(button, TF("Win.On", author.Name, label));
+            button.Click += (_, _) =>
+            {
+                // Same opener as the Links dialog: http(s) only, argument list, no shell.
+                if (!LinuxDesktopOpener.TryOpenUri(link, out var error))
+                    status.Text = ErrorLineText.LinkNotOpened(link, error);
+            };
+            buttons.Children.Add(button);
+        }
 
         row.Children.Add(name);
         row.Children.Add(role); Grid.SetColumn(role, 1);
-        row.Children.Add(kofi); Grid.SetColumn(kofi, 2);
+        row.Children.Add(buttons); Grid.SetColumn(buttons, 2);
         return row;
     }
 }

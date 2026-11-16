@@ -18,7 +18,7 @@ public static class PathEllipsis
     /// <summary>Returns <paramref name="text"/> unchanged when it fits <paramref name="maxWidth"/>, otherwise the
     /// widest compacted form that fits (never wider than <paramref name="maxWidth"/> unless even "…" is wider).
     /// Text that is not a path is trimmed at the end, or in the middle when <paramref name="middleForText"/> is set
-    /// (one-line lists such as "renodx-x.addon64 · by Marat", where both ends matter).</summary>
+    /// (one-line lists such as "renodx-x.addon64 · RenoDX: Marat", where both ends matter).</summary>
     public static string Compact(string? text, double maxWidth, Func<string, double> measure, bool middleForText = false)
     {
         ArgumentNullException.ThrowIfNull(measure);

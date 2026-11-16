@@ -41,12 +41,13 @@ internal sealed class GitcUpliftSettingsCard
             if (e.KeyModifiers is not (KeyModifiers.None or KeyModifiers.Shift) && e.Key != Avalonia.Input.Key.Back) return;
             if (GitcUpliftPresenter.VirtualKey(e.Key) is not { } vk) return;
             SetKey(vk);
+            KeyChanged?.Invoke(); // #297 (upstream 2.9.2): saved the moment the key is pressed
             e.Handled = true;
         }, RoutingStrategies.Tunnel);
         var clear = new Button { Content = "↺", Padding = new Thickness(10, 6), Name = "GitcUpliftKeyClear" };
         ToolTip.SetTip(clear, UiLocalizationService.Text("Uplift.KeyClearTip"));
         ToolTip.SetShowDelay(clear, MiddleEllipsisText.TooltipDelay);
-        clear.Click += (_, _) => SetKey(0);
+        clear.Click += (_, _) => { SetKey(0); KeyChanged?.Invoke(); };
         SetKey(settings.UpliftEnableKey);
         var write = new Button { Content = UiLocalizationService.Text("Uplift.WriteAll"), Padding = new Thickness(12, 6), Name = "GitcUpliftWriteAll" };
         ToolTip.SetTip(write, UiLocalizationService.Text("Uplift.WriteAllTip"));
@@ -59,22 +60,21 @@ internal sealed class GitcUpliftSettingsCard
             finally { write.IsEnabled = true; }
         }
 
-        var title = new TextBlock { Text = UiLocalizationService.Text("Uplift.CardTitle"), FontWeight = FontWeight.SemiBold, FontSize = 15 };
-        var label = new TextBlock { Text = UiLocalizationService.Text("Uplift.KeyLabel"), FontWeight = FontWeight.SemiBold };
-        ToolTip.SetTip(label, UiLocalizationService.Text("Uplift.KeyTip"));
-        ToolTip.SetShowDelay(label, MiddleEllipsisText.TooltipDelay);
+        // #296 (upstream SettingsHandler.UpliftKey): Components › GITC Uplift card — [NR on/off key | box ↺], then the button.
         var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
         row.Children.Add(_key);
         row.Children.Add(clear);
-        row.Children.Add(write);
-        var panel = new StackPanel { Spacing = 6, Name = "GitcUpliftCard" };
-        panel.Children.Add(title);
-        panel.Children.Add(label);
-        panel.Children.Add(row);
-        Control = panel;
+        write.Classes.Add("settingsPrimary");
+        var panel = new StackPanel { Spacing = 8, Name = "GitcUpliftCard" };
+        panel.Children.Add(SettingsLayout.Row(UiLocalizationService.Text("Uplift.KeyLabel"), row, tip: UiLocalizationService.Text("Uplift.KeyTip")));
+        panel.Children.Add(SettingsLayout.Block(write));
+        Control = SettingsLayout.Card(UiLocalizationService.Text("Uplift.CardTitle"), null, panel);
     }
 
     public Control Control { get; }
+
+    /// <summary>The user pressed a key or cleared it (Settings saves it straight away).</summary>
+    public event Action? KeyChanged;
 
     /// <summary>The chosen key's virtual-key code (0 = None).</summary>
     public int Key => _vk;

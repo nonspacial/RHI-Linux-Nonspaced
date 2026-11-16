@@ -72,7 +72,7 @@ internal sealed class PeakBrightnessSettingsRows
         _enabled.SelectionChanged += (_, _) => SyncPresets();
         SyncPresets();
 
-        var apply = new Button { Name = "PeakNitsApplyAll", Content = UiLocalizationService.Text("Ini.ApplyToAllGames"), Padding = new Thickness(12, 6), HorizontalAlignment = HorizontalAlignment.Left };
+        var apply = new Button { Name = "PeakNitsApplyAll", Content = UiLocalizationService.Text("Set.WritePeakToAll"), Padding = new Thickness(12, 6), HorizontalAlignment = HorizontalAlignment.Left };
         ToolTip.SetTip(apply, UiLocalizationService.Text("Ini.PeakApplyTip"));
         ToolTip.SetShowDelay(apply, 2000);
         async Task ApplyAll()
@@ -102,14 +102,15 @@ internal sealed class PeakBrightnessSettingsRows
         nitsRow.Children.Add(auto);
 
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PeakSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(SettingsLayout.SubHeading(UiLocalizationService.Text("Ini.PeakSection"), UiLocalizationService.Text("Ini.PeakNote")));
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.PeakNits"), nitsRow));
         panel.Children.Add(monitorHost);
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.PeakEnabled"), _enabled));
         panel.Children.Add(_presetRow);
-        panel.Children.Add(apply);
+        apply.Classes.Add("settingsPrimary");
+        panel.Children.Add(SettingsLayout.Block(apply));
         panel.Children.Add(confirm.Control);
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PeakNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Ini.PeakNote")));
         Control = panel;
     }
 
@@ -141,79 +142,6 @@ internal sealed class PeakBrightnessSettingsRows
         => UiLocalizationService.Format(peak.Source == RHI.Platform.Linux.Hdr.DisplayPeakSource.KdeDisplaySettings ? "Ini.PeakFromKde" : "Ini.PeakFromMonitor",
             peak.Label, peak.PeakNits);
 
-    private static StackPanel Labeled(string label, Control control)
-    {
-        var panel = new StackPanel { Spacing = 5 };
-        panel.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(control);
-        return panel;
-    }
-}
-
-/// <summary>
-/// w5/ini-presets (#182): the RenoDX ⚙ additions (upstream <c>RdxCogButton_Click</c>): "Set maximum nits" for this game
-/// (every RenoDX preset in its ReShade.ini, or preset 1) and, for Unreal Engine games, the UE-Extended switch, which
-/// reinstalls RenoDX with the other add-on.
-/// </summary>
-internal static class RenoDxPeakPanel
-{
-    public static Control Create(IniPresetsPresenter presenter, Action<string> show)
-    {
-        var panel = new StackPanel { Spacing = 8, Margin = new Thickness(0, 6, 0, 6) };
-        if (presenter.GameHasReShadeIni()) panel.Children.Add(NitsRow(presenter, show)); // no ReShade.ini yet: no presets to write
-        if (presenter.OffersUeExtended()) panel.Children.Add(UeExtendedRow(presenter, show));
-        return panel;
-    }
-
-    private static Control NitsRow(IniPresetsPresenter presenter, Action<string> show)
-    {
-        var panel = new StackPanel { Spacing = 8 };
-        var nits = new NumericUpDown
-        {
-            Name = "RenoDxGameNits", Minimum = 1, Maximum = RenoDxPeakNits.MaxNits, Increment = 10, FormatString = "0",
-            Value = presenter.GameNits() ?? 1000, MinWidth = 150
-        };
-        var set = new Button { Name = "RenoDxGameNitsSet", Classes = { "rhi" }, Content = UiLocalizationService.Text("Ini.PeakGameSetButton"), Margin = new Thickness(8, 0, 0, 0) };
-        ToolTip.SetTip(set, UiLocalizationService.Text("Ini.PeakGameTip"));
-        ToolTip.SetShowDelay(set, 2000);
-        set.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
-        {
-            set.IsEnabled = false;
-            try { show(await presenter.SetGameNitsAsync((int)(nits.Value ?? 0))); }
-            finally { set.IsEnabled = true; }
-        }, nameof(RenoDxPeakPanel));
-        var row = new WrapPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(nits);
-        row.Children.Add(set);
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PeakGame"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(row);
-        return panel;
-    }
-
-    private static Control UeExtendedRow(IniPresetsPresenter presenter, Action<string> show)
-    {
-        var panel = new StackPanel { Spacing = 8 };
-        var ue = new ComboBox { Name = "RenoDxUeExtended", ItemsSource = OptionLists.OffOn.Items, SelectedItem = OptionLists.OffOn.Display(presenter.UeExtendedInstalled()), MinWidth = 140 };
-        ToolTip.SetTip(ue, UiLocalizationService.Text("Ini.UeExtendedTip"));
-        ToolTip.SetShowDelay(ue, 2000);
-        var reverting = false;
-        ue.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
-        {
-            if (reverting || ue.SelectedItem is not string chosen) return;
-            var on = OptionLists.OffOn.Value(chosen);
-            if (on == presenter.UeExtendedInstalled()) return;
-            ue.IsEnabled = false;
-            try { show(await presenter.SetUeExtendedAsync(on)); }
-            finally
-            {
-                reverting = true;
-                ue.SelectedItem = OptionLists.OffOn.Display(presenter.UeExtendedInstalled());
-                reverting = false;
-                ue.IsEnabled = true;
-            }
-        }, nameof(RenoDxPeakPanel));
-        panel.Children.Add(new TextBlock { Text = "UE-Extended", FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(ue);
-        return panel;
-    }
+    // #296: the Settings row layout (name left, control right).
+    private static Control Labeled(string label, Control control) => SettingsLayout.Row(label, control, tip: ToolTip.GetTip(control) as string);
 }

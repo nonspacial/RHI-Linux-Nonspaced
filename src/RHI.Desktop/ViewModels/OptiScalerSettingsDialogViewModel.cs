@@ -11,6 +11,9 @@ namespace RHI.Desktop.ViewModels;
 /// <summary>A line of the OptiScaler.ini part of the ⚙ dialog: a group divider, a group heading or a setting.</summary>
 public abstract class OptiScalerIniItem : ObservableObject;
 
+/// <summary>#297: one OptiScaler.ini group as a ⚙ card — its heading and its settings (two per row).</summary>
+public sealed record OptiScalerIniGroupCard(string Title, IReadOnlyList<OptiScalerIniSetting> Settings);
+
 /// <summary>The thin line before every group but the first.</summary>
 public sealed class OptiScalerIniDivider : OptiScalerIniItem;
 
@@ -167,6 +170,10 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
                 items.Add(new OptiScalerIniSetting(this, setting));
             }
             IniItems = items;
+            // #297: one card per group, its settings two per row (upstream AddOsGrid).
+            IniGroups = items.OfType<OptiScalerIniGroup>().Select(group => new OptiScalerIniGroupCard(group.Text,
+                items.SkipWhile(item => !ReferenceEquals(item, group)).Skip(1).TakeWhile(item => item is OptiScalerIniSetting)
+                    .Cast<OptiScalerIniSetting>().ToArray())).ToArray();
             // #187: the four global presets (upstream shows them for the Nightly, DLSS NR and F5 channels).
             if (OptiScalerPresetsPresenter.AppliesTo(snapshot)) Presets = shell.OptiScalerPresets;
             // #272: All Settings and the saved inis, while RHI manages OptiScaler on the game.
@@ -275,8 +282,17 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
     public bool HasWarning => Warning is not null;
     public bool HasSettings { get; }
     public IReadOnlyList<OptiScalerIniItem> IniItems { get; } = [];
+    /// <summary>#297: <see cref="IniItems"/> as the ⚙'s cards, one per group.</summary>
+    public IReadOnlyList<OptiScalerIniGroupCard> IniGroups { get; } = [];
     public string? IniPath { get; }
     public bool HasIniPath => IniPath is not null;
+
+    /// <summary>
+    /// #297 (upstream 2.9.0 "New buttons to open … OptiScaler.ini"; 2.9.4 footer): "Open OptiScaler.ini", disabled while the
+    /// game has none; a failure shows in the ⚙'s status line.
+    /// </summary>
+    public ComponentFileButton OpenIni => _openIni ??= new(UiLocalizationService.Format("Fg.OpenFile", "OptiScaler.ini"), IniPath ?? "", line => Message = line);
+    private ComponentFileButton? _openIni;
 
     // #269 "Replace with a fresh copy…" (was "Deploy OptiScaler.ini" upstream): at the bottom, asks first.
     public bool CanReplaceIni => Snapshot.ManagedByRhi;
@@ -302,8 +318,12 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
     /// <summary>The #187 presets (hosted by the view), or null when the channel has none.</summary>
     public OptiScalerPresetsPresenter? Presets { get; }
 
-    /// <summary>Why there is nothing to change, or the last change's result.</summary>
-    [ObservableProperty] private string? message;
+    /// <summary>Why there is nothing to change, or the last change's result: the status line inside the ⚙ (#297).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMessage))]
+    private string? message;
+
+    public bool HasMessage => !string.IsNullOrEmpty(Message);
 
     /// <summary>The dialog's own Cancel: while a setting change can still stop (downloading or waiting).</summary>
     public bool ShowCancel => _applying && Operations.CanCancel;

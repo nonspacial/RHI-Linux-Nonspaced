@@ -12,6 +12,12 @@ public sealed partial class LinuxManagedComponentService
     /// <summary>The DLSS5 Tool service (set by the app's composition; null in builds and tests constructed without it).</summary>
     public Dlss5ToolDeploymentService? Dlss5Tool { get; set; }
 
+    /// <summary>
+    /// #317: the DLSS / Streamline section's swap service (the shell's, with its Update History), which a DLSS5 Tool install
+    /// asks to bring the game's DLSS SR/RR/FG to the newest. DLSS5 Tool never owns those files. Null: nothing is upgraded.
+    /// </summary>
+    public LinuxDlssDefaultsService? DlssSection { get; set; }
+
     /// <summary>The DLSS5 Tool build for the game: the installed one, else the saved Foveated switch (upstream's per-game choice).</summary>
     public Dlss5ToolBuild GetDlss5ToolBuild(DetectedGame game)
         => Dlss5Tool?.InstalledBuild(game)
@@ -81,8 +87,57 @@ public sealed partial class LinuxManagedComponentService
             _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Tool),
             _neuralVersionPins.GetNeuralRenderingDllVersion(game),
             withBridge);
-        return await Dlss5Tool.InstallAsync(game, options, hasDlss, cancellationToken).ConfigureAwait(false);
+        var installed = await Dlss5Tool.InstallAsync(game, options, hasDlss, cancellationToken).ConfigureAwait(false);
+        if (!installed.Success) return installed;
+        // #317 (upstream: "Upgrade all DLSS DLLs to latest" after the add-on): through the DLSS section, never as DLSS5 Tool's.
+        return installed with { Message = installed.Message + await BringDlssToNewestAsync(game, cancellationToken).ConfigureAwait(false) };
     }
+
+    /// <summary>
+    /// #317: the game's DLSS SR/RR/FG to the newest through <see cref="DlssSection"/> (its Quick Apply: the files the game
+    /// has, .original backups, journaled swaps, Update History entries). A game whose update inclusion leaves DLSS out (#178)
+    /// keeps its files, as Follow newest does. Returns the line added to the install's message ("" when nothing changed).
+    /// A failure here never fails the install: the add-on is in place and the DLSS section can still do it.
+    /// </summary>
+    private async Task<string> BringDlssToNewestAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (DlssSection is not { } section) return "";
+        if (_updateInclusion?.ExclusionFor(game, ManagedComponentKind.Dlss) is { } exclusion && exclusion != UpdateExclusion.None)
+            return DlssKeptByInclusionNote;
+        LinuxDlssBatchResult result;
+        try
+        {
+            result = await section.ApplyNewestDlssAsync(game, null, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("dlss5-tool", $"DLSS5 Tool: the game's DLSS could not be brought to the newest for {game.Name}", ex);
+            return DlssNewestFailedPrefix + (ex is OperationCanceledException ? "cancelled" : ex.Message);
+        }
+        var changed = result.Items.Where(item => item.Changed).Select(item => ShortName(item.Component)).ToArray();
+        var failed = result.FailedItems.ToArray();
+        var line = changed.Length > 0 ? DlssNewestPrefix + string.Join(", ", changed) + "." : "";
+        if (failed.Length > 0) line += DlssNewestFailedPrefix + string.Join(" ", failed.Select(item => item.Message));
+        if (result.DeferredCount > 0) line += DlssNewestDeferredNote;
+        return line;
+
+        static string ShortName(LinuxDlssBatchComponent component) => component switch
+        {
+            LinuxDlssBatchComponent.SuperResolution => "SR",
+            LinuxDlssBatchComponent.RayReconstruction => "RR",
+            LinuxDlssBatchComponent.FrameGeneration => "FG",
+            _ => component.ToString()
+        };
+    }
+
+    /// <summary>#317: the install's line after the game's DLSS files went to the newest; the families follow ("SR, FG.").</summary>
+    public const string DlssNewestPrefix = " The game's DLSS was brought to the newest in the DLSS / Streamline section (originals kept as .original): ";
+    /// <summary>#317: the newest DLSS could not be put in; the reason follows. The add-on is installed all the same.</summary>
+    public const string DlssNewestFailedPrefix = " The game's DLSS could not be brought to the newest; use the DLSS / Streamline section: ";
+    /// <summary>#317: the game runs, so its DLSS files were left for now.</summary>
+    public const string DlssNewestDeferredNote = " The game's DLSS was left as it is while the game runs; use Quick Apply in the DLSS / Streamline section later.";
+    /// <summary>#317: the game's update inclusion leaves DLSS out, so its DLSS files stay as they are.</summary>
+    public const string DlssKeptByInclusionNote = " The game's DLSS was left as it is: its update inclusion leaves DLSS out.";
 
     /// <summary>
     /// The DX11 Bridge row installs upstream's "DLSS5 Tool + DX11 Bridge": the DLSS5 Tool first (the bridge only mirrors

@@ -116,6 +116,21 @@ public sealed class LinuxAppSettings
     /// VKD3D_FRAME_RATE, unless the game has its own (or ReLimiter / Display Commander). 0 = Off, else 20–1000.
     /// </summary>
     public uint GlobalFpsLimit { get; set; }
+    // w14/ui-settings rows
+    /// <summary>#296 (upstream SettingsLastSection): the Settings section left last time; Settings reopens there.</summary>
+    public string SettingsLastSection { get; set; } = "";
+    /// <summary>#296 (upstream 2.9.3 "Tabs"): Settings shows one section at a time with a tab strip.</summary>
+    public bool SettingsTabbed { get; set; }
+    /// <summary>#312 (upstream 2.9.3 ShowHdrLaunchButton): the HDR row on game pages; hidden, a game's own choice still applies at launch.</summary>
+    public bool ShowHdrLaunchButton { get; set; } = true;
+    /// <summary>#312 (upstream 2.9.3 ShowResLaunchButton): the resolution switch row on game pages; hidden, a game's own choice still applies.</summary>
+    public bool ShowResLaunchButton { get; set; } = true;
+    // w14/ui-settings (small) rows
+    /// <summary>#309 (upstream 2.9.2 PatchNotesNavHidden / PatchNotesFontSize): What's New remembers whether its version list
+    /// and search are hidden, and its text size (10–20, 12 by default).</summary>
+    public bool WhatsNewNavHidden { get; set; }
+    public double WhatsNewFontSize { get; set; } = WhatsNewDefaultFontSize;
+    public const double WhatsNewMinFontSize = 10, WhatsNewMaxFontSize = 20, WhatsNewDefaultFontSize = 12;
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -166,6 +181,7 @@ public sealed class LinuxAppSettings
         // w5/shell-launch rows
         OptiScalerMenuKey = NormalizeOptiScalerMenuKey(OptiScalerMenuKey);
         if (UpliftEnableKey is < 0 or > 255) UpliftEnableKey = 0; // w14/nr (#274)
+        SettingsLastSection = SettingsLastSection?.Trim() ?? ""; // w14/ui-settings (#296)
         // w5/reshade-core rows
         // w7/smalls rows
         // w7/reshade rows
@@ -198,6 +214,8 @@ public sealed class LinuxAppSettings
         ColourTheme = NormalizeColourTheme(ColourTheme); // #301
         CustomThemeColours = string.IsNullOrWhiteSpace(CustomThemeColours) ? null : CustomThemeColours.Trim();
         GlobalFpsLimit = RHI.Platform.Linux.Hdr.FrameRateLimit.Valid(GlobalFpsLimit) ?? 0; // #310
+        // w14/ui-settings (small) rows
+        WhatsNewFontSize = double.IsFinite(WhatsNewFontSize) ? Math.Clamp(Math.Round(WhatsNewFontSize), WhatsNewMinFontSize, WhatsNewMaxFontSize) : WhatsNewDefaultFontSize; // #309
         return this;
     }
 

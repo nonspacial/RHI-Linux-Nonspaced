@@ -319,11 +319,11 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         if (DuplicateRefusal(entry, state) is { } duplicate) return (false, duplicate);
 
         state.ManualGames.Add(entry);
-        state.FilterMode = "All Games";
         if (Host.SaveLibraryCopy(state) is { } notSaved) return (false, notSaved);
         Host.AdoptLibraryCopy(state);
-        Host.ShowAllGames();
         saved?.Invoke();
+        // #309 (upstream 2.9.0): the added game opens straight away (Select below); only a search or filter that would hide
+        // it is cleared, so the filter tab is no longer reset to All Games beforehand.
         string message;
         if (!await Host.RefreshWhenIdleAsync(MainWindowViewModel.ManualOnly))
             message = TF("Vm.WasSavedManualLibraryButLibrary", entry.Name);

@@ -1,102 +1,118 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:views="using:RHI.Desktop.Views"
              xmlns:l="using:RHI.Desktop.Localization"
              x:Class="RHI.Desktop.Views.Dialogs.OptiScalerSettingsDialogView"
              x:DataType="vm:OptiScalerSettingsDialogViewModel">
-  <!-- The OptiScaler ⚙ dialog (epic #89). The nightly-build (#156) and presets (#187) rows are lane controls (code-behind). -->
-  <StackPanel Spacing="12" Margin="18">
-    <TextBlock Text="{l:T Win.AdvancedOptiScalerSettings}" FontSize="18" FontWeight="SemiBold"/>
+  <!-- The OptiScaler ⚙ (epic #89) on the shared ⚙ layout (#297, upstream 2.9.4 OsCogButton_Click): the version line, the
+       Presets panel, the Version card (name left, option right, explanation under), one card per OptiScaler.ini group with
+       its settings two per row as upstream (explanation in the tooltip), All Settings, then OptiScaler.ini's buttons (Open,
+       Replace with a fresh copy…, Save ini / Load saved ini) and the status line inside the ⚙. The nightly-build (#156),
+       presets (#187), All Settings and saved inis (#272) are lane controls (code-behind). -->
+  <StackPanel Spacing="14">
+    <TextBlock Text="{l:T Win.ControlsBelowEditOnlyOptiScalerIni}" TextWrapping="Wrap" Classes="cogIntro"/>
+    <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Classes="cogWarning" IsVisible="{Binding HasWarning}"/>
     <!-- #270 (upstream 2.9.2): installed vs latest, Check now, and Update when an update applies. -->
-    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding VersionLine, Converter={x:Static ObjectConverters.IsNotNull}}">
-      <TextBlock x:Name="OptiScalerVersionLine" Text="{Binding VersionLine.Text}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.78"/>
-      <Button Grid.Column="1" Classes="rhi" Content="{l:T Osv.CheckNow}" Command="{Binding VersionLine.CheckNowCommand}"
-              IsEnabled="{Binding !VersionLine.IsChecking}" ToolTip.Tip="{l:T Osv.CheckNowTip}" ToolTip.ShowDelay="2000"/>
-      <Button Grid.Column="2" Classes="rhi" Content="{l:T Vm.Update}" Command="{Binding VersionLine.UpdateCommand}"
-              IsVisible="{Binding VersionLine.CanUpdate}" ToolTip.Tip="{l:T Osv.UpdateTip}" ToolTip.ShowDelay="2000"/>
-    </Grid>
-    <TextBlock Text="{l:T Win.ChooseChannelBeforeInstallingStableDefault}" TextWrapping="Wrap" Opacity="0.72"/>
-    <!-- #174: the label names every channel (F5 DLSSNR included) so none hides inside the closed list; each entry and
-         the line under the list say in plain words what the channel is (2 s tooltips, the owner's rule). -->
-    <Grid ColumnDefinitions="280,*" ColumnSpacing="12">
-      <TextBlock Text="{l:T Win.ChannelVariant}" VerticalAlignment="Center" TextWrapping="Wrap"
-                 ToolTip.Tip="{l:T Win.StableUsesOfficialStableReleaseNightly}" ToolTip.ShowDelay="2000"/>
-      <ComboBox Grid.Column="1" ItemsSource="{Binding Runtime.OptiScalerVariantOptions}" SelectedItem="{Binding SelectedVariant}"
-                MinWidth="260" IsEnabled="{Binding CanChooseVariant}"
-                ToolTip.Tip="{Binding ChannelText}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
-        <ComboBox.ItemTemplate>
-          <DataTemplate x:DataType="vm:OptionItem">
-            <TextBlock Text="{Binding Display}" ToolTip.ShowDelay="2000"
-                       ToolTip.Tip="{Binding Converter={x:Static vm:OptiScalerSettingsDialogViewModel.ChannelTip}}"/>
-          </DataTemplate>
-        </ComboBox.ItemTemplate>
-      </ComboBox>
-    </Grid>
-    <TextBlock Text="{Binding ChannelText}" FontSize="12" TextWrapping="Wrap" Opacity="0.78"/>
-    <TextBlock Text="{Binding VariantNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.58"/>
-    <Panel x:Name="NightlyBuildSlot" IsVisible="False"/>
-    <!-- #270 (upstream 2.9.2): Release — pin the game to a release of Stable, DLSS NR or F5; changeable while not installed. -->
-    <Grid ColumnDefinitions="280,*" ColumnSpacing="12" IsVisible="{Binding Release.IsVisible, FallbackValue=False}">
-      <TextBlock Text="{l:T Osv.ReleaseLabel}" VerticalAlignment="Center" ToolTip.Tip="{Binding Release.Note}" ToolTip.ShowDelay="2000"/>
-      <ComboBox x:Name="OptiScalerRelease" Grid.Column="1" ItemsSource="{Binding Release.Options}" SelectedItem="{Binding Release.Selected}" MinWidth="260"
-                IsEnabled="{Binding Release.IsEnabled}" ToolTip.Tip="{Binding Release.Note}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
-    </Grid>
-    <!-- #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll, or the next free name while it is held),
-         locked while installed, names another RHI component uses left out; the 2 s tooltip says which name the install
-         takes and why. -->
-    <Grid ColumnDefinitions="280,*" ColumnSpacing="12" IsVisible="{Binding HasDllName}">
-      <TextBlock Text="{l:T Names.DllNameLabel}" VerticalAlignment="Center"/>
-      <ComboBox Grid.Column="1" ItemsSource="{Binding DllOptions}" SelectedItem="{Binding SelectedDll}" MinWidth="260"
-                IsEnabled="{Binding CanChooseDll}" ToolTip.Tip="{Binding DllHint}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
-    </Grid>
+    <views:CogCard IsVisible="{Binding VersionLine, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock x:Name="OptiScalerVersionLine" Text="{Binding VersionLine.Text}" TextWrapping="Wrap" VerticalAlignment="Center" Classes="cogLabel"/>
+        <Button Grid.Column="1" Classes="rhi secondary" Content="{l:T Osv.CheckNow}" Command="{Binding VersionLine.CheckNowCommand}"
+                IsEnabled="{Binding !VersionLine.IsChecking}" ToolTip.Tip="{l:T Osv.CheckNowTip}" ToolTip.ShowDelay="2000"/>
+        <Button Grid.Column="2" Classes="rhi" Content="{l:T Vm.Update}" Command="{Binding VersionLine.UpdateCommand}"
+                IsVisible="{Binding VersionLine.CanUpdate}" ToolTip.Tip="{l:T Osv.UpdateTip}" ToolTip.ShowDelay="2000"/>
+      </Grid>
+    </views:CogCard>
     <!-- #269 (upstream 2.8.9): the ⚙ opens on the Presets panel, on every version. -->
-    <Panel x:Name="PresetsSlot" IsVisible="False"/>
-    <Border Height="1" Background="{DynamicResource RhiBorderBrush}" Margin="0,4"/>
-    <TextBlock Text="OptiScaler.ini" FontSize="14" FontWeight="SemiBold"/>
-    <TextBlock Text="{l:T Win.ControlsBelowEditOnlyOptiScalerIni}" TextWrapping="Wrap" Opacity="0.72"/>
-    <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Opacity="0.72" IsVisible="{Binding HasWarning}"/>
-    <ItemsControl ItemsSource="{Binding IniItems}" IsVisible="{Binding HasSettings}">
+    <views:CogCard x:Name="PresetsCard" IsVisible="False">
+      <Panel x:Name="PresetsSlot" IsVisible="False"/>
+    </views:CogCard>
+    <views:CogCard Header="{l:T Cog.Version}">
+      <TextBlock Text="{l:T Win.ChooseChannelBeforeInstallingStableDefault}" TextWrapping="Wrap" Classes="cogNote"/>
+      <!-- #174: the label names every channel (F5 DLSSNR included) so none hides inside the closed list; each entry and
+           the explanation under the row say in plain words what the channel is. -->
+      <views:CogRow Label="{l:T Win.ChannelVariant}" Help="{l:T Win.StableUsesOfficialStableReleaseNightly}">
+        <ComboBox ItemsSource="{Binding Runtime.OptiScalerVariantOptions}" SelectedItem="{Binding SelectedVariant}"
+                  IsEnabled="{Binding CanChooseVariant}" ToolTip.Tip="{Binding ChannelText}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:OptionItem">
+              <TextBlock Text="{Binding Display}" ToolTip.ShowDelay="2000"
+                         ToolTip.Tip="{Binding Converter={x:Static vm:OptiScalerSettingsDialogViewModel.ChannelTip}}"/>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </views:CogRow>
+      <TextBlock Text="{Binding ChannelText}" TextWrapping="Wrap" Classes="cogIntro"/>
+      <TextBlock Text="{Binding VariantNote}" TextWrapping="Wrap" Classes="cogNote"/>
+      <Panel x:Name="NightlyBuildSlot" IsVisible="False"/>
+      <!-- #270 (upstream 2.9.2): Release — pin the game to a release of Stable, DLSS NR or F5; changeable while not installed. -->
+      <views:CogRow Label="{l:T Osv.ReleaseLabel}" Help="{Binding Release.Note}" IsVisible="{Binding Release.IsVisible, FallbackValue=False}">
+        <ComboBox x:Name="OptiScalerRelease" ItemsSource="{Binding Release.Options}" SelectedItem="{Binding Release.Selected}"
+                  IsEnabled="{Binding Release.IsEnabled}" ToolTip.Tip="{Binding Release.Note}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+      </views:CogRow>
+      <!-- #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll, or the next free name while it is held),
+           locked while installed, names another RHI component uses left out; the explanation says which name the install
+           takes and why. -->
+      <views:CogRow Label="{l:T Names.DllNameLabel}" Help="{Binding DllHint}" IsVisible="{Binding HasDllName}">
+        <ComboBox ItemsSource="{Binding DllOptions}" SelectedItem="{Binding SelectedDll}"
+                  IsEnabled="{Binding CanChooseDll}" ToolTip.Tip="{Binding DllHint}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+      </views:CogRow>
+    </views:CogCard>
+    <!-- OptiScaler.ini's settings: one card per group, two per row (upstream AddOsGrid); a change is written at once. -->
+    <ItemsControl ItemsSource="{Binding IniGroups}" IsVisible="{Binding HasSettings}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
-          <StackPanel Spacing="12"/>
+          <StackPanel Spacing="14"/>
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
-      <ItemsControl.DataTemplates>
-        <DataTemplate DataType="vm:OptiScalerIniDivider">
-          <Border Height="1" Background="{DynamicResource RhiBorderBrush}" Margin="0,4"/>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:OptiScalerIniGroupCard">
+          <views:CogCard Header="{Binding Title}">
+            <ItemsControl ItemsSource="{Binding Settings}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <views:CogCompactGrid/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:OptiScalerIniSetting">
+                  <views:CogCell Label="{Binding Label}" Help="{Binding Help}">
+                    <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" IsEnabled="{Binding IsEnabled}"/>
+                  </views:CogCell>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </views:CogCard>
         </DataTemplate>
-        <DataTemplate DataType="vm:OptiScalerIniGroup">
-          <TextBlock Text="{Binding Text}" FontSize="14" FontWeight="SemiBold" Margin="0,4,0,0"/>
-        </DataTemplate>
-        <DataTemplate DataType="vm:OptiScalerIniSetting">
-          <Grid ColumnDefinitions="280,*" ColumnSpacing="12">
-            <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding Help}"/>
-            <ComboBox Grid.Column="1" ItemsSource="{Binding Options}" MinWidth="260" SelectedIndex="{Binding SelectedIndex}"
-                      IsEnabled="{Binding IsEnabled}"/>
-          </Grid>
-        </DataTemplate>
-      </ItemsControl.DataTemplates>
+      </ItemsControl.ItemTemplate>
     </ItemsControl>
-    <!-- #272 (upstream 2.9.3): All Settings, then Save ini / Load saved ini (w14/optiscaler-2 slots). -->
-    <Panel x:Name="AllSettingsSlot" IsVisible="False"/>
-    <Panel x:Name="IniLibrarySlot" IsVisible="False"/>
-    <!-- #269: "Deploy OptiScaler.ini" became "Replace with a fresh copy…" at the bottom, and asks first. -->
-    <StackPanel Spacing="6" IsVisible="{Binding CanReplaceIni}">
-      <Button x:Name="OptiScalerFreshIni" Classes="rhi" Content="{l:T Osp.FreshIni}" Command="{Binding AskReplaceIniCommand}" HorizontalAlignment="Left"
-              IsVisible="{Binding !IsConfirmingFreshIni}" ToolTip.Tip="{l:T Osp.FreshIniTip}" ToolTip.ShowDelay="2000"/>
+    <!-- #272 (upstream 2.9.3): All Settings. -->
+    <views:CogCard x:Name="AllSettingsCard" IsVisible="False">
+      <Panel x:Name="AllSettingsSlot" IsVisible="False"/>
+    </views:CogCard>
+    <!-- Upstream's footer: Open OptiScaler.ini, Replace with a fresh copy… (#269, asks first), Save ini / Load saved ini (#272). -->
+    <views:CogCard Header="OptiScaler.ini">
+      <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
+        <Button x:Name="OptiScalerOpenIni" Classes="rhi secondary cogOpenFile" Content="{Binding OpenIni.Label}" Command="{Binding OpenIni.OpenFileCommand}"
+                IsEnabled="{Binding OpenIni.Exists}" ToolTip.Tip="{Binding OpenIni.Path}" ToolTip.ShowDelay="2000"/>
+        <Button x:Name="OptiScalerFreshIni" Classes="rhi secondary" Content="{l:T Osp.FreshIni}" Command="{Binding AskReplaceIniCommand}"
+                IsVisible="{Binding CanReplaceIni}" IsEnabled="{Binding !IsConfirmingFreshIni}" ToolTip.Tip="{l:T Osp.FreshIniTip}" ToolTip.ShowDelay="2000"/>
+      </WrapPanel>
       <StackPanel Spacing="6" IsVisible="{Binding IsConfirmingFreshIni}">
-        <TextBlock Text="{l:T Osp.FreshIniAsk}" TextWrapping="Wrap"/>
+        <TextBlock Text="{l:T Osp.FreshIniAsk}" TextWrapping="Wrap" Classes="cogWarning"/>
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Classes="rhi" Content="{l:T Osp.FreshIniConfirm}" Command="{Binding ReplaceIniCommand}"/>
-          <Button Classes="rhi" Content="{l:T Win.Cancel}" Command="{Binding CancelReplaceIniCommand}"/>
+          <Button Classes="rhi remove" Content="{l:T Osp.FreshIniConfirm}" Command="{Binding ReplaceIniCommand}"/>
+          <Button Classes="rhi secondary" Content="{l:T Win.Cancel}" Command="{Binding CancelReplaceIniCommand}"/>
         </StackPanel>
       </StackPanel>
-    </StackPanel>
+      <Panel x:Name="IniLibrarySlot" IsVisible="False"/>
+      <TextBlock Text="{Binding IniPath}" TextWrapping="Wrap" Classes="cogNote" IsVisible="{Binding HasIniPath}"/>
+    </views:CogCard>
     <!-- The main window's overlay Cancel is behind this modal dialog: a setting change that is still downloading or
          waiting can be stopped here; hidden otherwise, and once it starts changing files (Refs #89 unit 7). -->
-    <Button Classes="rhi" Content="{l:T Ui.CancelOperation}" Command="{Binding Operations.CancelCommand}"
+    <Button Classes="rhi secondary" Content="{l:T Ui.CancelOperation}" Command="{Binding Operations.CancelCommand}"
             HorizontalAlignment="Left" IsVisible="{Binding ShowCancel}"/>
-    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.78"/>
-    <TextBlock Text="{Binding IniPath}" FontSize="10" Opacity="0.55" TextWrapping="Wrap" IsVisible="{Binding HasIniPath}"/>
+    <!-- #297: results and errors inside the ⚙ (upstream's status line). -->
+    <TextBlock Name="CogStatus" Text="{Binding Message}" TextWrapping="Wrap" Classes="cogStatus" IsVisible="{Binding HasMessage}"/>
   </StackPanel>
 </UserControl>

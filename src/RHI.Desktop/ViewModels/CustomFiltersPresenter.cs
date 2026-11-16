@@ -109,6 +109,14 @@ public sealed partial class CustomFiltersPresenter : ObservableObject
         return (true, message);
     }
 
+    /// <summary>#309: turns the active chip off (a game added by hand must show); true when one was on. The caller re-filters.</summary>
+    internal bool TurnOff()
+    {
+        if (ActiveName is null) return false;
+        ActiveName = null;
+        return true;
+    }
+
     /// <summary>Turns a chip on, or off when it is the active one (upstream's toggle).</summary>
     [RelayCommand]
     private void Toggle(string? name)

@@ -110,7 +110,9 @@ public partial class MainWindowViewModel
                 SetPendingCustomGames([]);
                 return [];
             }
-            var found = await CustomFolderScanService.ScanAsync(request, CancellationToken.None);
+            IReadOnlyList<CustomGameCandidate> found;
+            using (BeginActivity("Sb.ActCustomFolders")) // #298
+                found = await CustomFolderScanService.ScanAsync(request, CancellationToken.None);
             // A game added (or removed from RHI) while the scan ran is not offered.
             var known = BuildCustomFolderScanRequest();
             found = found.Where(candidate => !IsKnownCustomGame(candidate, known)).ToArray();

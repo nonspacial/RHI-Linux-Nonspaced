@@ -226,17 +226,22 @@ public sealed class MfgUnlockTests : IDisposable
             => Task.FromResult(respond(request));
     }
 
-    // The ⚙ template lays the settings out by section (label, dropdown or number box, help text under it) and the file
-    // buttons after them; the MFG Unlock row has its ⚙ in the row's ⚙ column.
+    // The ⚙ template lays the settings out by section (#297: a card each; label, dropdown or number box, the explanation
+    // under it — or two per row with it as the tooltip in RTX Encore's compact sections) and the file buttons after them;
+    // the MFG Unlock row has its ⚙ in the row's ⚙ column.
     [Fact]
     public void Templates_ShowSettingsRowsFileButtonsAndTheMfgUnlockGear()
     {
         var app = System.Xml.Linq.XDocument.Load(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "App.axaml"));
         var templates = app.Descendants().Where(e => e.Name.LocalName == "DataTemplate").ToArray();
-        var row = templates.Single(t => (string?)t.Attribute(System.Xml.Linq.XName.Get("DataType", "http://schemas.microsoft.com/winfx/2006/xaml")) == "vm:ComponentSettingRow");
-        Assert.Contains(row.Descendants(), e => e.Name.LocalName == "ComboBox" && (string?)e.Attribute("SelectedIndex") == "{Binding SelectedIndex}");
-        Assert.Contains(row.Descendants(), e => e.Name.LocalName == "TextBox" && ((string?)e.Attribute("Text"))!.Contains("UpdateSourceTrigger=LostFocus", StringComparison.Ordinal));
-        Assert.Contains(row.Descendants(), e => e.Name.LocalName == "TextBlock" && (string?)e.Attribute("Text") == "{Binding Tip}");
+        var rows = templates.Where(t => (string?)t.Attribute(System.Xml.Linq.XName.Get("DataType", "http://schemas.microsoft.com/winfx/2006/xaml")) == "vm:ComponentSettingRow").ToArray();
+        Assert.Equal(["CogRow", "CogCell"], rows.Select(r => r.Elements().Single().Name.LocalName));
+        foreach (var row in rows)
+        {
+            Assert.Equal("{Binding Tip}", (string?)row.Elements().Single().Attribute("Help"));
+            Assert.Contains(row.Descendants(), e => e.Name.LocalName == "ComboBox" && (string?)e.Attribute("SelectedIndex") == "{Binding SelectedIndex}");
+            Assert.Contains(row.Descendants(), e => e.Name.LocalName == "TextBox" && ((string?)e.Attribute("Text"))!.Contains("UpdateSourceTrigger=LostFocus", StringComparison.Ordinal));
+        }
         var button = templates.Single(t => (string?)t.Attribute(System.Xml.Linq.XName.Get("DataType", "http://schemas.microsoft.com/winfx/2006/xaml")) == "vm:ComponentFileButton");
         Assert.Equal("{Binding Exists}", (string?)button.Elements().Single().Attribute("IsEnabled"));
 

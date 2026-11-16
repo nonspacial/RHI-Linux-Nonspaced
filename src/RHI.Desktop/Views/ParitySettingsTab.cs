@@ -77,7 +77,7 @@ internal static class ParitySettingsTab
         return row;
     }
 
-    private static Control AppUpdateSection(AppUpdatePresenter presenter)
+    internal static Control AppUpdateSection(AppUpdatePresenter presenter)
     {
         var section = new StackPanel { Spacing = 8 };
         section.Children.Add(Heading(T("Parity.AppUpdateHeading")));
@@ -109,7 +109,7 @@ internal static class ParitySettingsTab
         return section;
     }
 
-    private static Control NexusSection(NexusAccountPresenter presenter)
+    internal static Control NexusSection(NexusAccountPresenter presenter)
     {
         var section = new StackPanel { Spacing = 8 };
         section.Children.Add(Heading(T("Parity.NexusHeading")));
@@ -186,7 +186,7 @@ internal static class ParitySettingsTab
         return section;
     }
 
-    private static Control GitHubTokenSection(GitHubTokenPresenter presenter)
+    internal static Control GitHubTokenSection(GitHubTokenPresenter presenter)
     {
         var section = new StackPanel { Spacing = 8 };
         section.Children.Add(Heading(T("Parity.GitHubTokenHeading")));

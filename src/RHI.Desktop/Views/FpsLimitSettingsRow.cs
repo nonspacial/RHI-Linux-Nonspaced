@@ -10,7 +10,7 @@ namespace RHI.Desktop.Views;
 
 /// <summary>
 /// #310: Settings' FPS Limit (upstream 2.8.9 Settings › FPS Limit): Off, upstream's VRR presets or Custom… (20–1000),
-/// written on Save. Every game RHI launches through Wine/Proton gets it unless the game has its own FPS Limit or
+/// saved as it changes. Every game RHI launches through Wine/Proton gets it unless the game has its own FPS Limit or
 /// ReLimiter / Display Commander (upstream's rule).
 /// </summary>
 public sealed class FpsLimitSettingsRow
@@ -35,11 +35,7 @@ public sealed class FpsLimitSettingsRow
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.Add(_choice);
         row.Children.Add(_custom);
-        var panel = new StackPanel { Spacing = 5 };
-        panel.Children.Add(new TextBlock { Text = T("Fps.Label"), FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(row);
-        panel.Children.Add(new TextBlock { Text = T("Fps.GlobalNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
-        Control = panel;
+        Control = row; // Settings puts it in a row named Fps.Label with Fps.GlobalNote under it
         Set(settings.GlobalFpsLimit);
     }
 

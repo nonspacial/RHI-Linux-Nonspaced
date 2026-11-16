@@ -55,7 +55,7 @@ public sealed class CompiledBindingsTests
     [InlineData(typeof(ShaderAddonsDialogViewModel), nameof(ShaderAddonsDialogViewModel.CanApply))]
     [InlineData(typeof(ShaderPackRow), nameof(ShaderPackRow.IsChecked))]
     [InlineData(typeof(ShaderPackFilesDialogViewModel), nameof(ShaderPackFilesDialogViewModel.Status))]
-    [InlineData(typeof(SettingsDialogViewModel), nameof(SettingsDialogViewModel.CloseToTrayEnabled))]
+    [InlineData(typeof(SettingsDialogViewModel), nameof(SettingsDialogViewModel.Status))] // #296: the page is built in code; the status line stays a compiled binding
     // The ReShade profile section binds its panel (concern 12).
     [InlineData(typeof(ReShadeProfileViewModel), nameof(ReShadeProfileViewModel.ReShadeUpdateText))]
     public void MainWindow_BindingPaths_AreCompiledAgainstTheirDataType(Type dataType, string property)

@@ -47,6 +47,7 @@ public static class FgSettingsBuilder
         methodRow = new ComponentSettingRow(T("Mfgu.Method"), T("Mfgu.MethodTip"), MfgUnlockMethods, (int)method)
         {
             Available = available,
+            UnavailableReason = T("Cog.GreyedNotInstalled"), // #302: why it is greyed
             Apply = index => Saved(() => MfgUnlockIni.WriteMethod(binaryDirectory!, (MfgUnlockMethod)index), T("Mfgu.Method"))
         };
         var dlssSr = new ComponentSettingRow(T("Mfgu.DlssSr"), T("Mfgu.DlssSrTip"), [T("Ini.Off"), T("Ini.On")],
@@ -54,6 +55,8 @@ public static class FgSettingsBuilder
         {
             Available = available,
             EnabledWhen = () => methodRow.SelectedIndex == (int)MfgUnlockMethod.XeMfgCuda,
+            DisabledReason = T("Cog.GreyedXeMfgCuda"), // #302: why it is greyed
+            UnavailableReason = T("Cog.GreyedNotInstalled"),
             Apply = index => Saved(() => MfgUnlockIni.WriteDlssSr(binaryDirectory!, index == 1), T("Mfgu.DlssSr"))
         };
 
@@ -113,6 +116,7 @@ public static class FgSettingsBuilder
             return new ComponentSettingRow(label, tip, options, Dlssg2030Ini.IndexOf(setting, current))
             {
                 Available = available,
+                UnavailableReason = UiLocalizationService.Present(Dlssg2030Ini.NotInstalledMessage), // #302: why it is greyed
                 Apply = index =>
                 {
                     try
@@ -165,16 +169,17 @@ public static class FgSettingsBuilder
         string[] onOff = [T("Ini.Off"), T("Ini.On")];
         var game = T("Win.Game");
 
-        ComponentSettingRow Row(RtxEncoreSetting setting, string label, IReadOnlyList<string>? options = null, Func<bool>? when = null)
+        ComponentSettingRow Row(RtxEncoreSetting setting, string label, IReadOnlyList<string>? options = null, Func<bool>? when = null,
+            string? tip = null, string? greyed = null)
         {
             var current = RtxEncoreSettings.ValueOf(text, setting);
             (bool, string) Write(int value) => Saved(() => RtxEncoreConfig.SetInFile(configPath!, setting.Section, setting.Key,
                 setting.IsNumber ? value.ToString(System.Globalization.CultureInfo.InvariantCulture) : setting.Values[value]), label);
             var row = setting.IsNumber
-                ? new ComponentSettingRow(label, null, int.TryParse(current, out var number) ? number : int.Parse(setting.Default, System.Globalization.CultureInfo.InvariantCulture), setting.Min, setting.Max)
-                    { Available = available, EnabledWhen = when, Apply = Write }
-                : new ComponentSettingRow(label, null, options ?? (setting.IsBool ? onOff : setting.Values), setting.IndexOf(current))
-                    { Available = available, EnabledWhen = when, Apply = Write };
+                ? new ComponentSettingRow(label, tip, int.TryParse(current, out var number) ? number : int.Parse(setting.Default, System.Globalization.CultureInfo.InvariantCulture), setting.Min, setting.Max)
+                    { Available = available, EnabledWhen = when, Apply = Write, DisabledReason = greyed, UnavailableReason = T("Enc.NotInstalled") }
+                : new ComponentSettingRow(label, tip, options ?? (setting.IsBool ? onOff : setting.Values), setting.IndexOf(current))
+                    { Available = available, EnabledWhen = when, Apply = Write, DisabledReason = greyed, UnavailableReason = T("Enc.NotInstalled") };
             rows[setting] = row;
             return row;
         }
@@ -182,73 +187,74 @@ public static class FgSettingsBuilder
 
         var frameGeneration = new[]
         {
-            Row(RtxEncoreSettings.FgEngine, T("Dsg.Engine"), [game, "DLSS-FG", "XeFG"]),
-            Row(RtxEncoreSettings.Mode, T("Enc.Mode"), [T("Dsg.GameDecides"), T("Nv.FgFixed"), T("Nv.FgDynamic")]),
-            Row(RtxEncoreSettings.Multiplier, T("Enc.Multiplier"), ["2x", "3x", "4x", "5x", "6x"], () => Is(RtxEncoreSettings.Mode, "fixed")),
-            Row(RtxEncoreSettings.FgPreset, T("Enc.FgPreset"), [game, "A", "B", "C"]),
-            Row(RtxEncoreSettings.DynamicTarget, T("Enc.DynamicTarget"), when: () => Is(RtxEncoreSettings.Mode, "dynamic")),
-            Row(RtxEncoreSettings.Dynamic56, T("Enc.Dynamic56"), when: () => Is(RtxEncoreSettings.Mode, "dynamic")),
-            Row(RtxEncoreSettings.FlipMetering, T("Enc.FlipMetering")),
-            Row(RtxEncoreSettings.FrameLimit, T("Enc.FrameLimit")),
+            Row(RtxEncoreSettings.FgEngine, T("Dsg.Engine"), [game, "DLSS-FG", "XeFG"], tip: T("Enc.TipEngine")),
+            Row(RtxEncoreSettings.Mode, T("Enc.Mode"), [T("Dsg.GameDecides"), T("Nv.FgFixed"), T("Nv.FgDynamic")], tip: T("Enc.TipMode")),
+            Row(RtxEncoreSettings.Multiplier, T("Enc.Multiplier"), ["2x", "3x", "4x", "5x", "6x"], () => Is(RtxEncoreSettings.Mode, "fixed"), T("Enc.TipMultiplier"), T("Cog.GreyedFixedMode")),
+            Row(RtxEncoreSettings.FgPreset, T("Enc.FgPreset"), [game, "A", "B", "C"], tip: T("Enc.TipFgPreset")),
+            Row(RtxEncoreSettings.DynamicTarget, T("Enc.DynamicTarget"), when: () => Is(RtxEncoreSettings.Mode, "dynamic"), tip: T("Enc.TipDynamicTarget"), greyed: T("Cog.GreyedDynamicMode")),
+            Row(RtxEncoreSettings.Dynamic56, T("Enc.Dynamic56"), when: () => Is(RtxEncoreSettings.Mode, "dynamic"), tip: T("Enc.TipDynamic56"), greyed: T("Cog.GreyedDynamicMode")),
+            Row(RtxEncoreSettings.FlipMetering, T("Enc.FlipMetering"), tip: T("Enc.TipFlipMetering")),
+            Row(RtxEncoreSettings.FrameLimit, T("Enc.FrameLimit"), tip: T("Enc.TipFrameLimit")),
         };
         bool Xefg() => Is(RtxEncoreSettings.FgEngine, "xefg");
         var xefg = new[]
         {
-            Row(RtxEncoreSettings.XefgTensorCores, T("Enc.XefgTensorCores"), when: Xefg),
-            Row(RtxEncoreSettings.XefgPacing, T("Enc.XefgPacing"), when: Xefg),
-            Row(RtxEncoreSettings.XefgUi, T("Enc.XefgUi"), [T("Enc.Interpolate"), T("Enc.GameLayers")], Xefg),
-            Row(RtxEncoreSettings.XefgAlpha, T("Enc.XefgAlpha"), [T("Enc.Unknown"), T("Enc.Straight"), T("Enc.Premultiplied")], Xefg),
+            Row(RtxEncoreSettings.XefgTensorCores, T("Enc.XefgTensorCores"), when: Xefg, tip: T("Enc.TipXefgTensorCores"), greyed: T("Cog.GreyedXefg")),
+            Row(RtxEncoreSettings.XefgPacing, T("Enc.XefgPacing"), when: Xefg, tip: T("Enc.TipXefgPacing"), greyed: T("Cog.GreyedXefg")),
+            Row(RtxEncoreSettings.XefgUi, T("Enc.XefgUi"), [T("Enc.Interpolate"), T("Enc.GameLayers")], Xefg, T("Enc.TipXefgUi"), T("Cog.GreyedXefg")),
+            Row(RtxEncoreSettings.XefgAlpha, T("Enc.XefgAlpha"), [T("Enc.Unknown"), T("Enc.Straight"), T("Enc.Premultiplied")], Xefg, T("Enc.TipXefgAlpha"), T("Cog.GreyedXefg")),
         };
         var quality = new[]
         {
-            Row(RtxEncoreSettings.HighMultiplierQuality, T("Enc.HighMultiplierQuality")),
-            Row(RtxEncoreSettings.FrameProtection, T("Enc.FrameProtection")),
-            Row(RtxEncoreSettings.FastFrameGeneration, T("Enc.FastFrameGeneration")),
-            Row(RtxEncoreSettings.ProtectionTuning, T("Enc.ProtectionTuning"), [T("Enc.Refined"), T("Enc.Classic")]),
+            Row(RtxEncoreSettings.HighMultiplierQuality, T("Enc.HighMultiplierQuality"), tip: T("Enc.TipHighMultiplierQuality")),
+            Row(RtxEncoreSettings.FrameProtection, T("Enc.FrameProtection"), tip: T("Enc.TipFrameProtection")),
+            Row(RtxEncoreSettings.FastFrameGeneration, T("Enc.FastFrameGeneration"), tip: T("Enc.TipFastFrameGeneration")),
+            Row(RtxEncoreSettings.ProtectionTuning, T("Enc.ProtectionTuning"), [T("Enc.Refined"), T("Enc.Classic")], tip: T("Enc.TipProtectionTuning")),
         };
         var hud = new[]
         {
-            Row(RtxEncoreSettings.AutoUi, T("Enc.AutoUi")),
-            Row(RtxEncoreSettings.UiAssist, T("Enc.UiAssist")),
-            Row(RtxEncoreSettings.ForceUi, T("Enc.ForceUi")),
+            Row(RtxEncoreSettings.AutoUi, T("Enc.AutoUi"), tip: T("Enc.TipAutoUi")),
+            Row(RtxEncoreSettings.UiAssist, T("Enc.UiAssist"), tip: T("Enc.TipUiAssist")),
+            Row(RtxEncoreSettings.ForceUi, T("Enc.ForceUi"), tip: T("Enc.TipForceUi")),
         };
         string[] presets = ["A", "B", "C", "D", "E", "F"];
         var upscaling = new[]
         {
-            Row(RtxEncoreSettings.Upscaler, T("Enc.Upscaler"), [game, "XeSS"]),
-            Row(RtxEncoreSettings.XessTensorCores, T("Enc.XessTensorCores"), when: () => Is(RtxEncoreSettings.Upscaler, "xess")),
-            Row(RtxEncoreSettings.RenderScale, T("Enc.RenderScale"), [game, "DLAA", T("Enc.Quality"), T("Enc.Balanced"), T("Enc.Performance"), T("Enc.UltraPerformance"), T("Win.Custom")]),
-            Row(RtxEncoreSettings.CustomScale, T("Enc.CustomScale"), when: () => Is(RtxEncoreSettings.RenderScale, "custom")),
-            Row(RtxEncoreSettings.FastSr, T("Enc.FastSr")),
-            Row(RtxEncoreSettings.SrPreset, T("Enc.SrPreset"), [game, T("Ini.LumaHdrDefault"), .. presets, "J", "K", "L", "M"]),
-            Row(RtxEncoreSettings.RrPreset, T("Enc.RrPreset"), [game, T("Ini.LumaHdrDefault"), .. presets]),
-            Row(RtxEncoreSettings.SrHdr, T("Enc.SrHdr"), [game, T("Ini.On"), T("Ini.Off")]),
-            Row(RtxEncoreSettings.SrAutoExposure, T("Enc.SrAutoExposure"), [game, T("Ini.On"), T("Ini.Off")]),
+            Row(RtxEncoreSettings.Upscaler, T("Enc.Upscaler"), [game, "XeSS"], tip: T("Enc.TipUpscaler")),
+            Row(RtxEncoreSettings.XessTensorCores, T("Enc.XessTensorCores"), when: () => Is(RtxEncoreSettings.Upscaler, "xess"), tip: T("Enc.TipXessTensorCores"), greyed: T("Cog.GreyedXess")),
+            Row(RtxEncoreSettings.RenderScale, T("Enc.RenderScale"), [game, "DLAA", T("Enc.Quality"), T("Enc.Balanced"), T("Enc.Performance"), T("Enc.UltraPerformance"), T("Win.Custom")], tip: T("Enc.TipRenderScale")),
+            Row(RtxEncoreSettings.CustomScale, T("Enc.CustomScale"), when: () => Is(RtxEncoreSettings.RenderScale, "custom"), tip: T("Enc.TipCustomScale"), greyed: T("Cog.GreyedCustomScale")),
+            Row(RtxEncoreSettings.FastSr, T("Enc.FastSr"), tip: T("Enc.TipFastSr")),
+            Row(RtxEncoreSettings.SrPreset, T("Enc.SrPreset"), [game, T("Ini.LumaHdrDefault"), .. presets, "J", "K", "L", "M"], tip: T("Enc.TipSrPreset")),
+            Row(RtxEncoreSettings.RrPreset, T("Enc.RrPreset"), [game, T("Ini.LumaHdrDefault"), .. presets], tip: T("Enc.TipRrPreset")),
+            Row(RtxEncoreSettings.SrHdr, T("Enc.SrHdr"), [game, T("Ini.On"), T("Ini.Off")], tip: T("Enc.TipSrHdr")),
+            Row(RtxEncoreSettings.SrAutoExposure, T("Enc.SrAutoExposure"), [game, T("Ini.On"), T("Ini.Off")], tip: T("Enc.TipSrAutoExposure")),
         };
         var neural = new[]
         {
-            Row(RtxEncoreSettings.NrEnabled, "Neural Rendering"),
-            Row(RtxEncoreSettings.NrModel, T("Enc.NrModel"), ["B", "A", T("Ini.PeakAuto")]),
-            Row(RtxEncoreSettings.NrPrecision, T("Enc.NrPrecision"), [T("Dsg.SpeedExact"), T("Dsg.SpeedFast")]),
-            Row(RtxEncoreSettings.NrFast, T("Enc.NrFast")),
+            Row(RtxEncoreSettings.NrEnabled, "Neural Rendering", tip: T("Enc.TipNrEnabled")),
+            Row(RtxEncoreSettings.NrModel, T("Enc.NrModel"), ["B", "A", T("Ini.PeakAuto")], tip: T("Enc.TipNrModel")),
+            Row(RtxEncoreSettings.NrPrecision, T("Enc.NrPrecision"), [T("Dsg.SpeedExact"), T("Dsg.SpeedFast")], tip: T("Enc.TipNrPrecision")),
+            Row(RtxEncoreSettings.NrFast, T("Enc.NrFast"), tip: T("Enc.TipNrFast")),
         };
         var compatibility = new[]
         {
-            Row(RtxEncoreSettings.GpuSeries, T("Enc.GpuSeries"), [T("Ini.PeakAuto"), "RTX 40", "RTX 30", "RTX 20"]),
-            Row(RtxEncoreSettings.ForceOta, T("Enc.ForceOta")),
-            Row(RtxEncoreSettings.DisableMenu, T("Enc.DisableMenu")),
-            Row(RtxEncoreSettings.FgInMenus, T("Enc.FgInMenus")),
-            Row(RtxEncoreSettings.Hair, T("Enc.Hair")),
+            Row(RtxEncoreSettings.GpuSeries, T("Enc.GpuSeries"), [T("Ini.PeakAuto"), "RTX 40", "RTX 30", "RTX 20"], tip: T("Enc.TipGpuSeries")),
+            Row(RtxEncoreSettings.ForceOta, T("Enc.ForceOta"), tip: T("Enc.TipForceOta")),
+            Row(RtxEncoreSettings.DisableMenu, T("Enc.DisableMenu"), tip: T("Enc.TipDisableMenu")),
+            Row(RtxEncoreSettings.FgInMenus, T("Enc.FgInMenus"), tip: T("Enc.TipFgInMenus")),
+            Row(RtxEncoreSettings.Hair, T("Enc.Hair"), tip: T("Enc.TipHair")),
         };
         return
         [
-            new ComponentSettingSection(T("Win.FrameGeneration"), frameGeneration),
-            new ComponentSettingSection(T("Enc.SectionXefg"), xefg),
-            new ComponentSettingSection(T("Enc.SectionQuality"), quality),
-            new ComponentSettingSection(T("Enc.SectionHud"), hud),
-            new ComponentSettingSection(T("Enc.SectionUpscaling"), upscaling),
-            new ComponentSettingSection("Neural Rendering", neural),
-            new ComponentSettingSection(T("Enc.SectionCompatibility"), compatibility),
+            // #297: two per row, as upstream's RTX Encore ⚙ (AddCompactGrid).
+            new ComponentSettingSection(T("Win.FrameGeneration"), frameGeneration, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionXefg"), xefg, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionQuality"), quality, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionHud"), hud, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionUpscaling"), upscaling, Compact: true),
+            new ComponentSettingSection("Neural Rendering", neural, Compact: true),
+            new ComponentSettingSection(T("Enc.SectionCompatibility"), compatibility, Compact: true),
         ];
     }
 

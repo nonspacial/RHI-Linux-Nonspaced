@@ -20,18 +20,20 @@ public sealed class CatalogDialogTests
     {
         UiLocalizationService.Apply("en-US");
         var noSection = new RenoDxSettingsDialogViewModel(new(null, false, [Setting("Set_Path", "0", "0", "1")], null), "Tunic", (_, _) => throw new InvalidOperationException());
-        Assert.Equal(UiLocalizationService.Text("Win.RunGameOnceRenoDXInstalledGenerate"), noSection.Message);
+        Assert.Equal(UiLocalizationService.Text("Win.RunGameOnceRenoDXInstalledGenerate"), noSection.EmptyReason); // #297: in the Compatibility card
+        Assert.Null(noSection.Message); // the status line is for results
         Assert.False(noSection.HasRows);
         Assert.False(noSection.HasWarning);
         Assert.Equal(UiLocalizationService.Format("Win.RenoDxCompatibilityTitle", "Tunic"), noSection.WindowTitle);
 
         var warned = new RenoDxSettingsDialogViewModel(new("/g/renodx.ini", false, [], "unreadable"), null, (_, _) => throw new InvalidOperationException());
-        Assert.Equal("unreadable", warned.Message);
+        Assert.Equal("unreadable", warned.Warning);
+        Assert.Null(warned.EmptyReason); // the warning says why, once
         Assert.True(warned.HasWarning);
         Assert.Equal("/g/renodx.ini", warned.IniPath);
 
         var empty = new RenoDxSettingsDialogViewModel(new("/g/renodx.ini", true, [], null), "Tunic", (_, _) => throw new InvalidOperationException());
-        Assert.Equal(UiLocalizationService.Text("Win.RenodxSectionExistsButNoCompatibility"), empty.Message);
+        Assert.Equal(UiLocalizationService.Text("Win.RenodxSectionExistsButNoCompatibility"), empty.EmptyReason);
         Assert.False(empty.HasRows);
     }
 

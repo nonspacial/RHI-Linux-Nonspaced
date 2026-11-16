@@ -105,10 +105,12 @@
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:GameRowViewModel">
-                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="{DynamicResource RhiGameRowBrush}" BorderBrush="{DynamicResource RhiGameRowBorderBrush}" BorderThickness="1">
+                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="{DynamicResource RhiGameRowBrush}" BorderBrush="{DynamicResource RhiGameRowBorderBrush}" BorderThickness="1"
+                        ToolTip.Tip="{Binding ToolTip}">
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                     <StackPanel>
-                      <TextBlock Text="{Binding Name}" Foreground="{DynamicResource RhiGameRowTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                      <!-- #309: greyed when ReShade isn't installed for the game (upstream 2.8.9); the tooltip says so. -->
+                      <TextBlock Text="{Binding Name}" Classes="libraryName" Classes.noReShade="{Binding ShowsNoReShade}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                       <TextBlock Text="{Binding Source}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="9"/>
                     </StackPanel>
                     <TextBlock Grid.Column="1" Text="{Binding LibraryBadge}" Foreground="{DynamicResource RhiWarningBrush}" VerticalAlignment="Center" FontSize="12"/>
@@ -140,8 +142,10 @@
                     <Binding Path="ShowLaunchProviderBadge"/>
                   </MultiBinding>
                 </StackPanel.IsVisible>
-                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="{DynamicResource RhiControlBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1"
-                        Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding LibraryProviderToolTip}">
+                <!-- #309: the store badge opens the game's Steam Community page (upstream 2.8.9). -->
+                <Border x:Name="StoreBadge" views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="{DynamicResource RhiControlBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1"
+                        Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding StoreBadgeToolTip}"
+                        Classes.storeLink="{Binding StoreBadgeOpensCommunity}" PointerPressed="StoreBadge_PointerPressed">
                   <Image Source="{Binding SelectedLibraryProviderIcon}" Stretch="Uniform"/>
                 </Border>
                 <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="{DynamicResource RhiControlBrush}" BorderBrush="{DynamicResource RhiAccentBorderBrush}" BorderThickness="1"
@@ -150,19 +154,23 @@
                 </Border>
               </StackPanel>
               <StackPanel VerticalAlignment="Center">
-                <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"
-                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}"/>
+                <!-- Upstream 2.9.4 Game settings: a ⚙ beside the title (Block Steam updates; Remove from RHI until Management is ported). -->
+                <DockPanel>
+                  <Button x:Name="GameSettingsButton" DockPanel.Dock="Right" Classes="rhi" Content="⚙" Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                          IsVisible="{Binding ShowGameSettings}" ToolTip.Tip="{Binding GameSettingsTitle}" Click="GameSettings_Click"/>
+                  <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"
+                             TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}"/>
+                </DockPanel>
                 <TextBlock x:Name="SelectedSourceText" views:DetailHeaderPanel.Role="Subtitle" Text="{Binding SelectedSource}" FontSize="12" Foreground="{DynamicResource RhiAccentBrush}" Margin="0,4,0,0"
                            TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedSource}"/>
               </StackPanel>
             </DockPanel>
             <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
-              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <!-- #309: quieter, amber "Favourited" once on (upstream 2.8.9). -->
+              <Button x:Name="FavouriteButton" views:DetailHeaderPanel.Role="Action" Classes="rhi favourite" Classes.on="{Binding SelectedGameIsFavourite}"
+                      Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"
+                      ToolTip.Tip="{Binding FavouriteActionTip}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-              <Button x:Name="RemoveFromRhiButton" views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding RemoveFromRhiText}" Command="{Binding RemoveFromRhiCommand}"
-                      IsVisible="{Binding CanRemoveFromRhi}" ToolTip.Tip="{Binding RemoveFromRhiTip}"/>
-              <Button x:Name="BlockSteamUpdatesButton" views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding BlockSteamUpdatesText}" Command="{Binding ToggleSteamUpdatesCommand}"
-                      IsVisible="{Binding CanBlockSteamUpdates}" ToolTip.Tip="{Binding BlockSteamUpdatesTip}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
                       ToolTip.Tip="{DynamicResource Ui.EditTip}"/>
               <!-- Only manually added games can be removed; hide the button for everything else. -->
@@ -252,10 +260,11 @@
 
                   <!-- #251: the HDR section only for games that can use HDR; why it shows lives in the label's 2 s tooltip. -->
                   <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"
-                             IsVisible="{Binding Runtime.ShowHdrSection}" ToolTip.Tip="{Binding Runtime.HdrSectionTip}" ToolTip.ShowDelay="2000"/>
-                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrSection}">
+                             IsVisible="{Binding Runtime.ShowHdrRow}" ToolTip.Tip="{Binding Runtime.HdrSectionTip}" ToolTip.ShowDelay="2000"/>
+                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrRow}">
                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
-                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}">
+                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
+                                ToolTip.Tip="{Binding HdrModeTip}" ToolTip.ShowDelay="2000">
                               <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
                               </ComboBox.ItemTemplate>
@@ -272,7 +281,7 @@
                   <!-- #191 resolution auto-toggle (saved with the HDR profile). w12/hdr-wsi (#251 correction): its own row, so it stays
                        wherever a switch can apply when the HDR row above is hidden. -->
                   <TextBlock Grid.Row="10" Grid.Column="0" Text="{Binding Runtime.ResolutionRowLabel}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"
-                             IsVisible="{Binding Runtime.ShowResolutionToggle}"/>
+                             IsVisible="{Binding Runtime.ShowResolutionRow}"/>
                   <views:ResolutionToggleRow Grid.Row="10" Grid.Column="1" DataContext="{Binding Runtime}"/>
 
                   <TextBlock Grid.Row="11" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
@@ -376,7 +385,7 @@
                   <!-- w7/nvapi-launch (#211): a ResponsiveRow (was a Grid) so the third button, NVIDIA settings…, moves under the
                        summary when narrow; shown only where the NVIDIA settings apply. -->
                   <views:ResponsiveRow Columns="*,Auto,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="1" MinStarWidth="160">
-                    <TextBlock Text="{Binding DlssDefaultsSummary}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="DlssDefaultsSummaryText" Text="{Binding DlssDefaultsSummary}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     <Button Grid.Column="1" Classes="rhi" Content="{DynamicResource Ui.ApplyDefaults}" Command="{Binding QuickApplyDlssDefaultsCommand}"
                             IsEnabled="{Binding CanQuickApplyDlssDefaults}" Padding="12,6"
                             ToolTip.Tip="{DynamicResource Ui.ApplyDefaultsTip}"/>
@@ -661,6 +670,8 @@
                                     Click="IniSettings_Click" ToolTip.Tip="{Binding IniSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasDxvkHdrSettings}"
                                     Click="DxvkHdrSettings_Click" ToolTip.Tip="{Binding DxvkHdrSettingsTip}" ToolTip.ShowDelay="2000" Padding="10,6"/>
+                            <Button Grid.Column="4" Classes="rhi" Content="⚙" IsVisible="{Binding HasEmptySettings}"
+                                    Click="EmptySettings_Click" ToolTip.Tip="{Binding EmptySettingsTip}" ToolTip.ShowDelay="2000" Padding="10,6"/><!-- w14/ui-settings (#297) -->
                             <Button Grid.Column="5" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"
                                     Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" Command="{Binding Command}"
                                     CommandParameter="{Binding CommandParameter}" ToolTip.Tip="{Binding Note}" MinWidth="80" IsVisible="{Binding HasAction}"/>
@@ -798,7 +809,9 @@
         <Button x:Name="CustomGamesNotice" Content="{Binding CustomGamesNoticeText}" IsVisible="{Binding ShowCustomGamesNotice}"
                 ToolTip.Tip="{Binding CustomGamesNoticeTip}" Click="CustomGamesNotice_Click" Background="Transparent" BorderThickness="0"
                 Padding="0" FontSize="10" Foreground="{DynamicResource RhiLinkBrush}" Cursor="Hand" VerticalAlignment="Center"/>
-        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
+        <!-- #298: background activity, a status line for a while, else when RHI last checked for updates and the next check. -->
+        <TextBlock x:Name="StatusBarText" Grid.Column="1" Text="{Binding StatusBar.Text}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip.Tip="{Binding StatusBar.ToolTip}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
         <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
         <TextBlock x:Name="ProductVersionText" Grid.Column="2" Text="{Binding ProductVersionText}" Foreground="{DynamicResource RhiFaintTextBrush}" FontSize="10"

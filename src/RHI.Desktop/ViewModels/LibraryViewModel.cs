@@ -20,6 +20,26 @@ public sealed class GameRowViewModel(DetectedGame game) : ObservableObject
     public bool IsHidden => Game.IsHidden;
     public string LibraryBadge => Game.LibraryBadge;
 
+    /// <summary>#309 (upstream 2.8.9): whether ReShade is installed for the game; null until the library facts are known.</summary>
+    public bool? ReShadeInstalled { get; private set; }
+
+    /// <summary>The card's name is greyed: ReShade isn't installed for the game (not shown while unknown).</summary>
+    public bool ShowsNoReShade => ReShadeInstalled == false;
+
+    /// <summary>The card's tooltip: the full name (it trims), then what the greyed name means.</summary>
+    public string ToolTip => ShowsNoReShade ? Name + "\n" + RHI.Desktop.Localization.UiLocalizationService.Text("Lib.NoReShadeTip") : Name;
+
+    /// <summary>Sets the ReShade fact (worked out off the UI thread by the shell); true when it changed.</summary>
+    public bool SetReShadeInstalled(bool installed)
+    {
+        if (ReShadeInstalled == installed) return false;
+        ReShadeInstalled = installed;
+        OnPropertyChanged(nameof(ReShadeInstalled));
+        OnPropertyChanged(nameof(ShowsNoReShade));
+        OnPropertyChanged(nameof(ToolTip));
+        return true;
+    }
+
     /// <summary>Sets the favourite/hidden flags and tells the card; true when either changed.</summary>
     public bool SetLibraryFlags(bool favourite, bool hidden)
     {

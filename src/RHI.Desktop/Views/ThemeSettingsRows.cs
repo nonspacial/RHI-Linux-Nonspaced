@@ -37,8 +37,7 @@ public sealed class ThemeSettingsRows
         _presenter = presenter;
         _copy = copy;
         var panel = new StackPanel { Spacing = 6 };
-        panel.Children.Add(new TextBlock { Text = T("Theme.Title"), FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(new TextBlock { Text = T("Theme.Intro"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
+        // The Settings card holds the title and the intro (Theme.Title, Theme.Intro).
 
         _themes = new ComboBox { Name = "ColourTheme", ItemsSource = presenter.ThemeNames, Width = 240 };
         ToolTip.SetTip(_themes, T("Theme.ListTip"));
