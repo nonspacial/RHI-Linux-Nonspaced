@@ -37,28 +37,26 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
         {
             case ProxyComponentDialogKind.Dlssg2030:
             {
+                // #281 (upstream 2.8.9): no GPU generation; the mod's main settings in dlssg_sm86.ini, Open ini, Open log.
                 var preferences = shell.GetDlssg2030Preferences();
                 var record = shell.GetDlssg2030Record();
                 Title = T("Ui.Dlssg2030Title");
                 Intro = T("Ui.Dlssg2030Intro");
                 RouteNote = T("Ui.Dlssg2030RouteNote");
-                GpuLabel = T("Ui.Dlssg2030Gpu");
-                GpuOptions = Dlssg2030UnlockDeploymentService.GpuGenerations;
-                SelectedGpu = preferences.GpuGeneration;
-                GpuMinWidth = 260;
                 ProxyLabel = T("Ui.Dlssg2030Proxy");
                 ProxyOptions = Dlssg2030UnlockDeploymentService.ProxyNames;
                 SelectedProxy = preferences.ProxyName;
                 ProxyMinWidth = 220;
                 IsInstalled = record is not null;
-                InstalledText = record is null ? null : TF("Win.InstalledChangeGenerationProxyRemoveReinstall",
-                    record.Metadata.GetValueOrDefault("FG2030.GpuGeneration") ?? preferences.GpuGeneration,
+                InstalledText = record is null ? null : TF("Ui.UmfgInstalledAs", record.Version ?? "?",
                     record.Metadata.GetValueOrDefault("FG2030.ProxyName") ?? preferences.ProxyName);
+                var content = FgSettingsBuilder.Dlssg2030(shell.GetDlssg2030IniLines(), record?.BinaryDirectory, shell.SetDlssg2030IniSetting, ShowMessage);
+                (Sections, Lines, FileButtons) = (content.Sections, content.Lines, content.Files);
                 CheckLabel = T("Ui.Dlssg2030Check");
                 UpdateLabel = T("Ui.Dlssg2030Update");
                 FooterNote = T("Ui.Dlssg2030CompatibilityNote");
                 FooterIsWarning = false;
-                (Width, Height, MinWidth, MinHeight) = (690, 560, 560, 420);
+                (Width, Height, MinWidth, MinHeight) = (720, 640, 560, 420);
                 break;
             }
             case ProxyComponentDialogKind.DlssEnabler:

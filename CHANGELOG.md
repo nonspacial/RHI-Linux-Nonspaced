@@ -41,6 +41,11 @@ Wave 14 — extras-fg
     (Of Ash and Steel) are kept as `<file>.mfgada-original` and put back when you remove the mod. **Existing installs
     get them with Update or Update All**, and the ⚙ says whether the right files are there.
   - The ⚙ warns when the game can't use it: DirectX 11 and older don't work, Vulkan is experimental.
+- **20/30 FG Unlock ⚙** (upstream 2.8.9): the mod's main settings as dropdowns — Frame Generation, Engine (DLSS or
+  XeSS), Max Frames (2X to 6X), Preset (A, B, C: FG Lite), Speed Tier and Super Resolution (preset M or L) — saved in
+  the game's `dlssg_sm86.ini`, so you can't enter a value that would switch frame generation off. XeSS goes up to 4X.
+  Your settings are kept when the mod updates. Open dlssg_sm86.ini and Open log buttons. The GPU generation setting is
+  gone: the mod detects RTX 20 and 30 cards by itself.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

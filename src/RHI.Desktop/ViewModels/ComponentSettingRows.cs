@@ -101,7 +101,10 @@ public sealed partial class ComponentSettingRow : ObservableObject
 }
 
 /// <summary>A section heading inside the ⚙'s settings list (upstream's section titles).</summary>
-public sealed record ComponentSettingSection(string Title, IReadOnlyList<ComponentSettingRow> Rows);
+public sealed record ComponentSettingSection(string Title, IReadOnlyList<ComponentSettingRow> Rows)
+{
+    public bool HasTitle => Title.Length > 0;
+}
 
 /// <summary>w14/extras-fg: an "Open &lt;file&gt;" button of a ⚙ (the mod's ini, log or jsonc), disabled while the file is missing.</summary>
 public sealed partial class ComponentFileButton : ObservableObject

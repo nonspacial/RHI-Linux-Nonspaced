@@ -686,11 +686,20 @@ public sealed partial class Dlssg2030UnlockDeploymentService
                 new() { Path = newProxyPath, ExistedBeforeInstall = false, Sha256 = stagedCopy.Sha256, AllowUserChanges = false },
             };
             if (replaceIni)
-                files.Add(new LinuxDeployedFile
+            {
+                // #281 (upstream DeployIni): the ⚙'s settings set in the INI being replaced are written into the new one.
+                var kept = Dlssg2030Ini.Kept(IniLines.Read(iniPath));
+                var iniSha = await scope.PlaceCopyAsync(package.IniPath, iniPath, cancellationToken).ConfigureAwait(false);
+                var lines = IniLines.Read(iniPath);
+                if (kept.Any(pair => !string.Equals(IniLines.Get(lines, pair.Setting.Section, pair.Setting.Key)?.Trim(), pair.Value, StringComparison.OrdinalIgnoreCase)))
                 {
-                    Path = iniPath, ExistedBeforeInstall = false, AllowUserChanges = true,
-                    Sha256 = await scope.PlaceCopyAsync(package.IniPath, iniPath, cancellationToken).ConfigureAwait(false)
-                });
+                    foreach (var (setting, value) in kept) IniLines.Set(lines, setting.Section, setting.Key, value);
+                    IniLines.Write(iniPath, lines, [binaryDir]);
+                    await scope.DeclareWrittenContentAsync(iniPath, cancellationToken).ConfigureAwait(false);
+                    iniSha = await FileHash.Sha256HexAsync(iniPath, cancellationToken).ConfigureAwait(false);
+                }
+                files.Add(new LinuxDeployedFile { Path = iniPath, ExistedBeforeInstall = false, AllowUserChanges = true, Sha256 = iniSha });
+            }
             else if (iniRecord is not null)
                 files.Add(iniRecord);
             foreach (var (source, target) in modFiles)
@@ -1040,9 +1049,39 @@ public sealed partial class Dlssg2030UnlockDeploymentService
 
     [GeneratedRegex(@"^[vV]?[0-9]+(?:\.[0-9A-Za-z-]+)*$", RegexOptions.None, 1000)]
     private static partial Regex ReleaseTag();
+
+    /// <summary>
+    /// #281: the ⚙ writes one setting into the installed <c>dlssg_sm86.ini</c> (upstream's <c>WriteIniValue</c>; lines,
+    /// comments and other keys kept). While the INI still holds what RHI placed, RHI keeps owning it: the record takes the
+    /// new hash, so an update carries the ⚙'s settings into the new release's INI and removal deletes it, as upstream. An
+    /// INI changed outside RHI stays the user's (kept whole on update and removal). Returns the refusal, or null.
+    /// </summary>
+    public string? SetIniSetting(DetectedGame game, Dlssg2030Setting setting, int index)
+    {
+        if (GetRecord(game) is not { } record) return Dlssg2030Ini.NotInstalledMessage;
+        var iniPath = Path.Combine(record.BinaryDirectory, IniFileName);
+        if (!File.Exists(iniPath)) return Dlssg2030Ini.NotInstalledMessage;
+        var iniRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, iniPath));
+        var owned = iniRecord?.Sha256 is { Length: > 0 } recorded && FileHash.HexEquals(FileHash.Sha256Hex(iniPath), recorded);
+        var lines = IniLines.Read(iniPath);
+        if (Dlssg2030Ini.Apply(lines, setting, index) is { } refusal) return refusal;
+        IniLines.Write(iniPath, lines, [record.BinaryDirectory]);
+        if (owned)
+        {
+            var updated = LinuxDeploymentRecordStore.Clone(record);
+            updated.Files.First(file => PathsEqual(file.Path, iniPath)).Sha256 = FileHash.Sha256Hex(iniPath);
+            _records.Upsert(updated);
+        }
+        return null;
+    }
+
+    /// <summary>The installed INI's lines (empty when not installed or the file is gone), for the ⚙.</summary>
+    public IReadOnlyList<string>? InstalledIniLines(DetectedGame game)
+        => GetRecord(game) is { } record && File.Exists(Path.Combine(record.BinaryDirectory, IniFileName))
+            ? IniLines.Read(Path.Combine(record.BinaryDirectory, IniFileName))
+            : null;
 }
 
-/// <summary>The latest dlssg_for_sm86 release: its tag, version (tag without a leading v) and package asset.</summary>
 public sealed record Dlssg2030ReleaseInfo(string Tag, string Version, string AssetName, string Url, string? Digest);
 
 /// <summary>An extracted, validated package: paths are package-relative with '/' separators.</summary>

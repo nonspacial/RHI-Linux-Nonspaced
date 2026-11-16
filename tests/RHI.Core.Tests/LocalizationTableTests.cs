@@ -15,6 +15,7 @@ public sealed class LocalizationTableTests
     private static readonly HashSet<string> SameInBothLanguages = new(StringComparer.Ordinal)
     {
         "Ui.ShadersAddons", "Ui.Links", "Ui.Motd", "Ui.DlssStreamline", "Ui.Extras", "Ui.UxTab", "Ui.Rtx40MfgTitle",
+        "Ui.Dlssg2030Title", // w14/extras-fg (#281): the mod's name, as Universal MFG Unlocker's
         "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra"
     };
 

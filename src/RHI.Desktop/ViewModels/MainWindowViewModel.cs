@@ -204,6 +204,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     internal LinuxManagedComponentService ManagedForFgSettings => _managedComponents; // #279–#281: the FG unlocks' ⚙ read and write the mods' files
     /// <summary>#279: RHI's MFG Unlock record for the selected game, or null.</summary>
     public LinuxDeploymentRecord? GetMfgUnlockRecord() => SelectedGame is null ? null : _managedComponents.GetMfgUnlockRecord(SelectedGame);
+    /// <summary>#281: the installed dlssg_sm86.ini's lines (null when 20/30 FG Unlock is not installed or the file is gone).</summary>
+    public IReadOnlyList<string>? GetDlssg2030IniLines() => SelectedGame is null ? null : _managedComponents.Dlssg2030IniLines(SelectedGame);
+    /// <summary>#281: writes one ⚙ setting; the refusal (or null) and the INI as written.</summary>
+    public (string? Refusal, IReadOnlyList<string>? After) SetDlssg2030IniSetting(Dlssg2030Setting setting, int index)
+        => SelectedGame is not { } game ? (Dlssg2030Ini.NotInstalledMessage, null)
+            : _managedComponents.SetDlssg2030IniSetting(game, setting, index) is { } refusal ? (refusal, null) : (null, _managedComponents.Dlssg2030IniLines(game));
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;

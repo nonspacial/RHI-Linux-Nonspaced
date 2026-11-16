@@ -97,4 +97,58 @@ public static class FgSettingsBuilder
             _ => T("Mfgu.OlderApi")
         };
     }
+
+    /// <summary>
+    /// #281 (upstream 2.8.9 <c>Dlssg2030Settings</c>): the mod's six main settings as dropdowns, written to the installed
+    /// <c>dlssg_sm86.ini</c> (greyed out, with upstream's warning, until it is installed), then Open dlssg_sm86.ini and
+    /// Open log. <paramref name="lines"/> is the installed INI (null when not installed); <paramref name="write"/> saves
+    /// one choice and returns the refusal or null.
+    /// </summary>
+    public static FgSettingsContent Dlssg2030(IReadOnlyList<string>? lines, string? binaryDirectory, Func<Dlssg2030Setting, int, (string? Refusal, IReadOnlyList<string>? After)> write, Action<string> show)
+    {
+        var available = lines is not null;
+        var current = lines ?? [];
+        ComponentSettingRow Row(Dlssg2030Setting setting, string label, string tip, IReadOnlyList<string> options, Action<IReadOnlyList<string>>? after = null)
+        {
+            return new ComponentSettingRow(label, tip, options, Dlssg2030Ini.IndexOf(setting, current))
+            {
+                Available = available,
+                Apply = index =>
+                {
+                    try
+                    {
+                        var (refusal, written) = write(setting, index);
+                        if (refusal is not null) return (false, UiLocalizationService.Present(refusal));
+                        if (written is not null) after?.Invoke(written);
+                        return (true, TF("Dsg.Saved", label));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                    {
+                        return (false, TF("Fg.SaveFailed", label, UiLocalizationService.Present(ex.Message)));
+                    }
+                }
+            };
+        }
+
+        var maxFrames = Row(Dlssg2030Ini.MaxFrames, T("Dsg.MaxFrames"), T("Dsg.MaxFramesTip"), ["2X", "3X", T("Dsg.FourXDefault"), "5X", "6X", T("Dsg.GameDecides")]);
+        // Choosing XeSS at 5X/6X moves Max Frames to 4X (upstream): the dropdown follows what was written.
+        var engine = Row(Dlssg2030Ini.Engine, T("Dsg.Engine"), T("Dsg.EngineTip"), [T("Dsg.EngineDlss"), "XeSS"],
+            after => maxFrames.Show(Dlssg2030Ini.IndexOf(Dlssg2030Ini.MaxFrames, after)));
+        var rows = new[]
+        {
+            Row(Dlssg2030Ini.Enabled, T("Win.FrameGeneration"), T("Dsg.EnabledTip"), [T("Ini.On"), T("Ini.Off")]),
+            engine,
+            maxFrames,
+            Row(Dlssg2030Ini.Preset, "Preset", T("Dsg.PresetTip"), [T("Dsg.PresetA"), T("Dsg.PresetB"), "C: FG Lite"]),
+            Row(Dlssg2030Ini.SpeedTier, T("Dsg.Speed"), T("Dsg.SpeedTip"),
+                [T("Dsg.SpeedExact"), T("Dsg.SpeedExactOptimised"), T("Dsg.SpeedFast"), T("Dsg.SpeedFastest")]),
+            Row(Dlssg2030Ini.SuperResolution, "Super Resolution", T("Dsg.SrTip"), [T("Dsg.SrOff"), "M-INT8", "L-INT8", "M-FP16", "L-FP16"]),
+        };
+        var lines2 = available ? Array.Empty<ComponentDialogLine>() : [ComponentDialogLine.Warning(UiLocalizationService.Present(Dlssg2030Ini.NotInstalledMessage))];
+        var files = binaryDirectory is null
+            ? Array.Empty<ComponentFileButton>()
+            : [new ComponentFileButton(TF("Fg.OpenFile", Dlssg2030UnlockDeploymentService.IniFileName), Path.Combine(binaryDirectory, Dlssg2030UnlockDeploymentService.IniFileName), show),
+               new ComponentFileButton(T("Dsg.OpenLog"), Path.Combine(binaryDirectory, Dlssg2030Ini.LogRelativePath), show)];
+        return new FgSettingsContent([new ComponentSettingSection("", rows)], lines2, files);
+    }
 }

@@ -77,9 +77,9 @@ public sealed class ProxyComponentDialogTests
     }
 
     [Theory]
-    [InlineData(ProxyComponentDialogKind.Dlssg2030, ManagedComponentKind.Dlssg2030Unlock, "Ui.Dlssg2030Title", true)]
+    [InlineData(ProxyComponentDialogKind.Dlssg2030, ManagedComponentKind.Dlssg2030Unlock, "Ui.Dlssg2030Title", false)] // #281: no GPU generation
     [InlineData(ProxyComponentDialogKind.DlssEnabler, ManagedComponentKind.DlssEnablerStandalone, "Ui.DlssEnablerStandaloneTitle", false)]
-    [InlineData(ProxyComponentDialogKind.UniversalMfg, ManagedComponentKind.Rtx40MfgStandalone, "Ui.Rtx40MfgTitle", true)]
+    [InlineData(ProxyComponentDialogKind.UniversalMfg, ManagedComponentKind.Rtx40MfgStandalone, "Ui.Rtx40MfgTitle", false)] // #278: no GPU generation
     public async Task EachDialog_ShowsItsComponent_AndLocksItsChoicesOnceInstalled(ProxyComponentDialogKind kind, ManagedComponentKind component, string titleKey, bool hasGpu)
     {
         using var fx = await ViewModelFixture.StartAsync([]);

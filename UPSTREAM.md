@@ -1563,3 +1563,21 @@ release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
   accepted versions (libxess_fg 1.3.1.78, libxell 1.3.2.10 / 1.3.0.5) read from the PE version resource.
 - API warning, as upstream (only in the ⚙): any DirectX 12 among the game's APIs is fine; Vulkan gets the "experimental"
   text; DirectX 8–11 or OpenGL get "won't work here". Linux reads the effective API list (manifest or detection).
+
+### #281 — DLSSG 20/30 FG Unlock ⚙ settings (2.8.9)
+
+- The ⚙ shows upstream's six settings as dropdowns of valid values only, in upstream's order and with its help text
+  under each: Frame Generation (`[General] Enabled` 1/0), Engine (`[FrameGeneration] Engine` DLSS/XeSS), Max Frames
+  (`MaxGeneratedFrames` 1–5, "Game decides" 0), Preset (`[DLSSG] Preset` A/B/C), Speed Tier (`[DLSSG] Optimized` 0–3)
+  and Super Resolution (`[SuperResolution] Mode` Off/M-INT8/L-INT8/M-FP16/L-FP16). Upstream's Engine/Max Frames rule is
+  kept: XeSS at 5X/6X moves Max Frames to 4X, and 5X/6X are refused under XeSS. Until the mod is installed the rows are
+  greyed out with upstream's warning. **Open dlssg_sm86.ini** and **Open log** (`dlssg_sm86/logs/dlssg_sm86.log`) are
+  greyed out while the file does not exist. The values are pinned against the 0.4.2 package's INI fixture.
+- Kept on update, as upstream: a change made in the ⚙ keeps RHI's ownership of the INI (the record takes the new hash),
+  so Update puts the new release's INI in place and writes the six values back into it, and Remove deletes it. Linux
+  deviation (unchanged from #261): an INI changed outside RHI is the user's and is kept whole on update and removal.
+- Linux deviation: a missing Speed Tier reads as 1, the mod's documented default (upstream's fallback reads 0 while its
+  label marks 1 as the default).
+- The GPU-generation dropdown is gone, as upstream; the intro now describes the mod (RTX 20 and 30, DirectX 12,
+  driver R580+) instead of "Legacy SM75 path" (EN and PT-BR), and the dialog title is "20/30 FG Unlock". A saved
+  generation is not asked for any more; the preference store already reads an old "RTX 30" choice as RTX 20.
