@@ -200,6 +200,8 @@ internal static class DisplayModeValueEditor
                     DisplayModeValueKind.Number or DisplayModeValueKind.Decimal => item.AllowZero
                         ? $"{unsetLabel} ({item.Min:0}–{item.Max:0}, 0 = {T("DmChoice.Off")})" : $"{unsetLabel} ({item.Min:0}–{item.Max:0})",
                     DisplayModeValueKind.ReLimiterKey => T("Dm.KeyPlaceholder"),
+                    // w14/layouts-c: launch arguments set empty are "none in this mode", not "not set".
+                    _ when item.AllowEmpty && value is { Length: 0 } => T("Dm.None"),
                     _ => unsetLabel
                 };
                 var box = new TextBox { Text = value ?? "", PlaceholderText = placeholder, MinWidth = 180, Name = "DmValue-" + item.Key };
@@ -210,7 +212,8 @@ internal static class DisplayModeValueEditor
                 setButton.Click += async (_, _) =>
                 {
                     var text = box.Text ?? "";
-                    if (text.Trim().Length == 0) { report(TF("Dm.EnterValue", label), true); return; }
+                    // Launch arguments may be empty on purpose: no arguments in this mode (upstream).
+                    if (text.Trim().Length == 0 && !item.AllowEmpty) { report(TF("Dm.EnterValue", label), true); return; }
                     if (item.Normalize(text) is not { } normalized)
                     {
                         report(item.Kind == DisplayModeValueKind.ReLimiterKey ? TF("Dm.InvalidKey", label)

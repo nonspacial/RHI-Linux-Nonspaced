@@ -5,8 +5,8 @@ namespace RHI.Platform.Linux.DisplayModes;
 
 /// <summary>
 /// #311: item keys (saved in display-modes.json; upstream's keys, never renamed). Upstream's <c>RtxHdrPeak</c> and
-/// <c>HdrDisplay</c> have no Linux equivalent and <c>LaunchArgs</c> waits for an owner decision; their keys are not
-/// offered (a value saved for one is ignored).
+/// <c>HdrDisplay</c> have no Linux equivalent; their keys are not offered (a value saved for one is ignored).
+/// <c>LaunchArgs</c> came with the per-game launch arguments (w14/layouts-c).
 /// </summary>
 public static class DisplayModeItemKeys
 {
@@ -31,6 +31,8 @@ public static class DisplayModeItemKeys
     public const string Hdr = "Hdr";
     /// <summary>Upstream: the resolution on launch. Linux: the resolution switch around the launch (#191).</summary>
     public const string Resolution = "Resolution";
+    /// <summary>w14/layouts-c (upstream 2.9.3): the game's launch arguments in this mode ("" = none in this mode).</summary>
+    public const string LaunchArgs = "LaunchArgs";
 
     /// <summary>Items kept in ReShade.ini (kept through ReShade / RenoDX installs and the Settings "write to all" buttons).</summary>
     public static readonly IReadOnlyList<string> ReShadeIniItems = [RdxPeakNits, RdxGameNits, RdxUiNits, RsPreset, RsOverlayKey, RsScreenshotKey, RsGamepadNav];
@@ -80,6 +82,8 @@ public sealed class DisplayModeItem
     public double Max { get; init; } = double.MaxValue;
     /// <summary>0 is accepted and means off / no limit.</summary>
     public bool AllowZero { get; init; }
+    /// <summary>An empty text is a value of its own (launch arguments: none in this mode), not "not set".</summary>
+    public bool AllowEmpty { get; init; }
 
     /// <summary>Checks and normalises a typed value; null when it is not valid.</summary>
     public string? Normalize(string? text)
@@ -98,6 +102,8 @@ public sealed class DisplayModeItem
                 return d < Min || d > Max ? null : d.ToString("0.###", CultureInfo.InvariantCulture);
             case DisplayModeValueKind.Choice:
                 return t.Length == 0 ? null : t;
+            case DisplayModeValueKind.Text when Key == DisplayModeItemKeys.LaunchArgs:
+                return t.Length == 0 ? "" : RHI.Platform.Linux.Launch.LaunchArguments.Normalize(t);
             case DisplayModeValueKind.ReShadeKey:
                 return ReShadeKey(t);
             case DisplayModeValueKind.ReLimiterKey:
@@ -127,7 +133,7 @@ public sealed class DisplayModeItem
 /// the NVIDIA driver FPS limit is the per-game FPS limit (#310); DLSS frame generation, presets and render scales are the
 /// #211 launch variables; HDR and resolution on launch are RHI's HDR launch mode (#250/#251) and resolution switch (#191).
 /// Not on Linux: RTX HDR peak brightness (no RTX HDR under Wine/Proton) and the HDR display (RHI does not pick a display
-/// for HDR). Launch arguments wait for an owner decision.
+/// for HDR). Launch arguments are the game's own (Game Overrides, w14/layouts-c), swapped like the HDR and resolution settings.
 /// </summary>
 public static class DisplayModeItems
 {
@@ -162,6 +168,8 @@ public static class DisplayModeItems
         // When RHI launches the game
         Choice(DisplayModeItemKeys.Hdr, DisplayModeGroup.Launch, DisplayModeChoices.HdrMode),
         Choice(DisplayModeItemKeys.Resolution, DisplayModeGroup.Launch, DisplayModeChoices.Resolution),
+        new() { Key = DisplayModeItemKeys.LaunchArgs, Group = DisplayModeGroup.Launch, Target = DisplayModeTarget.LaunchSettings,
+            Kind = DisplayModeValueKind.Text, AllowEmpty = true },
     ];
 
     public static DisplayModeItem? Get(string? key)

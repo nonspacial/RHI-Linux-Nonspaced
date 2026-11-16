@@ -176,7 +176,8 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         var userCommand = IsUserCommand(game);
         if (userCommand) AddUserBinDirectories(psi);
         psi.ArgumentList.Add(userCommand ? "-lc" : "-c");
-        var command = BuildShellCommand(game.LaunchCommand!, options.CommandPrefix);
+        // w14/layouts-c: the game's launch arguments, where they reach the game (LaunchArguments decides; a typed command never changes).
+        var command = BuildShellCommand(LaunchArguments.CommandWith(game, options.Arguments) ?? game.LaunchCommand!, options.CommandPrefix);
         if (options.AfterExit is { } afterExit) command = WithAfterExit(command, afterExit);
         psi.ArgumentList.Add(stderrLog is null ? command : WithCappedStderrLog(command, stderrLog));
         return psi;

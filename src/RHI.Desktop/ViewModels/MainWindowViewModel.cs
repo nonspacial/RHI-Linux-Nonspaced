@@ -1123,12 +1123,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         }
 
         var resolutionPlan = Runtime.SelectedResolutionPlan; // #191: switch the display around a direct launch
+        // w14/layouts-c: the game's launch arguments (the launcher adds them where they reach the game) and their status line.
+        var arguments = LaunchArguments.ArgumentsFor(SelectedGame);
+        var argumentsLine = LaunchArguments.LaunchLine(SelectedGame);
+        string WithArguments(string line) => argumentsLine.Length == 0 ? line : line + " " + argumentsLine;
         if (plan.AppliesAtLaunch && _launcher is IGameLaunchOptionsLauncher profiledLauncher)
         {
             var hdrGame = SelectedGame;
-            var profileLine = Runtime.ProfileLaunchLine(hdrGame, plan); // w7/nvapi-launch hook (#211): HDR's line, or the NVIDIA settings' with HDR Off
+            var profileLine = WithArguments(Runtime.ProfileLaunchLine(hdrGame, plan)); // w7/nvapi-launch hook (#211): HDR's line, or the NVIDIA settings' with HDR Off
             StatusText = profileLine;
-            var (hdrOptions, hdrNotice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions(plan.Environment, plan.CommandPrefix));
+            var (hdrOptions, hdrNotice) = await Resolution.PrepareAsync(resolutionPlan,
+                new GameLaunchOptions(plan.Environment, plan.CommandPrefix, Arguments: arguments.Count > 0 ? arguments : null));
             var hdrLine = hdrNotice is null ? profileLine : profileLine + " " + hdrNotice;
             StatusText = hdrLine;
             if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, hdrOptions)))
@@ -1144,10 +1149,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             : TF("Vm.Launching", game.Name);
         // A store hand-off starts unwrapped; its launcher applies the HDR profile, so say where to enter it (#46).
         if (HdrLaunchText.HandoffNotice(plan, game) is { } handoff) started += " " + handoff;
+        started = WithArguments(started);
         if (resolutionPlan.SwitchesAroundLaunch && _launcher is IGameLaunchOptionsLauncher resolutionLauncher) // #191
         {
             StatusText = started;
-            var (options, notice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions());
+            var (options, notice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions(Arguments: arguments.Count > 0 ? arguments : null));
             if (notice is not null) started += " " + notice;
             StatusText = started;
             if (await TryLaunchAsync(game, () => resolutionLauncher.LaunchAsync(game, options)))
@@ -1157,6 +1163,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             return;
         }
         StatusText = started;
+        if (arguments.Count > 0 && _launcher is IGameLaunchOptionsLauncher argumentsLauncher) // w14/layouts-c
+        {
+            if (await TryLaunchAsync(game, () => argumentsLauncher.LaunchAsync(game, new GameLaunchOptions(Arguments: arguments))))
+                StatusText = started;
+            return;
+        }
         if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
             StatusText = started;
     }

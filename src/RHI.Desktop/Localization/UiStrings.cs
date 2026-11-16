@@ -2188,10 +2188,10 @@ internal static class UiStrings
         ("Mgmt.RemoveManualDesc", "Remover este jogo que você adicionou", "Remove this game you added yourself"),
         ("Mgmt.RemoveManualTip", "Remove este jogo do RHI. Você o adicionou, então adicione-o de novo para tê-lo de volta. Os arquivos do jogo não mudam.", "Remove this game from RHI. You added it yourself, so add it again to get it back. Game files are not changed."),
         ("Mgmt.ResetOverrides", "Redefinir substituições", "Reset Overrides"),
-        ("Mgmt.ResetOverridesTip", "Volta as substituições deste jogo aos padrões: API forçada, modo Luma, nomes de DLL, inclusão em Atualizar tudo e configurações NVIDIA (presets do DLSS). HDR e resolução ao iniciar não mudam.", "Reset this game's overrides back to defaults: forced API, Luma mode, DLL names, Update All inclusion and NVIDIA settings (DLSS presets). HDR and resolution on launch are not affected."),
+        ("Mgmt.ResetOverridesTip", "Volta as substituições deste jogo aos padrões: API forçada, modo Luma, nomes de DLL, inclusão em Atualizar tudo, configurações NVIDIA (presets do DLSS) e argumentos de inicialização. HDR e resolução ao iniciar não mudam.", "Reset this game's overrides back to defaults: forced API, Luma mode, DLL names, Update All inclusion, NVIDIA settings (DLSS presets) and launch arguments. HDR and resolution on launch are not affected."),
         ("Mgmt.ResetOverridesDesc", "Voltar cada ajuste por jogo ao global", "Put every per-game setting back to global"),
         ("Mgmt.ResetOverridesConfirmTitle", "Redefinir as substituições?", "Reset Overrides"),
-        ("Mgmt.ResetOverridesConfirm", "Redefinir as substituições de {0}? A API forçada, o modo Luma, os nomes de DLL, a inclusão em Atualizar tudo e as configurações NVIDIA voltam aos padrões. Nenhum arquivo instalado é removido.", "Reset {0}'s overrides? The forced API, Luma mode, DLL names, Update All inclusion and NVIDIA settings go back to the defaults. No installed file is removed."),
+        ("Mgmt.ResetOverridesConfirm", "Redefinir as substituições de {0}? A API forçada, o modo Luma, os nomes de DLL, a inclusão em Atualizar tudo, as configurações NVIDIA e os argumentos de inicialização voltam aos padrões. Nenhum arquivo instalado é removido.", "Reset {0}'s overrides? The forced API, Luma mode, DLL names, Update All inclusion, NVIDIA settings and launch arguments go back to the defaults. No installed file is removed."),
         ("Mgmt.ResetOverridesButton", "Redefinir", "Reset"),
         ("Mgmt.ResetOverridesDone", "{0}: substituições redefinidas ({1}).", "{0}: overrides reset ({1})."),
         ("Mgmt.ResetOverridesNothing", "{0} não tinha substituições.", "{0} had no overrides."),
@@ -2209,7 +2209,6 @@ internal static class UiStrings
         // w14/layouts-a (#304): the Tabs header.
         ("Tabs.Launch", "▶ Iniciar", "▶ Launch"),
         ("Tabs.LaunchMenuTip", "Executável e comando de inicialização, perfil de inicialização e atalho", "Executable and launch command, launch profile and shortcut"),
-        ("Tabs.EditLaunch", "Executável e comando de inicialização…", "Executable and launch command…"),
         ("Tabs.HdrOnLaunch", "HDR ao iniciar", "HDR on launch"),
         // w14/layouts-a: end of rows (layouts).
     ];

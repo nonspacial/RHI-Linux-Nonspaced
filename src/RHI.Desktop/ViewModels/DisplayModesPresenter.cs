@@ -153,6 +153,9 @@ public sealed partial class DisplayModesPresenter : ObservableObject
             // #251: the selected game's page knows whether it can use HDR; for other games RHI has not looked yet.
             HdrOffered = !selected || _shell.Runtime.ShowHdrSection,
             ResolutionOffered = DisplayModeSwitcher.CanEverApply(game, host),
+            // w14/layouts-c: launch arguments only where RHI adds them (a command it built, Steam's -applaunch).
+            LaunchArgsOffered = _shell.LaunchArguments.RouteFor(game) is RHI.Platform.Linux.Launch.LaunchArgumentsRoute.Direct
+                or RHI.Platform.Linux.Launch.LaunchArgumentsRoute.Steam,
             Launch = DisplayModeLaunchValues.From(panel.LibraryState, Key(game)),
         };
     }
@@ -260,6 +263,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         if (_shell.SelectedGame is not { } game) return;
         _shell.Runtime.LoadHdrProfile(game);
         _shell.FrameRateLimit.Load();
+        _shell.LaunchArguments.Load(); // w14/layouts-c
     }
 
     // ── A game's Custom mode ──────────────────────────────────────────────────

@@ -225,19 +225,49 @@ public sealed partial class MainWindow
         vm.StatusText = message;
     });
 
-    /// <summary>The Tabs header's Launch menu: executable and launch command, the launch profile, a shortcut.</summary>
+    /// <summary>
+    /// The Tabs header's Launch menu (upstream 2.9.0: Executable, Launch arguments..., Create desktop shortcut): the executable
+    /// (opens Edit game, where Linux chooses it and the launch command), Launch arguments... (Game Overrides' box), the launch
+    /// profile (Linux), a shortcut.
+    /// </summary>
     private void TabsLaunchMenu_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control anchor || DataContext is not MainWindowViewModel vm) return;
         var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft, FlyoutPresenterClasses = { "navy" } };
-        var edit = new MenuItem { Header = T("Tabs.EditLaunch"), IsEnabled = vm.CanEditSelectedGame };
+        var edit = new MenuItem { Header = vm.LaunchMenuExecutableText, IsEnabled = vm.CanEditSelectedGame, Name = "LaunchMenuExecutable" };
+        ToolTip.SetTip(edit, T("LcMenu.ExecutableTip"));
         edit.Click += (_, args) => EditGame_Click(anchor, args);
         menu.Items.Add(edit);
+        var arguments = new MenuItem { Header = T("LcMenu.Arguments"), IsEnabled = vm.HasSelectedGame, Name = "LaunchMenuArguments" };
+        arguments.Click += (_, _) => ShowLaunchArguments(vm);
+        menu.Items.Add(arguments);
         var profile = new MenuItem { Header = T("Ui.CopyLaunchProfile"), IsEnabled = vm.Runtime.CanCopyHdrLaunchOptions };
         profile.Click += (_, args) => CopyHdrLaunchOptions_Click(anchor, args);
         menu.Items.Add(profile);
         foreach (var item in vm.LaunchMenuItems()) menu.Items.Add(CardMenuView(item));
         menu.ShowAt(anchor);
+    }
+
+    /// <summary>Launch ▾ › Launch arguments...: Game Overrides' tab (upstream), with the box focused.</summary>
+    private void ShowLaunchArguments(MainWindowViewModel vm)
+    {
+        if (vm.Layout.ShowSection(GamePageSections.GameOverrides) is { } refused)
+        {
+            vm.StatusText = refused;
+            return;
+        }
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (this.FindControl<TextBox>("LaunchArgumentsBox") is not { } box) return;
+            box.BringIntoView();
+            box.Focus();
+        }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>The Launch arguments box lost focus: its text is saved (upstream saves on focus lost).</summary>
+    private void LaunchArgumentsBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm) vm.LaunchArguments.Commit();
     }
 
     private static MenuItem CardMenuView(CardMenuItem item)

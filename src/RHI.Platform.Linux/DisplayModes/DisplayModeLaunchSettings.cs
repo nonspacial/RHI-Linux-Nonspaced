@@ -6,7 +6,7 @@ namespace RHI.Platform.Linux.DisplayModes;
 
 /// <summary>
 /// #311: a copy of one game's launch settings that display modes swap — the HDR launch mode (#250/#251), the resolution
-/// switch (#191), the FPS limit (#310) and the NVIDIA settings (#211). Taken from the library state on the UI thread,
+/// switch (#191), the FPS limit (#310), the NVIDIA settings (#211) and the launch arguments (w14/layouts-c). Taken from the library state on the UI thread,
 /// changed by a switch on a background thread, then put back and saved by the desktop (<see cref="ApplyTo"/>), so the
 /// library state is only ever touched on the UI thread. Nothing is written to disk by the switch itself.
 /// </summary>
@@ -18,6 +18,8 @@ public sealed class DisplayModeLaunchValues
     /// <summary>The game's own FPS limit: null = Global, 0 = Off, else 20–1000.</summary>
     public uint? FpsLimit { get; set; }
     public NvidiaGameSettings Nvidia { get; set; } = new();
+    /// <summary>w14/layouts-c: the game's launch arguments (null = none).</summary>
+    public string? LaunchArgs { get; set; }
     /// <summary>A switch changed something (the desktop saves the library file and reloads the page's controls).</summary>
     public bool Changed { get; set; }
 
@@ -31,6 +33,7 @@ public sealed class DisplayModeLaunchValues
             Resolution = profile.Resolution,
             FpsLimit = state.FpsLimits is { } limits && limits.TryGetValue(key, out var fps) ? fps : null,
             Nvidia = profile.Nvidia?.Copy() ?? new NvidiaGameSettings(),
+            LaunchArgs = state.LaunchArguments is { } args && args.TryGetValue(key, out var text) ? text : null,
         };
     }
 
@@ -50,6 +53,10 @@ public sealed class DisplayModeLaunchValues
         if (FpsLimit is { } fps) limits[key] = fps;
         else limits.Remove(key);
         state.FpsLimits = limits.Count == 0 ? null : limits;
+        var arguments = state.LaunchArguments ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (RHI.Platform.Linux.Launch.LaunchArguments.Normalize(LaunchArgs) is { } text) arguments[key] = text;
+        else arguments.Remove(key);
+        state.LaunchArguments = arguments.Count == 0 ? null : arguments;
     }
 }
 
@@ -61,6 +68,7 @@ public static class DisplayModeLaunchSettings
         DisplayModeItemKeys.Hdr => ctx.HdrOffered ? DisplayModeUnavailable.None : DisplayModeUnavailable.HdrNotOffered,
         DisplayModeItemKeys.Resolution => ctx.ResolutionOffered ? DisplayModeUnavailable.None : DisplayModeUnavailable.ResolutionNotOffered,
         DisplayModeItemKeys.DriverFpsCap => ctx.FpsLimitOffered ? DisplayModeUnavailable.None : DisplayModeUnavailable.FpsLimitNotOffered,
+        DisplayModeItemKeys.LaunchArgs => ctx.LaunchArgsOffered ? DisplayModeUnavailable.None : DisplayModeUnavailable.LaunchArgsNotOffered,
         _ => ctx.NvidiaOffered ? DisplayModeUnavailable.None : DisplayModeUnavailable.NvidiaNotOffered
     };
 
@@ -85,6 +93,8 @@ public static class DisplayModeLaunchSettings
             DisplayModeItemKeys.DlssRrPreset => n.RayReconstructionPreset.ToString(CultureInfo.InvariantCulture),
             DisplayModeItemKeys.DlssSrScale => n.SuperResolutionRenderScale.ToString(CultureInfo.InvariantCulture),
             DisplayModeItemKeys.DlssRrScale => n.RayReconstructionRenderScale.ToString(CultureInfo.InvariantCulture),
+            // "" = no arguments: a value of its own, so "before modes" remembers it and Off puts it back.
+            DisplayModeItemKeys.LaunchArgs => v.LaunchArgs ?? "",
             _ => null
         };
     }
@@ -92,10 +102,10 @@ public static class DisplayModeLaunchSettings
     /// <summary>Sets an item; null on success, else why the value was not taken.</summary>
     public static string? Write(DisplayModeLaunchValues v, string itemKey, string value)
     {
-        var before = (v.HdrMode, v.ResolutionToggle, v.Resolution, v.FpsLimit, Nvidia: System.Text.Json.JsonSerializer.Serialize(v.Nvidia));
+        var before = (v.HdrMode, v.ResolutionToggle, v.Resolution, v.FpsLimit, Nvidia: System.Text.Json.JsonSerializer.Serialize(v.Nvidia), v.LaunchArgs);
         var problem = Set(v, itemKey, value);
         if (problem is null)
-            v.Changed |= before != (v.HdrMode, v.ResolutionToggle, v.Resolution, v.FpsLimit, System.Text.Json.JsonSerializer.Serialize(v.Nvidia));
+            v.Changed |= before != (v.HdrMode, v.ResolutionToggle, v.Resolution, v.FpsLimit, System.Text.Json.JsonSerializer.Serialize(v.Nvidia), v.LaunchArgs);
         return problem;
     }
 
@@ -169,6 +179,11 @@ public static class DisplayModeLaunchSettings
                     return NotTaken + value;
                 if (itemKey == DisplayModeItemKeys.DlssSrScale) n.SuperResolutionRenderScale = scale;
                 else n.RayReconstructionRenderScale = scale;
+                return null;
+            case DisplayModeItemKeys.LaunchArgs:
+                if (value.Trim().Length == 0) { v.LaunchArgs = null; return null; }
+                if (RHI.Platform.Linux.Launch.LaunchArguments.Normalize(value) is not { } args) return NotTaken + value;
+                v.LaunchArgs = args;
                 return null;
             default:
                 return NotTaken + itemKey;

@@ -399,11 +399,28 @@
                              IsVisible="{Binding DisplayModes.ShowSwitch}"/>
                   <views:DisplayModeSwitchView x:Name="DisplayModeSwitch" Grid.Row="11" Grid.Column="1"/>
 
-                  <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
-                  <TextBlock Grid.Row="12" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
+                  <!-- w14/layouts-c (upstream 2.9.0+ Game Overrides › Launch arguments and Reset launch options): saved on focus lost or
+                       Enter; the line under it says how the arguments reach the game on Linux, or where to add them. -->
+                  <TextBlock Grid.Row="12" Grid.Column="0" Text="{l:T LcArgs.Label}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                  <StackPanel x:Name="LaunchArgumentsRow" Grid.Row="12" Grid.Column="1" Spacing="4" DataContext="{Binding LaunchArguments}" x:DataType="vm:LaunchArgumentsPresenter">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
+                      <TextBox x:Name="LaunchArgumentsBox" MinWidth="260" Text="{Binding Text, Mode=TwoWay}" PlaceholderText="{l:T LcArgs.Placeholder}"
+                               IsEnabled="{Binding HasGame}" ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="1000" LostFocus="LaunchArgumentsBox_LostFocus">
+                        <TextBox.KeyBindings>
+                          <KeyBinding Gesture="Enter" Command="{Binding CommitCommand}"/>
+                        </TextBox.KeyBindings>
+                      </TextBox>
+                      <Button x:Name="ResetLaunchOptionsButton" Classes="rhi" Content="{l:T LcArgs.Reset}" Command="{Binding ResetCommand}" IsEnabled="{Binding HasGame}"
+                              ToolTip.Tip="{l:T LcArgs.ResetTip}" Padding="10,5"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="LaunchArgumentsNote" Text="{Binding Note}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                  </StackPanel>
 
-                  <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
-                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="{DynamicResource RhiMutedTextBrush}" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
+                  <TextBlock Grid.Row="13" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="{DynamicResource RhiSecondaryTextBrush}" TextWrapping="Wrap"/>
+
+                  <TextBlock Grid.Row="14" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
+                  <TextBlock Grid.Row="14" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="{DynamicResource RhiMutedTextBrush}" TextWrapping="Wrap"/>
                 </views:LabelValuePanel>
                   <!-- w14/layouts-a (#304): upstream Game Overrides' ReShade card (was the ReShade profile section). -->
                   <Border x:Name="GameOverridesReShadeCard" Classes="subCard">
