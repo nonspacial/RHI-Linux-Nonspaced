@@ -34,8 +34,8 @@ public static class ComponentProbe
         var addonFolder = string.IsNullOrWhiteSpace(addonDirectory)
             ? null
             : Path.GetFullPath(addonDirectory).TrimEnd(Path.DirectorySeparatorChar);
-        var dlssg2030Installed = files.Contains("dlssg_sm86.ini") &&
-            new[] { "version.dll", "winmm.dll", "dinput8.dll", "winhttp.dll", "dxgi.dll" }.Any(files.Contains);
+        // w13 final review nit: every proxy name the 0.4 package installs, plus winhttp.dll for older installs.
+        var dlssg2030Installed = files.Contains("dlssg_sm86.ini") && Dlssg2030ProxyNames.Detected.Any(files.Contains);
 
         var reShadeInstalled = indexedFiles.Any(path =>
         {

@@ -766,6 +766,8 @@ public static class UiLocalizationService
         // #261: DLSSG 20/30 installs the 0.4.x release package.
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.NoPackagePrefix, "A release do DLSSG 20/30 não publica um único pacote dlssg-release-<versão>-x64.zip, então nada foi instalado: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.PackageFileMissingPrefix, "Falta no pacote da release do DLSSG 20/30 um arquivo de que o mod precisa, então nada foi instalado: "),
+        // w13 final review nit: the package's files declare more than 1 GiB together (the byte count follows).
+        (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.PackageTooLargePrefix, "O pacote da release do DLSSG 20/30 ocuparia mais de 1 GiB ao ser extraído, então nada foi instalado. Bytes declarados: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.PackageFileCollisionPrefix, "Um arquivo do pacote do DLSSG 20/30 substituiria um arquivo que o RHI não gerencia, então nada foi alterado. Mova ou apague esse arquivo e tente de novo: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.ModFolderLinkPrefix, "A pasta dlssg_sm86 ao lado do jogo é um link, e o RHI não grava através de links: "),
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.PackageFileChangedPrefix, "Não atualizado: um arquivo do pacote do DLSSG 20/30 foi alterado fora do RHI, e uma atualização nunca o substitui. Remova e instale de novo: "),

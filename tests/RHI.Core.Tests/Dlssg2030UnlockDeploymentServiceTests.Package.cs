@@ -81,6 +81,19 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests
         Assert.Equal(Dlssg2030UnlockDeploymentService.PackageFileMissingPrefix + missing, error.Message);
     }
 
+    // w13 final review nit: the planned entries' declared sizes are capped as a whole (1 GiB), not only one by one.
+    [Fact]
+    public void Package_WhoseFilesUnpackPastTheTotalCap_IsRefused()
+    {
+        using var zip = ZipOf(RealPackageEntries());
+        var total = zip.Entries.Where(entry => Dlssg2030UnlockDeploymentService.IsRuntimeFile(entry.FullName)).Sum(entry => entry.Length);
+
+        Assert.NotEmpty(Dlssg2030UnlockDeploymentService.PlanPackageEntries(zip, maxTotalBytes: total));
+        var error = Assert.Throws<InvalidDataException>(() => Dlssg2030UnlockDeploymentService.PlanPackageEntries(zip, maxTotalBytes: total - 1));
+        Assert.StartsWith(Dlssg2030UnlockDeploymentService.PackageTooLargePrefix, error.Message, StringComparison.Ordinal);
+        Assert.Equal(1L << 30, Dlssg2030UnlockDeploymentService.PackageMaxTotalBytes);
+    }
+
     [Fact]
     public void ReleaseAsset_IsTheTagsPackage_FromTodaysRelease_NeverAnotherZip()
     {

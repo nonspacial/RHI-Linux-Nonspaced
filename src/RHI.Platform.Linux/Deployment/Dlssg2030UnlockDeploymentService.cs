@@ -49,8 +49,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     /// The proxy names, in the order the mod's <c>alternatives/README.md</c> says to try them (#261): version.dll first, then
     /// winmm, dbghelp, dinput8, and dxgi or d3d12 (render-path proxies, last resort). Each is its own build.
     /// </summary>
-    public static readonly IReadOnlyList<string> ProxyNames =
-        ["version.dll", "winmm.dll", "dbghelp.dll", "dinput8.dll", "dxgi.dll", "d3d12.dll"];
+    public static readonly IReadOnlyList<string> ProxyNames = Dlssg2030ProxyNames.Offered;
 
     public static readonly IReadOnlyList<string> GpuGenerations = [GpuGenRtx20];
 
@@ -193,6 +192,15 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     public const string NoPackagePrefix = "The DLSSG 20/30 release publishes no single dlssg-release-<version>-x64.zip package, so nothing was installed: ";
 
     /// <summary>A package missing a file a game needs; the package path follows.</summary>
+    /// <summary>
+    /// w13 final review nit: the files RHI would extract declare more than <see cref="PackageMaxTotalBytes"/> together
+    /// (each is capped on its own as well); the declared total in bytes follows (PT-BR presentation pair).
+    /// </summary>
+    public const string PackageTooLargePrefix = "The DLSSG 20/30 release package would unpack to more than 1 GiB, so nothing was installed. Declared bytes: ";
+
+    /// <summary>The cap on the declared size of every file RHI extracts from one package, together (1 GiB).</summary>
+    public const long PackageMaxTotalBytes = 1L << 30;
+
     public const string PackageFileMissingPrefix = "The DLSSG 20/30 release package is missing a file the mod needs, so nothing was installed: ";
 
     /// <summary>A package file RHI would place where a file that is not RHI's already is; the path follows.</summary>
@@ -820,10 +828,11 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     /// Docs, readmes, manuals and the configurator page stay out. A name with <c>..</c>, an empty part, a rooted path or a
     /// duplicate refuses the whole package; a package without the required files is refused.
     /// </summary>
-    internal static IReadOnlyList<(ZipArchiveEntry Entry, string Relative)> PlanPackageEntries(ZipArchive zip)
+    internal static IReadOnlyList<(ZipArchiveEntry Entry, string Relative)> PlanPackageEntries(ZipArchive zip, long maxTotalBytes = PackageMaxTotalBytes)
     {
         var plan = new List<(ZipArchiveEntry, string)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long declared = 0;
         foreach (var entry in zip.Entries)
         {
             var name = entry.FullName.Replace('\\', '/');
@@ -834,6 +843,10 @@ public sealed partial class Dlssg2030UnlockDeploymentService
             if (!IsRuntimeFile(name)) continue;
             if (!seen.Add(name))
                 throw new InvalidDataException(PackageFileMissingPrefix + "(duplicate entry) " + entry.FullName);
+            // The declared sizes, summed: the extractor checks each file against its own length as it writes.
+            declared += entry.Length;
+            if (declared > maxTotalBytes)
+                throw new InvalidDataException(PackageTooLargePrefix + declared);
             plan.Add((entry, name));
         }
         foreach (var required in new[] { DefaultProxyName, IniFileName }.Concat(RequiredModFiles.Select(file => ModFolderName + "/" + file)))
