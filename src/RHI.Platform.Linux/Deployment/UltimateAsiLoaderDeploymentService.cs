@@ -37,13 +37,20 @@ public sealed class UltimateAsiLoaderDeploymentService
     public const string HookedBackupExistsSuffix =
         " already exists. RHI will not overwrite an existing Hooked backup. Move or delete it, or choose another DLL name, then Install again.";
 
+    /// <summary>#284: after an install that moved an extra to its Hooked name; "component: old → new" follows (PT-BR pair).</summary>
+    public const string FollowedExtraPrefix =
+        " Another extra RHI installed used this name, so it was moved to the Hooked name, where ASI Loader loads it; RHI follows it, and moves it back when ASI Loader is removed. Extra: ";
+
+    /// <summary>#284: after a removal that moved an extra back from its Hooked name; "component: old → new" follows (PT-BR pair).</summary>
+    public const string ReleasedExtraPrefix = " An extra was moved back to the name ASI Loader had, so it keeps working on its own: ";
+
     /// <summary>The Install refusal when <paramref name="hookedName"/> (the chained original's name) already exists.</summary>
     public static string HookedBackupExistsMessage(string proxyName, string hookedName)
         => CannotChainPrefix + proxyName + ": " + hookedName + HookedBackupExistsSuffix;
 
     private const string Asset32 = "Ultimate-ASI-Loader.zip";
     private const string Asset64 = "Ultimate-ASI-Loader_x64.zip";
-    private const string MetaProxyName = "UAL.ProxyName";
+    internal const string MetaProxyName = "UAL.ProxyName";
     private const string MetaHookedPath = "UAL.HookedPath";
     private const string MetaHadOriginal = "UAL.HadOriginal";
     private const string MetaAssetSha256 = "UAL.AssetSha256";
@@ -227,9 +234,13 @@ public sealed class UltimateAsiLoaderDeploymentService
         var proxyName = Path.GetFileName(dllName.Trim());
         var targetPath = Path.Combine(binaryDir, proxyName);
         var hookedPath = Path.Combine(binaryDir, HookedName(proxyName));
-        var hadOriginal = File.Exists(targetPath);
+        // #284: an extra under the chosen name moves to its Hooked name, where ASI Loader loads it, and its record follows.
+        var followed = ExtraDllNames.MovableExtraAt(_records, game, targetPath);
+        var hadOriginal = followed is null && File.Exists(targetPath);
+        if (followed is not null && ReShadeDeploymentService.FindFileCaseInsensitive(binaryDir, Path.GetFileName(hookedPath)) is not null)
+            return ComponentOperationResult.Fail(HookedBackupExistsMessage(proxyName, Path.GetFileName(hookedPath)));
 
-        if (IsRhiManagedPath(game, targetPath))
+        if (followed is null && IsRhiManagedPath(game, targetPath))
             return ComponentOperationResult.Fail(
                 $"{proxyName} is already owned by another RHI-managed component. Choose a different ASI Loader proxy name; RHI will not reuse or chain over another managed proxy path.");
 
@@ -267,11 +278,23 @@ public sealed class UltimateAsiLoaderDeploymentService
         // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         string targetHash;
+        LinuxDeploymentRecord? followedAfter = null;
+        WineOverrideRestoreResult? followedRestore = null;
         try
         {
+            // #284: the extra's override for the name goes back first (ASI Loader sets its own); XHooked.dll needs none.
+            if (followed?.WineOverride is { } extraOverride)
+                followedRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, extraOverride, cancellationToken).ConfigureAwait(false);
             wineOverride = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
 
             await scope.TrackAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            if (followed is not null)
+            {
+                await scope.TrackAsync(hookedPath, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(hookedPath, scope.Files.Find(targetPath)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                AtomicFile.Rename(targetPath, hookedPath);
+                followedAfter = ExtraDllNames.Moved(followed, hookedPath, wineOverride: null);
+            }
             if (hadOriginal)
             {
                 await scope.TrackAsync(hookedPath, cancellationToken).ConfigureAwait(false);
@@ -294,7 +317,7 @@ public sealed class UltimateAsiLoaderDeploymentService
             if (hadOriginal)
                 metadata[MetaHookedPath] = hookedPath;
 
-            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
+            var ualRecord = scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -315,7 +338,10 @@ public sealed class UltimateAsiLoaderDeploymentService
                     }
                 ],
                 Metadata = metadata
-            }));
+            });
+            // The moved extra's record is saved in the same ledger write as ASI Loader's (the commit point).
+            if (followedAfter is not null) _records.Commit([ualRecord, followedAfter]);
+            else _records.Upsert(ualRecord);
         }
         catch (Exception ex)
         {
@@ -326,6 +352,8 @@ public sealed class UltimateAsiLoaderDeploymentService
             if (!rollback.Success)
                 AppLog.Warn("ual", $"Install rollback could not put {proxyName} back: {string.Join("; ", rollback.Failures)}");
             if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
+            if (rollback.RolledBack && scope.Operation is null && followedRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, followed!.WineOverride);
 
             return ComponentOperationResult.Fail($"Ultimate ASI Loader install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
@@ -334,7 +362,9 @@ public sealed class UltimateAsiLoaderDeploymentService
 
         var chainText = hadOriginal
             ? $" Existing {proxyName} was preserved as {Path.GetFileName(hookedPath)} and will be restored on Remove."
-            : "";
+            : followed is not null
+                ? FollowedExtraPrefix + $"{LinuxManagedComponentService.DisplayDependencyName(followed.Component)}: {proxyName} → {Path.GetFileName(hookedPath)}"
+                : "";
         return ComponentOperationResult.Ok(
             $"Ultimate ASI Loader {release.Version} installed as {proxyName}; Wine override {Path.GetFileName(game.ExecutablePath)}:{Path.GetFileNameWithoutExtension(proxyName)}=native,builtin applied.{chainText}");
     }
@@ -456,6 +486,10 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
+        // #284: an extra RHI moved to (or installed under) the Hooked name goes back to the name ASI Loader had.
+        var released = hadOriginal ? null : ExtraDllNames.MovableExtraAt(_records, game, Path.Combine(record.BinaryDirectory, HookedName(proxyName)));
+        LinuxDeploymentRecord? releasedAfter = null;
+        WineOverrideRecord? releasedOverride = null;
 
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
@@ -475,7 +509,18 @@ public sealed class UltimateAsiLoaderDeploymentService
             }
 
             overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
-            _records.Remove(game, ManagedComponentKind.UltimateAsiLoader);
+            if (released is not null && ExtraDllNames.ProxyOf(released) is { } hooked && File.Exists(hooked.Path))
+            {
+                await scope.TrackAsync(hooked.Path, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(targetPath, scope.Files.Find(hooked.Path)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                AtomicFile.Rename(hooked.Path, targetPath);
+                // Wine loads the extra under the system DLL's name now: it gets that name's override, as its own install sets.
+                releasedOverride = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+                releasedAfter = ExtraDllNames.Moved(released, targetPath, releasedOverride);
+            }
+            // The moved extra's record is saved in the same ledger write that drops ASI Loader's (the commit point).
+            if (releasedAfter is not null) _records.Commit([releasedAfter], [(game, ManagedComponentKind.UltimateAsiLoader)]);
+            else _records.Remove(game, ManagedComponentKind.UltimateAsiLoader);
         }
         catch (Exception ex)
         {
@@ -485,6 +530,8 @@ public sealed class UltimateAsiLoaderDeploymentService
             if (rollback.Committed) return DeploymentScope.Landed("Ultimate ASI Loader", removal: true);
             if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            if (rollback.RolledBack && scope.Operation is null && releasedOverride is not null)
+                _overrides.TryRestore(game.PrefixPath, releasedOverride);
             if (!rollback.Success)
                 AppLog.Warn("ual", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
             return ComponentOperationResult.Fail($"Ultimate ASI Loader removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
@@ -495,6 +542,7 @@ public sealed class UltimateAsiLoaderDeploymentService
             (hadOriginal
                 ? $"Ultimate ASI Loader removed; original {proxyName} restored and Wine override rolled back."
                 : $"Ultimate ASI Loader removed; Wine override for {proxyName} rolled back.")
+            + (releasedAfter is null ? "" : ReleasedExtraPrefix + $"{LinuxManagedComponentService.DisplayDependencyName(releasedAfter.Component)}: {HookedName(proxyName)} → {proxyName}")
             + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
 

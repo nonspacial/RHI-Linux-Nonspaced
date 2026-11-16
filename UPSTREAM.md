@@ -1755,3 +1755,118 @@ again. Not journaled: nothing in the game folder changes, and the change is undo
   folder, automatic when RHI corrects the folder, manifest `installPathMigrations`). Both need journaled moves of user
   and RHI files across folders and a review UI; they were left for a follow-up so this lane's other items could land
   with their tests.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane extras-addons)
+
+### #283 — Load ReShade as ASI (2.8.9)
+
+Upstream 2.8.9 `fdcc5b4` (`MainViewModel.ReShadeAsi`). ReShade's ⚙ has a "Loading" section with **Load ReShade as ASI**
+(Off / On). On renames RHI's ReShade to `ReShade64.asi` (`ReShade32.asi` on 32-bit games) for an ASI loader; RHI does
+not install a loader (ASI Loader in Extras, or the user's own). Installs and updates keep the name: the setting wins
+over the user's DLL name and the manifest's, and an installed ReShade keeps its recorded name on update. Off renames it
+back to the user's DLL name, else the automatic one (manifest, then the graphics API's). While it is on, the DLL-name
+dropdown is locked to the `.asi` name and says where to turn it off, as upstream greys it. Not offered for Vulkan games
+(ReShade runs there as a layer). The setting is stored per game beside the DLL-name choices (`dll-names.json`,
+`reshadeAsi`).
+
+Linux adaptation: an `.asi` gets no Wine DLL override (only an ASI loader loads it); the rename goes through the #196
+in-place rename, so the file, the Wine override (the old name's restored, none for the `.asi`), the saved setting and
+ReShade's record move in one journaled operation, and a refused or failed rename leaves the setting as it was.
+Deviations: upstream backs up a game file already at the target name as `.original` and renames over it; RHI Linux
+refuses and names the file (game files are never overwritten by a rename). The switch is refused, with the reason,
+while another component decides ReShade's name (the OptiScaler chain's `ReShade64.dll`, ShortFuse, the DirectX 9
+translation, DX9 HDR, the XNA GAC install). Without ReShade installed the ⚙ is not shown on Linux (the ⚙ is for an
+RHI-managed ReShade); the setting can still be saved through the service, and the DLL-name dropdown then shows the
+`.asi` name the install will use.
+
+### #284 — ASI Loader: Hooked names for extras, names in use greyed, renames followed (2.9.0)
+
+Upstream 2.9.0 `a54bb3e` (`HookedDllNames`, `MainViewModel.UalHooked`, `DetailPanelBuilder.Extras.DllNames`). With RHI's
+ASI Loader installed as X.dll, the DLL-name lists of 20/30 FG Unlock (RTX 20 FG Unlock on Linux), Universal MFG,
+RTX Encore and DLSS Enabler offer XHooked.dll right after X.dll, marked "loaded by ASI Loader": ASI Loader loads it as
+the real X.dll, so the extra runs alongside it. 20/30 FG Unlock copies its X.dll build under the Hooked name; RTX
+Encore offers no Hooked name for its Bink names (they already use Hooked for the game's own Bink file). Names another
+RHI component's file uses in the game folder are greyed with that component ("in use by …") and cannot be chosen; a
+Hooked name the game's own DLL already sits under is greyed as the game's. Installing ASI Loader under an extra's name
+moves the extra to XHooked.dll and its record (file and recorded name) follows, in the same journaled operation and
+ledger write as ASI Loader's install; the install says which extra moved. Removing ASI Loader moves it back to X.dll.
+An existing Hooked file stops the install, as before. Reinstalling ASI Loader never chains its own file (Linux: an
+installed ASI Loader is updated in place; Install refuses while it is installed).
+
+Linux adaptation: Wine overrides follow each rename. The extra's own `native,builtin` override for X.dll goes back first
+and ASI Loader sets its own; XHooked.dll needs none (Wine loads a DLL it does not ship from the game folder); on removal
+ASI Loader's override goes back and the extra gets X.dll's override again. A crash in between is rolled back by the
+journal (the extra back under X.dll with its override). Deviations: a Hooked name is refused at install unless ASI Loader
+is installed under the name it stands in for (upstream relies on the list only offering it then); RTX Encore's Hooked
+name is offered, but the component scan that finds a user-installed RTX Encore still looks under its documented names
+only. Upstream also moves RHI's `.original` sentinel with the file; Linux records own the files, so there is no sentinel.
+
+### #282 — Display Commander: main settings in its ⚙; a fresh install writes DisplayCommander.ini (2.8.9/2.9.3)
+
+Upstream 2.8.9 `8c89336` (`DcCogButton_Click`) and 2.9.3 `eacc622`. Display Commander's ⚙ has its main settings, under
+Display Commander's own names, written at once to the game's `DisplayCommander.ini` (`[DisplayCommander]`, beside the
+add-on, ReShade's AddonPath honoured): **Frame Rate** — FPS Limit (No limit, upstream's VRR presets 59–431, or Custom…,
+20–1000 with up to three decimals, `fps_limit`), FPS Limiter Mode (DC's fps limiter / NVIDIA Reflex,
+`fps_limiter_mode`), Inject Reflex (`inject_reflex`), Window Mode (No changes, Borderless fullscreen, Borderless
+windowed, No exclusive fullscreen, `WindowMode`); **Reflex** — Auto Configure Reflex, Enable Reflex Sleep Mode, Use
+Reflex Markers, Generate Reflex Markers (`Reflex*`); **Other** — Win+Up grace time (Off, 1, 2, 5, 10 seconds, Always;
+a value set by hand is shown as it is), and Open DisplayCommander.ini. Absent keys read as Display Commander's defaults.
+Only these keys and values are written (anything else is refused and changes nothing); every other line of the file is
+kept. "Deploy DisplayCommander.ini" stays in the ⚙ as before (#181). The DC menu names are kept in English in both
+languages, as they appear in Display Commander's own menu.
+
+Linux adaptation: each change is journaled on Display Commander's record (a crash before the record is saved puts the
+file back), goes through the one user-INI write path (a read-only lock is kept, a link is followed only to a same-named
+file in the game) and is refused while RHI's patch-target guard refuses INI writes. NVIDIA Reflex under Proton needs
+NVAPI enabled (the tooltip says so); Win+Up may be taken by the desktop before the game sees it (the tooltip says so).
+Upstream's running-game warning is the intro line's "change these with the game closed".
+
+Fresh install: upstream 2.9.3 fixed a Windows packaging bug (the template was looked up beside RHI.exe and missing from
+the single-file build). RHI Linux was not affected: a new Display Commander install already creates `DisplayCommander.ini`
+from the user's template, or RHI's shipped one (`[DisplayCommander]`, the same as upstream's file at `RHI-2.9.4`), when
+absent; `GitHubReShadeAddonDeploymentServiceTests` pins it.
+
+### #277 — HSF frame generation (2.9.3; HSF 0.9.8)
+
+Upstream 2.9.3 `e5075bd` / `7211cc9` (`HsfService`, `DetailPanelBuilder.Extras.Hsf`, `GpuInfoService`), unlocked for
+everyone in 2.9.4. HSF (Hunter's Sloppy Frames, Capt-Hunter/HSF) is a ReShade add-on that adds DLSS frame generation,
+up to 6x, to DirectX 9, 11, 12 and Vulkan games (Vulkan: 64-bit). One click installs the add-on for the game's bitness,
+`HSF_streamline/` (Streamline, `nvngx_dlssg.dll`, the 64-bit helper, with `LICENSE.txt`, `README.txt` and `licenses/`
+inside it), `HSF.ini` beside the add-on (ReShade's AddonPath honoured), `HSF.fx` in the game's `reshade-shaders/Shaders`
+and iMMERSE Launchpad (unless its box is unticked). The release list is read (pre-releases included, drafts skipped);
+the zip goes through the trusted-download policy (`DownloadSources.Hsf`, GitHub hosts, 128 MiB) and GitHub's published
+digest; a release without the files RHI knows is refused before anything changes. DirectX 12 games get HSF's D3D12 route
+in HSF.ini before the first launch (`InGameDlssg=2` with the game's own Streamline, else `SlBringIn=2`), following the
+Rendering API override; a route HSF or the player set is never changed. Update brings the release's clean HSF.ini with
+the player's settings carried over (upstream's merge: `Dx9ExRun`, `Presenter`, `Generated`, `Pacing` dropped, other
+sections kept) and is part of Update All. The ⚙ shows the installed version, the DirectX 12 mode (HSF decides, the
+game's own Streamline, HSF's own; "HSF decides" is remembered so RHI never pre-sets it) and turns Launchpad off for
+LumeniteFX or the game's own motion; opening it moves Launchpad to the top of the game's ReShade preset where HSF listed
+it lower down (only the order changes). On RTX 20/30/40 cards the row offers Universal MFG Unlocker after the install
+(from RHI's existing NVIDIA probe, `/proc/driver/nvidia` model names; not on RTX 50 or an unknown card). For Vulkan games
+the row warns when a DirectX ReShade (`dxgi.dll`) in the game folder keeps the Vulkan layer out. The row shows the
+anti-cheat warning before an install. Real data pinned in the tests: the release list (2026-11-16), the HSF-0.9.8.8.zip
+entry list and its HSF.ini.
+
+Linux adaptation: every install, update, removal and ⚙ change is journaled on HSF's record. Files RHI did not place are
+never overwritten: a hand-installed `hsf.addon64/32`, an `HSF_streamline` folder or an `HSF.fx` already there refuses the
+install; an `HSF.ini` already there is kept as it is (and not pre-set); a Launchpad file a user's own iMMERSE pack placed is
+left and never recorded. Removal takes RHI's files and the logs HSF writes (beside the add-on and in `HSF_streamline`);
+HSF's camera profiles (`HSF_profiles/`) and anything else stay and are named (upstream deletes the folders whole). A file
+RHI placed that changed since refuses update and removal.
+
+Deviations and partial items:
+- Placement: Linux lists Universal MFG and the other unlocks as component rows, so there is no "MFG Unlocks" group yet; HSF
+  is a row in Extras (below ShortFuse) until the Phase 2 lanes restyle the page (#296/#297).
+- ReShade: HSF needs RHI's ReShade installed first (the row says so); it does not install ReShade as a dependency.
+- iMMERSE Launchpad: the nr lane's reusable Launchpad service (#274) was not on `forge/w14/nr` yet, so a minimal step
+  (`ILaunchpadStep` / `ImmerseLaunchpadStep`) takes Launchpad's effect, includes and blue-noise texture from the iMMERSE
+  branch archive (`DownloadSources.ShaderPacks`, no digest published) and HSF records them. To unify at the merge.
+  Upstream moves Launchpad first whenever the game is not running; Linux does it when the ⚙ opens and after an update.
+- Universal MFG with HSF: the offer calls Universal MFG's own install unchanged (#278 owns it); upstream's 32-bit
+  placement in HSF's folder and the install without the RTXMFG-XeSS folder are not done here (64-bit games only), for
+  #278 to add.
+- D3D12 route: a game's Streamline is found by `sl.interposer.dll` under its folder (8 levels); its version is not read,
+  so a Streamline 1.x game gets `InGameDlssg=2` (HSF's value 2 lets HSF fall back by itself).
+- The ManagedComponentKind value is 30 (a gap, not the next free number) so another wave-14 lane's new kind cannot take it
+  unnoticed; it may be renumbered at the merge before release.

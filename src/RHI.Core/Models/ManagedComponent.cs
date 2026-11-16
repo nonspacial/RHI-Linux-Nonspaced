@@ -39,6 +39,9 @@ public enum ManagedComponentKind
     // w7/dxvk-hdr rows
     // #200: DXVK HDR (EndlesslyFlowering's DXVK HDR build) as d3d9.dll + dxvk.conf beside a DirectX 9 game, opt-in per game.
     DxvkHdr = 23,
+    // w14/extras-addons (#277): HSF frame generation (a ReShade add-on with its Streamline folder). 30, not the next free
+    // value, so another wave-14 lane's new kind cannot take the same number unnoticed; renumber at the merge if wanted.
+    Hsf = 30,
 }
 
 public enum ComponentAvailability

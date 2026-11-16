@@ -196,6 +196,7 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.MfgAdaUnlock, // #237 (upstream abf18c7 AddonPackService.RedeployToTrackedGames); after the other add-ons
         ManagedComponentKind.Dlssg2030Unlock, // #238 (upstream bb9b2fd: DLSSG 20/30 deployed at start)
         ManagedComponentKind.UltimateAsiLoader, // #238 (upstream a1a4e48: ASI Loader updates reach games); x86 and x64 each from their own asset
+        ManagedComponentKind.Hsf, // w14/extras-addons (#277: RHI keeps HSF up to date in the games it installed it in)
         // w12/shaders rows
         // w12/update-all rows
         // w12/github-cache rows

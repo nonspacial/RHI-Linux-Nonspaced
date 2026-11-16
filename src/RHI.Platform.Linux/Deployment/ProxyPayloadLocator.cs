@@ -29,7 +29,8 @@ public static class ProxyPayloadLocator
     public static bool IsReShadePayloadPath(string path)
     {
         var name = Path.GetFileName(path);
-        return ProxyDllNames.Canonical(name) is not null || name.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase);
+        return ProxyDllNames.Canonical(name) is not null || name.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase)
+               || name.Equals(ProxyDllNames.ReShade32AsiName, StringComparison.OrdinalIgnoreCase); // #283
     }
 
     /// <summary>The payload file of a ReShade record, whatever name it was installed under.</summary>

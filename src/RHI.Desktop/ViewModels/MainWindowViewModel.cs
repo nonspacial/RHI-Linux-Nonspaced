@@ -1282,6 +1282,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public LinuxDeploymentRecord? GetRtxEncoreRecord()
         => SelectedGame is null ? null : _managedComponents.GetRtxEncoreRecord(SelectedGame);
 
+    /// <summary>#284: the rows of an extra's DLL-name list for the selected game (Hooked names, names in use marked).</summary>
+    public IReadOnlyList<ExtraDllNameOption> ExtraDllNameOptions(ManagedComponentKind kind, string? current)
+        => SelectedGame is { } game ? _managedComponents.ExtraDllNameOptions(game, kind, current) : [];
+
     public IReadOnlyList<string> RtxEncoreOfferedNames()
         => SelectedGame is { } game && _managedComponents.RtxEncore is { } encore ? encore.OfferedNames(game) : [];
 

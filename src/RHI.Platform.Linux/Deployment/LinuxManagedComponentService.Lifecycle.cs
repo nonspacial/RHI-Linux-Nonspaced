@@ -71,6 +71,7 @@ public sealed partial class LinuxManagedComponentService
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            ManagedComponentKind.Hsf when Hsf is not null => await Hsf.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false), // w14/extras-addons (#277)
             // w11 lane rows: update checks (one arm each)
             // w11/download-idle rows
             // w11/nr-gpu rows
@@ -151,6 +152,7 @@ public sealed partial class LinuxManagedComponentService
             // w10/dlss-presets rows
             // w10/archives rows
             // w10/journal-holds rows
+            ManagedComponentKind.Hsf when Hsf is not null => Hsf.UpdateAsync(game, cancellationToken), // w14/extras-addons (#277)
             // w11 lane rows: updates (one arm each)
             // w11/download-idle rows
             // w11/nr-gpu rows

@@ -131,6 +131,42 @@ public sealed class ProxyComponentDialogTests
         Assert.Equal(UiLocalizationService.Text("Vm.OperationCancelled"), dialog.Message);
     }
 
+    // #284: with ASI Loader as winmm.dll the list offers winmmHooked.dll after it; names in use are shown with their
+    // component and cannot be chosen; choosing the Hooked name saves it.
+    [Fact]
+    public async Task ExtraNameList_GreysNamesInUse_AndOffersAsiLoadersHookedName()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = await AddAsync(fx, "Hooked Quest");
+        LinuxDeploymentRecord Held(ManagedComponentKind kind, string name, string key) => new()
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind, BinaryDirectory = game.BinaryDirectory!,
+            Version = "1", Files = [new LinuxDeployedFile { Path = Path.Combine(game.BinaryDirectory!, name) }],
+            Metadata = new(StringComparer.OrdinalIgnoreCase) { [key] = name }
+        };
+        fx.Records.Upsert(Held(ManagedComponentKind.UltimateAsiLoader, "winmm.dll", "UAL.ProxyName"));
+        fx.Records.Upsert(Held(ManagedComponentKind.Rtx40MfgStandalone, "dxgi.dll", "UniversalMFG.ProxyName"));
+        using var dialog = new ProxyComponentDialogViewModel(fx.Vm, ProxyComponentDialogKind.DlssEnabler);
+
+        var names = dialog.ProxyNameOptions.Select(o => o.Name).ToArray();
+        Assert.Equal(names.ToList().IndexOf("winmm.dll") + 1, names.ToList().IndexOf("winmmHooked.dll"));
+        var inUse = dialog.ProxyNameOptions.Single(o => o.Name == "dxgi.dll");
+        Assert.False(inUse.IsFree);
+        Assert.Equal("dxgi.dll — in use by Universal MFG", inUse.Display);
+        Assert.False(dialog.ProxyNameOptions.Single(o => o.Name == "winmm.dll").IsFree);
+        var hooked = dialog.ProxyNameOptions.Single(o => o.Name == "winmmHooked.dll");
+        Assert.True(hooked.IsFree);
+        Assert.Equal("winmmHooked.dll — loaded by ASI Loader", hooked.Display);
+        Assert.Equal("version.dll", dialog.SelectedProxyItem!.Name);
+
+        dialog.SelectedProxyItem = inUse;
+        Assert.Equal("version.dll", dialog.SelectedProxyItem!.Name); // a name in use is never chosen
+        Assert.Equal("version.dll", fx.Vm.GetStandaloneDlssEnablerPreferences().ProxyName);
+
+        dialog.SelectedProxyItem = hooked;
+        Assert.Equal("winmmHooked.dll", fx.Vm.GetStandaloneDlssEnablerPreferences().ProxyName);
+    }
+
     private static async Task<DetectedGame> AddAsync(ViewModelFixture fx, string name)
     {
         var game = fx.Game(name);

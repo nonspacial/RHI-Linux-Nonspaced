@@ -14,7 +14,7 @@ namespace RHI.Core.Tests;
 /// every failure leaves the game, the prefix and RHI's files byte for byte as they were, and Reset DLL names goes back to
 /// the automatic name the same way.
 /// </summary>
-public sealed class DllNameRenameTests : IDisposable
+public sealed partial class DllNameRenameTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-dll-rename-" + Guid.NewGuid().ToString("N"));
 

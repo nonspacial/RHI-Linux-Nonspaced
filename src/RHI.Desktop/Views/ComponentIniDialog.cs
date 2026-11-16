@@ -140,23 +140,233 @@ public static class ComponentIniDialog
         }
         else
         {
+            if (kind == ManagedComponentKind.DisplayCommander && presenter.DisplayCommanderSettings() is { } dc)
+                panel.Children.Add(DisplayCommanderSection(presenter, dc, Show)); // #282, above the template buttons as upstream's Files
             panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.TemplateSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(buttons);
             panel.Children.Add(confirm);
             panel.Children.Add(result);
         }
+        if (kind == ManagedComponentKind.ReShade && presenter.ReShadeAsiMode().Offered) panel.Children.Add(AsiSection(presenter, Show)); // #283
         if (kind == ManagedComponentKind.ReShade && presenter.PresetsApply()) panel.Children.Add(PresetSection(presenter, openFolder, Show)); // #180: RHI's ReShade only
 
         return new Window
         {
             Title = $"{UiLocalizationService.Format("Ini.SettingsTitle", componentName)} — {vm.SelectedGame?.Name}",
             Width = 600,
-            Height = kind == ManagedComponentKind.ReShade ? 560 : 320,
+            Height = kind is ManagedComponentKind.ReShade or ManagedComponentKind.DisplayCommander ? 620 : 320,
             MinWidth = 420,
             MinHeight = 240,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
+    }
+
+    /// <summary>
+    /// #282 (upstream 2.8.9 <c>DcCogButton_Click</c>): Display Commander's main settings, with its own names — FPS Limit
+    /// (No limit, the VRR presets or a custom value), FPS Limiter Mode, Inject Reflex, Window Mode, the four Reflex options
+    /// and Win+Up grace time — written to the game's DisplayCommander.ini at once; a refused change goes back to what the
+    /// file holds. "Open DisplayCommander.ini" opens the file.
+    /// </summary>
+    internal static Control DisplayCommanderSection(IniPresetsPresenter presenter, DisplayCommanderSettings settings, Action<string> show)
+    {
+        var section = new StackPanel { Spacing = 8 };
+        section.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Dc.Intro"), TextWrapping = TextWrapping.Wrap, Opacity = 0.82 });
+        var current = settings;
+        var reverting = false;
+
+        ComboBox Combo(string name, IReadOnlyList<string> items, int index, string tip)
+        {
+            var combo = new ComboBox { Name = name, ItemsSource = items, SelectedIndex = index, MinWidth = 200 };
+            ToolTip.SetTip(combo, UiLocalizationService.Text(tip));
+            ToolTip.SetShowDelay(combo, 2000);
+            return combo;
+        }
+        Control Cell(string label, Control control)
+        {
+            var cell = new StackPanel { Spacing = 5, Margin = new Avalonia.Thickness(0, 0, 16, 8) };
+            cell.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap });
+            cell.Children.Add(control);
+            return cell;
+        }
+        async Task<bool> WriteAsync(string key, string value, string label, string shown)
+        {
+            var (success, line) = await presenter.SetDisplayCommanderAsync(key, value, label, shown);
+            show(line);
+            current = presenter.DisplayCommanderSettings() ?? current;
+            return success;
+        }
+        Control Pick(string name, string label, IReadOnlyList<string> items, Func<DisplayCommanderSettings, int> read, string tip, Func<int, (string Key, string Value)> write)
+        {
+            var combo = Combo(name, items, read(current), tip);
+            combo.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+            {
+                if (reverting || combo.SelectedIndex < 0) return;
+                var (key, value) = write(combo.SelectedIndex);
+                if (await WriteAsync(key, value, label, items[combo.SelectedIndex])) return;
+                reverting = true;
+                combo.SelectedIndex = read(current);
+                reverting = false;
+            }, nameof(ComponentIniDialog));
+            return Cell(label, combo);
+        }
+        Control OnOff(string name, string key, string label, string tipKey, Func<DisplayCommanderSettings, bool> read)
+            => Pick(name, label, OptionLists.OffOn.Items, s => read(s) ? 1 : 0, tipKey,
+                i => (key, i == 1 ? "1" : "0"));
+        Control Heading(string key) => new TextBlock { Text = UiLocalizationService.Text(key), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+
+        // ── Frame Rate ──
+        section.Children.Add(Heading("Dc.FrameRate"));
+        section.Children.Add(FpsLimitRow());
+        var frameRate = new WrapPanel { Orientation = Orientation.Horizontal };
+        var limiterModes = new[] { UiLocalizationService.Text("Dc.LimiterDc"), "NVIDIA Reflex" };
+        frameRate.Children.Add(Pick("DcFpsLimiterMode", "FPS Limiter Mode", limiterModes, s => s.FpsLimiterMode, "Dc.FpsLimiterModeTip",
+            i => (DisplayCommanderSettingsService.FpsLimiterModeKey, i.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+        frameRate.Children.Add(OnOff("DcInjectReflex", DisplayCommanderSettingsService.InjectReflexKey, "Inject Reflex", "Dc.InjectReflexTip", s => s.InjectReflex));
+        var windowModes = new[] { "Dc.WindowNoChanges", "Dc.WindowBorderlessFullscreen", "Dc.WindowBorderlessWindowed", "Dc.WindowNoExclusive" }
+            .Select(UiLocalizationService.Text).ToArray();
+        frameRate.Children.Add(Pick("DcWindowMode", "Window Mode", windowModes, s => s.WindowMode, "Dc.WindowModeTip",
+            i => (DisplayCommanderSettingsService.WindowModeKey, i.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+        section.Children.Add(frameRate);
+
+        // ── Reflex ──
+        section.Children.Add(new TextBlock { Text = "Reflex", FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap }); // a product name
+        var reflex = new WrapPanel { Orientation = Orientation.Horizontal };
+        reflex.Children.Add(OnOff("DcReflexAuto", DisplayCommanderSettingsService.ReflexAutoConfigureKey, "Auto Configure Reflex", "Dc.ReflexAutoTip", s => s.ReflexAutoConfigure));
+        reflex.Children.Add(OnOff("DcReflexSleep", DisplayCommanderSettingsService.ReflexEnableSleepKey, "Enable Reflex Sleep Mode", "Dc.ReflexSleepTip", s => s.ReflexEnableSleep));
+        reflex.Children.Add(OnOff("DcReflexUseMarkers", DisplayCommanderSettingsService.ReflexUseMarkersKey, "Use Reflex Markers", "Dc.ReflexUseMarkersTip", s => s.ReflexUseMarkers));
+        reflex.Children.Add(OnOff("DcReflexGenerateMarkers", DisplayCommanderSettingsService.ReflexGenerateMarkersKey, "Generate Reflex Markers", "Dc.ReflexGenerateMarkersTip", s => s.ReflexGenerateMarkers));
+        section.Children.Add(reflex);
+
+        // ── Other ──
+        section.Children.Add(Heading("Dc.Other"));
+        var graces = DisplayCommanderSettingsService.WinUpGraceChoices;
+        string GraceLabel(int seconds) => seconds switch
+        {
+            0 => UiLocalizationService.Text("Ini.Off"),
+            1 => UiLocalizationService.Text("Dc.GraceOneSecond"),
+            61 => UiLocalizationService.Text("Dc.GraceAlways"),
+            _ => UiLocalizationService.Format("Dc.GraceSeconds", seconds)
+        };
+        var graceItems = graces.Select(GraceLabel).ToList();
+        if (!graces.Contains(current.WinUpGraceSeconds)) graceItems.Add(UiLocalizationService.Format("Dc.GraceSeconds", current.WinUpGraceSeconds)); // a value set by hand stays shown
+        int GraceIndex(DisplayCommanderSettings s) => graces.Contains(s.WinUpGraceSeconds) ? graces.ToList().IndexOf(s.WinUpGraceSeconds) : graceItems.Count - 1;
+        var other = new WrapPanel { Orientation = Orientation.Horizontal };
+        other.Children.Add(Pick("DcWinUpGrace", "Win+Up grace time", graceItems, GraceIndex, "Dc.WinUpGraceTip",
+            i => (DisplayCommanderSettingsService.WinUpGraceSecondsKey,
+                (i < graces.Count ? graces[i] : current.WinUpGraceSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture))));
+        section.Children.Add(other);
+        section.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Dc.Note"), TextWrapping = TextWrapping.Wrap, Opacity = 0.76 });
+
+        var open = new Button { Name = "DcOpenIni", Classes = { "rhi" }, Content = UiLocalizationService.Text("Dc.OpenIni"), HorizontalAlignment = HorizontalAlignment.Left };
+        ToolTip.SetTip(open, current.IniPath);
+        ToolTip.SetShowDelay(open, 2000);
+        open.Click += (_, _) =>
+        {
+            var path = presenter.DisplayCommanderSettings()?.IniPath ?? current.IniPath;
+            if (!RHI.Platform.Linux.Paths.LinuxDesktopOpener.TryOpenFile(path, out var error)) show(UiLocalizationService.Present(error ?? ""));
+        };
+        section.Children.Add(open);
+        return section;
+
+        // FPS Limit: No limit, the VRR presets, the file's own value when it is none of them, Custom… (a box and Set).
+        Control FpsLimitRow()
+        {
+            var presets = ReLimiterIniEditor.TargetFpsPresets;
+            string Fmt(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+            List<string> Items(double fps)
+            {
+                var items = new List<string> { UiLocalizationService.Text("Dc.NoLimit") };
+                items.AddRange(presets.Select(p => $"{p.Fps} ({p.Hz}Hz VRR)"));
+                if (fps > 0 && !presets.Any(p => p.Fps == fps)) items.Add(UiLocalizationService.Format("Dc.CustomValue", Fmt(fps)));
+                items.Add(UiLocalizationService.Text("Dc.Custom"));
+                return items;
+            }
+            int Index(List<string> items, double fps)
+            {
+                if (fps <= 0) return 0;
+                var preset = presets.ToList().FindIndex(p => p.Fps == fps);
+                return preset >= 0 ? preset + 1 : items.Count - 2;
+            }
+            var label = "FPS Limit";
+            var startItems = Items(current.FpsLimit);
+            var combo = Combo("DcFpsLimit", startItems, Index(startItems, current.FpsLimit), "Dc.FpsLimitTip");
+            var box = new NumericUpDown
+            {
+                Name = "DcCustomFps", Minimum = (decimal)DisplayCommanderSettingsService.MinCustomFps, Maximum = (decimal)DisplayCommanderSettingsService.MaxCustomFps,
+                Increment = 1, FormatString = "0.###", Value = 120, MinWidth = 140
+            };
+            ToolTip.SetTip(box, UiLocalizationService.Text("Dc.CustomFpsTip"));
+            var set = new Button { Name = "DcCustomFpsSet", Classes = { "rhi" }, Content = UiLocalizationService.Text("Ini.PeakGameSetButton"), Margin = new Avalonia.Thickness(8, 0, 0, 0) };
+            var custom = new StackPanel { Orientation = Orientation.Horizontal, IsVisible = false };
+            custom.Children.Add(box);
+            custom.Children.Add(set);
+            void Refresh()
+            {
+                reverting = true;
+                var items = Items(current.FpsLimit);
+                combo.ItemsSource = items;
+                combo.SelectedIndex = Index(items, current.FpsLimit);
+                custom.IsVisible = false;
+                reverting = false;
+            }
+            async Task SetAsync(double fps)
+            {
+                var shown = fps == 0 ? UiLocalizationService.Text("Dc.NoLimit") : $"{Fmt(fps)} FPS";
+                await WriteAsync(DisplayCommanderSettingsService.FpsLimitKey, Fmt(fps), label, shown);
+                Refresh();
+            }
+            combo.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+            {
+                if (reverting || combo.SelectedIndex < 0) return;
+                var items = (List<string>)combo.ItemsSource!;
+                if (combo.SelectedIndex == items.Count - 1) { custom.IsVisible = true; return; } // Custom…
+                custom.IsVisible = false;
+                if (combo.SelectedIndex == 0) await SetAsync(0);
+                else if (combo.SelectedIndex - 1 < presets.Count) await SetAsync(presets[combo.SelectedIndex - 1].Fps);
+                // the "(Custom)" row is already the file's value
+            }, nameof(ComponentIniDialog));
+            set.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+            {
+                if (box.Value is not { } value) { show(UiLocalizationService.Text("Dc.FpsRange")); return; }
+                await SetAsync(Math.Round((double)value, 3));
+            }, nameof(ComponentIniDialog));
+            var row = new StackPanel { Spacing = 6 };
+            row.Children.Add(Cell(label, combo));
+            row.Children.Add(custom);
+            return row;
+        }
+    }
+
+    /// <summary>
+    /// #283 (upstream 2.8.9): the "Loading" section of ReShade's ⚙ with "Load ReShade as ASI" (Off / On). A change is applied
+    /// at once (ReShade renamed in place); a refused one goes back to what the game has. Hidden for the Vulkan layer.
+    /// </summary>
+    internal static Control AsiSection(IniPresetsPresenter presenter, Action<string> show)
+    {
+        var section = new StackPanel { Spacing = 8, Margin = new Avalonia.Thickness(0, 8, 0, 0) };
+        section.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.LoadingSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
+        var label = new TextBlock { Text = UiLocalizationService.Text("Ini.ReShadeAsi"), TextWrapping = TextWrapping.Wrap };
+        var asi = new ComboBox { Name = "ReShadeAsi", ItemsSource = OptionLists.OffOn.Items, MinWidth = 160, SelectedItem = OptionLists.OffOn.Display(presenter.ReShadeAsiMode().On) };
+        ToolTip.SetTip(asi, UiLocalizationService.Text("Ini.ReShadeAsiTip"));
+        ToolTip.SetShowDelay(asi, 2000);
+        var reverting = false;
+        asi.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            if (reverting || asi.SelectedItem is not string chosen) return;
+            asi.IsEnabled = false;
+            try { show(await presenter.SetReShadeAsiModeAsync(OptionLists.OffOn.Value(chosen))); }
+            finally
+            {
+                reverting = true;
+                asi.SelectedItem = OptionLists.OffOn.Display(presenter.ReShadeAsiMode().On);
+                reverting = false;
+                asi.IsEnabled = true;
+            }
+        }, nameof(ComponentIniDialog));
+        section.Children.Add(label);
+        section.Children.Add(asi);
+        return section;
     }
 
     /// <summary>

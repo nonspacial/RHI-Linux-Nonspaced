@@ -33,6 +33,10 @@ public sealed record DllNameChoices
     [JsonPropertyName("rtxEncoreNeuralRendering")]
     public bool? RtxEncoreNeuralRendering { get; set; }
 
+    /// <summary>#283: "Load ReShade as ASI" (ReShade's ⚙); null = off. Wins over the ReShade name while on.</summary>
+    [JsonPropertyName("reshadeAsi")]
+    public bool? ReShadeAsi { get; set; }
+
     /// <summary>Fields a newer RHI wrote that this build does not know: kept as they are on every save.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unknown { get; set; }
@@ -112,7 +116,7 @@ public sealed class DllNamePreferenceStore : IGameStateStore
         {
             if (!GameRecordIdentity.TryGet(LoadUnsafe(), game, out var choices) || string.IsNullOrWhiteSpace(choices?.RtxEncore))
                 return null;
-            if (RtxEncoreNames.Canonical(choices.RtxEncore) is { } name) return name;
+            if (RtxEncoreNames.CanonicalOrHooked(choices.RtxEncore) is { } name) return name; // #284
             AppLog.Warn("dll-names", $"Ignored an RTX Encore name that RHI does not offer for {game.Name}: {choices.RtxEncore}");
             return null;
         }
@@ -137,9 +141,19 @@ public sealed class DllNamePreferenceStore : IGameStateStore
     {
         var canonical = string.IsNullOrWhiteSpace(name)
             ? null
-            : RtxEncoreNames.Canonical(name) ?? throw new ArgumentException($"Not a name RTX Encore uses: {name}", nameof(name));
+            : RtxEncoreNames.CanonicalOrHooked(name) ?? throw new ArgumentException($"Not a name RTX Encore uses: {name}", nameof(name));
         Update(game, choices => choices.RtxEncore = canonical);
     }
+
+    /// <summary>#283: whether "Load ReShade as ASI" is on for <paramref name="game"/>.</summary>
+    public bool GetReShadeAsi(DetectedGame game)
+    {
+        lock (_gate)
+            return GameRecordIdentity.TryGet(LoadUnsafe(), game, out var choices) && choices?.ReShadeAsi == true;
+    }
+
+    /// <summary>#283: saves "Load ReShade as ASI" for <paramref name="game"/> (an installed ReShade is renamed by the caller).</summary>
+    public void SetReShadeAsi(DetectedGame game, bool on) => Update(game, choices => choices.ReShadeAsi = on ? true : null);
 
     /// <summary>Whether RTX Encore's next install brings NVIDIA's Neural Rendering file (#158).</summary>
     public bool GetRtxEncoreNeuralRendering(DetectedGame game)

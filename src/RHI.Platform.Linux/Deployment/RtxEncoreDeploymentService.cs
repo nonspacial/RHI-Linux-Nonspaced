@@ -146,11 +146,20 @@ public sealed class RtxEncoreDeploymentService
     public IReadOnlyList<string> OfferedNames(DetectedGame game)
     {
         var held = HeldNames(game);
+        // #284: ASI Loader's Hooked name right after ASI Loader's name (RTX Encore runs alongside it).
+        return HookedDllNames.WithHooked(CandidateNames(game), ExtraDllNames.UalName(_records, game), RtxEncoreNames.IsBink)
+            .Where(name => !held.Contains(name))
+            .ToArray();
+    }
+
+    /// <summary>#284: <see cref="OfferedNames"/> before the names other RHI components hold are taken out (the picker
+    /// shows those greyed, with the component, as upstream).</summary>
+    public IReadOnlyList<string> CandidateNames(DetectedGame game)
+    {
         var hasLoader = _records.Find(game, ManagedComponentKind.UltimateAsiLoader) is not null;
         return RtxEncoreNames.All
             .Where(name => !RtxEncoreNames.IsBink(name))
             .Where(name => RtxEncoreNames.IsAsi(name) ? hasLoader : ProxyDllNames.LoadsFor(name, game.EffectiveGraphicsApi))
-            .Where(name => !held.Contains(name))
             .ToArray();
     }
 
@@ -174,7 +183,7 @@ public sealed class RtxEncoreDeploymentService
     public ComponentOperationResult SetName(DetectedGame game, string name)
     {
         if (GetRecord(game) is not null) return ComponentOperationResult.Fail(NameLockedMessage);
-        var canonical = RtxEncoreNames.Canonical(name);
+        var canonical = RtxEncoreNames.CanonicalOrHooked(name); // #284
         if (canonical is null || !OfferedNames(game).Contains(canonical, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail(NameNotOfferedPrefix + name);
         try { _names.SetRtxEncore(game, canonical.Equals(DefaultName, StringComparison.OrdinalIgnoreCase) ? null : canonical); }

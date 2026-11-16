@@ -714,6 +714,7 @@
                             IsEnabled="{Binding CanConfigureShortFuseZzzLoadOrder}"
                             ToolTip.Tip="{DynamicResource Ui.ShortFuseZzzTip}"/>
                   <TextBlock Text="{Binding ShortFuseLatestVersionText}" Classes="muted" TextWrapping="Wrap"/>
+                  <views:HsfRow/> <!-- w14/extras-addons (#277): HSF frame generation (upstream Extras › MFG Unlocks) -->
                   <TextBlock Text="{DynamicResource Ui.LinuxPolicyNote}" Classes="muted" TextWrapping="Wrap"/>
                   <TextBlock Text="{DynamicResource Ui.UalPolicyNote}"
                              Classes="muted" TextWrapping="Wrap"/>

@@ -369,6 +369,7 @@ internal sealed class AppComposition
             NexusAccount = nexusAccount,
             ShaderProfiles = new ShaderProfilePresenter(new ShaderSelectionProfileStore(), shaderPacks),
             NrCostScaler = new NrCostScalerPresenter(managedComponents),
+            Hsf = new HsfPresenter(managedComponents), // w14/extras-addons (#277)
             GameLinks = new GameLinksPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi), new NexusGameCatalogue(http)),
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),
@@ -394,6 +395,8 @@ internal sealed class AppComposition
         managedComponents.UserIni = new UserIniService(userIniTemplates, records, managedComponents.IniWriteRefusal, journal); // #181: deploys journaled
         managedComponents.ReShadePresets = new ReShadePresetService(records, journal, managedComponents.IniWriteRefusal); // #180
         managedComponents.LumaSettings = new LumaSettingsService(records, journal, managedComponents.IniWriteRefusal); // #189
+        managedComponents.DisplayCommanderSettings = new DisplayCommanderSettingsService(records, journal, managedComponents.IniWriteRefusal); // #282
+        managedComponents.Hsf = new HsfDeploymentService(http, records, journal, new ImmerseLaunchpadStep(http)); // #277
         managedComponents.RenoDxPeakNits = new RenoDxPeakNits(records, journal, managedComponents.IniWriteRefusal); // #182
         // w5/shell-launch rows
         // w5/reshade-core rows

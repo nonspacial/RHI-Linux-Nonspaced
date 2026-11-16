@@ -64,6 +64,23 @@ Wave 14 — library-updates
 - **Remove from RHI** (upstream 2.9.0): takes a game out of every list, Hidden included, and scans don't bring it back.
   **Settings → Removed games** lists them with Restore. Components RHI installed in the game stay installed.
 
+Not on `main` yet:
+
+- Wave 14 — extras-addons
+  - ReShade's ⚙ has **Load ReShade as ASI** (upstream 2.8.9): ReShade becomes `ReShade64.asi` / `ReShade32.asi` for an
+    ASI loader, installs and updates keep that name, Off goes back to its DLL name. Not for Vulkan games (#283).
+  - ASI Loader and the extras (upstream 2.9.0): with ASI Loader installed as `version.dll`, 20/30 FG Unlock, Universal
+    MFG, RTX Encore and DLSS Enabler offer `versionHooked.dll`, which ASI Loader loads. Names another component uses
+    are greyed with its name. Installing ASI Loader over an extra moves the extra to the Hooked name and RHI follows it;
+    removing ASI Loader moves it back, Wine overrides included (#284).
+  - Display Commander's ⚙ has its main settings (upstream 2.8.9): FPS Limit (VRR presets or your own value), FPS Limiter
+    Mode, Inject Reflex, Window Mode, the four Reflex options and Win+Up grace time, saved to the game's
+    `DisplayCommander.ini`, and Open DisplayCommander.ini (#282).
+  - HSF frame generation (upstream 2.9.3, HSF 0.9.8) in Extras: one click installs HSF's add-on, Streamline and frame
+    generation files, HSF.ini, HSF.fx and iMMERSE Launchpad; DirectX 12 games work from the first launch; updates keep
+    your HSF settings; the ⚙ sets the DirectX 12 mode and Launchpad; RTX 20/30/40 cards are offered Universal MFG
+    Unlocker. HSF needs RHI's ReShade installed first (#277).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

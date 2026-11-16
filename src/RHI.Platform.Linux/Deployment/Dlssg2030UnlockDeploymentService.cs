@@ -120,7 +120,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         var normalizedProxy = NormalizeProxyName(proxyName);
         if (!GpuGenerations.Contains(normalizedGpu, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"Geração de GPU inválida: {gpuGeneration}.");
-        if (!ProxyNames.Contains(normalizedProxy, StringComparer.OrdinalIgnoreCase))
+        if (HookedDllNames.Canonical(normalizedProxy, ProxyNames) is null) // #284: a Hooked name of an offered name too
             return ComponentOperationResult.Fail($"Nome de proxy não suportado pelo RTX 20 FG Unlock legado: {proxyName}.");
 
         try
@@ -144,8 +144,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     public static string NormalizeProxyName(string? value)
     {
         var name = string.IsNullOrWhiteSpace(value) ? DefaultProxyName : Path.GetFileName(value.Trim());
-        return ProxyNames.FirstOrDefault(candidate => candidate.Equals(name, StringComparison.OrdinalIgnoreCase))
-               ?? DefaultProxyName;
+        return HookedDllNames.Canonical(name, ProxyNames) ?? DefaultProxyName; // #284: XHooked.dll kept
     }
 
     /// <summary>
@@ -155,7 +154,9 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     /// </summary>
     public static string? PackagePathFor(string? proxyName)
     {
-        var name = ProxyNames.FirstOrDefault(candidate => candidate.Equals(proxyName?.Trim(), StringComparison.OrdinalIgnoreCase));
+        // #284: a Hooked name is the build of the name it stands in for, copied under the Hooked name.
+        var requested = proxyName is null ? null : HookedDllNames.BaseOf(proxyName.Trim());
+        var name = ProxyNames.FirstOrDefault(candidate => candidate.Equals(requested, StringComparison.OrdinalIgnoreCase));
         return name is null ? null : name == DefaultProxyName ? name : "alternatives/" + name;
     }
 
@@ -268,8 +269,9 @@ public sealed partial class Dlssg2030UnlockDeploymentService
         var preferences = GetPreferences(game);
         var selectedGpu = NormalizeGpuGeneration(requestedGpu);
         var selectedProxy = NormalizeProxyName(proxyName ?? preferences.ProxyName);
-        if (!ProxyNames.Contains(selectedProxy, StringComparer.OrdinalIgnoreCase))
+        if (HookedDllNames.Canonical(selectedProxy, ProxyNames) is null)
             return ComponentOperationResult.Fail($"Proxy não suportado: {selectedProxy}.");
+        if (ExtraDllNames.HookedRefusal(_records, game, selectedProxy) is { } notHooked) return ComponentOperationResult.Fail(notHooked); // #284
 
         var binaryDir = ResolveBinaryDirectory(game)!;
         var proxyPath = Path.Combine(binaryDir, selectedProxy);

@@ -454,6 +454,56 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         }
     }
 
+    // ---- #282 Display Commander ⚙ ---------------------------------------------------------------------
+
+    internal DisplayCommanderSettingsService DisplayCommander
+        => managed.DisplayCommanderSettings ?? new DisplayCommanderSettingsService(records, null, managed.IniWriteRefusal);
+
+    /// <summary>The selected game's Display Commander settings as its DisplayCommander.ini holds them.</summary>
+    public DisplayCommanderSettings? DisplayCommanderSettings()
+    {
+        if (vm.SelectedGame is not { } game || string.IsNullOrWhiteSpace(game.BinaryDirectory)) return null;
+        try { return DisplayCommander.Read(game); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>
+    /// Writes one Display Commander setting for the selected game; <paramref name="label"/> and <paramref name="shown"/> word
+    /// the line ("FPS Limit: 116 FPS."). The caller reads the settings back when it failed.
+    /// </summary>
+    public async Task<(bool Success, string Line)> SetDisplayCommanderAsync(string key, string value, string label, string shown)
+    {
+        if (vm.SelectedGame is not { } game) return (false, Report(UiLocalizationService.Text("Vm.SelectGameFirst")));
+        using var op = vm.Operations.TryBegin("dc-settings", cancellable: false);
+        if (op is null) return (false, Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning")));
+        var result = await DisplayCommander.SetAsync(game, key, value, op.Token);
+        return (result.Success, Report(result.Success
+            ? LandedLine.With($"{label}: {shown}.", result)
+            : UiLocalizationService.Present(result.Message)));
+    }
+
+    // ---- #283 Load ReShade as ASI (ReShade ⚙) --------------------------------------------------------
+
+    /// <summary>Whether the selected game's ReShade ⚙ shows "Load ReShade as ASI" (not for the Vulkan layer), and its value.</summary>
+    public (bool Offered, bool On) ReShadeAsiMode()
+        => vm.SelectedGame is { } game ? managed.ReShadeAsiMode(game) : (false, false);
+
+    /// <summary>
+    /// Turns "Load ReShade as ASI" on or off for the selected game; an installed ReShade is renamed with it. A refused or
+    /// failed rename leaves the setting as it was (the caller reads <see cref="ReShadeAsiMode"/> back).
+    /// </summary>
+    public async Task<string> SetReShadeAsiModeAsync(bool on)
+    {
+        if (vm.SelectedGame is not { } game) return Report(UiLocalizationService.Text("Vm.SelectGameFirst"));
+        using var op = vm.Operations.TryBegin("reshade-asi", cancellable: false);
+        if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await managed.SetReShadeAsiModeAsync(game, on, op.Token);
+        var line = Report(UiLocalizationService.Present(result.Message));
+        // The row, its DLL-name dropdown (locked while ReShade is an .asi) and the status line follow the new name.
+        if (result.Success) await ((IPanelHost)vm).ReprobeKeepingStatusAsync(game);
+        return line;
+    }
+
     // ---- #189 Luma ⚙ -------------------------------------------------------------------------------
 
     internal LumaSettingsService Luma => managed.LumaSettings ?? new LumaSettingsService(records, null, managed.IniWriteRefusal);

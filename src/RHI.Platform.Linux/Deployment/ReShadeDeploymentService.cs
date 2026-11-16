@@ -277,6 +277,8 @@ public sealed partial class ReShadeDeploymentService
             resolution = new ProxyNameResolution(SelectProxyName(game.EffectiveGraphicsApi)!, ProxyNameSource.GraphicsApi, resolution.Name);
         }
         var directProxy = resolution.Name;
+        // #283 (upstream 2.8.9): "Load ReShade as ASI" wins over any DLL name; an installed ReShade keeps its recorded name.
+        if (!xna && _dllNames.GetReShadeAsi(game)) directProxy = ProxyDllNames.AsiName(architecture == PeArchitecture.X86);
 
         // Switching to No Addons with add-ons installed is allowed (owner decision #91); its add-ons are turned off, and
         // back on when ReShade goes back to a build with add-on support (owner decision #170, ReShadeAddonSwitch below).
@@ -569,7 +571,10 @@ public sealed partial class ReShadeDeploymentService
                 // The override is for the name ReShade sits under (#120); ReShade64/32.dll chosen as a name are loaded by
                 // another mod, never by Wine, so they get none. ShortFuse's .asi keeps the API name as before.
                 var targetName = Path.GetFileName(target);
-                if (ProxyDllNames.NeedsWineOverride(targetName))
+                // An .asi needs no override (#283), except ShortFuse's, which keeps the override of the name ReShade had.
+                var shortFuseAsi = targetName.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase)
+                                   && existingRecord?.Metadata.ContainsKey(MetaShortFuseOriginalPayloadPath) == true;
+                if (ProxyDllNames.NeedsWineOverride(targetName) || shortFuseAsi)
                 {
                     if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
                         throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
@@ -727,6 +732,7 @@ public sealed partial class ReShadeDeploymentService
             try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
 
             var mode = Path.GetFileName(target).Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase)
+                       && existingRecord?.Metadata.ContainsKey(MetaShortFuseOriginalPayloadPath) == true
                 ? "ReShade64.asi (ShortFuse / UAL)"
                 : coexist ? "ReShade64.dll (OptiScaler coexistence)"
                 : xnaFolder is not null ? XnaGacReShade.ProxyName + XnaGacReShade.ModeSuffix : Path.GetFileName(target);

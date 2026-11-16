@@ -124,7 +124,7 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
     }
 
     private sealed record PickerState(ProxyNameResolution Resolution, string? Choice, string? Installed, bool Is32Bit,
-        string? Automatic, IReadOnlyList<string> RenameTargets, string? RenameRefusal, bool CanReset);
+        string? Automatic, IReadOnlyList<string> RenameTargets, string? RenameRefusal, bool CanReset, string? AsiName = null);
 
     private async Task RefreshAsync(DetectedGame? game, int generation)
     {
@@ -140,9 +140,12 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
                 var installed = _components.InstalledReShadeProxyName(game);
                 (IReadOnlyList<string> Targets, string? Refusal) rename = installed is null ? ([], null) : _components.ReShadeRenameOptions(game);
                 var (targets, refusal) = rename;
+                // #283: "Load ReShade as ASI" decides the name of the next install too.
+                var asiName = installed is null && _components.ReShadeAsiMode(game) is { Offered: true, On: true }
+                    ? ProxyDllNames.AsiName(architecture == PeArchitecture.X86) : null;
                 return new PickerState(resolution, _components.ReShadeDllNames.GetReShade(game), installed,
                     architecture == PeArchitecture.X86, _components.ReShadeAutomaticProxyName(game), targets, refusal,
-                    _components.HasDllNamesToReset(game));
+                    _components.HasDllNamesToReset(game), asiName);
             }).ConfigureAwait(true);
         }
         // One Apply at a time, and only the latest refresh's: without a UI synchronisation context (tests, a caller off
@@ -204,6 +207,16 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
                                  ?? Options[0];
                 CanChoose = !_shell.IsBusy && !_shell.IsSelectionProbeBusy;
                 Hint = UiLocalizationService.Format("Rx.DllNameTipRename", installed);
+                return;
+            }
+
+            if (state.AsiName is { } asiName)
+            {
+                var only = new DllNameOption(asiName, asiName);
+                Options.Add(only);
+                SelectedOption = only;
+                CanChoose = false;
+                Hint = UiLocalizationService.Present(ReShadeDeploymentService.AsiModeLocksNamePrefix + asiName);
                 return;
             }
 
