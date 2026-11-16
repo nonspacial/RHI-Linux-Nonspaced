@@ -95,7 +95,7 @@ public class CogRow : Control
             _help.Text = Help;
             _help.IsVisible = !string.IsNullOrWhiteSpace(Help);
             CogLayout.Tip(_label, Help);
-            if (Setting is { } setting && (_settingTipIsHelp || ToolTip.GetTip(setting) is null))
+            if (Setting is { } setting && _settingTipIsHelp)
             {
                 CogLayout.Tip(setting, Help);
                 _settingTipIsHelp = true;
@@ -110,7 +110,8 @@ public class CogRow : Control
                 control.VerticalAlignment = VerticalAlignment.Center;
                 Grid.SetColumn(control, 1);
                 _grid.Children.Add(control);
-                _settingTipIsHelp = ToolTip.GetTip(control) is null;
+                // A control with its own tooltip (set, or bound — e.g. why it is greyed, #302) keeps it.
+                _settingTipIsHelp = !control.IsSet(ToolTip.TipProperty);
                 if (_settingTipIsHelp) CogLayout.Tip(control, Help);
             }
         }
@@ -130,6 +131,7 @@ public class CogCell : Control
 
     private readonly TextBlock _label = new() { Classes = { "cogLabel" }, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
     private readonly Grid _grid = new() { ColumnDefinitions = new ColumnDefinitions($"*,{CogLayout.CompactControlWidth}"), ColumnSpacing = CogLayout.ColumnGap };
+    private bool _settingTipIsHelp;
 
     public CogCell()
     {
@@ -160,7 +162,7 @@ public class CogCell : Control
         else if (change.Property == HelpProperty)
         {
             CogLayout.Tip(_label, Help);
-            if (Setting is { } setting) CogLayout.Tip(setting, Help);
+            if (Setting is { } setting && _settingTipIsHelp) CogLayout.Tip(setting, Help);
         }
         else if (change.Property == SettingProperty)
         {
@@ -171,7 +173,9 @@ public class CogCell : Control
                 control.VerticalAlignment = VerticalAlignment.Center;
                 Grid.SetColumn(control, 1);
                 _grid.Children.Add(control);
-                CogLayout.Tip(control, Help);
+                // A control with its own tooltip (set, or bound — e.g. why it is greyed, #302) keeps it.
+                _settingTipIsHelp = !control.IsSet(ToolTip.TipProperty);
+                if (_settingTipIsHelp) CogLayout.Tip(control, Help);
             }
         }
     }

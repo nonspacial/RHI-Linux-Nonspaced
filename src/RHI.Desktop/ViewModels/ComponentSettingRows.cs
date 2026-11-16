@@ -54,12 +54,27 @@ public sealed partial class ComponentSettingRow : ObservableObject
     /// <summary>The dialog-wide switch (the mod is installed, its file can be written).</summary>
     public bool Available { get; init; } = true;
 
+    /// <summary>#302: why <see cref="EnabledWhen"/> greys the row (e.g. "only used when Mode is Fixed").</summary>
+    public string? DisabledReason { get; init; }
+
+    /// <summary>#302: why the row is greyed while <see cref="Available"/> is false (e.g. "Install RTX Encore …").</summary>
+    public string? UnavailableReason { get; init; }
+
+    /// <summary>
+    /// #302: the control's 2 s tooltip, shown on a greyed control too — the explanation, led by why it is greyed when it is.
+    /// </summary>
+    public string? ControlTip => IsEnabled
+        ? Tip
+        : string.Join("\n\n", new[] { Available ? DisabledReason : UnavailableReason ?? DisabledReason, Tip }.Where(t => !string.IsNullOrWhiteSpace(t)));
+
     /// <summary>Called after a saved change (the dialog shows the message and re-evaluates every row's enabled state).</summary>
     internal Action<string>? Changed { get; set; }
 
     [ObservableProperty] private int selectedIndex;
     [ObservableProperty] private string numberText = "";
-    [ObservableProperty] private bool isEnabled = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ControlTip))]
+    private bool isEnabled = true;
 
     public void Refresh() => IsEnabled = Available && (EnabledWhen?.Invoke() ?? true);
 

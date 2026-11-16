@@ -321,6 +321,12 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
     /// <summary>#297: the choices card (GPU generation, DLL name, Neural Rendering file, installed line, Check / Update) shows.</summary>
     public bool HasChoiceCard => HasGpu || HasProxy || HasNeuralRendering || HasCompatibility || IsInstalled || ShowsCheck;
 
+    /// <summary>#302: a choice locked while installed says why (2 s tooltip, shown on the greyed dropdown too).</summary>
+    public string? LockedTip => CanChoose ? null : T("Cog.GreyedLockedInstalled");
+
+    /// <summary>#302: the DLL-name dropdown's tooltip: why it is greyed when locked, then its explanation.</summary>
+    public string? ProxyChoiceTip => CanChoose ? ProxyTip : string.Join("\n\n", new[] { LockedTip, ProxyTip }.Where(t => !string.IsNullOrWhiteSpace(t)));
+
     /// <summary>#297: the ⚙'s title, "&lt;Component&gt; Settings" (upstream's rule).</summary>
     public string CogTitle => RHI.Desktop.Views.CogDialog.TitleFor(Title);
     [ObservableProperty] private bool canCheck = true;

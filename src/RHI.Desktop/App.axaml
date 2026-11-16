@@ -45,13 +45,15 @@
         <TextBlock Text="{Binding RouteNote}" TextWrapping="Wrap" Classes="cogWarning" IsVisible="{Binding HasRouteNote}"/>
         <views:CogCard IsVisible="{Binding HasChoiceCard}">
           <views:CogRow Label="{Binding GpuLabel}" IsVisible="{Binding HasGpu}">
-            <ComboBox ItemsSource="{Binding GpuOptions}" SelectedItem="{Binding SelectedGpu}" IsEnabled="{Binding CanChoose}"/>
+            <ComboBox ItemsSource="{Binding GpuOptions}" SelectedItem="{Binding SelectedGpu}" IsEnabled="{Binding CanChoose}"
+                      ToolTip.Tip="{Binding LockedTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
           </views:CogRow>
           <views:CogRow Label="{Binding ProxyLabel}" Help="{Binding ProxyTip}" IsVisible="{Binding HasProxy}">
             <Panel>
               <!-- #284: names in use are greyed with their component; ASI Loader's Hooked name is marked. -->
               <ComboBox ItemsSource="{Binding ProxyNameOptions}" SelectedItem="{Binding SelectedProxyItem}" HorizontalAlignment="Stretch"
                         IsEnabled="{Binding CanChoose}" IsVisible="{Binding !ShowsProxyAsText}"
+                        ToolTip.Tip="{Binding ProxyChoiceTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"
                         DisplayMemberBinding="{Binding Display, DataType=vm:ProxyNameItem}">
                 <ComboBox.Styles>
                   <Style Selector="ComboBoxItem" x:DataType="vm:ProxyNameItem">
@@ -135,9 +137,11 @@
                       <views:CogRow Label="{Binding Label}" Help="{Binding Tip}">
                         <Panel>
                           <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" HorizontalAlignment="Stretch"
-                                    IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsChoice}"/>
+                                    IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsChoice}"
+                                    ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
                           <TextBox Text="{Binding NumberText, UpdateSourceTrigger=LostFocus}" Width="120" HorizontalAlignment="Left"
-                                   IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsNumber}"/>
+                                   IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsNumber}"
+                                   ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
                         </Panel>
                       </views:CogRow>
                     </DataTemplate>
@@ -152,9 +156,11 @@
                       <views:CogCell Label="{Binding Label}" Help="{Binding Tip}">
                         <Panel>
                           <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" HorizontalAlignment="Stretch"
-                                    IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsChoice}"/>
+                                    IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsChoice}"
+                                    ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
                           <TextBox Text="{Binding NumberText, UpdateSourceTrigger=LostFocus}" HorizontalAlignment="Stretch"
-                                   IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsNumber}"/>
+                                   IsEnabled="{Binding IsEnabled}" IsVisible="{Binding IsNumber}"
+                                   ToolTip.Tip="{Binding ControlTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
                         </Panel>
                       </views:CogCell>
                     </DataTemplate>
