@@ -19,13 +19,13 @@ namespace RHI.Platform.Linux.Deployment;
 /// Encore's own version resource.</item>
 /// <item>A file RHI did not write already under the chosen name is kept as <c>&lt;name&gt;.original</c> and put back on
 /// removal (upstream's backup). Each <c>.dll</c> name gets the journaled per-game Wine <c>native,builtin</c> override.</item>
-/// <item>Optional: NVIDIA's <c>nvngx_dlssnr.dll</c> 310.8.0, the only one RTX Encore accepts (it checks the SHA-256), from
+/// <item>Optional: NVIDIA's <c>nvngx_dlssnr.dll</c> 310.9.16, the only one RTX Encore accepts (it checks the SHA-256), from
 /// the DLSS list. With it RTX Encore's record owns the game's Neural Rendering runtime under the one-owner rule
 /// (<see cref="NeuralRenderingRuntimeOwnership"/>); without it RTX Encore owns nothing and uses what is there.</item>
 /// </list>
 /// Under Proton nothing about it is confirmed yet (no game or Wine was run for #158): every row note says so.
 /// </summary>
-public sealed class RtxEncoreDeploymentService
+public sealed partial class RtxEncoreDeploymentService
 {
     public const string DisplayName = ComponentProbe.RtxEncoreDisplayName;
     public const string ReleasesApiUrl = "https://api.github.com/repos/SilyNoMeta/rtx-encore/releases?per_page=10";
@@ -34,9 +34,11 @@ public sealed class RtxEncoreDeploymentService
     public const string DefaultName = "version.dll";
     public const string KeptSuffix = ".original";
 
-    /// <summary>The Neural Rendering runtime RTX Encore accepts: NVIDIA's 310.8.0, by SHA-256 ("310.8.0 SHA256 mismatch").</summary>
-    public const string NeuralRenderingVersion = "310.8.0";
-    public const string NeuralRenderingSha256 = "E16BCF15E16E13F527491CDF7845B2FE6521A738D8F7C9C721866A8496E1FC8E";
+    /// <summary>The Neural Rendering runtime RTX Encore accepts: NVIDIA's 310.9.16, by SHA-256 ("310.9.16 SHA256 mismatch").</summary>
+    public const string NeuralRenderingVersion = "310.9.16";
+    public const string NeuralRenderingSha256 = "CDFA6C1EC784867182164C7836F324F087B5C9F374D0C9FE46F54999FEABF3ED"; // #280: 310.9.16 (rhi-repo dlssnr-310.9.16, checked 2026-11-16)
+    /// <summary>#280: the runtime RHI installed for RTX Encore before 2.9.4 parity; an install still holding it is moved to 310.9.16 by Update.</summary>
+    public const string PreviousNeuralRenderingVersion = "310.8.0";
 
     // Fixed messages, values last (PT-BR presentation pairs in UiLocalizationService).
     public const string NotYetConfirmedNote = "Not yet confirmed on Linux: Frame Generation ×3–×6 and Neural Rendering may work through Proton's DLSS; Smooth Motion cannot (it needs the Windows driver).";
@@ -53,14 +55,14 @@ public sealed class RtxEncoreDeploymentService
     public const string NameHeldPrefix = "This name already belongs to another RHI component; choose another in ⚙: ";
     public const string KeptCopyInTheWayPrefix = "RTX Encore not installed: a copy kept from before is in the way; move it aside first: ";
     public const string DownloadFailedPrefix = "RTX Encore download failed; nothing was changed: ";
-    public const string NeuralRenderingUnavailableMessage = "The DLSS list no longer offers NVIDIA's Neural Rendering file 310.8.0, the only one RTX Encore accepts; nothing was changed.";
-    public const string NeuralRenderingMismatchMessage = "The Neural Rendering file 310.8.0 that was downloaded is not the one RTX Encore accepts; nothing was changed.";
+    public const string NeuralRenderingUnavailableMessage = "The DLSS list no longer offers NVIDIA's Neural Rendering file 310.9.16, the only one RTX Encore accepts; nothing was changed.";
+    public const string NeuralRenderingMismatchMessage = "The Neural Rendering file 310.9.16 that was downloaded is not the one RTX Encore accepts; nothing was changed.";
     public const string NeuralRenderingNeedsDlssListMessage = "The DLSS list is not available, so the Neural Rendering file cannot be fetched; nothing was changed.";
     public const string FailedRolledBackPrefix = "RTX Encore failed and was rolled back: ";
     public const string ModifiedPrefix = "RTX Encore not changed: a file changed since RHI installed it (left as it is): ";
     public const string MissingPrefix = "RTX Encore not updated: its file is gone; remove it and install it again: ";
     public const string InstalledPrefix = "RTX Encore installed; press Insert in the game for its menu. Not yet confirmed on Linux. Name: ";
-    public const string InstalledWithNeuralRenderingSuffix = " (with the Neural Rendering file 310.8.0)";
+    public const string InstalledWithNeuralRenderingSuffix = " (with the Neural Rendering file 310.9.16)";
     public const string RemovedMessage = "RTX Encore removed; files kept from before it are back.";
     public const string KeptCopyMissingPrefix = " The copy kept from before was not found, so nothing was put back: ";
     public const string UpToDatePrefix = "RTX Encore is up to date: ";
@@ -68,10 +70,10 @@ public sealed class RtxEncoreDeploymentService
     public const string UpdateAvailablePrefix = "RTX Encore update available: ";
     public const string LatestPrefix = "Latest RTX Encore: ";
     public const string CheckFailedPrefix = "Could not check RTX Encore: ";
-    public const string NeuralRenderingOnMessage = "RTX Encore: Neural Rendering file 310.8.0 installed.";
+    public const string NeuralRenderingOnMessage = "RTX Encore: Neural Rendering file 310.9.16 installed.";
     public const string NeuralRenderingOffMessage = "RTX Encore: Neural Rendering file removed; a file kept from before is back.";
     public const string NeuralRenderingAlreadyMessage = "RTX Encore: nothing to change.";
-    public const string SavedWithNeuralRenderingMessage = "Saved: RTX Encore will be installed with the Neural Rendering file 310.8.0.";
+    public const string SavedWithNeuralRenderingMessage = "Saved: RTX Encore will be installed with the Neural Rendering file 310.9.16.";
     public const string SavedWithoutNeuralRenderingMessage = "Saved: RTX Encore will be installed without the Neural Rendering file.";
     public const string SavedNamePrefix = "Saved: RTX Encore will be installed as ";
     // Why a release or download is refused (they follow DownloadFailedPrefix / FailedRolledBackPrefix).
@@ -131,7 +133,7 @@ public sealed class RtxEncoreDeploymentService
 
     /// <summary>The installed name, else the saved choice, else <see cref="DefaultName"/>.</summary>
     public string ChosenName(DetectedGame game)
-        => GetRecord(game)?.Metadata.GetValueOrDefault(MetaName) ?? _names.GetRtxEncore(game) ?? DefaultName;
+        => GetRecord(game)?.Metadata.GetValueOrDefault(MetaName) ?? _names.GetRtxEncore(game) ?? RecommendedName(game) ?? DefaultName; // #280: the manifest's name first
 
     /// <summary>Whether the Neural Rendering file is installed (installed) or wanted at the next install (not installed).</summary>
     public bool NeuralRenderingChosen(DetectedGame game)
@@ -147,10 +149,11 @@ public sealed class RtxEncoreDeploymentService
     {
         var held = HeldNames(game);
         var hasLoader = _records.Find(game, ManagedComponentKind.UltimateAsiLoader) is not null;
-        return RtxEncoreNames.All
-            .Where(name => !RtxEncoreNames.IsBink(name))
+        var recommended = RecommendedName(game);
+        return RtxEncoreNames.All // #280: Bink names too (the game's Bink DLL is kept as *Hooked.dll)
             .Where(name => RtxEncoreNames.IsAsi(name) ? hasLoader : ProxyDllNames.LoadsFor(name, game.EffectiveGraphicsApi))
             .Where(name => !held.Contains(name))
+            .OrderBy(name => string.Equals(name, recommended, StringComparison.OrdinalIgnoreCase) ? 0 : 1) // #280: listed first
             .ToArray();
     }
 
@@ -196,7 +199,7 @@ public sealed class RtxEncoreDeploymentService
         if (!OfferedNames(game).Contains(name, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail((HeldNames(game).Contains(name) ? NameHeldPrefix : NameNotOfferedPrefix) + name);
         var target = ExistingSlot(binaryDir, name) ?? Path.Combine(binaryDir, name);
-        var keep = File.Exists(target) ? target + KeptSuffix : null;
+        var keep = File.Exists(target) ? KeptPathFor(target, name) : null; // #280: a Bink name keeps the game's file as *Hooked.dll
         if (keep is not null && ExistingSlot(binaryDir, Path.GetFileName(keep)) is { } keepInTheWay)
             return ComponentOperationResult.Fail(KeptCopyInTheWayPrefix + keepInTheWay);
 
@@ -219,7 +222,7 @@ public sealed class RtxEncoreDeploymentService
         try
         {
             release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
-            payload = await EnsureCachedPayloadAsync(release, cancellationToken).ConfigureAwait(false);
+            payload = await EnsureCachedPayloadAsync(release, RtxEncoreNames.IsAsi(name), cancellationToken).ConfigureAwait(false); // #280: the .asi build
             if (withNr)
             {
                 var (path, refusal) = await EnsureNeuralRenderingCachedAsync(cancellationToken).ConfigureAwait(false);
@@ -231,6 +234,9 @@ public sealed class RtxEncoreDeploymentService
         {
             return ComponentOperationResult.Fail(DownloadFailedPrefix + ex.Message);
         }
+        // #280: Intel's XeSS files; a download that fails does not stop the install (upstream), Update adds them later.
+        var (xessCache, xessFailure) = await CacheXessAsync(cancellationToken).ConfigureAwait(false);
+        IntelXessPlaced? xessPlaced = null;
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RTX Encore install: " + game.Name, game, ManagedComponentKind.RtxEncore, cancellationToken).ConfigureAwait(false);
@@ -259,6 +265,7 @@ public sealed class RtxEncoreDeploymentService
                 [MetaAssetName] = release.AssetName,
             };
             if (keep is not null) metadata[MetaKept] = Path.GetFileName(keep);
+            if (RtxEncoreNames.IsAsi(name)) metadata[MetaBuild] = AsiBuild; // #280
             // Fail-closed source: the zip matched GitHub's digest or the publisher's SHA256SUMS (refused otherwise).
             VerifiedDownload.Record(metadata, stagedCopy.Sha256, digestVerified: true);
             var files = new List<LinuxDeployedFile>
@@ -267,6 +274,8 @@ public sealed class RtxEncoreDeploymentService
             };
             if (nrSource is not null)
                 files.Add(await PlaceNeuralRenderingAsync(scope, nrSource, nrTarget!, nrKeep, metadata, cancellationToken).ConfigureAwait(false));
+            if (xessCache is not null)
+                xessPlaced = await PlaceXessAsync(scope, game, Path.GetDirectoryName(target)!, xessCache, metadata, cancellationToken).ConfigureAwait(false);
 
             _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
@@ -292,7 +301,8 @@ public sealed class RtxEncoreDeploymentService
         }
         // The record carries the operation id: the commit point. Nothing after it rolls back.
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok(InstalledPrefix + name + (nrSource is null ? "" : InstalledWithNeuralRenderingSuffix), target);
+        return ComponentOperationResult.Ok(InstalledPrefix + name + (nrSource is null ? "" : InstalledWithNeuralRenderingSuffix)
+            + (xessPlaced is not null ? IntelXessFiles.Notes(xessPlaced) : xessFailure is not null ? XessNotInstalledPrefix + xessFailure : ""), target);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -309,10 +319,13 @@ public sealed class RtxEncoreDeploymentService
         await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
         var missing = new List<string>();
+        var xessEntries = IntelXessFiles.Load(record.Metadata, XessPrefix);
+        IntelXessRemoved? xessRemoved = null;
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
+            xessRemoved = await IntelXessFiles.RemoveAsync(scope, xessEntries, cancellationToken).ConfigureAwait(false); // #280
             foreach (var file in record.Files)
             {
                 await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
@@ -335,12 +348,14 @@ public sealed class RtxEncoreDeploymentService
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
+        IntelXessFiles.DeleteEmptyFolders(xessEntries);
         var missingNote = missing.Count == 0 ? "" : KeptCopyMissingPrefix + string.Join(", ", missing);
-        return ComponentOperationResult.Ok(RemovedMessage + WineDllOverrideService.KeptValueNotes(overrideRestore) + missingNote);
+        return ComponentOperationResult.Ok(RemovedMessage + WineDllOverrideService.KeptValueNotes(overrideRestore) + missingNote
+            + (xessRemoved is not null ? IntelXessFiles.Notes(xessRemoved) : ""));
     }
 
     /// <summary>
-    /// The ⚙ "Neural Rendering file" choice. Not installed: saved for the next install. Installed: puts NVIDIA's 310.8.0
+    /// The ⚙ "Neural Rendering file" choice. Not installed: saved for the next install. Installed: puts NVIDIA's 310.9.16
     /// file beside RTX Encore (refused while another component owns <c>nvngx_dlssnr.dll</c>) or takes RTX Encore's copy
     /// away again (a file kept from before goes back), journaled like an install.
     /// </summary>
@@ -444,10 +459,11 @@ public sealed class RtxEncoreDeploymentService
 
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
-        if (GetRecord(game) is null) return new ManagedUpdateCheck(false, false, NotInstalledMessage);
+        if (GetRecord(game) is not { } record) return new ManagedUpdateCheck(false, false, NotInstalledMessage);
         var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
-        return new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
-            CouldNotCheck: !status.Success);
+        var upgradeDue = status.Success && !status.HasUpdate && (NeedsUpgrade(record) || NeedsAsiBuild(record)); // #280: XeSS files, NR 310.9.16, .asi build
+        return new ManagedUpdateCheck(true, status.Success && (status.HasUpdate || upgradeDue), upgradeDue ? UpgradeDueMessage : status.Message,
+            status.InstalledVersion, status.LatestVersion, CouldNotCheck: !status.Success);
     }
 
     public async Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -465,9 +481,10 @@ public sealed class RtxEncoreDeploymentService
         try
         {
             latest = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
-            if (string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase))
-                return ComponentOperationResult.Ok(UpToDatePrefix + record.Version);
-            payload = await EnsureCachedPayloadAsync(latest, cancellationToken).ConfigureAwait(false);
+            if (string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase) && !NeedsAsiBuild(record))
+                return NeedsUpgrade(record) ? await UpgradeAsync(game, record, cancellationToken).ConfigureAwait(false) // #280
+                    : ComponentOperationResult.Ok(UpToDatePrefix + record.Version);
+            payload = await EnsureCachedPayloadAsync(latest, IsAsiRecord(record), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -494,6 +511,7 @@ public sealed class RtxEncoreDeploymentService
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Metadata[MetaTag] = latest.Tag;
             record.Metadata[MetaAssetName] = latest.AssetName;
+            if (IsAsiRecord(record)) record.Metadata[MetaBuild] = AsiBuild; // #280: the .asi build replaces the renamed DLL
             VerifiedDownload.Record(record.Metadata, stagedCopy.Sha256, digestVerified: true);
             _records.Upsert(scope.Stamp(record));
         }
@@ -505,7 +523,9 @@ public sealed class RtxEncoreDeploymentService
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok(UpdatedPrefix + latest.Version, file.Path);
+        // #280: the XeSS files and the 310.9.16 runtime follow in their own operation (named, never failing the update).
+        var upgrade = GetRecord(game) is { } updated && NeedsUpgrade(updated) ? " " + (await UpgradeAsync(game, updated, cancellationToken).ConfigureAwait(false)).Message : "";
+        return ComponentOperationResult.Ok(UpdatedPrefix + latest.Version + upgrade, file.Path);
     }
 
     /// <summary>The newest non-draft release (prereleases included: every RTX Encore release so far is one).</summary>
@@ -570,10 +590,17 @@ public sealed class RtxEncoreDeploymentService
         return value;
     }
 
-    internal async Task<string> EnsureCachedPayloadAsync(RtxEncoreReleaseInfo release, CancellationToken cancellationToken)
+    internal Task<string> EnsureCachedPayloadAsync(RtxEncoreReleaseInfo release, CancellationToken cancellationToken)
+        => EnsureCachedPayloadAsync(release, asi: false, cancellationToken);
+
+    /// <summary>
+    /// The release's <c>rtx-encore.dll</c>, or with <paramref name="asi"/> its separate ASI build
+    /// (<c>alternative-proxies/rtx-encore.asi</c>, #280; upstream falls back to the DLL when a release has none).
+    /// </summary>
+    internal async Task<string> EnsureCachedPayloadAsync(RtxEncoreReleaseInfo release, bool asi, CancellationToken cancellationToken)
     {
         var versionDir = Path.Combine(_cacheRoot, release.Version);
-        var dllPath = Path.Combine(versionDir, PayloadName);
+        var dllPath = Path.Combine(versionDir, asi ? RtxEncoreNames.AsiName : PayloadName);
         Directory.CreateDirectory(versionDir);
         if (File.Exists(dllPath))
         {
@@ -606,8 +633,11 @@ public sealed class RtxEncoreDeploymentService
 
         using (var zip = ZipFile.OpenRead(download.Path))
         {
-            // The release's own rtx-encore.dll at the zip root; the pre-named copies under alternative-proxies/ are other builds.
-            var entries = zip.Entries.Where(e => e.FullName.Equals(PayloadName, StringComparison.OrdinalIgnoreCase)).ToArray();
+            // The release's own rtx-encore.dll at the zip root; the pre-named copies under alternative-proxies/ are other builds,
+            // except the .asi, which is the ASI-plugin build (#280).
+            var asiEntries = asi ? zip.Entries.Where(e => e.Name.Equals(RtxEncoreNames.AsiName, StringComparison.OrdinalIgnoreCase)).ToArray() : [];
+            if (asiEntries.Length > 1) throw new InvalidDataException(SeveralAsiBuildsMessage);
+            var entries = asiEntries.Length == 1 ? asiEntries : zip.Entries.Where(e => e.FullName.Equals(PayloadName, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (entries.Length != 1)
                 throw new InvalidDataException(PayloadNotAtRootMessage);
             await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entries[0], dllPath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
@@ -634,7 +664,7 @@ public sealed class RtxEncoreDeploymentService
     }
 
     /// <summary>
-    /// NVIDIA's 310.8.0 runtime from the DLSS list (the entry whose version starts with 310.8.0), cached by the DLSS
+    /// NVIDIA's 310.9.16 runtime from the DLSS list (the entry whose version starts with 310.9.16), cached by the DLSS
     /// service; it must have <see cref="RequiredNeuralRenderingSha256"/>. Never another version: RTX Encore refuses it.
     /// </summary>
     private async Task<(string? Path, string? Refusal)> EnsureNeuralRenderingCachedAsync(CancellationToken cancellationToken)
@@ -651,7 +681,7 @@ public sealed class RtxEncoreDeploymentService
         return (source.Path, null);
     }
 
-    /// <summary>"310.8.0" or "310.8.0 (…)" — never 310.8.0x or 310.8.01.</summary>
+    /// <summary>"310.9.16" or "310.9.16 (…)" — never 310.9.16x or 310.9.161.</summary>
     internal static bool IsRequiredNeuralRenderingVersion(string? version)
         => version is not null && version.StartsWith(NeuralRenderingVersion, StringComparison.Ordinal)
            && (version.Length == NeuralRenderingVersion.Length || version[NeuralRenderingVersion.Length] == ' ');

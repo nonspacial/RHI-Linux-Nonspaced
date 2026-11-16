@@ -1581,3 +1581,40 @@ release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
 - The GPU-generation dropdown is gone, as upstream; the intro now describes the mod (RTX 20 and 30, DirectX 12,
   driver R580+) instead of "Legacy SM75 path" (EN and PT-BR), and the dialog title is "20/30 FG Unlock". A saved
   generation is not asked for any more; the preference store already reads an old "RTX 30" choice as RTX 20.
+
+### #280 — RTX Encore: ⚙ settings, XeSS files in place, NR DLL 310.9.16, Bink names, .asi build, DLL-name recommendation (2.8.9–2.9.3)
+
+- The row is **RTX Encore** (no "Beta").
+- ⚙ settings: upstream's sections and settings, with its keys and values (`renderingEngines.frameGenerationEngine`,
+  `frameGeneration.mode`/`multiplier`/`dynamicTargetFrameRate`/…, `xefg.*`, `imageQuality.*`, `hudUi.*`, upscaling,
+  `neuralRendering/core.nrEnabled` and the NR presets, `general.gpuSeries`, `compatibility.*`,
+  `nativeMenuFeatures.hairEnabled`), written at once into `rtx-encore.jsonc` beside RTX Encore by a port of upstream's
+  line editor (`RtxEncoreConfig`): only the value token changes, comments and newline style are kept, a missing key or
+  section is inserted, and a missing file is created with just that setting. Upstream's dependencies grey rows out
+  (Multiplier in Fixed mode, the dynamic rows in Dynamic mode, the XeFG engine rows with XeFG, XeSS on Tensor Cores with
+  the XeSS upscaler, custom scale with Custom). Number boxes check their range and go back to the saved value when it is
+  out of range. Greyed out until RHI's RTX Encore is installed. Pinned against upstream's own editor tests.
+  Linux deviations: Smooth Motion is left out (it needs NVIDIA's Windows driver and does not run under Wine/Proton);
+  the rows have labels but not upstream's long per-row tooltips yet; the "game is running" warning is not shown.
+- Intel XeSS files (shared service above): the game's own `libxess.dll`, `libxess_fg.dll` and `libxell.dll` (any
+  folder under the game, Intel's version resource, links, `OptiScaler.ini` folders, `rtx-encore-runtimes`,
+  `RTXMFG-XeSS` and files another RHI component placed skipped; at most 16 levels and 20 000 folders) are replaced in
+  place, each kept as `<file>.encore-original`; the others and Intel's licence (`license.txt`) go in
+  `rtx-encore-runtimes/intel` beside RTX Encore. All in RTX Encore's own journaled install, removal or update. The ⚙
+  says whether they are installed and how many replace the game's copies.
+- Neural Rendering file 310.9.16 (`nvngx_dlssnr.dll`, pinned SHA-256 `CDFA6C1E…FEABF3ED`, from the DLSS list's
+  "310.9.16 (20/30/40/50)" entry). An RHI copy of 310.8.0 is replaced by Update, while it still holds RHI's bytes.
+- Bink names: `binkw64.dll` / `bink2w64.dll` are offered; the game's own Bink DLL is kept as `<stem>Hooked.dll` (where
+  RTX Encore loads it) and put back on removal. Linux deviation: a `…Hooked.dll` RHI did not record is never adopted,
+  so the install is refused with the file named instead of being treated as already set up.
+- `.asi`: the separate ASI build (`alternative-proxies/rtx-encore.asi`; the DLL when a release has none, as upstream)
+  replaces the renamed DLL; an .asi install from an older build is corrected by Update. Linux deviation: the `.asi`
+  stays beside the game's executable next to its Neural Rendering file, where RHI Linux has always put it (Ultimate ASI
+  Loader reads that folder), so upstream's move to `plugins/` is not needed.
+- Recommended DLL name: the manifest's `rtxEncoreDllNames` (Euro Truck Simulator 2: `winmm.dll`) is read into the game
+  and, when it is one of RTX Encore's DLL names, listed first and used as the default; the user's own choice wins; the
+  ⚙ names it.
+- Extras summary (upstream 2.9.4 fix): on Linux the RTX Encore row is in Managed components, whose collapsed summary
+  already lists it.
+- Linux deviation: installs from before get the XeSS files, 310.9.16 and the ASI build through Update / Update All (the
+  check plans it), not at start-up. A failed XeSS download does not stop an install (upstream); the message says so.

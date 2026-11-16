@@ -146,7 +146,7 @@ public static class ComponentProbe
     }
 
     /// <summary>The RTX Encore row's name (upstream 2.8.6 "RTX Encore (Beta)": every release so far is a prerelease).</summary>
-    public const string RtxEncoreDisplayName = "RTX Encore (Beta)";
+    public const string RtxEncoreDisplayName = "RTX Encore"; // #280: no longer Beta (upstream 2.8.9)
 
     /// <summary>The Neural Rendering rows' names, as the Managed components list shows them.</summary>
     public const string OptiScalerDisplayName = "OptiScaler";

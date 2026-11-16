@@ -204,6 +204,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     internal LinuxManagedComponentService ManagedForFgSettings => _managedComponents; // #279–#281: the FG unlocks' ⚙ read and write the mods' files
     /// <summary>#279: RHI's MFG Unlock record for the selected game, or null.</summary>
     public LinuxDeploymentRecord? GetMfgUnlockRecord() => SelectedGame is null ? null : _managedComponents.GetMfgUnlockRecord(SelectedGame);
+    /// <summary>#280: rtx-encore.jsonc beside RHI's RTX Encore (null when it is not installed).</summary>
+    public string? RtxEncoreConfigPath() => SelectedGame is null ? null : _managedComponents.RtxEncoreConfigPath(SelectedGame);
+    /// <summary>#280: whether RTX Encore's Intel XeSS files are in place (null when it is not installed).</summary>
+    public RtxEncoreXessStatus? RtxEncoreXessStatus() => SelectedGame is null ? null : _managedComponents.RtxEncoreXessStatus(SelectedGame);
     /// <summary>#281: the installed dlssg_sm86.ini's lines (null when 20/30 FG Unlock is not installed or the file is gone).</summary>
     public IReadOnlyList<string>? GetDlssg2030IniLines() => SelectedGame is null ? null : _managedComponents.Dlssg2030IniLines(SelectedGame);
     /// <summary>#281: writes one ⚙ setting; the refusal (or null) and the INI as written.</summary>

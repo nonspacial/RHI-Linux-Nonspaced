@@ -182,11 +182,14 @@ public sealed class IntelXessFiles
                 entries.Add(new IntelXessEntry { File = step.File.Name, Path = step.Target, Sha256 = sha, Placement = IntelXessPlacement.Replaced, Backup = step.Backup });
                 continue;
             }
-            var folder = System.IO.Path.GetDirectoryName(step.Target)!;
-            if (!Directory.Exists(folder))
+            // Every folder level RHI creates is recorded, so removal can take each away again when it is empty.
+            var created = new List<string>();
+            for (var folder = System.IO.Path.GetDirectoryName(step.Target); folder is not null && !Directory.Exists(folder); folder = System.IO.Path.GetDirectoryName(folder))
+                created.Add(folder);
+            if (created.Count > 0)
             {
-                Directory.CreateDirectory(folder);
-                entries.Add(new IntelXessEntry { File = "", Path = folder, Placement = IntelXessPlacement.Added });
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(step.Target)!);
+                entries.AddRange(created.Select(folder => new IntelXessEntry { File = "", Path = folder, Placement = IntelXessPlacement.Added }));
             }
             await scope.PlaceCopyAsync(source, step.Target, cancellationToken, sha, overwrite: false).ConfigureAwait(false);
             entries.Add(new IntelXessEntry { File = step.File.Name, Path = step.Target, Sha256 = sha, Placement = IntelXessPlacement.Added });

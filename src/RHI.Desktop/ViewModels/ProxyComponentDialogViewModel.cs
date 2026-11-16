@@ -117,11 +117,17 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 NeuralRenderingChosen = shell.RtxEncoreNeuralRenderingChosen();
                 IsInstalled = record is not null;
                 InstalledText = record is null ? null : TF("Win.RtxEncoreInstalled", record.Version ?? "?", chosen);
+                // #280: RTX Encore's settings in rtx-encore.jsonc, its XeSS files and the manifest's recommended name.
+                var configPath = shell.RtxEncoreConfigPath();
+                Sections = FgSettingsBuilder.RtxEncore(configPath);
+                Lines = FgSettingsBuilder.RtxEncoreLines(record is not null, configPath is not null && File.Exists(configPath),
+                    shell.RtxEncoreXessStatus(), shell.SelectedGame is { } encoreGame ? RtxEncoreDeploymentService.RecommendedName(encoreGame) : null);
+                FileButtons = configPath is null ? [] : [new ComponentFileButton(TF("Fg.OpenFile", RtxEncoreConfig.FileName), configPath, ShowMessage)];
                 CheckLabel = T("Ui.RtxEncoreCheck");
                 UpdateLabel = T("Vm.Update");
                 FooterNote = T("Ui.RtxEncoreFooter");
                 FooterIsWarning = true;
-                (Width, Height, MinWidth, MinHeight) = (660, 500, 540, 400);
+                (Width, Height, MinWidth, MinHeight) = (720, 760, 560, 420);
                 break;
             }
             default:

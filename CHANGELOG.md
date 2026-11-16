@@ -46,6 +46,20 @@ Wave 14 — extras-fg
   the game's `dlssg_sm86.ini`, so you can't enter a value that would switch frame generation off. XeSS goes up to 4X.
   Your settings are kept when the mod updates. Open dlssg_sm86.ini and Open log buttons. The GPU generation setting is
   gone: the mod detects RTX 20 and 30 cards by itself.
+- **RTX Encore** is no longer labelled Beta (upstream 2.8.9–2.9.3).
+  - Its ⚙ has RTX Encore's settings — frame generation, the XeFG engine, generated frame quality, HUD and UI,
+    upscaling, Neural Rendering and compatibility — written straight into the game's `rtx-encore.jsonc`, keeping the
+    file's comments, and an Open rtx-encore.jsonc button.
+  - Installing it also installs Intel's XeSS files the way RTX Encore Hub does: the game's own copies are replaced where
+    they are and put back when you remove RTX Encore; the rest, and Intel's licence, go in RTX Encore's own folder.
+  - The Neural Rendering file RHI installs for it is now 310.9.16.
+  - **Existing installs get the XeSS files and the 310.9.16 file with Update or Update All.**
+  - The Bink names (`binkw64.dll`, `bink2w64.dll`) are offered: the game's own Bink file is kept beside it as
+    `binkw64Hooked.dll` / `bink2w64Hooked.dll` and put back on removal.
+  - `rtx-encore.asi` installs the separate ASI build from RTX Encore's release. An `.asi` install from an older build is
+    corrected by Update.
+  - The DLL name list puts the name the RHI manifest recommends for a game first and uses it by default (Euro Truck
+    Simulator 2: `winmm.dll`); the ⚙ names it.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

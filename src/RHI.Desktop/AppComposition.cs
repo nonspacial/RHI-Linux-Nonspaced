@@ -317,7 +317,7 @@ internal sealed class AppComposition
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
             updateLog, nrCostScaler: nrCostScaler, // w3/parity hook (#96): named argument
-            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) // w4/encore (#158)
+            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) { Xess = intelXess } // w4/encore (#158); #280: Intel XeSS files
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
             , updateInclusion: updateInclusion

@@ -151,4 +151,117 @@ public static class FgSettingsBuilder
                new ComponentFileButton(T("Dsg.OpenLog"), Path.Combine(binaryDirectory, Dlssg2030Ini.LogRelativePath), show)];
         return new FgSettingsContent([new ComponentSettingSection("", rows)], lines2, files);
     }
+
+    /// <summary>
+    /// #280 (upstream 2.9.3 <c>DetailPanelBuilder.Extras.RtxEncoreSettings</c>): RTX Encore's settings by upstream's
+    /// sections, written straight into <c>rtx-encore.jsonc</c> beside RTX Encore (comments kept; created when missing).
+    /// Greyed out until RTX Encore is installed. Smooth Motion is left out on Linux (it needs the Windows driver).
+    /// </summary>
+    public static IReadOnlyList<ComponentSettingSection> RtxEncore(string? configPath)
+    {
+        var available = configPath is not null;
+        var text = available ? RtxEncoreConfig.Read(configPath!) : null;
+        var rows = new Dictionary<RtxEncoreSetting, ComponentSettingRow>();
+        string[] onOff = [T("Ini.Off"), T("Ini.On")];
+        var game = T("Win.Game");
+
+        ComponentSettingRow Row(RtxEncoreSetting setting, string label, IReadOnlyList<string>? options = null, Func<bool>? when = null)
+        {
+            var current = RtxEncoreSettings.ValueOf(text, setting);
+            (bool, string) Write(int value) => Saved(() => RtxEncoreConfig.SetInFile(configPath!, setting.Section, setting.Key,
+                setting.IsNumber ? value.ToString(System.Globalization.CultureInfo.InvariantCulture) : setting.Values[value]), label);
+            var row = setting.IsNumber
+                ? new ComponentSettingRow(label, null, int.TryParse(current, out var number) ? number : int.Parse(setting.Default, System.Globalization.CultureInfo.InvariantCulture), setting.Min, setting.Max)
+                    { Available = available, EnabledWhen = when, Apply = Write }
+                : new ComponentSettingRow(label, null, options ?? (setting.IsBool ? onOff : setting.Values), setting.IndexOf(current))
+                    { Available = available, EnabledWhen = when, Apply = Write };
+            rows[setting] = row;
+            return row;
+        }
+        bool Is(RtxEncoreSetting setting, string value) => rows.TryGetValue(setting, out var row) && row.SelectedIndex == setting.Values.ToList().IndexOf(value);
+
+        var frameGeneration = new[]
+        {
+            Row(RtxEncoreSettings.FgEngine, T("Dsg.Engine"), [game, "DLSS-FG", "XeFG"]),
+            Row(RtxEncoreSettings.Mode, T("Enc.Mode"), [T("Dsg.GameDecides"), T("Nv.FgFixed"), T("Nv.FgDynamic")]),
+            Row(RtxEncoreSettings.Multiplier, T("Enc.Multiplier"), ["2x", "3x", "4x", "5x", "6x"], () => Is(RtxEncoreSettings.Mode, "fixed")),
+            Row(RtxEncoreSettings.FgPreset, T("Enc.FgPreset"), [game, "A", "B", "C"]),
+            Row(RtxEncoreSettings.DynamicTarget, T("Enc.DynamicTarget"), when: () => Is(RtxEncoreSettings.Mode, "dynamic")),
+            Row(RtxEncoreSettings.Dynamic56, T("Enc.Dynamic56"), when: () => Is(RtxEncoreSettings.Mode, "dynamic")),
+            Row(RtxEncoreSettings.FlipMetering, T("Enc.FlipMetering")),
+            Row(RtxEncoreSettings.FrameLimit, T("Enc.FrameLimit")),
+        };
+        bool Xefg() => Is(RtxEncoreSettings.FgEngine, "xefg");
+        var xefg = new[]
+        {
+            Row(RtxEncoreSettings.XefgTensorCores, T("Enc.XefgTensorCores"), when: Xefg),
+            Row(RtxEncoreSettings.XefgPacing, T("Enc.XefgPacing"), when: Xefg),
+            Row(RtxEncoreSettings.XefgUi, T("Enc.XefgUi"), [T("Enc.Interpolate"), T("Enc.GameLayers")], Xefg),
+            Row(RtxEncoreSettings.XefgAlpha, T("Enc.XefgAlpha"), [T("Enc.Unknown"), T("Enc.Straight"), T("Enc.Premultiplied")], Xefg),
+        };
+        var quality = new[]
+        {
+            Row(RtxEncoreSettings.HighMultiplierQuality, T("Enc.HighMultiplierQuality")),
+            Row(RtxEncoreSettings.FrameProtection, T("Enc.FrameProtection")),
+            Row(RtxEncoreSettings.FastFrameGeneration, T("Enc.FastFrameGeneration")),
+            Row(RtxEncoreSettings.ProtectionTuning, T("Enc.ProtectionTuning"), [T("Enc.Refined"), T("Enc.Classic")]),
+        };
+        var hud = new[]
+        {
+            Row(RtxEncoreSettings.AutoUi, T("Enc.AutoUi")),
+            Row(RtxEncoreSettings.UiAssist, T("Enc.UiAssist")),
+            Row(RtxEncoreSettings.ForceUi, T("Enc.ForceUi")),
+        };
+        string[] presets = ["A", "B", "C", "D", "E", "F"];
+        var upscaling = new[]
+        {
+            Row(RtxEncoreSettings.Upscaler, T("Enc.Upscaler"), [game, "XeSS"]),
+            Row(RtxEncoreSettings.XessTensorCores, T("Enc.XessTensorCores"), when: () => Is(RtxEncoreSettings.Upscaler, "xess")),
+            Row(RtxEncoreSettings.RenderScale, T("Enc.RenderScale"), [game, "DLAA", T("Enc.Quality"), T("Enc.Balanced"), T("Enc.Performance"), T("Enc.UltraPerformance"), T("Win.Custom")]),
+            Row(RtxEncoreSettings.CustomScale, T("Enc.CustomScale"), when: () => Is(RtxEncoreSettings.RenderScale, "custom")),
+            Row(RtxEncoreSettings.FastSr, T("Enc.FastSr")),
+            Row(RtxEncoreSettings.SrPreset, T("Enc.SrPreset"), [game, T("Ini.LumaHdrDefault"), .. presets, "J", "K", "L", "M"]),
+            Row(RtxEncoreSettings.RrPreset, T("Enc.RrPreset"), [game, T("Ini.LumaHdrDefault"), .. presets]),
+            Row(RtxEncoreSettings.SrHdr, T("Enc.SrHdr"), [game, T("Ini.On"), T("Ini.Off")]),
+            Row(RtxEncoreSettings.SrAutoExposure, T("Enc.SrAutoExposure"), [game, T("Ini.On"), T("Ini.Off")]),
+        };
+        var neural = new[]
+        {
+            Row(RtxEncoreSettings.NrEnabled, "Neural Rendering"),
+            Row(RtxEncoreSettings.NrModel, T("Enc.NrModel"), ["B", "A", T("Ini.PeakAuto")]),
+            Row(RtxEncoreSettings.NrPrecision, T("Enc.NrPrecision"), [T("Dsg.SpeedExact"), T("Dsg.SpeedFast")]),
+            Row(RtxEncoreSettings.NrFast, T("Enc.NrFast")),
+        };
+        var compatibility = new[]
+        {
+            Row(RtxEncoreSettings.GpuSeries, T("Enc.GpuSeries"), [T("Ini.PeakAuto"), "RTX 40", "RTX 30", "RTX 20"]),
+            Row(RtxEncoreSettings.ForceOta, T("Enc.ForceOta")),
+            Row(RtxEncoreSettings.DisableMenu, T("Enc.DisableMenu")),
+            Row(RtxEncoreSettings.FgInMenus, T("Enc.FgInMenus")),
+            Row(RtxEncoreSettings.Hair, T("Enc.Hair")),
+        };
+        return
+        [
+            new ComponentSettingSection(T("Win.FrameGeneration"), frameGeneration),
+            new ComponentSettingSection(T("Enc.SectionXefg"), xefg),
+            new ComponentSettingSection(T("Enc.SectionQuality"), quality),
+            new ComponentSettingSection(T("Enc.SectionHud"), hud),
+            new ComponentSettingSection(T("Enc.SectionUpscaling"), upscaling),
+            new ComponentSettingSection("Neural Rendering", neural),
+            new ComponentSettingSection(T("Enc.SectionCompatibility"), compatibility),
+        ];
+    }
+
+    /// <summary>#280: the RTX Encore ⚙'s notes: what the settings are, why they are greyed out, the XeSS files, the recommended name.</summary>
+    public static IReadOnlyList<ComponentDialogLine> RtxEncoreLines(bool installed, bool configExists, RtxEncoreXessStatus? xess, string? recommendedName)
+    {
+        var lines = new List<ComponentDialogLine>();
+        if (recommendedName is not null) lines.Add(ComponentDialogLine.Plain(TF("Enc.Recommended", recommendedName)));
+        lines.Add(ComponentDialogLine.Plain(T("Enc.SettingsIntro")));
+        if (!installed) lines.Add(ComponentDialogLine.Warning(T("Enc.NotInstalled")));
+        else if (!configExists) lines.Add(ComponentDialogLine.Plain(T("Enc.NoFile")));
+        if (xess is { Installed: true }) lines.Add(ComponentDialogLine.Plain(TF("Enc.XessInstalled", xess.ReplacedGameCopies)));
+        else if (xess is { Installed: false }) lines.Add(ComponentDialogLine.Warning(T("Enc.XessMissing")));
+        return lines;
+    }
 }

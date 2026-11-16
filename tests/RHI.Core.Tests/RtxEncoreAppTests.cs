@@ -210,7 +210,7 @@ public sealed class RtxEncoreAppTests
         Assert.True(dialog.HasNeuralRendering);
         Assert.False(dialog.ShowsProxyAsText);
         Assert.Equal("version.dll", dialog.SelectedProxy);
-        Assert.DoesNotContain("binkw64.dll", dialog.ProxyOptions);
+        Assert.Contains("binkw64.dll", dialog.ProxyOptions); // #280: Bink names are offered
 
         dialog.SelectedProxy = "winmm.dll";
         dialog.NeuralRenderingChosen = true;

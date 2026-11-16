@@ -244,6 +244,9 @@ public sealed class DetectedGame
     public bool UsesProton => !string.IsNullOrWhiteSpace(PrefixPath) && SteamAppId.HasValue;
 
     public override string ToString() => $"{Name} ({Source})";
+    // w14/extras-fg rows
+    /// <summary>#280: the DLL name the RHI manifest recommends for RTX Encore in this game (<c>rtxEncoreDllNames</c>), or null.</summary>
+    public string? RtxEncoreRecommendedDllName { get; set; }
 }
 
 /// <summary>The launch command and parent launcher a detector (or the Add game entry) supplied for a card.</summary>

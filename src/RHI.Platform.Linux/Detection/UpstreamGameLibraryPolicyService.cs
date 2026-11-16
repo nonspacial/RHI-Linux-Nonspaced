@@ -159,6 +159,9 @@ public sealed class UpstreamGameLibraryPolicyService(
             game.ManifestGameNoteUrlLabel = gameNote.UrlLabel;
         }
 
+        if (TryGet(policy.RtxEncoreDllNames, canonical, out var rtxEncoreName)) // w14/extras-fg (#280)
+            game.RtxEncoreRecommendedDllName = rtxEncoreName;
+
         if (TryGet(policy.DllNameOverrides, canonical, out var dllNames))
         {
             game.ReShadeDllNameOverride = dllNames.ReShade;
