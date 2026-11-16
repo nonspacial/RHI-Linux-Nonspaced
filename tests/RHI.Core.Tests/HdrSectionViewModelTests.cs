@@ -252,11 +252,14 @@ public sealed class HdrSectionViewModelTests : IDisposable
         {
             var arrived = slow.NextArrival();
             fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == game.Name).Game;
-            await arrived.WaitAsync(TimeSpan.FromSeconds(20)); // never arrives while a left lookup still holds the gate
+            await arrived.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard); // never arrives while a left lookup still holds the gate
         }
         var last = runtime.HdrSupportLookup!;
         slow.Release();
         await last.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
+        // #316: the section hides only once the last game's own analysis says no HDR mod is installed (not analysed yet:
+        // shown). That analysis runs in the background from the selection; under full-suite load it was still running here.
+        await fx.WhenSelectionProbeIdleAsync(LegacyHdrWsiViewModelTests.HangGuard);
 
         Assert.Equal(count - 1 + 2, slow.Requests); // one cancelled search per game left, then the last game's search + page
         Assert.Same(games[^1].Name, fx.Vm.SelectedGame!.Name);
@@ -288,7 +291,7 @@ public sealed class HdrSectionViewModelTests : IDisposable
         var arrived = slow.NextArrival();
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == a.Name).Game;
         var lookupA = runtime.HdrSupportLookup!;
-        await arrived.WaitAsync(TimeSpan.FromSeconds(20));
+        await arrived.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == b.Name).Game; // B's answer from the cache
         Assert.Null(runtime.HdrSupportLookup);
         slow.Release();
@@ -329,7 +332,7 @@ public sealed class HdrSectionViewModelTests : IDisposable
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == a.Name).Game;
         var lookupA = runtime.HdrSupportLookup!;
         var sourceA = (CancellationTokenSource)field.GetValue(runtime)!;
-        await arrived.WaitAsync(TimeSpan.FromSeconds(20));
+        await arrived.WaitAsync(LegacyHdrWsiViewModelTests.HangGuard);
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == b.Name).Game;
         Assert.False(Disposed(sourceA), "disposed while its lookup still ran");
         Assert.True(sourceA.IsCancellationRequested);

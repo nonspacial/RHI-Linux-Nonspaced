@@ -416,6 +416,9 @@ public sealed partial class LandedLineViewModelTests : IDisposable
         fx.Managed.ReShadePresets = new ReShadePresetService(fx.Records, journal, _ => null);
         fx.Managed.UserIni = new UserIniService(new UserIniTemplates(Path.Combine(root, "inis")), fx.Records, _ => null, journal);
         fx.Vm.SelectedGame = card;
+        // #316: the selection's analysis ends before the test starts, so it never lands in the middle of a test (e.g. after
+        // a test dropped it with Session.Invalidate, turning ReShade's install shortcut into a second add-on apply).
+        await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromSeconds(60));
         return new Rig(fx, card, root, bin);
     }
 }

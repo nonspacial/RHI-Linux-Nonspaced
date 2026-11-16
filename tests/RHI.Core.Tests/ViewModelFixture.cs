@@ -177,7 +177,7 @@ internal sealed class ViewModelFixture : IDisposable
     /// <param name="httpResponse">A response for chosen requests (null: the request fails as <paramref name="httpFailure"/> says).</param>
     /// <param name="launcher">The game launcher (default: the real <see cref="LinuxGameLauncher"/>).</param>
     /// <param name="hdrProfiles">The HDR profile service (default: one reading this host's session and PATH).</param>
-    /// <param name="probe">The runtime probe (default: one that changes nothing).</param>
+    /// <param name="probe">The runtime probe (default: one that changes nothing, and the start-up analysis has ended on return).</param>
     /// <param name="detectors">Extra detectors the scanner runs beside the fixture's own (e.g. one counting its scans).</param>
     public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
         Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null,
@@ -279,6 +279,11 @@ internal sealed class ViewModelFixture : IDisposable
             // w12/hdr-wsi rows
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
+        // #316: start-up selects the first game and analyses it in the background; that analysis writes its findings back
+        // onto the shared game instance when it lands. A test that changed the game (or dropped its analysis) meanwhile
+        // was undone at random under full-suite load, so with the fixture's own probe (which never blocks) the fixture
+        // hands the shell over only once that analysis has ended. A test that passes its own probe controls it itself.
+        if (probe is null) await fixture.WhenSelectionProbeIdleAsync(TimeSpan.FromSeconds(60));
         return fixture;
     }
 
