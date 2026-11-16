@@ -205,7 +205,7 @@ public sealed class LumaSettingsTests : IDisposable
 
         Assert.True(luma.UnrealEngine);
         Assert.True(IniPresetsPresenter.HasIniSettings(luma));
-        Assert.False(IniPresetsPresenter.HasIniSettings(new ManagedComponent { Kind = ManagedComponentKind.LumaFramework, DisplayName = "L", Availability = ComponentAvailability.Installed, ManagedByRhi = true }));
+        Assert.True(IniPresetsPresenter.HasIniSettings(new ManagedComponent { Kind = ManagedComponentKind.LumaFramework, DisplayName = "L", Availability = ComponentAvailability.Installed, ManagedByRhi = true })); // #297: a non-Unreal game has the ⚙, saying there is nothing to set
         Assert.False(IniPresetsPresenter.HasIniSettings(new ManagedComponent { Kind = ManagedComponentKind.LumaFramework, DisplayName = "L", Availability = ComponentAvailability.Installed, UnrealEngine = true }));
     }
 

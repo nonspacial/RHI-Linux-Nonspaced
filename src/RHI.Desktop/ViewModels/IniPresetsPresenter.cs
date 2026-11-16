@@ -29,9 +29,58 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     public static bool HasIniSettings(ManagedComponent component)
         => component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable
            && component.ManagedByRhi
-           && (component.Kind is ManagedComponentKind.ReShade or ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander
-               // #189: Luma's ⚙ (HDR on first boot, TAA) is upstream's, for Unreal Engine games whose Luma RHI installed.
-               || component.Kind == ManagedComponentKind.LumaFramework && component.UnrealEngine);
+           // #189: Luma's ⚙ (HDR on first boot, TAA) is upstream's Unreal Engine card; #297 (upstream 2.9.0): on any other
+           // game it says there is nothing to set, instead of having no ⚙.
+           && component.Kind is ManagedComponentKind.ReShade or ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander
+               or ManagedComponentKind.LumaFramework;
+
+    /// <summary>
+    /// w14/ui-settings (#297, upstream 2.9.0 "New buttons to open relimiter.ini, DisplayCommander.ini and OptiScaler.ini"):
+    /// the files the component's ⚙ opens, as upstream — ReShade.ini and ReShade.log; relimiter.ini and ReLimiter's log;
+    /// DisplayCommander.ini. A file that does not exist yet keeps its expected path (its button is disabled); a log with no
+    /// file yet has none.
+    /// </summary>
+    public IReadOnlyList<CogFile> OpenFiles(ManagedComponentKind kind)
+    {
+        if (vm.SelectedGame is not { BinaryDirectory: { } bin } game || string.IsNullOrWhiteSpace(bin)) return [];
+        string Open(string name) => UiLocalizationService.Format("Fg.OpenFile", name);
+        switch (kind)
+        {
+            case ManagedComponentKind.ReShade:
+                return [new(Open("ReShade.ini"), Existing(bin, "ReShade.ini")), new(Open("ReShade.log"), Existing(bin, "ReShade.log"))];
+            case ManagedComponentKind.ReLimiter:
+                var addons = RenoDxDeploymentService.ResolveAddonDeployPath(bin, game.PrefixPath);
+                return [new(Open("relimiter.ini"), UserIniService.AddonIniPath(game, kind)), new(UiLocalizationService.Text("Cog.OpenReLimiterLog"), ReLimiterLog(addons))];
+            case ManagedComponentKind.DisplayCommander:
+                return [new(Open("DisplayCommander.ini"), UserIniService.AddonIniPath(game, kind))];
+            default:
+                return [];
+        }
+
+        static string Existing(string directory, string name)
+        {
+            try
+            {
+                if (Directory.Exists(directory)
+                    && Directory.EnumerateFiles(directory).FirstOrDefault(f => string.Equals(Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase)) is { } found)
+                    return found;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            return Path.Combine(directory, name);
+        }
+
+        // Upstream: the first relimiter_*.log in the game folder; here the newest, beside the add-on.
+        static string? ReLimiterLog(string directory)
+        {
+            try
+            {
+                return Directory.Exists(directory)
+                    ? new DirectoryInfo(directory).EnumerateFiles("relimiter_*.log").OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName
+                    : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        }
+    }
 
     /// <summary>The file "Deploy" writes for a component.</summary>
     public static string IniFileName(ManagedComponentKind kind)
@@ -508,6 +557,9 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
 
     internal LumaSettingsService Luma => managed.LumaSettings ?? new LumaSettingsService(records, null, managed.IniWriteRefusal);
 
+    /// <summary>#297 (upstream <c>LumaCogButton_Click</c>): Luma's ⚙ has settings only for Unreal Engine games.</summary>
+    public bool LumaApplies() => vm.SelectedGame?.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true;
+
     /// <summary>The selected game's Luma settings as its files hold them.</summary>
     public LumaSettingsSnapshot? LumaSettings() => vm.SelectedGame is { } game ? Luma.Read(game) : null;
 
@@ -620,3 +672,6 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         return line;
     }
 }
+
+/// <summary>w14/ui-settings (#297): one "Open &lt;file&gt;" button of a ⚙ — its label and the file (null: none yet).</summary>
+public sealed record CogFile(string Label, string? Path);

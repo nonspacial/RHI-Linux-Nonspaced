@@ -253,7 +253,10 @@ public static class UiLocalizationService
         ["Cog.NoSettings"] = "Este componente não tem configurações.",
         ["Cog.ChangeFailed"] = "Não foi possível alterar {0}: {1}",
         ["Cog.ActionFailed"] = "{0} falhou: {1}",
-        ["Cog.LumaNotUnreal"] = "As configurações do Luma são para jogos Unreal Engine. Este jogo não tem nada para configurar aqui."
+        ["Cog.LumaNotUnreal"] = "As configurações do Luma são para jogos Unreal Engine. Este jogo não tem nada para configurar aqui.",
+        ["Cog.Files"] = "Arquivos",
+        ["Cog.UnrealEngine"] = "Unreal Engine",
+        ["Cog.OpenReLimiterLog"] = "Abrir log do ReLimiter"
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -500,7 +503,10 @@ public static class UiLocalizationService
         ["Cog.NoSettings"] = "This component has no settings.",
         ["Cog.ChangeFailed"] = "Couldn't change {0}: {1}",
         ["Cog.ActionFailed"] = "{0} failed: {1}",
-        ["Cog.LumaNotUnreal"] = "Luma's settings are for Unreal Engine games. This game has nothing to set here."
+        ["Cog.LumaNotUnreal"] = "Luma's settings are for Unreal Engine games. This game has nothing to set here.",
+        ["Cog.Files"] = "Files",
+        ["Cog.UnrealEngine"] = "Unreal Engine",
+        ["Cog.OpenReLimiterLog"] = "Open ReLimiter log"
     };
 
 
