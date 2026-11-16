@@ -1593,6 +1593,10 @@ public static class UiLocalizationService
             "Os arquivos do OptiScaler foram removidos, mas o nome para o qual o ReShade64.dll volta está ocupado inesperadamente; o RHI não moveu o ReShade de volta por cima dele: "),
         ("Foreign RenoDX protection: another RenoDX add-on already exists at ", "Proteção contra RenoDX de terceiros: já existe outro add-on do RenoDX em "),
         (". RHI Linux will not overwrite or stack it automatically.", ". O RHI Linux não vai sobrescrevê-lo nem empilhá-lo automaticamente."),
+        (RHI.Platform.Linux.Deployment.RenoDxSourceEngine.SetupNotYetMessage, // #286
+            "O mod do RenoDX para a engine Source precisa do DXVK carregado na frente do ReShade, e o RHI Linux ainda não faz essa configuração (aguarda um teste em um jogo real no Proton). O RHI não instalou o add-on sozinho, porque sem essa configuração ele não faz nada. Para testar agora, siga os passos da engine Source na wiki do RenoDX."),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.DuplicatesSetAsidePrefix, // #287
+            "Um segundo download deste add-on foi renomeado para que o ReShade não o carregue duas vezes (guardado, não apagado): "),
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.XnaGameMessage,
             "Este é um jogo XNA: ele carrega o d3d9.dll apenas da pasta de assemblies .NET do prefixo Wine/Proton, nunca da pasta do jogo, então o DX9 HDR não funciona nele."),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeXnaGacMessage,

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Network;
 
@@ -23,9 +24,51 @@ public sealed record RenoDxModEntry(
     string? NexusUrl = null,
     string? DiscordUrl = null)
 {
+    /// <summary>#268: the generic Unity add-on links in force when this entry was resolved (null: the built-in ones).</summary>
+    public GenericUnityAddonUrls? UnityUrls { get; init; }
+
     public string? UrlFor(PeArchitecture architecture)
         => RenoDxCatalogService.ResolveAddonUrl(
-            architecture == PeArchitecture.X86 ? SnapshotUrl32 ?? SnapshotUrl64 : SnapshotUrl64 ?? SnapshotUrl32);
+            architecture == PeArchitecture.X86 ? SnapshotUrl32 ?? SnapshotUrl64 : SnapshotUrl64 ?? SnapshotUrl32, UnityUrls);
+}
+
+/// <summary>
+/// #268 (upstream 2.9.5 beta <c>a593a09</c>): where the generic Unity add-on (Voosh) is downloaded from. Upstream moved the
+/// 64-bit build to GitHub Pages and lets the manifest's <c>componentUrls.unity64</c> / <c>unity32</c> move either link
+/// without an app update. The add-on is recognised by file name, so every older link (database, wiki, manifest snapshot
+/// overrides, install records) follows the current one.
+/// </summary>
+public sealed record GenericUnityAddonUrls(string Url64, string Url32)
+{
+    public const string File64 = "renodx-unityengine.addon64";
+    public const string File32 = "renodx-unityengine.addon32";
+
+    public static GenericUnityAddonUrls Default { get; } = new(RenoDxCatalogService.GenericUnityUrl64, RenoDxCatalogService.GenericUnityUrl32);
+
+    /// <summary>
+    /// The manifest's <c>unity64</c> / <c>unity32</c> keys over the built-in links, as upstream <c>ApplyManifestUnityUrls</c>.
+    /// Linux: a link is taken only when the RenoDX download policy allows it and it names a 64-/32-bit add-on; anything
+    /// else keeps the built-in link (upstream also takes plain http and any file).
+    /// </summary>
+    public static GenericUnityAddonUrls FromComponentUrls(IReadOnlyDictionary<string, string>? componentUrls)
+        => new(Pick(componentUrls, "unity64", ".addon64", Default.Url64), Pick(componentUrls, "unity32", ".addon32", Default.Url32));
+
+    /// <summary>The current link for a generic Unity add-on file name; null for any other file.</summary>
+    public string? For(string fileName)
+        => fileName.Equals(File64, StringComparison.OrdinalIgnoreCase) ? Url64
+            : fileName.Equals(File32, StringComparison.OrdinalIgnoreCase) ? Url32
+            : null;
+
+    private static string Pick(IReadOnlyDictionary<string, string>? urls, string key, string extension, string fallback)
+    {
+        if (urls is null) return fallback;
+        var value = urls.FirstOrDefault(pair => string.Equals(pair.Key?.Trim(), key, StringComparison.OrdinalIgnoreCase)).Value?.Trim();
+        return !string.IsNullOrEmpty(value)
+               && TrustedDownloadPolicy.RenoDxAddons.IsTrusted(value)
+               && new Uri(value).AbsolutePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
+            ? value
+            : fallback;
+    }
 }
 
 public sealed class RenoDxCatalogService
@@ -34,7 +77,10 @@ public sealed class RenoDxCatalogService
     public const string StructuredDbUrl = "https://raw.githubusercontent.com/RankFTW/rhi-repo/main/database/RenoDXdb.json";
     public const string PinnedStructuredDbUrl = "https://raw.githubusercontent.com/RankFTW/RHI/0eddd366be9a8c9c183374565d20598cc8fabbcb/docs/RenoDXdb.json";
     public const string GenericUnrealUrl = "https://github.com/clshortfuse/renodx/releases/download/snapshot/renodx-unrealengine.addon64";
-    public const string GenericUnityUrl64 = "https://github.com/NotVoosh/renodx-unity/releases/download/snapshot/renodx-unityengine.addon64";
+    // #268 (upstream 2.9.5 beta a593a09): Voosh moved the generic Unity add-on to GitHub Pages; the old release links still
+    // serve the 14 Oct 2026 build. Upstream keeps 32-bit on the release link (the Pages copy was missing on 15 Nov 2026),
+    // and so does its manifest's componentUrls.unity32. Both are built-in defaults; the manifest may move either.
+    public const string GenericUnityUrl64 = "https://notvoosh.github.io/renodx/renodx-unityengine.addon64";
     public const string GenericUnityUrl32 = "https://github.com/NotVoosh/renodx-unity/releases/download/snapshot/renodx-unityengine.addon32";
 
     private readonly HttpClient _http;
@@ -171,15 +217,41 @@ public sealed class RenoDxCatalogService
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
+        var entry = await ResolveEntryAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false);
+        return entry is null ? null : entry with { UnityUrls = await UnityUrlsAsync(cancellationToken).ConfigureAwait(false) };
+    }
+
+    /// <summary>#268: the generic Unity add-on links, the manifest's <c>componentUrls</c> over the built-in ones (fail-open).</summary>
+    public async Task<GenericUnityAddonUrls> UnityUrlsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_upstreamManifest is null) return GenericUnityAddonUrls.Default;
+        try
+        {
+            return GenericUnityAddonUrls.FromComponentUrls(
+                await _upstreamManifest.FetchComponentUrlsAsync(cancellationToken).ConfigureAwait(false));
+        }
+        catch when (!cancellationToken.IsCancellationRequested)
+        {
+            return GenericUnityAddonUrls.Default; // the manifest is an enrichment layer
+        }
+    }
+
+    private async Task<RenoDxModEntry?> ResolveEntryAsync(
+        DetectedGame game,
+        IReadOnlyList<string> indexedFiles,
+        CancellationToken cancellationToken)
+    {
         // Upstream RHI manifest snapshot overrides are authoritative over wiki/generic matching for the download.
         // This is what links titles such as Hogwarts Legacy to Marat's UE-Extended build.
         string? overrideUrl = null;
         string? overrideEngineHint = null;
+        string? manifestEngineHint = null;
         if (_upstreamManifest is not null)
         {
             try
             {
                 var gameOverride = await _upstreamManifest.ResolveGameOverrideAsync(game, cancellationToken).ConfigureAwait(false);
+                manifestEngineHint = gameOverride?.EngineHint;
                 if (!string.IsNullOrWhiteSpace(gameOverride?.SnapshotUrl))
                 {
                     overrideUrl = gameOverride.SnapshotUrl;
@@ -215,11 +287,60 @@ public sealed class RenoDxCatalogService
             // Upstream (MainViewModel.BuildCards.cs, "Manifest snapshot override") only swaps the download URL of the
             // card's mod and keeps its maintainer: the database author of the named match — also an entry that has
             // no download of its own — else the generic engine fallback's maintainer.
-            var credited = named ?? MatchNamed(_authorEntries, gameNorm) ?? GenericFallback(indexedFiles);
+            var credited = named ?? MatchNamed(_authorEntries, gameNorm)
+                ?? GenericFallback(indexedFiles, await KnownUnrealAsync(game, manifestEngineHint).ConfigureAwait(false));
             return SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint, credited?.Author, credited?.DiscussionUrl);
         }
 
-        return named ?? GenericFallback(indexedFiles);
+        return named
+               ?? await SourceEngineEntryAsync(game, cancellationToken).ConfigureAwait(false)
+               ?? GenericFallback(indexedFiles, await KnownUnrealAsync(game, manifestEngineHint).ConfigureAwait(false));
+    }
+
+    /// <summary>#286: upstream's Source engine database (<c>RenoDXdb-source.json</c>), for <see cref="SourceEngineEntryAsync"/>; optional.</summary>
+    public RenoDxSourceDatabaseService? SourceDatabase { get; set; }
+
+    /// <summary>
+    /// #286 (upstream 2.9.3 <c>MakeGenericSourceFor</c>): a game the Source database lists gets CommandGenius's Source engine
+    /// add-on when no named mod matches it. Fail-open: no database, no entry.
+    /// </summary>
+    private async Task<RenoDxModEntry?> SourceEngineEntryAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (SourceDatabase is null) return null;
+        try
+        {
+            var lookupName = string.IsNullOrWhiteSpace(game.WikiNameOverride) ? game.Name : game.WikiNameOverride;
+            return RenoDxSourceEngine.Find(await SourceDatabase.GetAsync(cancellationToken).ConfigureAwait(false), lookupName) is { } entry
+                ? RenoDxSourceEngine.EntryFor(entry)
+                : null;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException
+                                       or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>#287: upstream's UE-Extended database (<c>RenoDXdb-unreal.json</c>), for <see cref="KnownUnrealAsync"/>; optional.</summary>
+    public RenoDxUnrealDatabaseService? UnrealDatabase { get; set; }
+
+    private static readonly Regex Unreal4Or5 = new(@"^Unreal Engine [45](\.|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// #287 (upstream 2.9.1 <c>1f8a32e</c>, <c>KnownUnrealFromData</c>): RHI's own data says the game is UE4/UE5 — it has an
+    /// entry in the UE-Extended database, or its engine hint (the manifest's, or the one the scan read from the game) is
+    /// "Unreal Engine 4…" / "Unreal Engine 5…". Upstream uses it when the file scan said Unknown or UE3 (a stray .u/.upk file,
+    /// a game scanned while it was still downloading), so the engine tag and the generic Unreal mod cannot disagree.
+    /// </summary>
+    internal async Task<bool> KnownUnrealAsync(DetectedGame game, string? manifestEngineHint)
+    {
+        if (Unreal4Or5.IsMatch(manifestEngineHint?.Trim() ?? "") || Unreal4Or5.IsMatch(game.EngineHint?.Trim() ?? "")) return true;
+        if (UnrealDatabase is null) return false;
+        try { return await UnrealDatabase.FindAsync(game.Name).ConfigureAwait(false) is not null; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            return false; // the database is an enrichment layer
+        }
     }
 
     private static RenoDxModEntry SnapshotOverrideEntry(DetectedGame game, string url, string? engineHint, string? author, string? discussionUrl = null)
@@ -252,11 +373,12 @@ public sealed class RenoDxCatalogService
     }
 
     // Upstream's generic fallback mods carry their engine maintainer (MainViewModel.Init.cs: ShortFuse / Voosh).
-    private static RenoDxModEntry? GenericFallback(IReadOnlyList<string> indexedFiles)
+    // #287: knownUnreal = RHI's data says UE4/UE5 (KnownUnrealAsync), used when the files do not look like Unreal.
+    private static RenoDxModEntry? GenericFallback(IReadOnlyList<string> indexedFiles, bool knownUnreal = false)
     {
         if (LooksLikeUnity(indexedFiles))
             return new RenoDxModEntry("Generic Unity", GenericUnityUrl64, GenericUnityUrl32, "Generic RenoDX Unity addon", true, Author: ModAuthorCredit.GenericUnityAuthor);
-        if (LooksLikeUnreal(indexedFiles))
+        if (LooksLikeUnreal(indexedFiles) || knownUnreal)
             return new RenoDxModEntry("Generic Unreal", GenericUnrealUrl, null, "Generic RenoDX Unreal addon", true, Author: ModAuthorCredit.GenericUnrealAuthor);
         return null;
     }
@@ -426,15 +548,12 @@ public sealed class RenoDxCatalogService
         return Regex.Replace(sb.ToString().ToLowerInvariant(), "[^a-z0-9]", "");
     }
 
-    // Upstream 2.7.6: the Unity add-on always comes from GitHub Releases, whatever URL the manifest,
-    // database or wiki carries. GitHub Pages omits Content-Length on HEAD, which defeats the cache.
-    public static string? ResolveAddonUrl(string? url)
+    // Upstream 2.7.6: the Unity add-on always comes from one place, whatever URL the manifest, database or wiki carries.
+    // #268 (upstream 2.9.5 beta): that place is the current link (built-in, or the manifest's componentUrls unity64/unity32).
+    public static string? ResolveAddonUrl(string? url, GenericUnityAddonUrls? unityUrls = null)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return url;
-        var fileName = Path.GetFileName(uri.LocalPath);
-        if (fileName.Equals("renodx-unityengine.addon64", StringComparison.OrdinalIgnoreCase)) return GenericUnityUrl64;
-        if (fileName.Equals("renodx-unityengine.addon32", StringComparison.OrdinalIgnoreCase)) return GenericUnityUrl32;
-        return url;
+        return (unityUrls ?? GenericUnityAddonUrls.Default).For(Path.GetFileName(uri.LocalPath)) ?? url;
     }
 
     internal static bool LooksLikeUnity(IReadOnlyList<string> files)

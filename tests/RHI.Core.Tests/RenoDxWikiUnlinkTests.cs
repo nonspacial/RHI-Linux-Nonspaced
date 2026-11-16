@@ -70,7 +70,8 @@ public sealed class RenoDxWikiUnlinkTests : IDisposable
         Assert.Equal(UnityUrl, entry!.SnapshotUrl64);
         Assert.Equal("Voosh", ModAuthorCredit.ForRenoDx(entry, game));
         Assert.True(install.Success, install.Message);
-        Assert.Equal(UnityUrl, _store.Find(game, ManagedComponentKind.RenoDX)!.SourceUrl);
+        // #268: the override's older Unity link installs from the current one (upstream resolves the add-on by file name).
+        Assert.Equal(RenoDxCatalogService.GenericUnityUrl64, _store.Find(game, ManagedComponentKind.RenoDX)!.SourceUrl);
         Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "renodx-unityengine.addon64")));
         Assert.DoesNotContain(_handler.Requested, url => url.Contains("renodx-outerwilds", StringComparison.Ordinal));
     }

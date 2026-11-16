@@ -355,6 +355,16 @@ public sealed partial class UpstreamRhiManifestService
         return result;
     }
 
+    /// <summary>#268: the manifest's whole <c>componentUrls</c> map (empty when it has none).</summary>
+    public async Task<IReadOnlyDictionary<string, string>> FetchComponentUrlsAsync(CancellationToken cancellationToken = default)
+    {
+        var manifest = await FetchDocumentAsync(cancellationToken).ConfigureAwait(false);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in manifest.ComponentUrls ?? [])
+            if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value)) result[key.Trim()] = value.Trim();
+        return result;
+    }
+
     public async Task<string?> FetchComponentUrlAsync(
         string key,
         CancellationToken cancellationToken = default)

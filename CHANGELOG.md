@@ -13,7 +13,30 @@ upstream's release leaves beta; until then its builds carry a beta label (such a
 
 ## In progress
 
-Not on `main` yet: nothing at the moment.
+Not on `main` yet.
+
+### Wave 14 — renodx-reshade
+
+- The generic Unity RenoDX add-on comes from its new location (Voosh's GitHub Pages, 64-bit), and the upstream
+  manifest can move it again without an app update. Games with the add-on from the old link show an update. When a
+  link cannot be reached, RHI tries the add-on's older links in turn (#268).
+- Shader packs you have downloaded are checked for updates at every start, whether or not a game uses them and with
+  "Download all shaders" on or off; packs you never used are still downloaded only when needed (#267). Packs that
+  come as a branch archive (most of them) now update when their author changes them; before, the first download was
+  kept for good. Packs the online manifest adds (SD Shaders, UltrawideSideGlass) update like the others, and
+  UltrawideSideGlass, a single `.fx` file, now installs at all (#265).
+- RenoDX add-ons hosted on a modder's own site (such as UE-Extended) install from the same file on the modder's
+  GitHub when the site cannot be reached. A second download of an add-on (`renodx-x (1).addon64`) no longer blocks an
+  install or update: it is renamed so ReShade does not load it twice (the file is kept), and a dropped one installs
+  under the add-on's own name. Games that RHI's data lists as Unreal Engine 4 or 5 get the generic Unreal mod even when
+  the folder scan did not recognise the engine (#287).
+- Vulkan ReShade: checked against upstream's three Vulkan fixes. Each Vulkan game here has its own ReShade layer, so
+  updates show and Update All applies them, and Stable, Nightly and Legacy each switch that game's layer; new tests
+  keep it that way (#288).
+- Source engine games (Half-Life 2, Portal, Counter-Strike: Source and the others in RenoDX's Source list) now show
+  RenoDX's Source engine mod on their RenoDX row. RHI does not install it yet: the mod needs DXVK set up in front of
+  ReShade, and how to do that under Proton is waiting for a test on a real game. Install says so and points to the
+  RenoDX wiki's manual steps (#286, partial).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

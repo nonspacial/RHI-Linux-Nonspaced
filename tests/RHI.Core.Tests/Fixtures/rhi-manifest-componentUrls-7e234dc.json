@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "componentUrls": {
+    "dc": "https://api.github.com/repos/pmnoxx/display-commander/releases/tags/latest",
+    "unity64": "https://notvoosh.github.io/renodx/renodx-unityengine.addon64",
+    "unity32": "https://github.com/NotVoosh/renodx-unity/releases/download/snapshot/renodx-unityengine.addon32"
+  }
+}

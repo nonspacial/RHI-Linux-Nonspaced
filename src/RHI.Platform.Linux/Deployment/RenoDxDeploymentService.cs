@@ -294,6 +294,9 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("Nenhum perfil RenoDX específico ou fallback genérico seguro foi encontrado para este jogo.");
 
         var url = mod.UrlFor(architecture);
+        // #286: the Source engine mod only works with its DXVK chain, which RHI Linux does not set up yet (owner test pending).
+        if (RenoDxSourceEngine.IsSourceAddonUrl(url))
+            return ComponentOperationResult.Fail(RenoDxSourceEngine.SetupNotYetMessage);
         if (string.IsNullOrWhiteSpace(url))
             return ComponentOperationResult.Fail($"{mod.Name} does not publish a compatible {(architecture == PeArchitecture.X86 ? "32-bit" : "64-bit")} add-on.");
         // DEP-06: wiki, database, manifest and Unity links alike must be HTTPS on a trusted host; checked before any download.
@@ -336,12 +339,14 @@ public sealed class RenoDxDeploymentService
         if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.RenoDX).ConfigureAwait(false) is { } held)
             return ComponentOperationResult.Fail(held);
 
+        var duplicates = new List<string>(); // #287: second downloads of this add-on ("renodx-x (1).addon64"), set aside below
         foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", CaseInsensitiveTopLevel))
         {
             var existingName = Path.GetFileName(existing);
             if (IsAuxiliaryRenoDxAddon(existingName)) continue;
             if (managedOldPath is not null && Path.GetFullPath(existing) == Path.GetFullPath(managedOldPath)) continue;
             if (Path.GetFullPath(existing) == Path.GetFullPath(target) && existingRecord is not null) continue;
+            if (RenoDxAddonFileNames.IsDuplicateOf(existingName, fileName)) { duplicates.Add(existing); continue; }
             return ComponentOperationResult.Fail($"Foreign RenoDX protection: another RenoDX add-on already exists at {existing}. RHI Linux will not overwrite or stack it automatically.");
         }
 
@@ -427,6 +432,7 @@ public sealed class RenoDxDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         var inis = new RenoDxIniTracking(scope);
+        var duplicatesNote = "";
         RenoDxIniOverrideApplyResult iniApply;
         Dictionary<string, RenoDxIniOverrideState> peakStates;
         UpstreamEngineIniApplyResult engineIniApply = new(previousEngineIniState, 0, 0, null);
@@ -449,6 +455,7 @@ public sealed class RenoDxDeploymentService
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid."));
             // The verified copy returns the hash of what it placed: no second read of the target.
             var newHash = await scope.PlaceCopyAsync(cached, target, cancellationToken).ConfigureAwait(false);
+            var setAside = await SetAsideDuplicatesAsync(scope, duplicates, cancellationToken).ConfigureAwait(false);
             // #218: the native-HDR keys first, then the manifest's [renodx] values (upstream's order: the manifest wins).
             var nativeState = previousNative;
             if (nativeRequested.Count > 0)
@@ -545,6 +552,8 @@ public sealed class RenoDxDeploymentService
             CarryEngineIniKeys(existingRecord, record, engineKeysState); // #217: the ⚙ choices stay, the keys stay owned
             if (hdrApplies) record.Metadata[RenoDxEngineIni.HdrAppliesMetadataKey] = "1"; // #218: the ⚙ offers the HDR row
             if (nativeState is not null) record.Metadata[RenoDxEngineIni.NativeHdrMetadataKey] = RenoDxIniOverrideManager.Serialize(nativeState);
+            RecordSetAside(existingRecord, record, setAside);
+            duplicatesNote = DuplicatesNote(setAside);
             // The commit point: nothing above survives without this record (the rollback, or the next start, undoes it all).
             _records.Upsert(scope.Stamp(record));
         }
@@ -571,7 +580,7 @@ public sealed class RenoDxDeploymentService
                 ? $" · {engineIniApply.PreservedUserEdits} user-edited Engine.ini key(s) preserved"
                 : "";
         var controlSummary = controlNotes.Count > 0 ? $" · Control UE: {string.Join(" ", controlNotes)}" : "";
-        return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}{EngineKeysNote(engineKeysSkipped)}", target);
+        return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}{EngineKeysNote(engineKeysSkipped)}{duplicatesNote}", target);
     }
 
     // ── #217: RenoDX's own Engine.ini keys ─────────────────────────────────────────────────────────────────────────
@@ -654,6 +663,43 @@ public sealed class RenoDxDeploymentService
 
     /// <summary>The result's note when the Engine.ini keys were skipped (empty when they were not).</summary>
     private static string EngineKeysNote(string? skipped) => skipped is null ? "" : " · " + EngineIniKeysNotWrittenPrefix + skipped;
+
+    /// <summary>#287: the note naming the second downloads RHI set aside (PT-BR pair); the paths follow, joined by ", ".</summary>
+    public const string DuplicatesSetAsidePrefix =
+        "A second download of this add-on was renamed so ReShade does not load it twice (kept, not deleted): ";
+
+    /// <summary>#287: the record metadata listing the second downloads RHI set aside (one path per line), kept across updates.</summary>
+    public const string DuplicatesSetAsideMetadataKey = "RenoDX.DuplicatesSetAside";
+
+    private static string DuplicatesNote(IReadOnlyList<string> setAside)
+        => setAside.Count == 0 ? "" : " · " + DuplicatesSetAsidePrefix + string.Join(", ", setAside);
+
+    /// <summary>
+    /// #287 (upstream <c>AddonFileNames.RemoveDuplicates</c>, which deletes them): each second download of the add-on is
+    /// renamed to <c>&lt;name&gt;.rhi-duplicate</c> inside the operation, so ReShade no longer loads it and a rollback puts it back.
+    /// The user's file is kept. Returns the new paths.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> SetAsideDuplicatesAsync(DeploymentScope scope, IReadOnlyList<string> duplicates, CancellationToken cancellationToken)
+    {
+        var setAside = new List<string>();
+        foreach (var duplicate in duplicates)
+        {
+            if (!File.Exists(duplicate)) continue;
+            var aside = RenoDxAddonFileNames.SetAsidePath(duplicate);
+            await scope.PlaceCopyAsync(duplicate, aside, cancellationToken, overwrite: false).ConfigureAwait(false);
+            await scope.DeleteAsync(duplicate, cancellationToken).ConfigureAwait(false);
+            setAside.Add(aside);
+        }
+        return setAside;
+    }
+
+    private static void RecordSetAside(LinuxDeploymentRecord? previous, LinuxDeploymentRecord record, IReadOnlyList<string> setAside)
+    {
+        var all = (previous?.Metadata.GetValueOrDefault(DuplicatesSetAsideMetadataKey) ?? "")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries).Concat(setAside).Distinct(StringComparer.Ordinal).ToArray();
+        if (all.Length > 0) record.Metadata[DuplicatesSetAsideMetadataKey] = string.Join('\n', all);
+        else record.Metadata.Remove(DuplicatesSetAsideMetadataKey);
+    }
 
     /// <summary>Fixed text of the note when RenoDX installed but its Engine.ini keys could not be written (PT-BR pair); the reason follows.</summary>
     public const string EngineIniKeysNotWrittenPrefix = "RenoDX's Unreal colour-grading/HDR lines were not written to Engine.ini: ";
@@ -867,7 +913,9 @@ public sealed class RenoDxDeploymentService
         var addonFolder = AddonPathFolder.Resolve(game.BinaryDirectory, game.PrefixPath);
         if (addonFolder.Refusal is not null) return ComponentOperationResult.Fail(addonFolder.Refusal);
         var deployDir = addonFolder.Folder;
-        var target = Path.Combine(deployDir, fileName);
+        // #287 (upstream 2.9.3): a second download ("renodx-x (1).addon64") installs under the add-on's own name.
+        var installName = RenoDxAddonFileNames.Canonical(fileName);
+        var target = Path.Combine(deployDir, installName);
         var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
         // The record is the commit point: refuse before the copy when it cannot be saved (an unreadable ledger) — and before
         // the foreign-file scan, which would take RHI's own add-on (its record unreadable) for someone else's (re-review 7).
@@ -878,6 +926,7 @@ public sealed class RenoDxDeploymentService
         // text first — the scan below would take that change's own add-on, still in place, for someone else's.
         if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.RenoDX).ConfigureAwait(false) is { } held)
             return ComponentOperationResult.Fail(held);
+        var duplicates = new List<string>(); // #287: second downloads of this add-on, set aside below
         if (Directory.Exists(deployDir))
         {
             foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", CaseInsensitiveTopLevel))
@@ -885,6 +934,7 @@ public sealed class RenoDxDeploymentService
                 var existingName = Path.GetFileName(existing);
                 if (IsAuxiliaryRenoDxAddon(existingName)) continue;
                 if (managedOldPath is not null && PathsEqual(existing, managedOldPath)) continue;
+                if (RenoDxAddonFileNames.IsDuplicateOf(existingName, installName)) { duplicates.Add(existing); continue; }
                 // A same-named file RHI does not own is caught here too: every accepted name is a renodx-* add-on.
                 return ComponentOperationResult.Fail($"Foreign RenoDX protection: another RenoDX add-on already exists at {existing}. RHI Linux will not overwrite or stack it automatically.");
             }
@@ -910,6 +960,7 @@ public sealed class RenoDxDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         var inis = new RenoDxIniTracking(scope);
+        var duplicatesNote = "";
         try
         {
             // Checks are done: from the copy on, Cancel is refused.
@@ -917,6 +968,7 @@ public sealed class RenoDxDeploymentService
             await TrackEngineKeysAsync(inis, engineKeysIni, engineKeysState, cancellationToken).ConfigureAwait(false);
             Directory.CreateDirectory(deployDir);
             await scope.PlaceCopyAsync(addonPath, target, cancellationToken, sha).ConfigureAwait(false);
+            var setAside = await SetAsideDuplicatesAsync(scope, duplicates, cancellationToken).ConfigureAwait(false);
             if (engineKeysIni is not null)
             {
                 engineKeysState = RenoDxEngineIni.ApplyOptional(engineKeysIni, engineKeysOn, NoGroups, engineKeysState, out var keysFailure);
@@ -932,7 +984,7 @@ public sealed class RenoDxDeploymentService
             record.Component = ManagedComponentKind.RenoDX;
             record.BinaryDirectory = game.BinaryDirectory;
             record.SourceUrl = null;
-            record.Version = fileName;
+            record.Version = installName;
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Files = [new LinuxDeployedFile { Path = target, ExistedBeforeInstall = false, Sha256 = sha }];
             // The INI / Engine.ini / Control UE / peak-brightness ownership of an earlier install stays, so removal still
@@ -943,6 +995,8 @@ public sealed class RenoDxDeploymentService
             record.Metadata[LocalPackageMetadataKey] = "1";
             record.Metadata[AddonVersionMetadataKey] = ReadAddonVersion(target);
             RenoDxEngineIni.Write(record, engineKeysState);
+            RecordSetAside(existingRecord, record, setAside);
+            duplicatesNote = DuplicatesNote(setAside);
             _records.Upsert(scope.Stamp(record));
         }
         catch (Exception failure) // any failure up to the saved record (the ledger refusing the save too) puts everything back
@@ -953,7 +1007,7 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok(LocalInstalledPrefix + target + EngineKeysNote(engineKeysSkipped), target);
+        return ComponentOperationResult.Ok(LocalInstalledPrefix + target + EngineKeysNote(engineKeysSkipped) + duplicatesNote, target);
     }
 
     private async Task<bool> HasSnapshotOverrideAsync(DetectedGame game, CancellationToken cancellationToken)
@@ -1311,6 +1365,34 @@ public sealed class RenoDxDeploymentService
         var (current, cachedRemote) = await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false);
         if (current)
             return (cache, cachedRemote);
+        // #268/#287: a link that cannot be reached falls back to the same file elsewhere (upstream's candidate list); every
+        // alternative passes the same policy. The cache sidecar names the link that served the file, so a copy from an
+        // alternative is not reused for the catalogue's link (it is downloaded again while that link stays unreachable).
+        var candidates = RenoDxDownloadFallback.Candidates(url).Where(DownloadPolicy.IsTrusted).ToArray();
+        var failures = new List<string>();
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var result = await DownloadFromAsync(candidate, cache, source, cancellationToken).ConfigureAwait(false);
+                if (failures.Count > 0) AppLog.Warn("renodx", $"RenoDX add-on downloaded from {candidate} after: {string.Join("; ", failures)}");
+                return result;
+            }
+            catch (HttpRequestException ex) when (!cancellationToken.IsCancellationRequested && candidate != candidates[^1])
+            {
+                failures.Add($"{candidate}: {ex.Message}");
+            }
+            catch (HttpRequestException ex) when (!cancellationToken.IsCancellationRequested && failures.Count > 0)
+            {
+                failures.Add($"{candidate}: {ex.Message}");
+                throw new HttpRequestException("Could not download the RenoDX add-on. Tried: " + string.Join("; ", failures), ex);
+            }
+        }
+        throw new InvalidOperationException("RenoDX add-on link is not allowed: " + url);
+    }
+
+    private async Task<(string Path, RenoDxRemoteStamp? Stamp)> DownloadFromAsync(string url, string cache, string source, CancellationToken cancellationToken)
+    {
         CacheStamp.Invalidate(cache);
         RenoDxRemoteStamp? remote = null;
         // HTTPS + allow-list on the request and after redirects, size cap, fsynced verified temp (TrustedDownload).

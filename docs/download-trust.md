@@ -45,7 +45,7 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | ReShade shader packs | `ShaderPacks` | GitHub release hosts, codeload.github.com, gitlab.com (upstream manifest's UltraShade) | none for branch archives | fail-open |
 | Upstream Engine.ini templates (`engineIniFiles`, RenoDX installs) | `EngineIniTemplates` | raw.githubusercontent.com, 256 KiB | none (text template, parsed before use; last-known-good cache when unreachable) | fail-open |
 | Universal UE DOF Fix | core `GitHub` | GitHub release hosts, raw.githubusercontent.com | GitHub asset `digest`; a manifest `ueDofFix` override names another file, so the digest does not apply | fail-open |
-| RenoDX add-ons | core `RenoDxAddons` | GitHub, `<author>.github.io`, renodx.com | none (snapshots are rebuilt in place) | fail-open; ETag/Last-Modified/size stamp for update checks |
+| RenoDX add-ons | core `RenoDxAddons` | GitHub, `<author>.github.io`, renodx.com | none (snapshots are rebuilt in place) | fail-open; ETag/Last-Modified/size stamp for update checks; when a link cannot be reached, the same file's other links are tried in order, each under this policy (`RenoDxDownloadFallback`, #268/#287); the generic Unity link may be moved by the manifest's `componentUrls.unity64`/`unity32`, only to a link this policy allows |
 | ReShade Addon Manager | core `ReShadeAddons` | GitHub, `<author>.github.io`, raw.githubusercontent.com (Addons.ini) | none checked | fail-open |
 
 **Stalled downloads (#233).** Every body `TrustedDownload` reads (payloads and metadata) gives up when no byte arrives

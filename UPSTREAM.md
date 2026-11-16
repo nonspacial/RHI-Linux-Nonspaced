@@ -1480,3 +1480,128 @@ makes the check could-not-check and the update refuse, as for the proxy (#238). 
 Automatic Updates, not as a start-up push (D1 = No). Unchanged: new installs stay RTX 20 only (RTX 30 uses Universal
 MFG) and the GPU-generation choice stays in the ⚙ dialog but no longer changes the INI. Pinned in the tests: the 0.4.2
 release JSON, the package's entry list and its `dlssg_sm86.ini` (2026-11-14).
+
+## Parity notes (upstream 2.8.9–2.9.4, lane renodx-reshade)
+
+### #268 — Generic Unity add-on from its new location; manifest `componentUrls.unity64` / `unity32`
+
+Upstream 2.9.5 beta `a593a09` (ported ahead of the 2.9.5 release, as the triage asks). Voosh moved the generic Unity
+add-on to GitHub Pages: the 64-bit link is now `https://notvoosh.github.io/renodx/renodx-unityengine.addon64`; 32-bit
+stays on his `renodx-unity` release, as upstream does (its new Pages copy returned 404 on 15 Nov 2026; on 16 Nov it
+serves, and upstream's manifest still points 32-bit at the release). The manifest's `componentUrls.unity64` / `unity32`
+move either link without an app update (`GenericUnityAddonUrls`); upstream's manifest on 16 Nov 2026 (`7e234dc`) sets
+both, and that `componentUrls` block is a test fixture. The add-on is recognised by file name, so the older links in
+the database, the wiki, manifest snapshot overrides and install records all follow the current one: a game with the
+add-on from the old release link shows an update, which installs from the new link. Checked on 16 Nov 2026: the old
+release links still serve the 14 Oct build, so nothing breaks before the move; the new links serve the 16 Nov build.
+
+When a link cannot be reached, the download tries the add-on's other links in upstream's order (new Pages, old
+release, old Pages, ShortFuse's Pages); the record keeps the catalogue's link and the failure names every link tried.
+Linux deviations: a manifest link is taken only when the RenoDX download policy allows it (HTTPS, a trusted host) and
+it names a 64- or 32-bit add-on to match its key; anything else keeps the built-in link (upstream takes any http(s)
+link). Each fallback link passes the same policy. A copy downloaded from a fallback link is not reused from the cache
+for the catalogue's link, so it is downloaded again while that link stays unreachable. Not ported from `a593a09`: the
+Built-in add-ons setting (Generic Depth / Effect Runtime Sync), which belongs to the ReShade settings lanes.
+
+### #267 / #265 — Shader packs you downloaded are checked for updates at every start, manifest packs included
+
+Upstream 2.8.9 `b59a60f` (`EnsureDownloadedPacksAsync`) and 2.9.4 `73af594` (`EnsureManifestPacksAsync`). RHI Linux had
+no start-up check for staged packs at all: with "Download all shaders" on, start-up staged only the packs missing from
+the cache (#194), and an install refreshed only the packs that game uses. Now every start checks each pack already in
+the cache, whatever the setting and whether or not a game uses it, and stages it again when its source has a newer
+build (`ReShadeShaderPackService.RefreshDownloadedAsync`); packs never downloaded stay on demand. The catalogue is
+refreshed from the manifest first, so the packs it adds (SD Shaders, UltrawideSideGlass, BaBa Shaders…) are checked
+with the built-in ones in one pass; upstream needs a second pass because its start-up check runs before the manifest
+loads. Games get the new files with their next shader sync (ReShade install or update, Shaders/Add-ons, Update All of
+ReShade), as before.
+
+Two Linux gaps closed on the way. A branch-archive pack (`DirectUrl`, most packs) was keyed by its link alone, so it
+never updated once staged; its version is now the server's ETag, else its Last-Modified, asked with a HEAD under the
+shader-pack policy (upstream `ResolveDirectUrlVersion`). Each pack staged by an older build is therefore downloaded
+once more after the upgrade. A pack that is one `.fx` / `.fxh` file (UltrawideSideGlass's release asset) was refused
+("format is not supported"); it is now staged in the pack's `Shaders` folder, as upstream copies it. Upstream's
+second 2.8.9 fix (shaders a pack removed or renamed staying behind) never applied here: each build of a pack replaces
+the whole staged tree.
+
+Linux deviations: when the server cannot be asked or sends no validator, the staged copy is kept (upstream downloads
+it again on every check). The refresh runs under the pack cache gate; a ReShade install that staged a pack just
+before could see it replaced before it copies it, as two installs at once already could, and its journaled sync then
+fails and is undone rather than deploying a mix. Not ported: upstream's Zenteon+ link is a Patreon file link, which
+the shader-pack download policy (GitHub, GitLab) refuses, so Zenteon+ shows in the list but does not download; adding
+patreon.com as a trusted host is an owner decision.
+
+### #287 — RenoDX: GitHub fallback for modder-hosted add-ons, second-download names, Unreal mod for known UE4/UE5 games
+
+- **GitHub fallback** (upstream 2.8.9 `ef62d59`). An add-on at `<owner>.github.io/<repo>/<file>` (Marat's UE-Extended and
+  other modders' sites) that cannot be reached is downloaded from `github.com/<owner>/<repo>/releases/download/snapshot/<file>`,
+  then from ShortFuse's snapshot release; the generic Unreal add-on falls back to ShortFuse's release and Pages, as
+  upstream. The same candidate list carries #268's Unity links (`RenoDxDownloadFallback`). Only network failures
+  (unreachable, timeout, an HTTP error) move on to the next link; every link passes the RenoDX download policy, and a file
+  that is not a PE add-on still fails the install. The record keeps the catalogue's link, so the update check asks that
+  link; while it stays unreachable the check says it could not check.
+- **Second-download names** (upstream 2.9.3 `870f4a9`, `AddonFileNames`, same pattern: ` (1)`, `(2)`, ` - Copy`,
+  ` - Copy (2)`). A dropped or watched `renodx-x (1).addon64` installs as `renodx-x.addon64` and is recorded under that
+  name. An install or update that finds a second download of the add-on it is placing no longer refuses it as a foreign
+  RenoDX add-on. Linux deviation: upstream deletes such copies; RHI never deletes a user's file, so it renames each to
+  `<name>.rhi-duplicate` (ReShade loads only `.addon`, `.addon32` and `.addon64`) inside the install's journaled
+  operation (a failed install puts it back), names it in the result and keeps the list on the RenoDX record
+  (`RenoDX.DuplicatesSetAside`). Removing RenoDX leaves those copies as they are. A second download of another mod is
+  still refused as a foreign add-on. Not applicable: upstream's "Download from Discord" state for an unrecognised
+  add-on (and its clearing after uninstall) never existed here; the Linux probe already counted any `renodx*` add-on as
+  RenoDX, second downloads included.
+- **Unreal mod for known UE4/UE5 games** (upstream 2.9.1 `1f8a32e`, the half #260 above deferred). When no named mod
+  matches and the game's files do not look like Unreal, the generic Unreal mod is still offered when RHI's data says
+  UE4/UE5: the manifest's engine hint, or the game's own engine hint (`Unreal Engine 4…` / `Unreal Engine 5…`; `Unreal
+  Engine 3` does not count), or an entry in the UE-Extended database (`RenoDXdb-unreal.json`). A Unity game stays
+  Unity, as upstream. Linux deviation: upstream also changes the engine tag to Unreal; here only the RenoDX choice
+  changes. A game known only from the UE-Extended database keeps its engine hint, so the Unreal-only extras that read
+  the hint (RenoDX's Engine.ini line, the UE-Extended switch) stay off until a manifest or scan hint says Unreal.
+- **Unreal warnings in Info** (2.8.9): not applicable; the Linux Info dialog never showed upstream's "Common Unreal
+  Engine mod warnings" block.
+
+### #288 — Vulkan ReShade follows the chosen channel and version; update badge and Legacy for Vulkan games
+
+Upstream 2.9.3 `badb2d9`. Upstream installs one Vulkan layer for the whole PC (`VulkanLayerService`); its three bugs
+came from that shared copy: a Vulkan game kept the build the layer had (6.7.3 after 6.8.0), showed no ReShade update,
+switched Nightly/Stable unreliably (it compared the layer DLL by size), and ignored a Legacy choice. Upstream now brings
+the shared layer to the game's channel on install, resolves one channel for all Vulkan games (an explicit Stable never
+hides another game's Nightly or Legacy) and asks to apply a Legacy version to all Vulkan games.
+
+RHI Linux has never shared the layer: since #92 each Vulkan game has its own layer in the prefix, installed from the
+channel and version that game chose, recorded on its ReShade record and checked by the same update check as the DLL
+ReShade. So nothing was broken here; the three upstream cases are pinned as tests
+(`ReShadeChannelTests.VulkanChannel.cs`): a layer on an older Stable shows the update and the update installs the newer
+build; Nightly and Stable swap the layer DLL even when both builds are the same size (compared by content); a Legacy
+version installs into the layer and stays pinned. Linux deviation: no "apply to all Vulkan games" question, because a
+channel or version choice is that game's own and changes no other game's layer.
+
+### #286 — RenoDX Source engine one-click install (partial: matching and folder rules; the DXVK chain waits for a game test)
+
+Upstream 2.9.3 `870f4a9` / `3da42bc` (`SourceEngineSetup.cs`, `MainViewModel.SourceEngine.cs`): for the games of
+`RenoDXdb-source.json`, ReShade as `d3d9.dll` beside the engine (bin for 32-bit games, the main folder for 64-bit,
+Garry's Mod both), stable DXVK's `d3d9.dll` as `dxgi_dxvk.dll` loaded through ReShade's `[PROXY]`, `[GENERAL]
+Disable=1`, a pre-made `ReShade2.ini`, `dxvk.conf` with the two `deferSurfaceCreation` lines, `-insecure` in RHI's launch
+options with a VAC warning, a Source Engine badge, and update and uninstall for all of it.
+
+Linux design (comment on #286, 2026-11-16). The chain's point is ReShade's second, Vulkan runtime on DXVK's device
+(`Disable=1` turns the DirectX 9 one off). Under Wine, stable DXVK asks for `winevulkan.dll` before `vulkan-1.dll`
+(found for #200), so ReShade most likely never gets that runtime and the game would be left with none; the runner's own
+DXVK has the same problem. The route that reaches the same runtime is #200's: a DXVK build that asks for
+`vulkan-1.dll` first (DX9 HDR's) as the game's `d3d9.dll` and ReShade on this game's Vulkan layer (#92). That needs a
+game run to confirm, so this wave does not install the mod.
+
+Ported now:
+- Matching (`RenoDxSourceEngine`, upstream `GetDbSourceEntry` / `MakeGenericSourceFor`): a game the Source database lists
+  (exact name, then ignoring punctuation and spacing) gets "Generic Source Engine", CommandGenius's add-on
+  (`CommandGenius/renodx` snapshot release, 64- and 32-bit), with the database's comment as its note and WIP status, when
+  no named RenoDX mod matches. The catalogue and Available mods share one database loader.
+- Upstream's folder rules (`DetectTargets`, `PrimarySubfolder`), pinned with upstream's test layouts; Linux matches the
+  `bin` / `win64` folders and engine DLLs ignoring case. Not used yet: the install folder change belongs with the
+  one-click install and the install-folder work (#293).
+- Installing the Source add-on is refused before any download with a plain EN/PT-BR reason that points to the RenoDX
+  wiki's manual steps, so the add-on is never placed without the chain it needs.
+
+Deferred to the owner test: the DXVK chain (above), `dxvk.conf`, the `ReShade2.ini` and `Disable=1` handling (not needed
+on the layer route), Garry's Mod's second install, moving a 32-bit main-folder ReShade to bin, the Source Engine badge,
+update and uninstall. `-insecure`: RHI Linux hands Steam, Heroic and Lutris games to their client, whose launch options
+RHI does not edit, so the one-click install will say to add it there (upstream's own advice for Steam starts).
