@@ -1525,3 +1525,28 @@ journal (the extra back under X.dll with its override). Deviations: a Hooked nam
 is installed under the name it stands in for (upstream relies on the list only offering it then); RTX Encore's Hooked
 name is offered, but the component scan that finds a user-installed RTX Encore still looks under its documented names
 only. Upstream also moves RHI's `.original` sentinel with the file; Linux records own the files, so there is no sentinel.
+
+### #282 — Display Commander: main settings in its ⚙; a fresh install writes DisplayCommander.ini (2.8.9/2.9.3)
+
+Upstream 2.8.9 `8c89336` (`DcCogButton_Click`) and 2.9.3 `eacc622`. Display Commander's ⚙ has its main settings, under
+Display Commander's own names, written at once to the game's `DisplayCommander.ini` (`[DisplayCommander]`, beside the
+add-on, ReShade's AddonPath honoured): **Frame Rate** — FPS Limit (No limit, upstream's VRR presets 59–431, or Custom…,
+20–1000 with up to three decimals, `fps_limit`), FPS Limiter Mode (DC's fps limiter / NVIDIA Reflex,
+`fps_limiter_mode`), Inject Reflex (`inject_reflex`), Window Mode (No changes, Borderless fullscreen, Borderless
+windowed, No exclusive fullscreen, `WindowMode`); **Reflex** — Auto Configure Reflex, Enable Reflex Sleep Mode, Use
+Reflex Markers, Generate Reflex Markers (`Reflex*`); **Other** — Win+Up grace time (Off, 1, 2, 5, 10 seconds, Always;
+a value set by hand is shown as it is), and Open DisplayCommander.ini. Absent keys read as Display Commander's defaults.
+Only these keys and values are written (anything else is refused and changes nothing); every other line of the file is
+kept. "Deploy DisplayCommander.ini" stays in the ⚙ as before (#181). The DC menu names are kept in English in both
+languages, as they appear in Display Commander's own menu.
+
+Linux adaptation: each change is journaled on Display Commander's record (a crash before the record is saved puts the
+file back), goes through the one user-INI write path (a read-only lock is kept, a link is followed only to a same-named
+file in the game) and is refused while RHI's patch-target guard refuses INI writes. NVIDIA Reflex under Proton needs
+NVAPI enabled (the tooltip says so); Win+Up may be taken by the desktop before the game sees it (the tooltip says so).
+Upstream's running-game warning is the intro line's "change these with the game closed".
+
+Fresh install: upstream 2.9.3 fixed a Windows packaging bug (the template was looked up beside RHI.exe and missing from
+the single-file build). RHI Linux was not affected: a new Display Commander install already creates `DisplayCommander.ini`
+from the user's template, or RHI's shipped one (`[DisplayCommander]`, the same as upstream's file at `RHI-2.9.4`), when
+absent; `GitHubReShadeAddonDeploymentServiceTests` pins it.

@@ -42,6 +42,33 @@ public sealed class IniPresetsPresenterTests
         Assert.Equal(shown, row.HasIniSettings);
     }
 
+    // #282: the Display Commander ⚙ reads the game's DisplayCommander.ini and writes one setting under the busy gate.
+    [Fact]
+    public async Task DisplayCommanderSettings_ReadAndWriteTheGamesIni_UnderTheBusyGate()
+    {
+        var bin = Path.Combine(Path.GetTempPath(), "rhi-ini-dc-" + Guid.NewGuid().ToString("N"), "bin");
+        Directory.CreateDirectory(bin);
+        File.WriteAllText(Path.Combine(bin, "DisplayCommander.ini"), "[DisplayCommander]\nfps_limit=60\n");
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        var game = new DetectedGame
+        {
+            Name = "Dc Game", InstallPath = Path.GetDirectoryName(bin)!, BinaryDirectory = bin, ExecutablePath = exe,
+            Runner = "Proton", SteamAppId = 77003, Source = "Steam"
+        };
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        fx.Records.Manage(fx.Vm.AllLibraryGames.Single(), ManagedComponentKind.DisplayCommander);
+        Assert.Equal(60, fx.Vm.IniPresets.DisplayCommanderSettings()!.FpsLimit);
+
+        using (fx.Vm.Operations.TryBegin("test"))
+            Assert.False((await fx.Vm.IniPresets.SetDisplayCommanderAsync(DisplayCommanderSettingsService.FpsLimitKey, "116", "FPS Limit", "116 FPS")).Success);
+        var (success, line) = await fx.Vm.IniPresets.SetDisplayCommanderAsync(DisplayCommanderSettingsService.FpsLimitKey, "116", "FPS Limit", "116 FPS");
+
+        Assert.True(success, line);
+        Assert.Equal("FPS Limit: 116 FPS.", line);
+        Assert.Equal(116, fx.Vm.IniPresets.DisplayCommanderSettings()!.FpsLimit);
+    }
+
     [Fact]
     public async Task ApplyToAll_HoldsTheBusyGate_AndReportsTheCounts()
     {

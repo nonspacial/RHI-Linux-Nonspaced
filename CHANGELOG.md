@@ -22,6 +22,9 @@ Not on `main` yet:
     MFG, RTX Encore and DLSS Enabler offer `versionHooked.dll`, which ASI Loader loads. Names another component uses
     are greyed with its name. Installing ASI Loader over an extra moves the extra to the Hooked name and RHI follows it;
     removing ASI Loader moves it back, Wine overrides included (#284).
+  - Display Commander's ⚙ has its main settings (upstream 2.8.9): FPS Limit (VRR presets or your own value), FPS Limiter
+    Mode, Inject Reflex, Window Mode, the four Reflex options and Win+Up grace time, saved to the game's
+    `DisplayCommander.ini`, and Open DisplayCommander.ini (#282).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

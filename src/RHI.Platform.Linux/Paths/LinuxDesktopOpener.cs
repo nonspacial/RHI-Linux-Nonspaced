@@ -13,6 +13,7 @@ public static class LinuxDesktopOpener
     public const string UnsupportedLinkPrefix = "Unsupported link: ";
     public const string DirectoryMissingPrefix = "Directory does not exist: ";
     public const string NoOpenerMessage = "No supported desktop opener could be started.";
+    public const string FileMissingPrefix = "File does not exist: ";
 
     internal static IReadOnlyList<ProcessStartInfo> BuildCandidates(string directory)
     {
@@ -54,6 +55,36 @@ public static class LinuxDesktopOpener
 
         Exception? lastError = null;
         foreach (var startInfo in BuildUriCandidates(uri))
+        {
+            try
+            {
+                var process = Process.Start(startInfo);
+                if (process is not null)
+                {
+                    process.Dispose();
+                    return true;
+                }
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                lastError = ex;
+            }
+        }
+        error = lastError?.Message ?? NoOpenerMessage;
+        return false;
+    }
+
+    /// <summary>w14/extras-addons (#282): "Open DisplayCommander.ini" — the file in the desktop's default app for it.</summary>
+    public static bool TryOpenFile(string file, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+        {
+            error = FileMissingPrefix + file;
+            return false;
+        }
+        Exception? lastError = null;
+        foreach (var startInfo in BuildCandidates(file))
         {
             try
             {

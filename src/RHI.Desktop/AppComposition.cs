@@ -394,6 +394,7 @@ internal sealed class AppComposition
         managedComponents.UserIni = new UserIniService(userIniTemplates, records, managedComponents.IniWriteRefusal, journal); // #181: deploys journaled
         managedComponents.ReShadePresets = new ReShadePresetService(records, journal, managedComponents.IniWriteRefusal); // #180
         managedComponents.LumaSettings = new LumaSettingsService(records, journal, managedComponents.IniWriteRefusal); // #189
+        managedComponents.DisplayCommanderSettings = new DisplayCommanderSettingsService(records, journal, managedComponents.IniWriteRefusal); // #282
         managedComponents.RenoDxPeakNits = new RenoDxPeakNits(records, journal, managedComponents.IniWriteRefusal); // #182
         // w5/shell-launch rows
         // w5/reshade-core rows

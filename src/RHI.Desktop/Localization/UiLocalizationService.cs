@@ -1079,6 +1079,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Persistence.StagedFileCommit.StagedTwiceReason, "o mesmo arquivo foi preparado duas vezes."),
         // Desktop opener (folders and links); the path or link follows the fragment.
         (RHI.Platform.Linux.Paths.LinuxDesktopOpener.DirectoryMissingPrefix, "A pasta não existe: "),
+        (RHI.Platform.Linux.Paths.LinuxDesktopOpener.FileMissingPrefix, "O arquivo não existe: "), // #282
         (RHI.Platform.Linux.Paths.LinuxDesktopOpener.UnsupportedLinkPrefix, "Link não suportado: "),
         (RHI.Platform.Linux.Paths.LinuxDesktopOpener.NoOpenerMessage, "Nenhum programa para abrir pastas ou links (xdg-open, gio, kde-open) pôde ser iniciado."),
         // .NET's own file-system errors behind a refused save or folder creation (path between the fragments).
@@ -1451,6 +1452,9 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ProxyRename.FailedPrefix, "A renomeação da DLL falhou e foi revertida; a DLL mantém o nome: "),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameNotInPlacePrefix,
             "A DLL do ReShade não pode ser renomeada no lugar enquanto outro componente decide o nome dela (OptiScaler, ShortFuse ou a tradução DirectX 9); remova o ReShade e instale-o de novo para mudar: "),
+        // w14/extras-addons rows (#282)
+        (RHI.Platform.Linux.Deployment.DisplayCommanderSettingsService.NotManagedPrefix, "As configurações do Display Commander precisam do Display Commander instalado pelo RHI: "),
+        (RHI.Platform.Linux.Deployment.DisplayCommanderSettingsService.InvalidValuePrefix, "O Display Commander não aceita este valor; nada foi alterado: "),
         // w14/extras-addons rows (#284)
         (RHI.Platform.Linux.Deployment.ExtraDllNames.HookedNeedsUalPrefix,
             "Este nome Hooked só funciona enquanto o ASI Loader estiver instalado neste jogo com o nome que ele substitui; instale primeiro o ASI Loader com esse nome ou escolha outro nome. Nomes: "),
