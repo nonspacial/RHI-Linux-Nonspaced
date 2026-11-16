@@ -981,6 +981,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
             await RefreshLibraryFactsAsync(); // Update All / DLSS batch availability for the new library, off the UI thread
             if (onlyDetectors is null) _ = Updates.RequestFollowNewest(); // w5/update-policy hook (#177): start-up and Full Refresh
+            if (onlyDetectors is null) StartCustomFolderScan(); // #293: custom game folders at start and on Refresh
             return true;
         }
         catch (Exception ex) when (op.WasCancelled(ex))

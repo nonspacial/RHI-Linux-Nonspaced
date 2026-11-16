@@ -105,6 +105,8 @@ internal sealed class AppComposition
     // w12/hdr-wsi rows
     /// <summary>#251: whether a game can use HDR (curated list, PCGamingWiki, the Microsoft Store record); the HDR section follows it.</summary>
     public RHI.Platform.Linux.Hdr.HdrSupportService? HdrSupport { get; init; }
+    /// <summary>#293: PCGamingWiki's data, whose page titles name the games found in custom game folders.</summary>
+    public PcgwCentralDataService? PcgwData { get; init; }
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -114,6 +116,7 @@ internal sealed class AppComposition
         vm.Resolution.Switcher = DisplayModes; // #191: also puts back a display switch an earlier run left behind
         vm.UpdatePolicy = UpdatePolicy; // w5/update-policy hook (#177)
         vm.Runtime.HdrSupport = HdrSupport; // w12/hdr-wsi hook (#251)
+        if (PcgwData is { } pcgw) vm.CustomFolderTitleLookup = name => pcgw.Current?.TryLookup(name, null)?.PageTitle; // #293
         return vm;
     }
 
@@ -508,6 +511,7 @@ internal sealed class AppComposition
             // w12/pins rows
             // w12/hdr-wsi rows
             HdrSupport = hdrSupport,
+            PcgwData = pcgwData, // #293
         };
     }
 }

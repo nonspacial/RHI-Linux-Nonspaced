@@ -211,26 +211,13 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         // The Add game button and drag-and-drop are not busy-gated: a save between the repair's commit and its
         // reload would write the pre-repair library over the repaired file.
         if (Host.LibraryRepairRunning) return (false, T("Vm.WaitForRepairAfterMove"));
-        if (string.IsNullOrWhiteSpace(entry.Name)) return (false, T("Vm.EnterNameGame"));
-        if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath))
-            return (false, T("Vm.GameDirectoryDoesNotExist"));
-        if (MainWindowViewModel.GameRootRefusal(entry.InstallPath) is { } rootRefusal) return (false, rootRefusal);
-        if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath))
-            return (false, T("Vm.SelectedExecutableDoesNotExist"));
-        if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
-            return (false, T("Vm.SelectedWineProtonPrefixDoesNot"));
-
-        // Duplicates are judged by the library's own identity (PathIdentity: symlinks resolved, ordinal), so a
-        // symlink spelling of a listed folder is refused here instead of being saved and merged away by the scan.
+        if (EntryRefusal(entry) is { } refused) return (false, refused);
         var identity = PathIdentity.Canonicalize(entry.InstallPath);
         bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
-        if (Host.AllGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath)))
-            return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
         // Mutate a copy; the live state changes only once the save succeeded.
         var state = Host.WorkingLibraryCopy();
-        if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath)))
-            return (false, T("Vm.ManualGameAlreadySaved"));
+        if (DuplicateRefusal(entry, state) is { } duplicate) return (false, duplicate);
 
         state.ManualGames.Add(entry);
         state.FilterMode = "All Games";
@@ -252,6 +239,59 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         return (true, message);
     }
 
+    // Add game's checks on one entry before the library copy is read (name, folders, executable, prefix).
+    private static string? EntryRefusal(LinuxManualGameEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.Name)) return T("Vm.EnterNameGame");
+        if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath)) return T("Vm.GameDirectoryDoesNotExist");
+        if (MainWindowViewModel.GameRootRefusal(entry.InstallPath) is { } rootRefusal) return rootRefusal;
+        if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath)) return T("Vm.SelectedExecutableDoesNotExist");
+        if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath)) return T("Vm.SelectedWineProtonPrefixDoesNot");
+        return null;
+    }
+
+    // Duplicates are judged by the library's own identity (PathIdentity: symlinks resolved, ordinal), so a symlink
+    // spelling of a listed folder is refused here instead of being saved and merged away by the scan.
+    private string? DuplicateRefusal(LinuxManualGameEntry entry, LinuxGameLibraryState state)
+    {
+        var identity = PathIdentity.Canonicalize(entry.InstallPath);
+        bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
+        if (Host.AllGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath))) return T("Vm.GameDirectoryAlreadyLibrary");
+        if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath))) return T("Vm.ManualGameAlreadySaved");
+        return null;
+    }
+
+    /// <summary>
+    /// #293 (custom game folders' review): Add game for several entries at once, with Add game's checks on each; the ones
+    /// that pass are saved together and the library is refreshed once. <c>Refused</c> pairs each refused entry with its
+    /// localised reason (all of them when the library could not be saved); <c>Refreshed</c> is false when the refresh failed.
+    /// </summary>
+    internal async Task<(IReadOnlyList<LinuxManualGameEntry> Added, IReadOnlyList<(LinuxManualGameEntry Entry, string Reason)> Refused, bool Refreshed)>
+        TryAddManualGamesAsync(IReadOnlyList<LinuxManualGameEntry> entries)
+    {
+        if (Host.LibraryRepairRunning) return ([], entries.Select(entry => (entry, T("Vm.WaitForRepairAfterMove"))).ToArray(), true);
+        var state = Host.WorkingLibraryCopy();
+        var added = new List<LinuxManualGameEntry>();
+        var refused = new List<(LinuxManualGameEntry, string)>();
+        foreach (var entry in entries)
+        {
+            // Each accepted entry joins the copy first, so two entries for one folder cannot both be saved.
+            if ((EntryRefusal(entry) ?? DuplicateRefusal(entry, state)) is { } reason) refused.Add((entry, reason));
+            else
+            {
+                state.ManualGames.Add(entry);
+                added.Add(entry);
+            }
+        }
+        if (added.Count == 0) return ([], refused, true);
+        state.FilterMode = "All Games";
+        if (Host.SaveLibraryCopy(state) is { } notSaved) return ([], entries.Select(entry => (entry, notSaved)).ToArray(), true);
+        Host.AdoptLibraryCopy(state);
+        Host.ShowAllGames();
+        var refreshed = await Host.RefreshWhenIdleAsync(MainWindowViewModel.ManualOnly);
+        return (added, refused, refreshed);
+    }
+
     [RelayCommand(CanExecute = nameof(CanRemoveManualGame))]
     private async Task RemoveManualGameAsync()
     {
@@ -264,6 +304,8 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             StatusText = TF("Vm.SavedManualEntryWasNotFound", selected.Name);
             return;
         }
+        // #293 (upstream 2.9.0): a game added from a custom game folder is not offered again by the next scan.
+        state.IgnoreCustomFolderGame(selected.LibraryIdentityPath ?? selected.InstallPath);
         if (Host.SaveLibraryCopy(state) is not null) return;
         Host.AdoptLibraryCopy(state);
         StatusText = await Host.RefreshWhenIdleAsync(MainWindowViewModel.ManualOnly)

@@ -105,7 +105,6 @@ public sealed class LinuxGameEditOverride
     }
 }
 
-/// <summary>A saved custom filter (Refs #193): a name and the search text it applies.</summary>
 /// <summary>#293 (upstream 2.9.0 "Remove from RHI"): a game the user removed from every list, until Restore.</summary>
 public sealed class LinuxRemovedGame
 {
@@ -115,6 +114,7 @@ public sealed class LinuxRemovedGame
     public DateTimeOffset RemovedUtc { get; set; }
 }
 
+/// <summary>A saved custom filter (Refs #193): a name and the search text it applies.</summary>
 public sealed class LinuxCustomFilter
 {
     public string Name { get; set; } = "";
@@ -165,6 +165,33 @@ public sealed class LinuxGameLibraryState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<LinuxRemovedGame>? RemovedGames { get; set; }
 
+    /// <summary>
+    /// #293 (upstream 2.9.0 Settings › Tools &amp; Maintenance › Custom game folders): folders RHI scans for games from outside
+    /// the supported stores. Null when there are none, so the file keeps the shape older builds wrote.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? CustomGameFolders { get; set; }
+
+    /// <summary>
+    /// #293: candidate folders the user ignored in the review, or removed after adding them from a custom folder; never
+    /// offered again until "Forget ignored games". Null when there are none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? IgnoredCustomGameFolders { get; set; }
+
+    /// <summary>
+    /// #293: puts the custom-folder candidate that holds <paramref name="gamePath"/> on the ignored list (a game added from a
+    /// custom folder and then removed is not offered again). False when the path is under no custom folder.
+    /// </summary>
+    public bool IgnoreCustomFolderGame(string? gamePath)
+    {
+        if (CustomGameFolders is not { Count: > 0 } folders || string.IsNullOrWhiteSpace(gamePath)) return false;
+        if (RHI.Platform.Linux.Detection.CustomFolders.CustomFolderScanService.FindCandidateRoot(gamePath, folders) is not { } root) return false;
+        IgnoredCustomGameFolders ??= [];
+        if (!IgnoredCustomGameFolders.Contains(root, StringComparer.Ordinal)) IgnoredCustomGameFolders.Add(root);
+        return true;
+    }
+
     public bool IsRemoved(string key) => RemovedGames?.Any(entry => string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase)) == true;
 
     public LinuxGameLibraryState Normalize()
@@ -205,11 +232,24 @@ public sealed class LinuxGameLibraryState
             .DistinctBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
         RemovedGames = removed.Count == 0 ? null : removed;
+        CustomGameFolders = NormalizeFolderList(CustomGameFolders);
+        IgnoredCustomGameFolders = NormalizeFolderList(IgnoredCustomGameFolders);
         return this;
     }
 
     private static string? NormalizeOptionalPath(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : NormalizePath(value);
+
+    // #293: absolute, no trailing '/', blanks and repeats dropped (paths are case sensitive); null when empty.
+    private static List<string>? NormalizeFolderList(List<string>? folders)
+    {
+        var list = (folders ?? [])
+            .Where(folder => !string.IsNullOrWhiteSpace(folder))
+            .Select(folder => RHI.Platform.Linux.Detection.CustomFolders.CustomFolderScanService.NormalizePath(folder))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return list.Count == 0 ? null : list;
+    }
 
     /// <summary>
     /// Removes the manual entries behind a library card. A card can be a manual entry merged with a

@@ -134,6 +134,7 @@ public sealed partial class SettingsDialogView : UserControl
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;
         tabs.Items.Add(XboxFoldersSettingsTab.Create(vm.Settings.XboxFolders, Show, model.PickFolder)); // w3/scan Settings row (#90)
+        tabs.Items.Add(CustomGameFoldersSettingsTab.Create(vm, Show, model.PickFolder)); // #293 Custom game folders
         tabs.Items.Add(RemovedGamesSettingsTab.Create(vm, Show)); // #293 Removed games
         tabs.Items.Add(ParitySettingsTab.Create(vm.Settings.Parity)); // w3/parity Settings rows (#100 #163 #99)
         // w5/update-policy rows

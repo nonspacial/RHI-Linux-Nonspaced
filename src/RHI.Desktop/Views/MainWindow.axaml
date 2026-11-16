@@ -739,11 +739,15 @@
     <Border x:Name="StatusBarBackdrop" Classes="libraryBackdrop" Grid.Row="2" IsVisible="False" ZIndex="1"
             PointerPressed="LibraryBackdrop_PointerPressed"/>
     <Border x:Name="StatusBar" Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-        <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+        <!-- #293: games found in the custom game folders; a link, never a modal (upstream 2.9.0's status-bar notice). -->
+        <Button x:Name="CustomGamesNotice" Content="{Binding CustomGamesNoticeText}" IsVisible="{Binding ShowCustomGamesNotice}"
+                ToolTip.Tip="{Binding CustomGamesNoticeTip}" Click="CustomGamesNotice_Click" Background="Transparent" BorderThickness="0"
+                Padding="0" FontSize="10" Foreground="#4DA3FF" Cursor="Hand" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
         <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
-        <TextBlock x:Name="ProductVersionText" Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"
+        <TextBlock x:Name="ProductVersionText" Grid.Column="2" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"
                    Cursor="Hand" Tapped="ProductVersion_Tapped"/>
       </Grid>
     </Border>
