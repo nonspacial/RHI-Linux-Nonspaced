@@ -545,6 +545,12 @@ public static class UiLocalizationService
         ("Internal render scale", "Escala interna de renderização"),
         ("Disable NVIDIA Flip Metering", "Desativar NVIDIA Flip Metering"),
         ("Framerate limit", "Limite de FPS"),
+        // #270 DXGI Spoofing
+        ("DXGI Spoofing", "Spoofing de DXGI"),
+        ("True", "Verdadeiro"),
+        ("False", "Falso"),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.DxgiSpoofingHelp,
+            "Faz o jogo ver uma GPU NVIDIA (Dxgi em [Spoofing]) para oferecer as opções de DLSS. Auto ativa em GPUs AMD e Intel e desativa em NVIDIA. Use Falso se um jogo travar ou se comportar de forma estranha com o spoofing ativo."),
         ("OptiScaler menu shortcut", "Atalho do menu do OptiScaler"),
         ("Compatible OptiScaler values. DX11on12 options remain explicit.", "Valores compatíveis do OptiScaler. As opções DX11on12 permanecem explícitas."),
         ("Controls OptiScaler FrameGen.Enabled only; it does not install missing FG libraries.", "Controla apenas FrameGen.Enabled do OptiScaler; não instala bibliotecas de FG ausentes."),

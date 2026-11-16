@@ -767,7 +767,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         _loadingOptiScalerVariant = true;
         try
         {
-            var variant = _managedComponents.GetInstalledOptiScalerVariant(game) ?? _optiScalerVariantStore.Get(game);
+            // #270: a game with no choice of its own takes Settings › Components › OptiScaler › Default version.
+            var variant = _managedComponents.GetInstalledOptiScalerVariant(game) ?? _optiScalerVariantStore.Get(game, DefaultOptiScalerVariant(Host.Settings));
             SelectedOptiScalerVariant = FormatOptiScalerVariant(variant);
         }
         finally { _loadingOptiScalerVariant = false; }
@@ -779,6 +780,10 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         try { SelectedOptiScalerVariant = FormatOptiScalerVariant(OptiScalerVariant.Stable); }
         finally { _loadingOptiScalerVariant = false; }
     }
+
+    /// <summary>#270: the Default version setting as a channel (Stable when unset or unknown).</summary>
+    internal static OptiScalerVariant DefaultOptiScalerVariant(LinuxAppSettings settings)
+        => Enum.TryParse<OptiScalerVariant>(settings.OptiScalerDefaultVersion, true, out var variant) && Enum.IsDefined(variant) ? variant : OptiScalerVariant.Stable;
 
     private static OptiScalerVariant ParseOptiScalerVariant(OptionItem<OptiScalerVariant>? item) => item?.Value ?? OptionLists.OptiScalerVariant.Fallback;
 

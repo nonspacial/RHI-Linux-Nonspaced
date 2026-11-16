@@ -1527,3 +1527,37 @@ pinned by tests.
   channel (#187): changing it reinstalls OptiScaler, which the ⚙ does not do while it is installed. Applying a preset
   never changes the channel. Revisited with the presets panel (#269).
 - **Replace OptiScaler.ini using the NVIDIA template (2.8.9)** is part of "Replace with a fresh copy" (#269).
+
+### #270 — OptiScaler versions: Default version, DXGI Spoofing, installed vs latest, Release pin, Remove old Nightly builds (2.9.0–2.9.3)
+
+- **Default version (2.9.0).** Settings, beside OptiScaler's GPU Type and DLSS Inputs: Stable, Nightly, DLSS NR or F5
+  DLSSNR. A game with no version chosen in its ⚙ takes it; a game with OptiScaler installed shows the version it has.
+  The per-game choice now stores Stable too (it used to remove the entry), so Stable picked by hand is never replaced
+  by the default. Linux deviation: a game whose Stable choice was saved before this build has no entry and takes the
+  default. Forks and custom builds join the list with #271.
+- **DXGI Spoofing (2.9.0).** In the ⚙ on every version, after the frame-rate limit: Auto (Default), True or False,
+  written to `[Spoofing] Dxgi`. Presets capture it like every other ⚙ setting.
+- **Installed vs latest, Check now, Update (2.9.2).** A line at the top of the ⚙: "Installed: x · Latest: y (state)".
+  Installed games use the same check as Update All (a pinned build or release reads "pinned to …, so it isn't updated");
+  a game without OptiScaler shows the newest release the install would take, or its pin. Check now asks GitHub again
+  (RHI's GitHub answers are revalidated with their ETag on every request, so there is no cache to clear); Update shows
+  only when an update applies and runs the component row's update, journaled as always. When GitHub cannot be asked the
+  line says so and points to the GitHub token, as upstream.
+- **Release (2.9.2).** A Release row in the ⚙ for Stable, DLSS NR and F5: "Latest (auto-update)" or one of the
+  channel's releases (GitHub's newest 30, newest first; Stable without prereleases; only releases that publish a package
+  RHI installs, so the display-filter tool in the DLSS NR repository and F5 v0.1.28's double package are not offered).
+  As upstream, it can be changed only while RHI's OptiScaler is not installed; the next install takes that release by
+  its tag (never "latest"), records it, and Update / Update All leave the game on it. Nightly keeps its own Nightly
+  build row (#156/#232). Linux deviations: upstream stores one per-game value for the Nightly build and the release; RHI
+  keeps the one per-game slot but saves a release with its channel (`F5+v0.1.29`), so a pin made for one channel never
+  applies to another. Tags are limited to letters, digits and `. _ + -` before RHI asks GitHub for them. Pinned
+  releases come from the same GitHub release hosts, digests and size checks as the latest ones.
+- **Remove old Nightly builds (2.9.2).** Settings, beside the Default version; off by default. After a Nightly
+  download RHI deletes the cached Nightly builds except the newest, the one just downloaded and every build a game uses
+  (installed Nightly pins and saved Nightly build choices). Only RHI's own `~/.cache/rhi-linux/optiscaler/nightly/
+  nightly-YYYYMMDD` folders are touched; a folder that cannot be deleted is logged and kept. Linux deviation: upstream
+  skips folders still unpacking; RHI's cache entries are stamped, and a deleted build is downloaded again when needed.
+- **Newer release before a cached copy (2.9.2), never existed.** RHI asks GitHub for the newest release on every
+  install and update and keeps each release in its own stamped cache folder, so an older cached build is never taken for
+  the latest. Pinned by a provider test.
+- The release lists of Stable, DLSS NR and F5 as served on 2026-11-16 are test fixtures.

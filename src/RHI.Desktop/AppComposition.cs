@@ -355,6 +355,9 @@ internal sealed class AppComposition
             // w12/pins rows
             // w12/hdr-wsi rows
             );
+        // w14/optiscaler rows
+        // #270 Remove old Nightly builds (off by default): after a Nightly download, keep the newest and the builds games use.
+        optiPackages.NightlyCleanupKeep = () => settingsStore.Load().OptiScalerRemoveOldNightlyBuilds ? managedComponents.OptiScalerNightlyBuildsInUse() : null;
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows

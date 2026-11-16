@@ -25,5 +25,22 @@ public sealed class OptiScalerVariantPreferenceStoreTests : IDisposable
         Assert.Equal(OptiScalerVariant.Stable, new OptiScalerVariantPreferenceStore(path).Get(game));
     }
 
+    // #270 (upstream 2.9.0 Default version): a game with no choice takes the default; Stable picked by hand is a choice.
+    [Fact]
+    public void TryGet_TellsNoChoiceFromAChosenStable()
+    {
+        Directory.CreateDirectory(_root);
+        var path = Path.Combine(_root, "variants-default.json");
+        var store = new OptiScalerVariantPreferenceStore(path);
+        var game = new DetectedGame { Name = "Game", Source = "Steam", InstallPath = "/games/default", ExecutablePath = "/games/default/Game.exe" };
+
+        Assert.False(store.TryGet(game, out _));
+        Assert.Equal(OptiScalerVariant.F5, store.Get(game, fallback: OptiScalerVariant.F5));
+        store.Set(game, OptiScalerVariant.Stable);
+        Assert.True(new OptiScalerVariantPreferenceStore(path).TryGet(game, out var chosen));
+        Assert.Equal(OptiScalerVariant.Stable, chosen);
+        Assert.Equal(OptiScalerVariant.Stable, store.Get(game, fallback: OptiScalerVariant.F5));
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 }

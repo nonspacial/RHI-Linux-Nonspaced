@@ -132,6 +132,9 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
             ? T("Win.InstalledVariantSelectorStaysLockedUntil")
             : T("Win.SelectedVariantSavedPerGameWill");
         NightlyBuild = Runtime.OptiScalerNightlyBuild;
+        // #270: the version line at the top and the Release row (Stable, DLSS NR, F5).
+        VersionLine = shell.OptiScalerVersionLineFor(() => Runtime.SelectedOptiScalerVariant?.Value ?? OptiScalerVariant.Stable);
+        Release = shell.OptiScalerReleaseFor(Runtime.SelectedOptiScalerVariant?.Value ?? OptiScalerVariant.Stable);
         if (shell.OptiScalerDllName() is { } dllName)
         {
             HasDllName = true;
@@ -182,8 +185,23 @@ public sealed partial class OptiScalerSettingsDialogViewModel : ObservableObject
 
     partial void OnSelectedVariantChanged(OptionItem<OptiScalerVariant>? value)
     {
-        if (value is not null) Runtime.SelectedOptiScalerVariant = value;
+        if (value is null) return;
+        Runtime.SelectedOptiScalerVariant = value;
+        // #270: the Release row and the version line follow the channel.
+        Release = _shell.OptiScalerReleaseFor(value.Value);
+        if (Release is not null) UiExceptionGuard.Forget(Release.LoadAsync(), "optiscaler-release");
+        if (VersionLine is not null) UiExceptionGuard.Forget(VersionLine.CheckAsync(), "optiscaler-version");
     }
+
+    /// <summary>#270: "Installed · Latest" with Check now and Update (null without a selected game).</summary>
+    public OptiScalerVersionLinePresenter? VersionLine { get; }
+
+    /// <summary>#270: the Release row (pin a game to a release of Stable, DLSS NR or F5).</summary>
+    [ObservableProperty] private OptiScalerReleasePresenter? release;
+
+    /// <summary>#270: checks the version line and lists the releases once the dialog is shown.</summary>
+    internal Task LoadVersionsAsync()
+        => Task.WhenAll(VersionLine?.CheckAsync() ?? Task.CompletedTask, Release?.LoadAsync() ?? Task.CompletedTask);
 
     /// <summary>The nightly-build row's presenter (#156; the row is hosted by the view).</summary>
     public OptiScalerNightlyBuildPresenter NightlyBuild { get; }

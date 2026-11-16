@@ -7,6 +7,14 @@
   <!-- The OptiScaler ⚙ dialog (epic #89). The nightly-build (#156) and presets (#187) rows are lane controls (code-behind). -->
   <StackPanel Spacing="12" Margin="18">
     <TextBlock Text="{l:T Win.AdvancedOptiScalerSettings}" FontSize="18" FontWeight="SemiBold"/>
+    <!-- #270 (upstream 2.9.2): installed vs latest, Check now, and Update when an update applies. -->
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding VersionLine, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <TextBlock x:Name="OptiScalerVersionLine" Text="{Binding VersionLine.Text}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.78"/>
+      <Button Grid.Column="1" Classes="rhi" Content="{l:T Osv.CheckNow}" Command="{Binding VersionLine.CheckNowCommand}"
+              IsEnabled="{Binding !VersionLine.IsChecking}" ToolTip.Tip="{l:T Osv.CheckNowTip}" ToolTip.ShowDelay="2000"/>
+      <Button Grid.Column="2" Classes="rhi" Content="{l:T Vm.Update}" Command="{Binding VersionLine.UpdateCommand}"
+              IsVisible="{Binding VersionLine.CanUpdate}" ToolTip.Tip="{l:T Osv.UpdateTip}" ToolTip.ShowDelay="2000"/>
+    </Grid>
     <TextBlock Text="{l:T Win.ChooseChannelBeforeInstallingStableDefault}" TextWrapping="Wrap" Opacity="0.72"/>
     <!-- #174: the label names every channel (F5 DLSSNR included) so none hides inside the closed list; each entry and
          the line under the list say in plain words what the channel is (2 s tooltips, the owner's rule). -->
@@ -27,6 +35,12 @@
     <TextBlock Text="{Binding ChannelText}" FontSize="12" TextWrapping="Wrap" Opacity="0.78"/>
     <TextBlock Text="{Binding VariantNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.58"/>
     <Panel x:Name="NightlyBuildSlot" IsVisible="False"/>
+    <!-- #270 (upstream 2.9.2): Release — pin the game to a release of Stable, DLSS NR or F5; changeable while not installed. -->
+    <Grid ColumnDefinitions="280,*" ColumnSpacing="12" IsVisible="{Binding Release.IsVisible, FallbackValue=False}">
+      <TextBlock Text="{l:T Osv.ReleaseLabel}" VerticalAlignment="Center" ToolTip.Tip="{Binding Release.Note}" ToolTip.ShowDelay="2000"/>
+      <ComboBox x:Name="OptiScalerRelease" Grid.Column="1" ItemsSource="{Binding Release.Options}" SelectedItem="{Binding Release.Selected}" MinWidth="260"
+                IsEnabled="{Binding Release.IsEnabled}" ToolTip.Tip="{Binding Release.Note}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+    </Grid>
     <!-- #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll, or the next free name while it is held),
          locked while installed, names another RHI component uses left out; the 2 s tooltip says which name the install
          takes and why. -->

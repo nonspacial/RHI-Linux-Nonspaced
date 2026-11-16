@@ -22,6 +22,15 @@ Not on `main` yet: nothing at the moment.
 - OptiPatcher now loads with OptiScaler Nightly, DLSS NR, F5 and the forks: it goes to `OptiScaler/plugins`, where
   those builds look, instead of the game's `plugins` folder, which only Stable reads. Games that already have it show
   an update; Update moves it (#273, upstream 2.8.9).
+- OptiScaler versions (#270, upstream 2.9.0–2.9.2):
+  - New **Default version** setting next to OptiScaler's GPU Type: the version a game installs when you haven't picked
+    one in its ⚙. Games that already have OptiScaler keep theirs.
+  - New **DXGI Spoofing** setting in OptiScaler's ⚙ on every version (Auto, True, False). Presets save it.
+  - The ⚙ shows the installed and the newest version, with **Check now**, and **Update** when there is one.
+  - New **Release** setting in the ⚙: keep a game on an older release of Stable, DLSS NR or F5 DLSSNR. Pinned games are
+    not updated.
+  - New **Remove old Nightly builds** setting (off by default): deletes old downloaded Nightly builds, keeping the
+    newest and any a game uses.
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 

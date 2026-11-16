@@ -48,6 +48,12 @@ public sealed partial class OptiScalerDeploymentService
     public const string NightlyPinnedCurrentPrefix = "OptiScaler Nightly is pinned and current: ";
     public const string NightlyPinnedNotUpdatedPrefix = "OptiScaler Nightly is pinned, so it was not updated: ";
     public const string NightlyPinWrongChannelMessage = "A nightly build can be pinned only for the OptiScaler Nightly channel.";
+    /// <summary>#270: the release a Stable / DLSS NR / F5 install is pinned to (upstream 2.9.2 Release setting).</summary>
+    internal const string ReleaseTagMetadataKey = "OptiScaler.ReleaseTag";
+    public const string ReleasePinnedCurrentPrefix = "OptiScaler is pinned to a release, so it is not updated: ";
+    public const string ReleasePinnedNotUpdatedPrefix = "OptiScaler is pinned to a release, so it was not updated: ";
+    public const string ReleasePinWrongChannelMessage = "A release can be pinned only for OptiScaler Stable, DLSS NR and F5 DLSSNR; Nightly has its own build setting.";
+    public const string ReleaseTagInvalidPrefix = "Not an OptiScaler release tag RHI can ask for: ";
     public const string NightlyBuildInvalidPrefix = "Not an OptiScaler nightly build date: ";
     /// <summary>Appended to the OptiScaler row note while DLSS5 Feeder owns nvngx_dlssnr.dll (#157).</summary>
     public const string FeederBlocksNrVariantsNote = " DLSS NR and F5 DLSSNR are blocked while DLSS5 Feeder is managed because both would own nvngx_dlssnr.dll; Stable/Nightly remain available.";
@@ -116,6 +122,8 @@ public sealed partial class OptiScalerDeploymentService
         // A pinned nightly stays on its build (upstream 2.8.6): current, never an update and never "could not check".
         if (GetPinnedNightlyBuild(record) is { } pinned)
             return new ManagedUpdateCheck(true, false, NightlyPinnedCurrentPrefix + pinned, record.Version, pinned);
+        if (GetPinnedRelease(record) is { } pinnedRelease)
+            return new ManagedUpdateCheck(true, false, ReleasePinnedCurrentPrefix + pinnedRelease, record.Version, record.Version);
         try
         {
             var variant = GetInstalledVariant(record);
@@ -155,6 +163,8 @@ public sealed partial class OptiScalerDeploymentService
         // A pinned Nightly stays on its build (#156): Update All never moves it; only the ⚙ dialog's Apply does (#232).
         if (GetPinnedNightlyBuild(record) is { } pinned)
             return ComponentOperationResult.Ok(NightlyPinnedNotUpdatedPrefix + pinned);
+        if (GetPinnedRelease(record) is { } pinnedRelease)
+            return ComponentOperationResult.Ok(ReleasePinnedNotUpdatedPrefix + pinnedRelease);
         return await UpdateCoreAsync(game, record, nightly: null, cancellationToken).ConfigureAwait(false);
     }
 
@@ -347,16 +357,33 @@ public sealed partial class OptiScalerDeploymentService
         CancellationToken cancellationToken = default)
         => InstallAsync(game, variant, nightlyBuild, proxyName: null, cancellationToken);
 
-    /// <param name="nightlyBuild">Nightly only: the build date to pin (<c>20261004</c>); null = Latest, which auto-updates.</param>
-    /// <param name="proxyName">The DLL name to install OptiScaler under (<see cref="ProxyNames"/>; Control UE frame
-    /// generation uses <c>winmm.dll</c>, #136); null = <see cref="DefaultProxyName"/>. Recorded: update and removal use it.</param>
-    public async Task<ComponentOperationResult> InstallAsync(
+    public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         OptiScalerVariant variant,
         string? nightlyBuild,
         string? proxyName,
         CancellationToken cancellationToken = default)
+        => InstallAsync(game, variant, nightlyBuild, proxyName, releaseTag: null, cancellationToken);
+
+    /// <param name="nightlyBuild">Nightly only: the build date to pin (<c>20261004</c>); null = Latest, which auto-updates.</param>
+    /// <param name="proxyName">The DLL name to install OptiScaler under (<see cref="ProxyNames"/>; Control UE frame
+    /// generation uses <c>winmm.dll</c>, #136); null = <see cref="DefaultProxyName"/>. Recorded: update and removal use it.</param>
+    /// <param name="releaseTag">#270: Stable, DLSS NR or F5 only: the release to pin (its GitHub tag); null = Latest. Recorded:
+    /// the update check reports it current and Update leaves it.</param>
+    public async Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        OptiScalerVariant variant,
+        string? nightlyBuild,
+        string? proxyName,
+        string? releaseTag,
+        CancellationToken cancellationToken = default)
     {
+        if (releaseTag is not null)
+        {
+            if (nightlyBuild is not null || OptiScalerPackageProvider.ReleaseRepository(variant) is null)
+                return ComponentOperationResult.Fail(ReleasePinWrongChannelMessage);
+            if (!OptiScalerPackageProvider.IsSafeReleaseTag(releaseTag)) return ComponentOperationResult.Fail(ReleaseTagInvalidPrefix + releaseTag);
+        }
         var chosenName = ProxyNames.FirstOrDefault(name => name.Equals(proxyName ?? DefaultProxyName, StringComparison.OrdinalIgnoreCase));
         if (chosenName is null) return ComponentOperationResult.Fail(ProxyNameNotOfferedPrefix + proxyName);
         proxyName = chosenName;
@@ -414,9 +441,11 @@ public sealed partial class OptiScalerDeploymentService
         string? nrRuntimeVersion = null;
         try
         {
-            package = nightlyBuild is null
-                ? await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false)
-                : await _packages.GetNightlyBuildAsync(nightlyBuild, cancellationToken).ConfigureAwait(false);
+            package = nightlyBuild is not null
+                ? await _packages.GetNightlyBuildAsync(nightlyBuild, cancellationToken).ConfigureAwait(false)
+                : releaseTag is not null
+                    ? await _packages.GetReleaseAsync(variant, releaseTag, cancellationToken).ConfigureAwait(false)
+                    : await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false);
             (nrRuntime, nrRuntimeVersion) = await PrepareDlssNrRuntimeAsync(variant, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
@@ -552,6 +581,7 @@ public sealed partial class OptiScalerDeploymentService
                 }
             };
             if (nightlyBuild is not null) record.Metadata[NightlyBuildMetadataKey] = nightlyBuild;
+            if (releaseTag is not null) record.Metadata[ReleaseTagMetadataKey] = releaseTag;
             record.Metadata[ProxyNameMetadataKey] = proxyName;
             package.Download?.RecordIn(record.Metadata);
             if (optiPatcher is not null)
@@ -607,6 +637,14 @@ public sealed partial class OptiScalerDeploymentService
            && record.Metadata.TryGetValue(NightlyBuildMetadataKey, out var build)
            && OptiScalerPackageProvider.IsNightlyBuild(build)
             ? build
+            : null;
+
+    /// <summary>#270: the release an installed Stable / DLSS NR / F5 is pinned to, or null (Latest, Nightly, no valid pin).</summary>
+    public static string? GetPinnedRelease(LinuxDeploymentRecord record)
+        => OptiScalerPackageProvider.ReleaseRepository(GetInstalledVariant(record)) is not null
+           && record.Metadata.TryGetValue(ReleaseTagMetadataKey, out var tag)
+           && OptiScalerPackageProvider.IsSafeReleaseTag(tag)
+            ? tag
             : null;
 
     /// <summary>The DLL name an installed OptiScaler sits under (records before #136: <see cref="DefaultProxyName"/>).</summary>
@@ -700,6 +738,10 @@ public sealed partial class OptiScalerDeploymentService
     /// <summary>The newest nightly builds a game can be pinned to (dates, newest first).</summary>
     public Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
         => _packages.ListNightlyBuildsAsync(cancellationToken);
+
+    /// <summary>#270: the releases of Stable, DLSS NR or F5 a game can be pinned to (newest first; metadata only).</summary>
+    public Task<IReadOnlyList<OptiScalerRelease>> ListReleasesAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
+        => _packages.ListReleasesAsync(variant, cancellationToken);
 
     internal static string VariantLabel(OptiScalerVariant variant) => variant switch
     {

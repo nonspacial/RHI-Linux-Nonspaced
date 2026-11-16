@@ -157,6 +157,34 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
     public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
     public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
+
+    // w14/optiscaler rows
+    /// <summary>#270: the OptiScaler ⚙ Release row for the selected game and channel (null without a selected game).</summary>
+    internal OptiScalerReleasePresenter? OptiScalerReleaseFor(OptiScalerVariant variant)
+        => SelectedGame is { } game ? new OptiScalerReleasePresenter(this, _managedComponents, game, variant, TryPersist) : null;
+
+    /// <summary>#270: the OptiScaler ⚙ version line for the selected game; Update runs the component row's update.</summary>
+    internal OptiScalerVersionLinePresenter? OptiScalerVersionLineFor(Func<OptiScalerVariant> variant)
+        => SelectedGame is { } game ? new OptiScalerVersionLinePresenter(_managedComponents, game, variant, token => UpdateOptiScalerAsync(game, token)) : null;
+
+    private async Task<bool> UpdateOptiScalerAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        using var op = BeginOperation("component", linkedToken: cancellationToken);
+        if (op is null) return false;
+        try
+        {
+            StatusText = TF("Vm.Installing", "OptiScaler");
+            var result = await _managedComponents.UpdateManagedAsync(game, ManagedComponentKind.OptiScaler, [], op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
+            if (result.Success) await ReprobeGameAsync(game);
+            return result.Success;
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+            return false;
+        }
+    }
     public ResolutionLaunchPresenter Resolution => ResolutionLaunchPresenter.For(this); // #191 resolution auto-toggle
     // w5/reshade-core rows
     public ReShadeLegacyPresenter ReShadeLegacy => ReShadeLegacyPresenter.For(this, _managedComponents); // #186

@@ -73,14 +73,119 @@ public sealed partial class LinuxManagedComponentService
         return record is null ? null : OptiScalerDeploymentService.GetInstalledVariant(record);
     }
 
-    /// <summary>Nightly installs take the game's saved nightly build pin (#156); null pin = Latest.</summary>
+    /// <summary>
+    /// Nightly installs take the game's saved nightly build pin (#156); Stable, DLSS NR and F5 its saved release pin (#270).
+    /// Null pin = Latest.
+    /// </summary>
     public Task<ComponentOperationResult> InstallOptiScalerAsync(
         DetectedGame game,
         OptiScalerVariant variant,
         CancellationToken cancellationToken = default)
-        => InstallOptiScalerAsync(game, variant,
-            variant == OptiScalerVariant.Nightly ? _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler) : null,
-            cancellationToken);
+    {
+        if (variant == OptiScalerVariant.Nightly || GetOptiScalerReleasePin(game, variant) is not { } releaseTag)
+            return InstallOptiScalerAsync(game, variant,
+                variant == OptiScalerVariant.Nightly ? _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler) : null,
+                cancellationToken);
+        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler)
+                    ?? VulkanLayerConflict(game, ManagedComponentKind.OptiScaler);
+        return guard is not null
+            ? Task.FromResult(guard)
+            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
+                () => InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild: null, cancellationToken, releaseTag));
+    }
+
+    /// <summary>The separator between the channel and the tag of a saved release pin ("F5+v0.1.29"); never part of a channel name.</summary>
+    private const char ReleasePinSeparator = '+';
+
+    /// <summary>
+    /// #270 (upstream 2.9.2 Release setting): the release the game's next Stable / DLSS NR / F5 install is pinned to, or null
+    /// (Latest). The pin is saved per game with its channel, in the same per-game slot as the Nightly build (upstream shares
+    /// one value), so a pin made for one channel never applies to another.
+    /// </summary>
+    public string? GetOptiScalerReleasePin(DetectedGame game, OptiScalerVariant variant)
+    {
+        var saved = _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler);
+        var at = saved?.IndexOf(ReleasePinSeparator) ?? -1;
+        return at > 0 && saved![..at] == variant.ToString() && OptiScalerPackageProvider.IsSafeReleaseTag(saved[(at + 1)..])
+            ? saved[(at + 1)..]
+            : null;
+    }
+
+    /// <summary>
+    /// #270: saves the release the next install of <paramref name="variant"/> uses (null = Latest). It replaces a saved
+    /// Nightly build too: a game has one pin. Throws when the tag is not one RHI can ask for, or the file cannot be written.
+    /// </summary>
+    public void SetOptiScalerReleasePin(DetectedGame game, OptiScalerVariant variant, string? tag)
+    {
+        if (OptiScalerPackageProvider.ReleaseRepository(variant) is null)
+            throw new ArgumentException(OptiScalerDeploymentService.ReleasePinWrongChannelMessage, nameof(variant));
+        if (tag is not null && !OptiScalerPackageProvider.IsSafeReleaseTag(tag))
+            throw new ArgumentException(OptiScalerDeploymentService.ReleaseTagInvalidPrefix + tag, nameof(tag));
+        if (tag is null && GetOptiScalerReleasePin(game, variant) is null) return; // Latest already; another channel's pin stays
+        _neuralVersionPins.Set(game, ManagedComponentKind.OptiScaler, tag is null ? null : $"{variant}{ReleasePinSeparator}{tag}");
+    }
+
+    /// <summary>#270: the version RHI's installed OptiScaler records (null when not installed or unknown).</summary>
+    public string? GetInstalledOptiScalerVersion(DetectedGame game) => _optiscaler.GetRecord(game)?.Version;
+
+    /// <summary>#270: the release RHI's installed OptiScaler is pinned to (null = Latest, Nightly, or not installed).</summary>
+    public string? GetInstalledOptiScalerReleasePin(DetectedGame game)
+        => _optiscaler.GetRecord(game) is { } record ? OptiScalerDeploymentService.GetPinnedRelease(record) : null;
+
+    /// <summary>#270: the releases of Stable, DLSS NR or F5 the ⚙ Release row offers (newest first; metadata only).</summary>
+    public Task<IReadOnlyList<OptiScalerRelease>> ListOptiScalerReleasesAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
+        => _optiscaler.ListReleasesAsync(variant, cancellationToken);
+
+    /// <summary>
+    /// #270 "Remove old Nightly builds": the Nightly builds games use, which the cache keeps besides the newest: every
+    /// installed Nightly's pinned build and every saved Nightly build choice.
+    /// </summary>
+    public IReadOnlyCollection<string> OptiScalerNightlyBuildsInUse()
+    {
+        var builds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var record in _records.All().Where(record => record.Component == ManagedComponentKind.OptiScaler))
+            if (OptiScalerDeploymentService.GetPinnedNightlyBuild(record) is { } pinned) builds.Add(pinned);
+        foreach (var saved in _neuralVersionPins.All(ManagedComponentKind.OptiScaler))
+            if (OptiScalerPackageProvider.IsNightlyBuild(saved)) builds.Add(saved);
+        return builds;
+    }
+
+    /// <summary>
+    /// #270 (upstream 2.9.2 version line): what the OptiScaler ⚙ shows at its top for <paramref name="variant"/> on the
+    /// game — the installed version, the newest release and whether Update applies. Installed: the same check as Update All
+    /// (a pinned build or release is current). Not installed: the newest listed release, or the pin the install will take.
+    /// Never throws for a network failure (could not check).
+    /// </summary>
+    public async Task<OptiScalerVersionStatus> GetOptiScalerVersionStatusAsync(DetectedGame game, OptiScalerVariant variant, CancellationToken cancellationToken = default)
+    {
+        var record = _optiscaler.GetRecord(game);
+        if (record is not null)
+        {
+            var check = await _optiscaler.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false);
+            var pin = OptiScalerDeploymentService.GetPinnedNightlyBuild(record) ?? OptiScalerDeploymentService.GetPinnedRelease(record);
+            return new OptiScalerVersionStatus(record.Version, check.CouldNotCheck ? null : check.LatestVersion, pin,
+                check.CouldNotCheck ? OptiScalerVersionState.CouldNotCheck
+                : pin is not null ? OptiScalerVersionState.Pinned
+                : check.UpdateAvailable ? OptiScalerVersionState.UpdateAvailable
+                : OptiScalerVersionState.UpToDate);
+        }
+        var savedPin = variant == OptiScalerVariant.Nightly ? GetOptiScalerNightlyChoice(game) : GetOptiScalerReleasePin(game, variant);
+        try
+        {
+            var latest = variant == OptiScalerVariant.Nightly
+                ? (await _optiscaler.ListNightlyBuildsAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault()
+                : (await _optiscaler.ListReleasesAsync(variant, cancellationToken).ConfigureAwait(false)).FirstOrDefault()?.Version;
+            return new OptiScalerVersionStatus(null, latest, savedPin,
+                latest is null ? OptiScalerVersionState.CouldNotCheck
+                : savedPin is not null ? OptiScalerVersionState.Pinned
+                : OptiScalerVersionState.NotInstalled, IsInstalled: false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("optiscaler", "The newest OptiScaler release could not be read", ex);
+            return new OptiScalerVersionStatus(null, null, savedPin, OptiScalerVersionState.CouldNotCheck, IsInstalled: false);
+        }
+    }
 
     /// <summary>Installs OptiScaler with an explicit nightly build pin (Nightly only; null = Latest). For #136's Control UE FG.</summary>
     public Task<ComponentOperationResult> InstallOptiScalerAsync(
@@ -181,6 +286,21 @@ public sealed partial class LinuxManagedComponentService
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
                 () => new ControlUeFrameGenerationService(_optiscaler, _records).InstallAsync(game, useHdr, cancellationToken));
     }
+}
+
+/// <summary>#270: what the OptiScaler ⚙ version line says (installed and newest version, the pin, and whether Update applies).</summary>
+public sealed record OptiScalerVersionStatus(string? Installed, string? Latest, string? Pin, OptiScalerVersionState State, bool IsInstalled = true);
+
+public enum OptiScalerVersionState
+{
+    /// <summary>Not installed: the install takes <see cref="OptiScalerVersionStatus.Latest"/>.</summary>
+    NotInstalled,
+    UpToDate,
+    UpdateAvailable,
+    /// <summary>Pinned to a Nightly build or a release: never updated.</summary>
+    Pinned,
+    /// <summary>GitHub could not be asked (offline, rate limit).</summary>
+    CouldNotCheck
 }
 
 /// <summary>What the OptiScaler ⚙ Nightly build row may do with the installed OptiScaler (#232).</summary>

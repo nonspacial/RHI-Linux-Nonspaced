@@ -42,7 +42,18 @@ public interface IOptiScalerPackageProvider
     /// <summary>The newest nightly builds (dates, newest first, at most <see cref="OptiScalerPackageProvider.NightlyBuildListSize"/>).</summary>
     Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
         => Task.FromException<IReadOnlyList<string>>(new NotSupportedException("OptiScaler package provider does not list nightly builds."));
+
+    /// <summary>#270: the releases of Stable, DLSS NR or F5 that publish a package RHI installs, newest first (metadata only).</summary>
+    Task<IReadOnlyList<OptiScalerRelease>> ListReleasesAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
+        => Task.FromException<IReadOnlyList<OptiScalerRelease>>(new NotSupportedException("OptiScaler package provider does not list releases."));
+
+    /// <summary>#270: one release of Stable, DLSS NR or F5 by its tag (a pinned game), downloaded and cached per tag.</summary>
+    Task<OptiScalerPackage> GetReleaseAsync(OptiScalerVariant variant, string tag, CancellationToken cancellationToken = default)
+        => Task.FromException<OptiScalerPackage>(new NotSupportedException("OptiScaler package provider does not offer pinned releases."));
 }
+
+/// <summary>One release in a channel's list (#270): its tag, the version RHI records for it, and when it was published.</summary>
+public sealed record OptiScalerRelease(string Tag, string Version, DateTimeOffset Published);
 
 public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvider
 {
@@ -77,6 +88,39 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
 
     public static string NightlyTagApiUrl(string build)
         => $"https://api.github.com/repos/optiscaler/OptiScaler-nightly/releases/tags/{NightlyTagPrefix}{build}";
+
+    /// <summary>#270: a pinned release that GitHub answered with another tag (the asked tag follows).</summary>
+    public const string ReleaseMismatchPrefix = "GitHub returned another OptiScaler release than the one pinned: ";
+    /// <summary>#270: Nightly has dated builds (<see cref="GetNightlyBuildAsync"/>), not a release pin.</summary>
+    public const string ReleasePinNotOfferedPrefix = "OptiScaler has no release list for this version: ";
+
+    /// <summary>The GitHub repository a channel's releases come from (Stable, DLSS NR, F5); null for Nightly.</summary>
+    public static string? ReleaseRepository(OptiScalerVariant variant) => variant switch
+    {
+        OptiScalerVariant.Stable => "optiscaler/OptiScaler",
+        OptiScalerVariant.DlssNr => "wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass",
+        OptiScalerVariant.F5 => "janblade/OptiScaler-F5-DLSSNR-Multipass",
+        _ => null
+    };
+
+    /// <summary>The release list (GitHub's newest 30). DLSS NR's is the list the latest install already reads.</summary>
+    public static string ReleaseListApiUrl(OptiScalerVariant variant)
+        => variant == OptiScalerVariant.DlssNr
+            ? DlssNrReleasesApi
+            : $"https://api.github.com/repos/{ReleaseRepository(variant) ?? throw new ArgumentException(ReleasePinNotOfferedPrefix + variant, nameof(variant))}/releases";
+
+    public static string ReleaseTagApiUrl(OptiScalerVariant variant, string tag)
+        => $"https://api.github.com/repos/{ReleaseRepository(variant) ?? throw new ArgumentException(ReleasePinNotOfferedPrefix + variant, nameof(variant))}/releases/tags/{Uri.EscapeDataString(tag)}";
+
+    /// <summary>A tag RHI asks GitHub for: letters, digits and <c>. _ + -</c>, starting with a letter or digit.</summary>
+    public static bool IsSafeReleaseTag(string? tag)
+        => tag is { Length: > 0 and <= 128 } && char.IsAsciiLetterOrDigit(tag[0]) && tag.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or '+' or '-');
+
+    /// <summary>
+    /// #270 "Remove old Nightly builds" (off by default): after a Nightly download, the builds to keep besides the newest
+    /// (those games are pinned to), or null when the setting is off.
+    /// </summary>
+    public Func<IReadOnlyCollection<string>?>? NightlyCleanupKeep { get; set; }
 
     private readonly HttpClient _http;
     private readonly IOptiScalerArchiveExtractor _extractor;
@@ -137,6 +181,112 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
         return builds.OrderByDescending(build => build, StringComparer.Ordinal).Take(NightlyBuildListSize).ToArray();
     }
 
+    /// <summary>
+    /// #270 (upstream 2.9.2 <c>OsReleaseService.ListReleases</c>): non-draft releases (Stable: no prereleases, as upstream)
+    /// that publish a package RHI would install, newest by publish date first.
+    /// </summary>
+    public async Task<IReadOnlyList<OptiScalerRelease>> ListReleasesAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
+    {
+        var url = ReleaseListApiUrl(variant);
+        var json = await TrustedDownload.GetStringAsync(_http, url, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("GitHub release-list response was not an array.");
+        var releases = new List<OptiScalerRelease>();
+        foreach (var release in doc.RootElement.EnumerateArray())
+        {
+            if (release.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) continue;
+            if (variant == OptiScalerVariant.Stable && release.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True) continue;
+            var tag = release.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
+            if (!IsSafeReleaseTag(tag) || releases.Any(known => known.Tag == tag)) continue;
+            if (!HasInstallablePackage(release, variant, tag!)) continue;
+            var published = release.TryGetProperty("published_at", out var at) && at.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(at.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed)
+                ? parsed : DateTimeOffset.MinValue;
+            releases.Add(new OptiScalerRelease(tag!, NormalizeVersion(tag!, variant), published));
+        }
+        return releases.OrderByDescending(release => release.Published).ToArray();
+    }
+
+    /// <summary>#270: a pinned release, asked by its tag (never "latest"), cached per tag like every release.</summary>
+    public Task<OptiScalerPackage> GetReleaseAsync(OptiScalerVariant variant, string tag, CancellationToken cancellationToken = default)
+    {
+        if (ReleaseRepository(variant) is null) throw new ArgumentException(ReleasePinNotOfferedPrefix + variant, nameof(variant));
+        if (!IsSafeReleaseTag(tag)) throw new ArgumentException(ReleaseMismatchPrefix + tag, nameof(tag));
+        return FetchAsync(ReleaseTagApiUrl(variant, tag), responseIsList: false, variant, expectedVersion: NormalizeVersion(tag, variant), cancellationToken);
+    }
+
+    private static bool HasInstallablePackage(JsonElement release, OptiScalerVariant variant, string tag)
+    {
+        var names = PackageCandidateNames(release, variant);
+        if (variant != OptiScalerVariant.F5) return names.Count > 0;
+        try { SelectF5AssetName(names, tag); return true; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    private static List<string> PackageCandidateNames(JsonElement release, OptiScalerVariant variant)
+    {
+        var requiredExtension = variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5 ? ".zip" : ".7z";
+        var names = new List<string>();
+        if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return names;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            var name = asset.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+            if (string.IsNullOrWhiteSpace(name) || !name.EndsWith(requiredExtension, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!name.Contains("optiscaler", StringComparison.OrdinalIgnoreCase) || IsNonRuntimeAssetName(name)) continue;
+            names.Add(name);
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// #270 (upstream 2.9.2 <c>RemoveOldNightlyBuilds</c>): deletes cached Nightly builds except the newest and
+    /// <paramref name="keep"/> (build dates games are pinned to). Only <c>nightly-YYYYMMDD</c> folders are touched; a folder
+    /// that cannot be deleted is logged and kept. Returns how many were removed and their size.
+    /// </summary>
+    public (int Removed, long Bytes) RemoveOldNightlyBuilds(IReadOnlyCollection<string> keep)
+    {
+        var root = Path.Combine(_cacheDir, OptiScalerVariant.Nightly.ToString().ToLowerInvariant());
+        if (!Directory.Exists(root)) return (0, 0);
+        var builds = Directory.GetDirectories(root)
+            .Select(dir => (Dir: dir, Build: Path.GetFileName(dir).StartsWith(NightlyTagPrefix, StringComparison.OrdinalIgnoreCase) ? Path.GetFileName(dir)[NightlyTagPrefix.Length..] : ""))
+            .Where(entry => IsNightlyBuild(entry.Build))
+            .ToArray();
+        var newest = builds.Select(entry => entry.Build).OrderByDescending(build => build, StringComparer.Ordinal).FirstOrDefault();
+        var removed = 0;
+        long bytes = 0;
+        foreach (var (dir, build) in builds)
+        {
+            if (build == newest || keep.Contains(build, StringComparer.Ordinal)) continue;
+            try
+            {
+                var size = SafeFileEnumeration.Files(dir).Sum(file => new FileInfo(file).Length);
+                Directory.Delete(dir, recursive: true); // RHI's own download cache, never a game folder
+                removed++;
+                bytes += size;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("optiscaler", $"An old OptiScaler Nightly build could not be removed from the cache: {dir}", ex);
+            }
+        }
+        if (removed > 0) AppLog.Current?.Write("optiscaler", $"Removed {removed} old OptiScaler Nightly build(s) ({bytes / (1024 * 1024)} MB); kept {newest} and [{string.Join(", ", keep)}].");
+        return (removed, bytes);
+    }
+
+    private void CleanUpNightlies(string fetched)
+    {
+        try
+        {
+            if (NightlyCleanupKeep?.Invoke() is not { } keep) return;
+            RemoveOldNightlyBuilds([.. keep, fetched]);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            AppLog.Warn("optiscaler", "Old OptiScaler Nightly builds could not be cleaned up", ex);
+        }
+    }
+
     private async Task<OptiScalerPackage> FetchAsync(
         string apiUrl,
         bool responseIsList,
@@ -154,7 +304,7 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
             throw new InvalidOperationException($"GitHub release response did not contain an OptiScaler {variant} tag.");
         var version = NormalizeVersion(rawTag, variant);
         if (expectedVersion is not null && !string.Equals(version, expectedVersion, StringComparison.Ordinal))
-            throw new InvalidOperationException(NightlyBuildMismatchPrefix + rawTag);
+            throw new InvalidOperationException((variant == OptiScalerVariant.Nightly ? NightlyBuildMismatchPrefix : ReleaseMismatchPrefix) + rawTag);
 
         var candidates = new List<JsonElement>();
         if (release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
@@ -250,6 +400,7 @@ public sealed partial class OptiScalerPackageProvider : IOptiScalerPackageProvid
         }
 
         if (freshlyExtracted) CacheStamp.WriteBoundTo(extractDir, sourceUrl, rawTag, archiveSha256);
+        if (variant == OptiScalerVariant.Nightly) CleanUpNightlies(version);
         return new OptiScalerPackage(version, sourceUrl, packageRoot, variant, download);
     }
 

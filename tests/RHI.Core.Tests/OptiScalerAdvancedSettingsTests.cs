@@ -184,6 +184,30 @@ public sealed class OptiScalerAdvancedSettingsTests : IDisposable
         Assert.Equal("fsr22", settings.Single(setting => setting.Id == "VulkanUpscaler").CurrentValue);
     }
 
+    // #270 (upstream 2.9.0): DXGI Spoofing ([Spoofing] Dxgi) on every version, Auto / True / False, after the frame-rate limit.
+    [Theory]
+    [InlineData(OptiScalerVariant.Stable)]
+    [InlineData(OptiScalerVariant.Nightly)]
+    [InlineData(OptiScalerVariant.F5)]
+    public void DxgiSpoofing_IsOfferedOnEveryVersion_AndWritesSpoofingDxgi(OptiScalerVariant variant)
+    {
+        var (game, store, ini) = CreateGame("dxgi-" + variant, managed: true, variant);
+        File.WriteAllText(ini, "[Spoofing]\nDxgi=auto\nVulkan=auto\n");
+        var service = NewService(store);
+
+        var rows = service.GetAdvancedSettings(game).Settings;
+        var dxgi = rows.Single(setting => setting.Id == OptiScalerDeploymentService.DxgiSpoofingSettingId);
+        Assert.Equal(["auto", "true", "false"], dxgi.Options.Select(option => option.Value));
+        Assert.Equal("auto", dxgi.CurrentValue);
+        Assert.Equal(rows.ToList().FindIndex(setting => setting.Id == "FramerateLimit") + 1, rows.ToList().IndexOf(dxgi));
+
+        Assert.True(service.SetAdvancedSetting(game, OptiScalerDeploymentService.DxgiSpoofingSettingId, "false").Success);
+        Assert.Contains("Dxgi=false", File.ReadAllText(ini));
+        Assert.Contains("Vulkan=auto", File.ReadAllText(ini));
+        Assert.Equal("false", service.GetAdvancedSettings(game).Settings.Single(setting => setting.Id == OptiScalerDeploymentService.DxgiSpoofingSettingId).CurrentValue);
+        Assert.False(service.SetAdvancedSetting(game, OptiScalerDeploymentService.DxgiSpoofingSettingId, "yes").Success);
+    }
+
     [Fact]
     public void SetAdvancedSetting_InvalidChoiceIsRejectedWithoutChangingIni()
     {

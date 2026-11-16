@@ -86,6 +86,12 @@ public sealed partial class OptiScalerDeploymentService
         ("144.000000", "144 FPS"), ("165.000000", "165 FPS"), ("180.000000", "180 FPS"),
         ("240.000000", "240 FPS"));
 
+    /// <summary>#270 (upstream 2.9.0): advanced-setting id for <c>[Spoofing] Dxgi</c> (auto/true/false), on every version.</summary>
+    public const string DxgiSpoofingSettingId = "DxgiSpoofing";
+
+    private static readonly OptiScalerAdvancedOption[] DxgiSpoofingOptions = Options(
+        ("auto", "Auto (Default)"), ("true", "True"), ("false", "False"));
+
     /// <summary>Advanced-setting id for <c>[Menu] ShortcutKey</c> (the OptiScaler overlay key).</summary>
     public const string MenuShortcutKeySettingId = "MenuShortcutKey";
 
@@ -107,6 +113,8 @@ public sealed partial class OptiScalerDeploymentService
     /// </summary>
     public ComponentOperationResult? SetMenuKey(DetectedGame game, string value)
         => GetRecord(game) is null ? null : SetAdvancedSetting(game, MenuShortcutKeySettingId, value);
+
+    public const string DxgiSpoofingHelp = "Makes the game see an NVIDIA GPU (Dxgi in [Spoofing]) so it offers DLSS options. Auto turns it on for AMD and Intel GPUs and off for NVIDIA. Set it to False if a game crashes or behaves oddly with spoofing on.";
 
     public OptiScalerAdvancedSnapshot GetAdvancedSettings(DetectedGame game)
     {
@@ -159,6 +167,8 @@ public sealed partial class OptiScalerDeploymentService
                 "OptiScaler documents this primarily for Fakenvapi/NukemFG compatibility."),
             new("FramerateLimit", "Compatibility", "Framerate limit", Read("Framerate", "FramerateLimit"), EnsureCurrent(FramerateOptions, Read("Framerate", "FramerateLimit")),
                 "OptiScaler's Reflex-based limiter. Auto/Off leaves the limiter disabled by default."),
+            new(DxgiSpoofingSettingId, "Compatibility", "DXGI Spoofing", Read("Spoofing", "Dxgi"), EnsureCurrent(DxgiSpoofingOptions, Read("Spoofing", "Dxgi")),
+                DxgiSpoofingHelp),
             new(MenuShortcutKeySettingId, "Menu", "OptiScaler menu shortcut", Read("Menu", "ShortcutKey"), EnsureCurrent(ShortcutOptions, Read("Menu", "ShortcutKey")))
         };
 
@@ -251,6 +261,8 @@ public sealed partial class OptiScalerDeploymentService
                     WriteChoice(binaryDirectory, "fakenvapi", "ForceReflex", value, ForceReflexOptions); break;
                 case UseGamesReflexMarkersSettingId:
                     WriteChoice(binaryDirectory, "DLSSG", "UseGamesReflexMarkers", value, AutoBoolOptions); break;
+                case DxgiSpoofingSettingId:
+                    WriteChoice(binaryDirectory, "Spoofing", "Dxgi", value, DxgiSpoofingOptions); break;
                 case MenuShortcutKeySettingId:
                     WriteChoice(binaryDirectory, "Menu", "ShortcutKey", value, ShortcutOptions); break;
                 case "SrPreset":

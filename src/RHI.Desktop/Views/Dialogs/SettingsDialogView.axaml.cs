@@ -54,6 +54,8 @@ public sealed partial class SettingsDialogView : UserControl
         {
             current.OptiScalerGpuType = optiScalerTemplates.GpuType;
             current.OptiScalerDlssInputs = optiScalerTemplates.DlssInputs;
+            current.OptiScalerDefaultVersion = optiScalerTemplates.DefaultVersion; // #270
+            current.OptiScalerRemoveOldNightlyBuilds = optiScalerTemplates.RemoveOldNightlyBuilds;
         }, optiScalerTemplates.Reset));
 
         // w5 lane rows: Settings rows (build your row object here, put it in its slot, host its values)
