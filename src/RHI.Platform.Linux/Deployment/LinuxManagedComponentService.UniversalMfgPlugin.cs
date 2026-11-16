@@ -14,23 +14,23 @@ public sealed partial class LinuxManagedComponentService
         DetectedGame game, Task<ComponentOperationResult> install, CancellationToken cancellationToken)
     {
         var result = await install.ConfigureAwait(false);
-        if (!result.Success) return result;
+        if (!result.Success || _rtx40Mfg is null) return result;
         var moved = await _rtx40Mfg.MoveIntoOptiScalerAsync(game, cancellationToken).ConfigureAwait(false);
         return moved is null ? result : result with { Message = result.Message + moved };
     }
 
     private async Task<ComponentOperationResult> RemoveOptiScalerMovingUniversalMfgAsync(DetectedGame game, CancellationToken cancellationToken)
     {
-        var moved = _optiscaler.GetRecord(game) is null ? null : await _rtx40Mfg.MoveOutOfOptiScalerAsync(game, cancellationToken).ConfigureAwait(false);
+        var moved = _rtx40Mfg is null || _optiscaler.GetRecord(game) is null ? null : await _rtx40Mfg.MoveOutOfOptiScalerAsync(game, cancellationToken).ConfigureAwait(false);
         var result = await _optiscaler.RemoveAsync(game, cancellationToken).ConfigureAwait(false);
         return moved is null ? result : result with { Message = result.Message + moved };
     }
 
     /// <summary>Universal MFG Unlocker's ⚙ facts for the game (#278).</summary>
-    public UniversalMfgStatus UniversalMfgStatus(DetectedGame game) => _rtx40Mfg.Status(game);
+    public UniversalMfgStatus? UniversalMfgStatus(DetectedGame game) => _rtx40Mfg?.Status(game);
 
     /// <summary>Whether installing Universal MFG Unlocker now would put it in OptiScaler's plugins folder (#278).</summary>
-    public bool UniversalMfgWouldBePlugin(DetectedGame game) => _rtx40Mfg.WouldInstallAsPlugin(game);
+    public bool UniversalMfgWouldBePlugin(DetectedGame game) => _rtx40Mfg?.WouldInstallAsPlugin(game) == true;
 
     /// <summary>
     /// Whether installing Universal MFG Unlocker now warrants upstream's ReShade warning (#278): it would go beside the game
@@ -38,7 +38,7 @@ public sealed partial class LinuxManagedComponentService
     /// </summary>
     public bool UniversalMfgNeedsReShadeWarning(DetectedGame game)
     {
-        if (_rtx40Mfg.WouldInstallAsPlugin(game) || game.EffectiveGraphicsApi == GraphicsApi.Vulkan) return false;
+        if (UniversalMfgWouldBePlugin(game) || game.EffectiveGraphicsApi == GraphicsApi.Vulkan) return false;
         if (_records.Find(game, ManagedComponentKind.ReShade) is not null) return true;
         var binaryDir = Rtx40MfgStandaloneDeploymentService.ResolveBinaryDirectory(game);
         return binaryDir is not null && GitHubReShadeAddonDeploymentService.HasReShade(binaryDir);

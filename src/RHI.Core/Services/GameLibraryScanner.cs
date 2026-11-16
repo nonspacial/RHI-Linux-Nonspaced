@@ -250,6 +250,7 @@ public sealed class GameLibraryScanner
             first.PdUpscalerArtifact ??= candidate.PdUpscalerArtifact;
             first.ManifestLaunchExecutable ??= candidate.ManifestLaunchExecutable;
             first.ExternalModUrl ??= candidate.ExternalModUrl;
+            first.RtxEncoreRecommendedDllName ??= candidate.RtxEncoreRecommendedDllName; // w14/extras-fg (#280)
             first.ExternalModLabel ??= candidate.ExternalModLabel;
             first.NexusUrlOverride ??= candidate.NexusUrlOverride;
             first.PcgwUrlOverride ??= candidate.PcgwUrlOverride;

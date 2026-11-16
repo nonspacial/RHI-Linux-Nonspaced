@@ -107,9 +107,9 @@ public sealed class InstallNoticePresenter
         if (answer.DontShowAgain)
         {
             try { _store.Dismiss(notice.Key); }
-            catch (JsonStoreUnavailableException ex) { _shell.StatusText = TF("Notice.DismissNotSaved", ex.Message); }
-            catch (IOException ex) { _shell.StatusText = TF("Notice.DismissNotSaved", ex.Message); }
-            catch (UnauthorizedAccessException ex) { _shell.StatusText = TF("Notice.DismissNotSaved", ex.Message); }
+            catch (JsonStoreUnavailableException ex) { _shell.StatusText = TF("Notice.DismissNotSaved", UiLocalizationService.Present(ex.Message)); }
+            catch (IOException ex) { _shell.StatusText = TF("Notice.DismissNotSaved", UiLocalizationService.Present(ex.Message)); }
+            catch (UnauthorizedAccessException ex) { _shell.StatusText = TF("Notice.DismissNotSaved", UiLocalizationService.Present(ex.Message)); }
         }
         return answer.Accepted;
     }

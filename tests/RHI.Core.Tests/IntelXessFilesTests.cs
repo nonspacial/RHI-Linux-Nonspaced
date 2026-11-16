@@ -102,7 +102,7 @@ public sealed class IntelXessFilesTests : IDisposable
         {
             var placed = await IntelXessFiles.PlaceAsync(scope, [new(fg.File, Path.Combine(folder, fg.File.Name)), new(xell.File, Path.Combine(folder, xell.File.Name))], cached);
             await scope.CommitAsync();
-            Assert.Equal(3, placed.Entries.Count); // the folder and both files
+            Assert.Equal(4, placed.Entries.Count); // both folder levels RHI created and both files
             Assert.Empty(placed.KeptUserFiles);
             Assert.Equal(fg.Bytes, File.ReadAllBytes(Path.Combine(folder, "libxess_fg.dll")));
 

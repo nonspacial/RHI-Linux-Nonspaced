@@ -17,10 +17,10 @@ Not on `main` yet: nothing at the moment.
 
 Wave 14 — extras-fg
 
-- **Closed-source notice** (upstream 2.9.3): installing RTX Encore or 20/30 FG Unlock first says the mod is closed source
-  (its author publishes only the DLL, not the code), with Install, Cancel and **Don't show this again**. The tick is
-  remembered per mod, also when you press Cancel. The ⓘ on the RTX Encore, 20/30 FG Unlock, Universal MFG Unlocker and
-  MFG Unlock rows opens the mod's GitHub page.
+- **Closed-source notice** (upstream 2.9.3): installing RTX Encore or 20/30 FG Unlock first says the mod is
+  closed source (its author publishes only the DLL, not the code), with Install, Cancel and **Don't show this
+  again**. The tick is remembered per mod, also when you press Cancel. The ⓘ on the RTX Encore, 20/30 FG Unlock,
+  Universal MFG Unlocker and MFG Unlock rows opens the mod's GitHub page.
 - **Universal MFG Unlocker** (formerly Universal MFG / RTX 40 MFG, upstream 2.8.9): the row has the mod's name and links
   to its new GitHub page. The GPU generation choice is gone: RTX 30 is supported (RTX 20 experimental) and XeSS frame
   generation (XeMFG) runs on any GPU, in DirectX 12 and (experimentally) Vulkan games.
