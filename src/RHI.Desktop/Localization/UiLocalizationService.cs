@@ -1807,6 +1807,19 @@ public static class UiLocalizationService
         // w13 final review m2: an AddonPath on a Windows drive the game's Wine prefix does not map (the value follows).
         (RHI.Platform.Linux.Deployment.AddonPathFolder.UnmappedPrefix,
             "O AddonPath do ReShade aponta para uma unidade do Windows que o RHI não encontra no prefixo Wine deste jogo, então nada foi alterado. Defina o AddonPath como uma pasta dentro do prefixo (C:\\…, Z:\\…) ou como uma pasta relativa: "),
+        // w14/extras-fg rows
+        (RHI.Platform.Linux.Deployment.DownloadSources.IntelXess.RefusalPrefix,
+            "Download recusado: links do Intel XeSS devem ser HTTPS em um host confiável (raw.githubusercontent.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.IntelXessFiles.DownloadFailedPrefix, "Não foi possível baixar os arquivos Intel XeSS: "),
+        (RHI.Platform.Linux.Deployment.IntelXessFiles.NotX64Prefix, "Este arquivo Intel XeSS não é uma DLL Windows de 64 bits: "),
+        (RHI.Platform.Linux.Deployment.IntelXessFiles.KeptUserFilesPrefix,
+            " Arquivos Intel XeSS que já estavam lá e não são do RHI ficaram como estavam: "),
+        (RHI.Platform.Linux.Deployment.IntelXessFiles.BackupInTheWayPrefix,
+            " Estes arquivos Intel XeSS não foram substituídos, porque já existe uma cópia de segurança do arquivo do jogo: "),
+        (RHI.Platform.Linux.Deployment.IntelXessFiles.ChangedLeftPrefix,
+            " Estes arquivos Intel XeSS mudaram desde que o RHI os colocou, então ficaram como estão: "),
+        (RHI.Platform.Linux.Deployment.IntelXessFiles.BackupsLeftPrefix,
+            " As cópias do próprio jogo ficam nestas cópias de segurança, porque o arquivo mudou desde que o RHI o colocou: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

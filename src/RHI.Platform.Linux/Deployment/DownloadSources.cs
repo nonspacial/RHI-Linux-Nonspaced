@@ -186,6 +186,13 @@ public static class DownloadSources
     /// </summary>
     public static readonly TrustedDownloadPolicy DxvkHdr = new(
         "DXVK HDR", "GitHub", GitHubReleaseHosts, maxBytes: 128L * 1024 * 1024);
+    // w14/extras-fg rows
+    /// <summary>
+    /// Intel's XeSS SDK files for the frame-generation mods (Universal MFG Unlocker, MFG Unlock, RTX Encore; upstream's
+    /// source): intel/xess at a pinned tag on raw.githubusercontent.com, each file checked against its pinned SHA-256.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy IntelXess = new(
+        "Intel XeSS", "raw.githubusercontent.com", ["raw.githubusercontent.com"], maxBytes: 128L * 1024 * 1024);
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -217,5 +224,7 @@ public static class DownloadSources
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         DxvkHdr,
+        // w14/extras-fg rows
+        IntelXess,
     ];
 }
