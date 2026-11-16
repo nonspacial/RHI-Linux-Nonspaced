@@ -47,46 +47,48 @@ public sealed partial class MainWindow
         if (DataContext is not MainWindowViewModel vm) return;
         var layout = vm.Layout;
         var tabs = layout.IsTabs;
-        SetVisible("ClassicHeader", !tabs);
-        SetVisible("TabsHeader", tabs);
+        var chrome = layout.UsesTabsChrome; // w14/layouts-b (#305): Spotlight's banner holds the Tabs header; its sections are cards
+        SetVisible("ClassicHeader", !chrome);
+        SetVisible("TabsHeader", chrome);
         SetVisible("GameTabStripHost", tabs);
-        if (this.FindControl<ScrollViewer>("DetailScroller") is { } scroller) scroller.Classes.Set("tabsPage", tabs);
+        if (this.FindControl<ScrollViewer>("DetailScroller") is { } scroller) scroller.Classes.Set("tabsPage", chrome);
 
         var collapsed = _detailLayout.CollapsedSections.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var key in DetailSectionLayoutStore.DefaultSectionOrder)
         {
             if (FindSectionContainer(key) is not Border container) continue;
             container.IsVisible = layout.IsSectionShown(key);
-            container.Classes.Set("tabsCard", tabs);
+            container.Classes.Set("tabsCard", chrome);
             // The tab names the section in Tabs: no ≡, title, summary or arrow, and never collapsed (upstream).
-            if (container.Child is Panel { Children.Count: > 0 } stack && stack.Children[0] is Grid header) header.IsVisible = !tabs;
-            if (FindSectionBody(key) is { } body) body.IsVisible = tabs || !collapsed.Contains(key);
+            if (container.Child is Panel { Children.Count: > 0 } stack && stack.Children[0] is Grid header) header.IsVisible = !chrome;
+            if (FindSectionBody(key) is { } body) body.IsVisible = chrome || !collapsed.Contains(key);
         }
 
         // Overview: the Components rows as cards (the same rows, so every button keeps its rules; upstream copies them).
-        if (this.FindControl<ItemsControl>("ManagedComponentsSectionBody") is { } components && _cardsShown != tabs)
+        if (this.FindControl<ItemsControl>("ManagedComponentsSectionBody") is { } components && _cardsShown != chrome)
         {
-            _cardsShown = tabs;
+            _cardsShown = chrome;
             if (!_cardsHooked)
             {
                 _cardsHooked = true;
                 // A new row's template is built after it is prepared: shape it once it is laid out.
                 components.ContainerPrepared += (_, e) => Dispatcher.UIThread.Post(() => ShapeComponentRow(e.Container), DispatcherPriority.Loaded);
             }
-            components.ItemsPanel = tabs ? CardsPanel : RowsPanel;
-            components.Classes.Set("cards", tabs);
+            components.ItemsPanel = chrome ? CardsPanel : RowsPanel;
+            components.Classes.Set("cards", chrome);
             foreach (var container in components.GetRealizedContainers()) ShapeComponentRow(container);
         }
         if (this.FindControl<AutoFitPanel>("ManagementActions") is { } management)
         {
-            management.MinColumnWidth = tabs ? 220 : 150;
-            management.Classes.Set("tiles", tabs);
+            management.MinColumnWidth = chrome ? 220 : 150;
+            management.Classes.Set("tiles", chrome);
         }
 
         BuildTabStrip(vm);
         SetVisible("GlancePanel", layout.ShowsOverview);
         if (layout.ShowsOverview) RebuildGlance(vm);
         if (_inlineCog is { } open && (!tabs || open.Host.Parent is not Control { IsEffectivelyVisible: true })) CloseInlineCog(false);
+        ApplySpotlightLayout(vm); // w14/layouts-b (#305)
     }
 
     private void SetVisible(string name, bool visible)
@@ -175,6 +177,7 @@ public sealed partial class MainWindow
     private bool TryShowCogInline(Window dialog, out Task shown)
     {
         shown = Task.CompletedTask;
+        if (TryShowCogInSpotlightPanel(dialog, out shown)) return true; // w14/layouts-b (#305): a ⚙ in Spotlight's side panel
         if (dialog is not CogHostWindow cog || DataContext is not MainWindowViewModel { Layout.CogsOpenInline: true }) return false;
         var source = _lastPressed?.FindAncestorOfType<Button>(includeSelf: true);
         if (_inlineCog is { } open)

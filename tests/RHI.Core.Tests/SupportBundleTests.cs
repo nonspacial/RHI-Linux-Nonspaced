@@ -65,7 +65,8 @@ public sealed class SupportBundleTests : IDisposable
 
         Assert.Equal("nexus said [secret]; token [secret]; GET https://api.nexusmods.com/v1/users/validate.json?key=[secret]&x=1; " +
                      "apikey: [secret]; \"api_key\": \"[secret]\"; ShortcutKey=0x2D; key: steam:1", masked);
-        Assert.Equal([RHI.Platform.Linux.Network.GitHubTokenSettingsService.DefaultTokenPath, NexusAccountPresenter.DefaultKeyPath],
+        Assert.Equal([RHI.Platform.Linux.Network.GitHubTokenSettingsService.DefaultTokenPath, NexusAccountPresenter.DefaultKeyPath,
+            RHI.Platform.Linux.Artwork.SteamGridDbService.DefaultKeyPath], // w14/layouts-b (#305)
             SupportPresenter.SecretFiles());
     }
 

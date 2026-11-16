@@ -141,6 +141,21 @@ public sealed class LinuxAppSettings
     /// <summary>#306 (upstream 2.9.3 TopBarScale / GameListScale): the top bar's and game list's own sizes, 50–200 %.</summary>
     public int TopBarScale { get; set; } = 100;
     public int GameListScale { get; set; } = 100;
+    // w14/layouts-b rows
+    /// <summary>#305 (upstream 2.9.2 SpotlightHeroHeight): the Spotlight banner's dragged height, 200–900; 0 = automatic.</summary>
+    public double SpotlightHeroHeight { get; set; }
+    /// <summary>#305 (upstream 2.9.2 SpotlightCoverScale): the Spotlight cover size, 0.6–2.0 (1 = 120 × 180).</summary>
+    public double SpotlightCoverScale { get; set; } = 1.0;
+    /// <summary>#305 (upstream 2.9.2 SpotlightShelfAtBottom): the search, filters and covers below the game page.</summary>
+    public bool SpotlightShelfAtBottom { get; set; }
+    /// <summary>#305 (upstream 2.9.2 SpotlightShelfPlain): the cover strip in the page colour (No background).</summary>
+    public bool SpotlightShelfPlain { get; set; }
+    /// <summary>#307 (upstream 2.9.2 SteamAchievements): Spotlight shows a Steam game's achievements (opt-in).</summary>
+    public bool SteamAchievements { get; set; }
+    /// <summary>#307 (upstream 2.9.3 AchievementsShowHidden): hidden achievements show their name and description.</summary>
+    public bool AchievementsShowHidden { get; set; }
+    /// <summary>#308 (upstream 2.9.0 ControllerSupport): a game controller drives Spotlight while RHI is focused (on by default).</summary>
+    public bool ControllerSupport { get; set; } = true;
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -237,6 +252,9 @@ public sealed class LinuxAppSettings
         UiScale = Math.Clamp(UiScale is 0 ? 100 : UiScale, 50, 200); // #306
         TopBarScale = Math.Clamp(TopBarScale is 0 ? 100 : TopBarScale, 50, 200);
         GameListScale = Math.Clamp(GameListScale is 0 ? 100 : GameListScale, 50, 200);
+        // w14/layouts-b rows
+        SpotlightHeroHeight = double.IsFinite(SpotlightHeroHeight) && SpotlightHeroHeight > 0 ? Math.Clamp(Math.Round(SpotlightHeroHeight), 200, 900) : 0; // #305
+        SpotlightCoverScale = double.IsFinite(SpotlightCoverScale) && SpotlightCoverScale > 0 ? Math.Clamp(Math.Round(SpotlightCoverScale, 3), 0.6, 2.0) : 1.0;
         return this;
     }
 

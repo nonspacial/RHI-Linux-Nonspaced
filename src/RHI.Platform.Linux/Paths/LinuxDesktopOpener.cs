@@ -104,6 +104,37 @@ public static class LinuxDesktopOpener
         return false;
     }
 
+    /// <summary>
+    /// w14/layouts-b (#305, Screenshots › Show in folder; upstream: Explorer /select): the file's folder in the file manager
+    /// with the file selected (org.freedesktop.FileManager1.ShowItems over the session bus); the plain folder when no file
+    /// manager answers that call.
+    /// </summary>
+    public static bool TryShowItem(string file, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+        {
+            error = FileMissingPrefix + file;
+            return false;
+        }
+        try
+        {
+            using var process = Process.Start(ShowItemsCommand(file));
+            if (process is not null && process.WaitForExit(3000) && process.ExitCode == 0) return true;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            // no dbus-send: the folder below
+        }
+        return TryOpenDirectory(Path.GetDirectoryName(Path.GetFullPath(file))!, out error);
+    }
+
+    /// <summary>The <c>dbus-send</c> call that asks the file manager to show <paramref name="file"/> selected.</summary>
+    internal static ProcessStartInfo ShowItemsCommand(string file)
+        => Build("dbus-send", "--session", "--print-reply", "--dest=org.freedesktop.FileManager1", "--type=method_call",
+            "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems",
+            "array:string:" + new Uri(Path.GetFullPath(file)).AbsoluteUri, "string:");
+
     public static bool TryOpenDirectory(string directory, out string? error)
     {
         error = null;

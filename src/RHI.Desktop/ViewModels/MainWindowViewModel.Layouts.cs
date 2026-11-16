@@ -40,6 +40,11 @@ public partial class MainWindowViewModel
         _settings.UiScale = settings.UiScale;
         _settings.TopBarScale = settings.TopBarScale;
         _settings.GameListScale = settings.GameListScale;
+        // w14/layouts-b (#305, #307, #308): Spotlight's own fields, saved the same way.
+        _settings.SpotlightHeroHeight = settings.SpotlightHeroHeight;
+        _settings.SpotlightCoverScale = settings.SpotlightCoverScale;
+        _settings.SpotlightShelfAtBottom = settings.SpotlightShelfAtBottom;
+        _settings.SpotlightShelfPlain = settings.SpotlightShelfPlain;
         return null;
     }
 

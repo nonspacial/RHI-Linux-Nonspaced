@@ -65,6 +65,7 @@ public sealed partial class MainWindow : Window
         AvaloniaXamlLoader.Load(this);
         InitializeTopBar(); // w14/layouts-a (#303/#306): top bar, game list switch, sizes
         InitializeInlineCogs(); // w14/layouts-a (#304): a ⚙ opens under its component in Tabs
+        InitializeSpotlight(); // w14/layouts-b (#305): Spotlight's strip, banner, tiles and side panel
         _detailLayoutStore = new DetailSectionLayoutStore();
         _detailLayout = _detailLayoutStore.Load();
         ApplyDetailSectionLayout();
@@ -184,7 +185,10 @@ public sealed partial class MainWindow : Window
         await ShowFittedDialogAsync(dialog);
     }
 
-    private void Settings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
+    private void Settings_Click(object? sender, RoutedEventArgs e) => OpenSettingsAt(null);
+
+    /// <summary>Opens Settings, at <paramref name="section"/> when given (w14/layouts-b: Artwork's "Add an API key").</summary>
+    internal void OpenSettingsAt(string? section) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm) return;
         // The layout is the view model's data template (Views/Dialogs/SettingsDialogView.axaml; epic #89); the rows and
@@ -192,6 +196,7 @@ public sealed partial class MainWindow : Window
         var model = new SettingsDialogViewModel(vm,
             folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error),
             PickFolderAsync, CopyTextToClipboardAsync);
+        if (section is not null) model.LastSection = section;
         model.Applied += () =>
         {
             ApplyViewMode();
@@ -476,7 +481,7 @@ public sealed partial class MainWindow : Window
 
         var orderedControls = _detailLayout.SectionOrder
             .Select(FindSectionContainer)
-            .Where(x => x is not null)
+            .Where(x => x is not null && (x.Parent is null || ReferenceEquals(x.Parent, panel))) // w14/layouts-b: one in Spotlight's side panel stays there
             .Cast<Control>()
             .ToArray();
 

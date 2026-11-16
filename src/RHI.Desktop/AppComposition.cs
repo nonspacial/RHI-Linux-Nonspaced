@@ -129,6 +129,7 @@ internal sealed class AppComposition
         }
         if (PcgwData is { } pcgw) vm.CustomFolderTitleLookup = name => pcgw.Current?.TryLookup(name, null)?.PageTitle; // #293
         vm.OptiScalerCustomBuilds.Http = Http; // w14/optiscaler-2 hook (#271): custom builds added from a link
+        vm.UseSpotlightServices(Http, PcgwData); // w14/layouts-b hook (#305): Spotlight's artwork and SteamGridDB
         // w14/optiscaler-2 hook (#271): the manifest's OptiScaler forks replace the built-in four once it is read.
         RHI.Desktop.Diagnostics.UiExceptionGuard.Forget(Task.Run(() => UpstreamManifest.RefreshOsForksAsync()), "optiscaler-forks");
         return vm;

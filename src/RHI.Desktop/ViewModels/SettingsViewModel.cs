@@ -181,6 +181,14 @@ public sealed class SettingsViewModel : PanelViewModel
             ShowResLaunchButton = Host.Settings.ShowResLaunchButton, // #312
             WhatsNewNavHidden = Host.Settings.WhatsNewNavHidden, // #309
             WhatsNewFontSize = Host.Settings.WhatsNewFontSize, // #309
+            // w14/layouts-b rows
+            SpotlightHeroHeight = Host.Settings.SpotlightHeroHeight, // #305
+            SpotlightCoverScale = Host.Settings.SpotlightCoverScale, // #305
+            SpotlightShelfAtBottom = Host.Settings.SpotlightShelfAtBottom, // #305
+            SpotlightShelfPlain = Host.Settings.SpotlightShelfPlain, // #305
+            SteamAchievements = Host.Settings.SteamAchievements, // #307
+            AchievementsShowHidden = Host.Settings.AchievementsShowHidden, // #307
+            ControllerSupport = Host.Settings.ControllerSupport, // #308
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

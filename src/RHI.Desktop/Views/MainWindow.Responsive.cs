@@ -76,6 +76,7 @@ public sealed partial class MainWindow
     {
         var width = LayoutWidth;
         if (double.IsNaN(width) || width <= 0) return;
+        if (ApplySpotlightLibraryLayout()) return; // w14/layouts-b (#305): Spotlight's strip replaces the game list
         // #306 (upstream ChromeSizes): the game list's width follows its size (300 px at 100%); the page keeps 360 px.
         var listScale = DataContext is MainWindowViewModel layoutVm ? layoutVm.GameListScale : InterfaceSize.Normal;
         var listWidth = Math.Floor(Math.Clamp(InterfaceSize.GameListWidth(listScale), 150, Math.Max(150, width - GamePageMinWidth)));

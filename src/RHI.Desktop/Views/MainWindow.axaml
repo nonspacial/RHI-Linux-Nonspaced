@@ -15,6 +15,143 @@
       <Setter Property="Background" Value="{DynamicResource RhiStatusBarBrush}"/>
       <Setter Property="Opacity" Value="0.75"/>
     </Style>
+    <!-- w14/layouts-b (#305, upstream 2.9.0 Spotlight, mockup D tokens): the strip, the covers, the banner, the tiles and the
+         side panel, from the theme resources only. -->
+    <Style Selector="Border.spotStrip">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPanelBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    </Style>
+    <Style Selector="Border.spotStrip.bottom">
+      <Setter Property="BorderThickness" Value="0,1,0,0"/>
+    </Style>
+    <Style Selector="Border.spotStrip.plain">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
+    </Style>
+    <Style Selector="ToggleButton.spotFilters">
+      <Setter Property="MinWidth" Value="40"/>
+      <Setter Property="MinHeight" Value="34"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="ListBox.shelf ListBoxItem">
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Margin" Value="4,0"/>
+      <Setter Property="VerticalContentAlignment" Value="Top"/>
+    </Style>
+    <Style Selector="ListBox.shelf ListBoxItem /template/ ContentPresenter, ListBox.shelf ListBoxItem:selected /template/ ContentPresenter, ListBox.shelf ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Border.shelfCover">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+    </Style>
+    <Style Selector="ListBox.shelf ListBoxItem:pointerover Border.shelfCover">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+    </Style>
+    <Style Selector="Border.shelfCover.update">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiUpdateBrush}"/>
+    </Style>
+    <Style Selector="ListBox.shelf ListBoxItem:selected Border.shelfCover">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
+    </Style>
+    <Style Selector="Border.shelfBadge">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPurpleButtonBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiUpdateBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Border.shelfBadge TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyPurpleButtonTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.shelfName">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.shelfName.hidden, TextBlock.shelfFallback">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyMutedTextBrush}"/>
+    </Style>
+    <Style Selector="Border#SpotlightHero.spot">
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Background" Value="{DynamicResource RhiSpotlightHeroBrush}"/>
+      <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <Style Selector="Border#SpotlightHero.spot Border#SpotlightHeroContent">
+      <Setter Property="Padding" Value="28"/>
+    </Style>
+    <Style Selector="Border#SpotlightHero.spot TextBlock#TabsTitle">
+      <Setter Property="FontSize" Value="40"/>
+      <Setter Property="FontWeight" Value="ExtraBold"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Ellipse.statusDot">
+      <Setter Property="Fill" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+    </Style>
+    <Style Selector="Ellipse.statusDot.installed">
+      <Setter Property="Fill" Value="{DynamicResource RhiInstalledBrush}"/>
+    </Style>
+    <Style Selector="Ellipse.statusDot.update">
+      <Setter Property="Fill" Value="{DynamicResource RhiUpdateBrush}"/>
+    </Style>
+    <Style Selector="Ellipse.statusDot.unsupported">
+      <Setter Property="Fill" Value="{DynamicResource RhiNavyDangerTextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.statusLine">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="Border.spotScrim">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
+      <Setter Property="Opacity" Value="0.6"/>
+    </Style>
+    <Style Selector="Border.spotSheet">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPanelBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1,0,0,0"/>
+    </Style>
+    <Style Selector="TextBlock.spotPanelTitle">
+      <Setter Property="FontSize" Value="20"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
+    <Style Selector="Border.spotCard">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="16"/>
+    </Style>
+    <Style Selector="TextBlock.spotMuted">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyMutedTextBrush}"/>
+      <Setter Property="FontSize" Value="13"/>
+    </Style>
+    <Style Selector="TextBlock.spotStrong">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Grid.shotCell">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowHoverBrush}"/>
+    </Style>
+    <Style Selector="Button.shotThumb">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <Style Selector="Button.shotThumb:pointerover">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.pickTile.chosen">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+    <Style Selector="Border.pickLabel">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
+    </Style>
+    <Style Selector="Border.pickLabel TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyTextBrush}"/>
+    </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- w14/layouts-a (#303): upstream 2.9.0's top bar, used by every layout. Left: the brand, then Available Mods (with a
@@ -93,14 +230,14 @@
       </LayoutTransformControl>
     </Border>
 
-    <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnDefinitions="300,*">
+    <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnDefinitions="300,*" RowDefinitions="Auto,*">
       <!-- Below 900 px the column is removed and the same sidebar opens over this dimmed backdrop (MainWindow.Responsive.cs). -->
-      <Border x:Name="LibraryBackdrop" Classes="libraryBackdrop" Grid.ColumnSpan="2" IsVisible="False" ZIndex="10"
+      <Border x:Name="LibraryBackdrop" Classes="libraryBackdrop" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False" ZIndex="10"
               PointerPressed="LibraryBackdrop_PointerPressed"/>
       <!-- Sidebar (#303, upstream's game list in Classic+ and Tabs): search and the green + (add a game), the All | Installed |
            Favourites | Hidden switch, your collections, then the Filters button by the counts; the engine and mod filters
            show behind Filters. Its own size (#306) scales it; its right edge drags. -->
-      <Border x:Name="LibrarySidebar" Grid.Column="0" Background="{DynamicResource RhiSidebarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,1,0" ClipToBounds="True">
+      <Border x:Name="LibrarySidebar" Grid.Column="0" Grid.RowSpan="2" Background="{DynamicResource RhiSidebarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,1,0" ClipToBounds="True">
         <LayoutTransformControl x:Name="GameListScaleBox">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
           <Border Grid.Row="0" Padding="10,10,10,6" Background="{DynamicResource RhiFilterBarBrush}">
@@ -166,8 +303,73 @@
         </LayoutTransformControl>
       </Border>
 
+      <!-- w14/layouts-b (#305, upstream 2.9.0–2.9.4 Spotlight, mockup D): the game list becomes a full-width strip above the
+           game page (below it with the strip's ⚙ › Covers below the game page): the search box and the green +, the Filters
+           icon, the All | Installed | Favourites | Hidden switch, your collections beside them, the counts and the strip's ⚙;
+           behind Filters the engine and mod filters and the saved searches; then a row of game covers. The covers show the
+           same filtered list as the game list and pick the same game (MainWindow.Spotlight.cs). -->
+      <Border x:Name="SpotlightStrip" Grid.Row="0" Grid.ColumnSpan="2" Classes="spotStrip" IsVisible="False">
+        <Grid x:Name="SpotlightStripGrid" RowDefinitions="Auto,Auto,Auto">
+          <Grid x:Name="SpotlightSearchRow" Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Margin="24,14,24,6">
+            <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="8" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBox x:Name="SpotlightSearch" Width="320" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         PlaceholderText="{DynamicResource Ui.SearchGames}" Background="{DynamicResource RhiControlBrush}" Foreground="{DynamicResource RhiSecondaryTextBrush}"
+                         BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
+                <Button x:Name="SpotlightAddGame" Classes="rhi addGame" Content="+" Click="AddGame_Click"
+                        ToolTip.Tip="{DynamicResource Top.AddGameTip}" AutomationProperties.Name="{DynamicResource Ui.AddGame}"/>
+              </StackPanel>
+              <!-- Upstream 2.9.2: Spotlight's Filters is an icon left of the switch. -->
+              <ToggleButton x:Name="SpotlightFiltersButton" Classes="filters spotFilters" ToolTip.Tip="{Binding LibraryFiltersTip}"
+                            AutomationProperties.Name="{Binding LibraryFiltersText}" IsCheckedChanged="SpotlightFilters_Changed">
+                <PathIcon Width="14" Height="14" Data="M2,3 L22,3 L14,12.5 L14,20 L10,22 L10,12.5 Z"/>
+              </ToggleButton>
+              <views:SegmentedSwitch x:Name="SpotlightMainFilter" Width="340" VerticalAlignment="Center"/>
+              <!-- #300 collections beside Filters (upstream 2.9.2 Spotlight). -->
+              <views:CollectionsRow x:Name="SpotlightCollections" VerticalAlignment="Center" Margin="0"/>
+            </WrapPanel>
+            <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="11"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <Button x:Name="SpotlightShelfOptions" Grid.Column="2" Classes="rhi topIcon" Content="⚙" Click="SpotlightShelfOptions_Click"
+                    ToolTip.Tip="{DynamicResource Spot.ShelfOptionsTip}" AutomationProperties.Name="{DynamicResource Spot.ShelfOptionsTip}"/>
+          </Grid>
+          <Border x:Name="SpotlightFilterBar" Grid.Row="1" Padding="24,0,24,6" IsVisible="False">
+            <StackPanel Spacing="4">
+              <WrapPanel Orientation="Horizontal">
+                <Button Classes="chip" Classes.active="{Binding LibraryFilterIsUnreal}" Content="Unreal" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unreal"/>
+                <Button Classes="chip" Classes.active="{Binding LibraryFilterIsUnity}" Content="Unity" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unity"/>
+                <Button Classes="chip" Classes.active="{Binding LibraryFilterIsOther}" Content="{DynamicResource Ui.Other}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Other"/>
+                <Button Classes="chip" Classes.active="{Binding LibraryFilterIsRenoDx}" Content="RenoDX" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="RenoDX"/>
+                <Button Classes="chip" Classes.active="{Binding LibraryFilterIsLuma}" Content="Luma" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Luma"/>
+              </WrapPanel>
+              <!-- #193 saved searches: behind Filters in Spotlight, as upstream keeps them. -->
+              <views:CustomFilterRow/>
+            </StackPanel>
+          </Border>
+          <ListBox x:Name="SpotlightShelf" Grid.Row="2" Classes="shelf" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGameRow}"
+                   ContextRequested="GameLibrary_ContextRequested" KeyUp="GameLibrary_KeyUp"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                   Background="Transparent" BorderThickness="0" Padding="20,4,20,10">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:GameRowViewModel">
+                <views:ShelfTile/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock x:Name="SpotlightEmptyText" Grid.Row="2" Margin="24,12,24,0" VerticalAlignment="Top" TextWrapping="Wrap"
+                     FontSize="12" Foreground="{DynamicResource RhiMutedTextBrush}" IsHitTestVisible="False"
+                     Text="{Binding Collections.EmptyText}" IsVisible="{Binding Collections.HasEmptyText}"/>
+          <!-- Upstream 2.9.2: drag the strip's edge facing the page to resize the covers; double-click resets. -->
+          <Border x:Name="SpotlightCoverGrip" Grid.Row="2" Classes="resizeGrip" Height="10" VerticalAlignment="Bottom" Margin="0,0,0,-5"
+                  Background="Transparent" Cursor="SizeNorthSouth" ToolTip.Tip="{DynamicResource Spot.CoverGripTip}"/>
+        </Grid>
+      </Border>
+
       <!-- Detail panel -->
-      <ScrollViewer x:Name="DetailScroller" Grid.Column="1" Background="{DynamicResource RhiBackgroundBrush}">
+      <ScrollViewer x:Name="DetailScroller" Grid.Column="1" Grid.RowSpan="2" Background="{DynamicResource RhiBackgroundBrush}">
         <Grid x:Name="DetailRoot" Margin="24" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="14">
           <!-- Responsive header: steps typography down, then moves the actions below the title, then trims (DetailHeaderPanel). -->
           <views:DetailHeaderPanel x:Name="ClassicHeader" Grid.Row="0" RowSpacing="8">
@@ -229,12 +431,27 @@
                settings ⚙; quiet tags (store, runner, graphics API, engine); the install path with Open folder and Open prefix (the
                Linux stand-in for Config folder); the game's links; a large Launch button with its menu; HDR on launch, the
                resolution switch and the display mode switch (#311). Shown in Tabs instead of the Classic+ header; every control calls what the Classic+ one does. -->
-          <StackPanel x:Name="TabsHeader" Grid.Row="0" Spacing="10" IsVisible="False">
+          <!-- w14/layouts-b (#305, upstream 2.9.0 Spotlight hero): in Spotlight the Tabs header sits in a banner over the game's
+               Steam art (or its own banner) with dark fades so the text stays readable; a plain banner for games not on Steam. Its
+               bottom edge drags its height (double-click: automatic again); right-click opens the game menu (Artwork). In Tabs
+               the banner's layers are hidden and the header shows as before. -->
+          <Border x:Name="SpotlightHero" Grid.Row="0" Classes="spotHero" IsVisible="False" ContextRequested="SpotlightHero_ContextRequested">
+            <Grid x:Name="SpotlightHeroLayers">
+              <Border x:Name="SpotlightHeroArt" IsVisible="False" IsHitTestVisible="False" Opacity="0"/>
+              <Border x:Name="SpotlightHeroFadeBottom" IsVisible="False" IsHitTestVisible="False"/>
+              <Border x:Name="SpotlightHeroFadeSide" IsVisible="False" IsHitTestVisible="False"/>
+              <Border x:Name="SpotlightHeroContent" VerticalAlignment="Bottom">
+          <StackPanel x:Name="TabsHeader" Spacing="10" IsVisible="False">
             <DockPanel>
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <Button x:Name="TabsFavourite" Classes="tabsStar" Classes.on="{Binding SelectedGameIsFavourite}" Content="★"
                         Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}" ToolTip.Tip="{Binding FavouriteActionTip}"/>
                 <Button x:Name="TabsHide" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+                <!-- w14/layouts-b (#305, upstream 2.9.3): Spotlight's Screenshots (the side panel), beside the Game settings ⚙. -->
+                <Button x:Name="SpotlightScreenshots" Classes="rhi" Padding="10,4" IsVisible="False" IsEnabled="{Binding HasSelectedGame}"
+                        Click="SpotlightScreenshots_Click" ToolTip.Tip="{DynamicResource Spot.Screenshots}" AutomationProperties.Name="{DynamicResource Spot.Screenshots}">
+                  <PathIcon Width="15" Height="15" Data="M3,5 H21 V19 H3 Z M5,17 L10,11 L13,14 L16,10 L19,17 Z M7,8.5 A1.5,1.5 0 1 0 7.01,8.5"/>
+                </Button>
                 <Button x:Name="TabsGameSettings" Classes="rhi" Content="⚙" Padding="10,4" IsVisible="{Binding ShowGameSettings}"
                         ToolTip.Tip="{Binding GameSettingsTitle}" Click="GameSettings_Click"/>
               </StackPanel>
@@ -292,11 +509,29 @@
               </StackPanel>
             </WrapPanel>
           </StackPanel>
+              </Border>
+              <Border x:Name="SpotlightHeroGrip" Classes="resizeGrip" IsVisible="False" Height="10" VerticalAlignment="Bottom"
+                      Background="Transparent" Cursor="SizeNorthSouth" ToolTip.Tip="{DynamicResource Spot.HeroGripTip}"/>
+            </Grid>
+          </Border>
 
           <!-- w14/layouts-a (#304): the Tabs layout's tab strip, upstream's fixed order (MainWindow.GameLayout.cs fills it). -->
           <Border x:Name="GameTabStripHost" Grid.Row="1" Classes="tabStrip" IsVisible="False">
             <WrapPanel x:Name="GameTabStrip" Orientation="Horizontal" ItemSpacing="24"/>
           </Border>
+
+          <!-- w14/layouts-b (#305, mockup D): What's installed (a tile per component, like the Overview cards; a click opens the
+               component cards in the side panel) and Tune this game (the At a glance tiles; a click opens that section there). -->
+          <StackPanel x:Name="SpotlightBody" Grid.Row="1" Spacing="18" IsVisible="False">
+            <StackPanel Spacing="10">
+              <TextBlock Text="{DynamicResource Spot.WhatsInstalled}" Classes="glanceHeading"/>
+              <views:AutoFitPanel x:Name="SpotlightStatusTiles" MinColumnWidth="200" Spacing="10"/>
+            </StackPanel>
+            <StackPanel Spacing="10">
+              <TextBlock Text="{DynamicResource Spot.TuneThisGame}" Classes="glanceHeading"/>
+              <views:AutoFitPanel x:Name="SpotlightTuneTiles" MinColumnWidth="260" MaxColumns="3" Spacing="10"/>
+            </StackPanel>
+          </StackPanel>
 
           <!-- Detail sections are collapsible and drag-reorderable; Linux stores state in XDG_CONFIG_HOME. -->
           <StackPanel x:Name="DetailSectionsPanel" Grid.Row="2" Spacing="14">
@@ -1004,7 +1239,7 @@
         </Grid>
       </ScrollViewer>
 
-      <Border Grid.ColumnSpan="2" Background="{DynamicResource RhiStatusBarBrush}" Opacity="0.96" IsVisible="{Binding IsBusy}" ZIndex="20">
+      <Border Grid.ColumnSpan="2" Grid.RowSpan="2" Background="{DynamicResource RhiStatusBarBrush}" Opacity="0.96" IsVisible="{Binding IsBusy}" ZIndex="20">
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
           <ProgressBar IsIndeterminate="True" Width="280" Height="4"/>
           <TextBlock Text="{DynamicResource Ui.Processing}" Foreground="{DynamicResource RhiSecondaryTextBrush}"/>
@@ -1013,6 +1248,30 @@
                   Command="{Binding Operations.CancelCommand}" IsVisible="{Binding Operations.CanCancel}"/>
         </StackPanel>
       </Border>
+
+      <!-- w14/layouts-b (#305, upstream 2.9.0 Spotlight): the side panel slides in from the right over the page. It holds a
+           section as Tabs arranges it (the same section, moved in while open), the component cards, Screenshots, Achievements,
+           Game settings or Artwork. A component's ⚙ opens in it with a back button to the section. A click on the dimmed page,
+           ✕ or Esc closes it. -->
+      <Grid x:Name="SpotlightPanelOverlay" Grid.RowSpan="2" Grid.ColumnSpan="2" ZIndex="15" IsVisible="False">
+        <Border x:Name="SpotlightPanelScrim" Classes="spotScrim" PointerPressed="SpotlightScrim_PointerPressed"/>
+        <Border x:Name="SpotlightPanelSheet" Classes="spotSheet" HorizontalAlignment="Right">
+          <Grid RowDefinitions="Auto,*">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="24,20,20,12">
+              <Button x:Name="SpotlightPanelBack" Classes="rhi" IsVisible="False" Click="SpotlightPanelBack_Click" Padding="8,4,12,4"/>
+              <TextBlock x:Name="SpotlightPanelTitle" Grid.Column="1" Classes="spotPanelTitle" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              <Button x:Name="SpotlightPanelClose" Grid.Column="2" Classes="rhi topIcon" Content="✕" Click="SpotlightPanelClose_Click"
+                      ToolTip.Tip="{DynamicResource Win.Close}" AutomationProperties.Name="{DynamicResource Win.Close}"/>
+            </Grid>
+            <ScrollViewer x:Name="SpotlightPanelScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="SpotlightPanelHost" Margin="24,4,24,32" Spacing="20"/>
+            </ScrollViewer>
+            <ScrollViewer x:Name="SpotlightPanelCogScroll" Grid.Row="1" IsVisible="False" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <Border x:Name="SpotlightPanelCogHost" Margin="24,4,24,32"/>
+            </ScrollViewer>
+          </Grid>
+        </Border>
+      </Grid>
     </Grid>
 
     <!-- The overlay backdrop continues over the status bar (same dim); a click there closes the overlay too. -->

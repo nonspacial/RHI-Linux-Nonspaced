@@ -227,6 +227,9 @@ public sealed partial class SettingsDialogView : UserControl
             cards[SettingsSections.Accounts].Add(SettingsLayout.Card(T("Set.CardAccounts"), null,
                 SettingsLayout.Block(ParitySettingsTab.GitHubTokenSection(parity.GitHubToken)),
                 SettingsLayout.Block(ParitySettingsTab.NexusSection(parity.NexusAccount))));
+        // w14/layouts-b (#305, upstream 2.9.5 beta): SteamGridDB API key, for Spotlight › Artwork's community covers and banners.
+        if (vm.SteamGridDbKey is { } sgdbKey)
+            cards[SettingsSections.Accounts].Add(SettingsLayout.Card(T("Sgdb.KeyTitle"), null, SettingsLayout.Block(SteamGridDbKeySection.Create(sgdbKey))));
 
         // ── ReShade & RenoDX ── (upstream: Keys, screenshots and brightness; Shaders and addons)
         var screenshotFolder = SettingsLayout.Text(() => model.ScreenshotPath, v => model.ScreenshotPath = v, model, nameof(model.ScreenshotPath),

@@ -79,6 +79,9 @@ public sealed partial class TopBarPresenter : ObservableObject
         if (changed) NotifyCount();
     }
 
+    /// <summary>w14/layouts-b (#305): whether RHI knows of an update for this game (Spotlight's cover outline).</summary>
+    public bool HasUpdate(string key) => _withUpdates.Contains(key);
+
     /// <summary>Update All ran: what it updated is current; games it could not update are found again when opened.</summary>
     public void UpdateAllRan()
     {

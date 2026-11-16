@@ -74,7 +74,44 @@ public sealed class PcgwCentralData
     {
         if (string.IsNullOrWhiteSpace(gameName))
             return LookupAppId(steamAppId);
+        if (LookupExact(gameName, steamAppId) is { } exact) return exact;
 
+        // w14/layouts-b (#305, upstream 2.9.3 PcgwService steps 6–8, b5c4ede / 7548a8e): names a store decorated.
+        var stripped = gameName.Replace("™", "").Replace("®", "").Replace("©", "").Trim();
+        // 6. A platform suffix a store added ("Banishers: Ghosts of New Eden - Windows", "Game (Windows 10)", "Game (PC)")
+        if (StoreNameSuffix.StripPlatform(gameName) is { } withoutPlatform)
+            return TryLookup(withoutPlatform, steamAppId: null);
+        // 7. An edition name the store keeps ("Dishonored Definitive Edition" → "Dishonored")
+        if (StoreNameSuffix.StripEdition(stripped) is { } withoutEdition)
+            return TryLookup(withoutEdition, steamAppId: null);
+        // 8. PCGamingWiki adds the year to same-named games ("Resident Evil 3 (2020)"): used only when there is one
+        if (YearTitles.TryGetValue(stripped, out var yearTitles) && yearTitles.Count == 1
+            && _games.TryGetValue(yearTitles[0], out var yearEntry))
+            return (yearTitles[0], yearEntry);
+        return null;
+    }
+
+    private Dictionary<string, List<string>>? _yearTitles;
+
+    /// <summary>Base name → PCGamingWiki titles "base (year)". Built on first use (the data is loaded once).</summary>
+    private Dictionary<string, List<string>> YearTitles
+    {
+        get
+        {
+            if (_yearTitles is { } built) return built;
+            var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var title in _games.Keys)
+                if (StoreNameSuffix.BaseOfYearTitle(title) is { } baseName)
+                {
+                    if (!map.TryGetValue(baseName, out var list)) map[baseName] = list = [];
+                    list.Add(title);
+                }
+            return _yearTitles = map;
+        }
+    }
+
+    private (string PageTitle, PcgwCentralEntry Entry)? LookupExact(string gameName, int? steamAppId)
+    {
         if (LookupName(gameName) is { } byName) return byName;
         if (LookupAppId(steamAppId) is { } byAppId) return byAppId;
 

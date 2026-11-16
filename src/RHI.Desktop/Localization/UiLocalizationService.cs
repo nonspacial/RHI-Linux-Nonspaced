@@ -1661,6 +1661,15 @@ public static class UiLocalizationService
         // w14/optiscaler-2 rows
         (RHI.Platform.Linux.Deployment.DownloadSources.OptiScalerCustomBuild.RefusalPrefix, "Download recusado: links de build personalizada do OptiScaler devem ser HTTPS em um host confiável (o próprio host do link ou o GitHub). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.AnrFg.RefusalPrefix, "Download recusado: links do ANR FG devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        // w14/layouts-b rows (#305, #307)
+        (RHI.Platform.Linux.Deployment.DownloadSources.SteamArtwork.RefusalPrefix, "Download recusado: links da arte da Steam devem ser HTTPS em um host confiável (servidores de imagens da Steam). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.SteamWebApi.RefusalPrefix, "Download recusado: links da API Web da Steam devem ser HTTPS em um host confiável (api.steampowered.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.SteamGridDbApi.RefusalPrefix, "Download recusado: links da API do SteamGridDB devem ser HTTPS em um host confiável (www.steamgriddb.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.SteamGridDbImages.RefusalPrefix, "Download recusado: links da imagem do SteamGridDB devem ser HTTPS em um host confiável (servidores de imagens do SteamGridDB). Link recusado: "),
+        (RHI.Platform.Linux.Artwork.SteamArtworkService.NotAnImageMessage, "O arquivo não é uma imagem JPEG, PNG, WebP ou BMP."),
+        (RHI.Platform.Linux.Artwork.SteamArtworkService.TooLargeMessage, "A imagem tem mais de 32 MB."),
+        (RHI.Platform.Linux.Artwork.SteamGridDbService.DownloadFailedMessage, "Não foi possível baixar a imagem. Verifique sua conexão e tente novamente."),
+        (RHI.Platform.Linux.Paths.FreedesktopTrash.NotTrashedPrefix, "Não foi possível mover o arquivo para a Lixeira: "),
         // w14/extras-addons rows (#282)
         (RHI.Platform.Linux.Deployment.DisplayCommanderSettingsService.NotManagedPrefix, "As configurações do Display Commander precisam do Display Commander instalado pelo RHI: "),
         (RHI.Platform.Linux.Deployment.DisplayCommanderSettingsService.InvalidValuePrefix, "O Display Commander não aceita este valor; nada foi alterado: "),
@@ -2275,8 +2284,8 @@ public static class UiLocalizationService
 
     // Every UI string, by language: the XAML resource table above plus the code table in UiStrings. Built once; a key
     // defined twice throws here, so a duplicate fails every test instead of silently shadowing a translation.
-    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Concat(DisplayModeUiStrings.Entries).Select(e => (e.Key, e.PtBr)));
-    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Concat(DisplayModeUiStrings.Entries).Select(e => (e.Key, e.EnUs)));
+    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Concat(DisplayModeUiStrings.Entries).Concat(SpotlightUiStrings.Entries).Select(e => (e.Key, e.PtBr)));
+    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Concat(SettingsUiStrings.Entries).Concat(DisplayModeUiStrings.Entries).Concat(SpotlightUiStrings.Entries).Select(e => (e.Key, e.EnUs)));
 
     private static Dictionary<string, string> Merge(IReadOnlyDictionary<string, string> resources, IEnumerable<(string Key, string Value)> code)
     {

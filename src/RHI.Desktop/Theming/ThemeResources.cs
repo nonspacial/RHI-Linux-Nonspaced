@@ -124,6 +124,9 @@ public static class ThemeResources
         ("RhiNavyDangerBrush", "#1F1217"),
         ("RhiNavyDangerBorderBrush", "#4A2630"),
         ("RhiNavyDangerTextBrush", "#FF9AA8"),
+        // w14/layouts-b (#305): Spotlight's plain banner (games without art) and the fade over its art (upstream #10161F, #0B0F17)
+        ("RhiSpotlightHeroBrush", "#10161F"),
+        ("RhiSpotlightFadeBrush", "#0B0F17"),
     ];
 
     /// <summary>The palette applied last (Default until a theme is applied).</summary>
@@ -166,4 +169,23 @@ public static class ThemeResources
         => new(property, new DynamicResourceExtension(key));
 
     public static Color ToAvalonia(ThemeColor c) => Color.FromArgb(c.A, c.R, c.G, c.B);
+
+    /// <summary>
+    /// w14/layouts-b (#305, upstream Spotlight's hero fades): a gradient of a theme brush's colour at the given opacities, so
+    /// the text over Spotlight's art stays readable in every theme. Built again by the caller after <see cref="Changed"/>.
+    /// </summary>
+    public static IBrush Fade(string key, bool vertical, params (double Alpha, double Offset)[] stops)
+    {
+        var colour = Application.Current?.Resources.TryGetResource(key, null, out var value) == true && value is ISolidColorBrush brush
+            ? brush.Color
+            : ToAvalonia(new ThemeColorMapper(Current).Map(ThemePalette.Hex(Defaults.First(d => d.Key == key).Hex)));
+        var gradient = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = vertical ? new RelativePoint(0, 1, RelativeUnit.Relative) : new RelativePoint(1, 0, RelativeUnit.Relative),
+        };
+        foreach (var (alpha, offset) in stops)
+            gradient.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(Math.Clamp(alpha, 0, 1) * 255), colour.R, colour.G, colour.B), offset));
+        return gradient;
+    }
 }
