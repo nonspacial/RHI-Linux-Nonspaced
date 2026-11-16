@@ -130,6 +130,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             StatusText = UiLocalizationService.UpdateAllSummary(result) + Shell.F5Driver.UpdateAllNote(games, result); // w11/nr-gpu hook (#231)
             // #292 (upstream: a manual check restarts the countdown): the next automatic pass is a whole interval away.
             RecordPass();
+            Shell.TopBar.UpdateAllRan(); // w14/layouts-a (#303): the top bar's count starts again
             if (_backgroundUpdateCts is not null) RestartBackgroundUpdateLoop(runImmediate: false);
         }
         catch (Exception ex) when (op.WasCancelled(ex))

@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
@@ -9,8 +10,8 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Core.Tests;
 
 /// <summary>
-/// Upstream 2.9.4 Game settings: a ⚙ beside the game's title holds Block Steam updates (and, on Linux until the Management
-/// section is ported, Remove from RHI); neither is a header action beside Favourite / Hide any more.
+/// Upstream 2.9.4 Game settings: a ⚙ beside the game's title holds Block Steam updates; Remove from RHI is in the Management
+/// section (w14/layouts-a, #304), as upstream. Neither is a header action beside Favourite / Hide any more.
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
 public sealed class GameSettingsCogTests : IDisposable
@@ -39,7 +40,7 @@ public sealed class GameSettingsCogTests : IDisposable
     }
 
     [Fact]
-    public async Task ASteamGame_GetsBothRows_AndTheSwitchBlocksAndAllowsUpdates()
+    public async Task ASteamGame_GetsTheSteamRow_AndTheSwitchBlocksAndAllowsUpdates()
     {
         UiLocalizationService.Apply("en-US");
         var (steam, other, manifest) = Games();
@@ -51,7 +52,7 @@ public sealed class GameSettingsCogTests : IDisposable
         var closed = false;
         var parts = GameSettingsView.Build(fx.Vm, () => closed = true);
         Assert.NotNull(parts.SteamSwitch);
-        Assert.NotNull(parts.RemoveButton);
+        Assert.DoesNotContain(parts.Root.GetLogicalDescendants().OfType<Control>(), c => c.Name == "RemoveFromRhiButton"); // in Management
         Assert.False(parts.SteamSwitch!.IsChecked);
 
         parts.SteamSwitch.IsChecked = true;
@@ -81,7 +82,7 @@ public sealed class GameSettingsCogTests : IDisposable
     }
 
     [Fact]
-    public async Task ADetectedGameWithoutASteamManifest_GetsOnlyRemoveFromRhi_WhichClosesThePanelAndAsks()
+    public async Task ADetectedGameWithoutASteamManifest_HasNoCog_RemoveFromRhiIsInManagement()
     {
         UiLocalizationService.Apply("en-US");
         var (steam, other, _) = Games();
@@ -90,20 +91,14 @@ public sealed class GameSettingsCogTests : IDisposable
         MainWindowViewModel.RemoveFromRhiPrompt? asked = null;
         fx.Vm.ConfirmRemoveFromRhiAsync = prompt => { asked = prompt; return Task.FromResult<bool?>(null); };
 
-        Assert.True(fx.Vm.ShowGameSettings);
-        var closed = false;
-        var parts = GameSettingsView.Build(fx.Vm, () => closed = true);
-        Assert.Null(parts.SteamSwitch);
-        Assert.Equal("Remove from RHI…", parts.RemoveButton!.Content);
-
-        parts.RemoveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-
-        Assert.True(closed);
+        Assert.False(fx.Vm.ShowGameSettings);
+        Assert.True(fx.Vm.CanRemoveFromRhiAny);
+        fx.Vm.RemoveFromRhiAnyCommand.Execute(null);
         Assert.NotNull(asked); // the existing confirmation (with its uninstall offer) runs
     }
 
     [Fact]
-    public async Task AGameAddedByHand_HasNoCog_ItKeepsRemoveManualGame()
+    public async Task AGameAddedByHand_HasNoCog_ManagementRemovesIt()
     {
         UiLocalizationService.Apply("en-US");
         using var fx = await ViewModelFixture.StartAsync([]);

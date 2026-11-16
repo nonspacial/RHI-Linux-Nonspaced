@@ -16,9 +16,9 @@ internal static class GameSettingsView
 {
     private static string T(string key) => UiLocalizationService.Text(key);
 
-    public sealed record Parts(StackPanel Root, ToggleSwitch? SteamSwitch, Button? RemoveButton);
+    public sealed record Parts(StackPanel Root, ToggleSwitch? SteamSwitch);
 
-    /// <param name="close">Closes the panel (Remove from RHI asks first in its own dialog).</param>
+    /// <param name="close">Closes the panel.</param>
     public static Parts Build(MainWindowViewModel vm, Action close)
     {
         ArgumentNullException.ThrowIfNull(vm);
@@ -46,21 +46,8 @@ internal static class GameSettingsView
             root.Children.Add(Row(T("Steam.BlockUpdates"), T("Steam.BlockUpdatesTip"), steam));
         }
 
-        Button? remove = null;
-        if (vm.GameSettingsHasRemoveRow)
-        {
-            remove = new Button
-            {
-                Name = "RemoveFromRhiButton", Classes = { "rhi", "remove" }, Content = vm.RemoveFromRhiText + "…", IsEnabled = vm.CanRemoveFromRhi
-            };
-            remove.Click += (_, _) =>
-            {
-                close();
-                vm.RemoveFromRhiCommand.Execute(null);
-            };
-            root.Children.Add(Row(vm.RemoveFromRhiText, vm.RemoveFromRhiTip, remove));
-        }
-        return new Parts(root, steam, remove);
+        // w14/layouts-a (#304): Remove from RHI moved to the Management section, as upstream; Block Steam updates stays here.
+        return new Parts(root, steam);
     }
 
     // Upstream's AddGameSettingRow: label and description on the left, the control on the right.

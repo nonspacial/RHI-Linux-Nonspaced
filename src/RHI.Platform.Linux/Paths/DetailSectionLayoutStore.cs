@@ -14,14 +14,29 @@ public sealed class DetailSectionLayoutSettings
 
 public sealed class DetailSectionLayoutStore
 {
+    /// <summary>
+    /// w14/layouts-a (#303/#304): upstream 2.9.0 Classic+'s seven sections in its default order: Components, Game Overrides,
+    /// Neural Rendering, DLSS / Streamline, Driver Settings, Management, Extras (keys kept from before where a section was
+    /// only renamed: ManagedComponents = Components, Runtime = Game Overrides).
+    /// </summary>
     public static readonly IReadOnlyList<string> DefaultSectionOrder =
     [
-        "Runtime",
-        "DlssStreamline",
-        "ReShadeProfile",
         "ManagedComponents",
+        "Runtime",
+        "NeuralRendering",
+        "DlssStreamline",
+        "DriverSettings",
+        "Management",
         "Extras"
     ];
+
+    /// <summary>The order every install had before wave 14 (never dragged): it opens in upstream's order instead.</summary>
+    public static readonly IReadOnlyList<string> PreviousDefaultSectionOrder =
+        ["Runtime", "DlssStreamline", "ReShadeProfile", "ManagedComponents", "Extras"];
+
+    /// <summary>Sections renamed in wave 14: the ReShade profile section became Neural Rendering (its ReShade rows moved to Game Overrides).</summary>
+    private static string Migrate(string section)
+        => section.Equals("ReShadeProfile", StringComparison.OrdinalIgnoreCase) ? "NeuralRendering" : section;
 
     private static readonly HashSet<string> KnownSections =
         new(DefaultSectionOrder, StringComparer.OrdinalIgnoreCase);
@@ -49,25 +64,43 @@ public sealed class DetailSectionLayoutStore
 
         var collapsed = new List<string>();
         var collapsedSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var section in settings.CollapsedSections ?? [])
+        foreach (var saved in settings.CollapsedSections ?? [])
         {
+            var section = saved is null ? null : Migrate(saved);
             if (string.IsNullOrWhiteSpace(section) || !KnownSections.Contains(section) || !collapsedSeen.Add(section))
                 continue;
             collapsed.Add(Canonical(section));
         }
 
+        var savedOrder = settings.SectionOrder ?? [];
+        if (savedOrder.SequenceEqual(PreviousDefaultSectionOrder, StringComparer.OrdinalIgnoreCase))
+            savedOrder = [.. DefaultSectionOrder]; // never dragged: upstream's order
+
         var order = new List<string>();
         var orderSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var section in settings.SectionOrder ?? [])
+        foreach (var saved in savedOrder)
         {
+            var section = saved is null ? null : Migrate(saved);
             if (string.IsNullOrWhiteSpace(section) || !KnownSections.Contains(section) || !orderSeen.Add(section))
                 continue;
             order.Add(Canonical(section));
         }
 
-        foreach (var section in DefaultSectionOrder)
-            if (orderSeen.Add(section))
-                order.Add(section);
+        // A section the saved order lacks goes where upstream's order puts it: after the nearest earlier section present.
+        for (var i = 0; i < DefaultSectionOrder.Count; i++)
+        {
+            var section = DefaultSectionOrder[i];
+            if (!orderSeen.Add(section)) continue;
+            var at = 0;
+            for (var j = i - 1; j >= 0; j--)
+            {
+                var before = order.IndexOf(DefaultSectionOrder[j]);
+                if (before < 0) continue;
+                at = before + 1;
+                break;
+            }
+            order.Insert(at, section);
+        }
 
         return new DetailSectionLayoutSettings
         {

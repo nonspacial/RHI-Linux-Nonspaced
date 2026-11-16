@@ -107,6 +107,10 @@ public sealed class WidthEstimator
                 TextBlock t => TextWidth(t.Text, TypefaceOf(t), FontSizeOf(t)) + t.Padding.Left + t.Padding.Right,
                 Button { Content: string s } b => TextWidth(s, TypefaceOf(b), FontSizeOf(b))
                     + Horizontal(_values.Padding(b) ?? b.Padding) + Horizontal(b.BorderThickness),
+                // w14/layouts-a (#303): the top bar's composite buttons (Update All with its count, Available Mods with
+                // New) and controls made of a track of buttons (the layout switch).
+                ContentControl { Content: Control inner } cc => Estimate(inner)
+                    + Horizontal(_values.Padding(cc) ?? cc.Padding) + Horizontal(cc.BorderThickness),
                 StackPanel { Orientation: Orientation.Horizontal } sp => Row(sp.Children, sp.Spacing),
                 StackPanel sp => sp.Children.Where(_values.IsIncluded).Select(Estimate).DefaultIfEmpty(0).Max(),
                 WrapPanel wp => Row(wp.Children, wp.ItemSpacing),

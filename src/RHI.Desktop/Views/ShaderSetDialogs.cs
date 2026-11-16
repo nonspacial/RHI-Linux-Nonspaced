@@ -15,7 +15,8 @@ internal static class ShaderSetDialogs
     private const double SideMargin = 32; // as MainWindow.DialogSideMargin
 
     /// <summary>The global shader set and add-ons (Settings → ReShade → Global shaders and add-ons…).</summary>
-    public static async Task ShowGlobalAsync(Control anchor, MainWindowViewModel vm, Action<string> show)
+    /// <param name="tab">The tab to open on: 0 shader packs (Global Shaders), 1 add-ons (Global Addons; w14/layouts-a, #303).</param>
+    public static async Task ShowGlobalAsync(Control anchor, MainWindowViewModel vm, Action<string> show, int tab = 0)
     {
         if (TopLevel.GetTopLevel(anchor) is not Window owner) return;
         ShaderAddonManagerUiSnapshot snapshot;
@@ -29,6 +30,7 @@ internal static class ShaderSetDialogs
             return;
         }
         var model = ShaderAddonsDialogViewModel.ForGlobal(vm, snapshot, OpenFolder, pack => ShowFilesAsync(owner, vm, pack));
+        model.SelectedTabIndex = tab;
         await ShowAsync(owner, model);
         show(vm.StatusText);
     }

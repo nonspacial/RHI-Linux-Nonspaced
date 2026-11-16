@@ -36,7 +36,7 @@ public sealed class CompiledBindingsTests
     [InlineData(typeof(RuntimePanelViewModel), nameof(RuntimePanelViewModel.ShowHdrLaunchProfile))]
     [InlineData(typeof(OptionItem), nameof(OptionItem.Display))]
     [InlineData(typeof(UpdatesViewModel), nameof(UpdatesViewModel.CanUpdateAll))]
-    [InlineData(typeof(ManualGamesViewModel), nameof(ManualGamesViewModel.CanRemoveManualGame))]
+    [InlineData(typeof(MainWindowViewModel), nameof(MainWindowViewModel.CanRemoveFromRhiAny))] // w14/layouts-a: Management › Remove from RHI
     [InlineData(typeof(ProxyComponentDialogViewModel), nameof(ProxyComponentDialogViewModel.ShowCancel))]
     // Dialogs moved out of the window's code-behind (epic #89): Views/Dialogs/*.axaml.
     [InlineData(typeof(DlssBatchDialogViewModel), nameof(DlssBatchDialogViewModel.CloseLabel))]

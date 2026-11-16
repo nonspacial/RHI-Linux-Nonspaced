@@ -293,7 +293,7 @@ public sealed class SettingsLayoutParityTests
             Assert.NotEqual(key, UiLocalizationService.TextFor("en-US", key!));
             Assert.NotEqual(key, UiLocalizationService.TextFor("pt-BR", key!));
         }
-        foreach (var section in new[] { "Runtime", "DlssStreamline", "ReShadeProfile", "ManagedComponents", "Extras" })
+        foreach (var section in RHI.Platform.Linux.Paths.DetailSectionLayoutStore.DefaultSectionOrder) // w14/layouts-a: upstream's seven
             Assert.NotNull(RHI.Desktop.Views.TooltipSweep.SectionTipKey(section));
         Assert.Null(RHI.Desktop.Views.TooltipSweep.FilterTipKey("Collection:x")); // unknown chips keep whatever they have
     }

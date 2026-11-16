@@ -101,6 +101,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         if (restartLoop) Updates.RestartBackgroundUpdateLoop(runImmediate);
         NotifyDlssDefaults();
         AdoptTheme(); // #301
+        AdoptLayoutSettings(); // w14/layouts-a (#303/#306)
     }
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
@@ -653,6 +654,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         Extras.NotifyUalAndShortFuse();
         NotifyDlssDefaults();
         NotifyDlss();
+        NotifyManagement(); // w14/layouts-a (#304)
+        _topBar?.LibraryChanged(); // w14/layouts-a (#303): hidden games leave the count
     }
 
     /// <summary>A w3/parity notice (a newer RHI-Linux release, a hand-off result), appended once like the token notice. Integrator hook.</summary>
@@ -901,6 +904,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             if (game is not null)
             {
                 Extras.OnAnalysisPublished(game);
+                NoteAnalysisUpdates(game, analysis); // w14/layouts-a (#303): the top bar's Update All count
             }
         }
         IsSelectionProbeBusy = game is not null && ReferenceEquals(_session.Game, game) && _session.IsProbeBusy;
@@ -1812,6 +1816,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null, CustomFilters.ActiveQuery, Collections.Membership);
         Collections.UpdateEmptyText(Games.Count, !string.IsNullOrWhiteSpace(SearchText) || CustomFilters.ActiveQuery is not null);
         OnPropertyChanged(nameof(GameCountText));
+        NotifyLibraryFilterSwitch(); // w14/layouts-a (#303)
         if (selected is not null && _library.IsShown(selected))
         {
             if (!ReferenceEquals(SelectedGameRow, _library.RowFor(selected))) SyncSelectedRow(selected);
@@ -2255,6 +2260,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         OnPropertyChanged(nameof(SelectedBinaryDirectory));
         NotifySteamUpdateBlock(); // #290
         NotifyRemoveFromRhi(); // #293
+        NotifyManagement(); // w14/layouts-a (#304)
         NotifyUiParity(); // #309
         Runtime.NotifySection();
         OnPropertyChanged(nameof(HasSelectedGame));

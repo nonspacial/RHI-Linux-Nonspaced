@@ -136,26 +136,19 @@ public sealed partial class MainWindow
         });
     }
 
-    private void ViewMode_Click(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm) return;
-        vm.ToggleViewModeCommand.Execute(null);
-        ApplyViewMode();
-    }
-
+    /// <summary>
+    /// The window follows the settings: w14/layouts-a (#303) the layout switch replaced the Compact view toggle (upstream
+    /// removed its compact view too), so the game page and the game list take the chosen layout and sizes.
+    /// </summary>
     private void ApplyViewMode()
     {
-        if (DataContext is not MainWindowViewModel vm) return;
-        var compact = vm.IsCompactView;
-        var filters = this.FindControl<Border>("LibraryFilterBar");
-        var detail = this.FindControl<Grid>("DetailRoot");
-        if (filters is not null)
-            filters.IsVisible = !compact;
-        if (detail is not null)
-            detail.Margin = new Thickness(compact ? 12 : 24);
+        if (DataContext is not MainWindowViewModel) return;
+        if (this.FindControl<Grid>("DetailRoot") is { } detail) detail.Margin = new Thickness(24);
+        ApplyGameLayout();
+        ApplySizes();
 
-        // 640 × 480 minimum in both views. Switching view changes the layout only: the app never resizes the
-        // user's window (no enlarge for Detailed, no shrink or cap for Compact).
+        // 640 × 480 minimum in every layout. Switching layout changes the layout only: the app never resizes the
+        // user's window.
         MinWidth = 640;
         MinHeight = 480;
         _libraryLayoutKey = null;

@@ -274,6 +274,11 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
             ColourTheme = _shell.Theme.ThemeId, // #301: the theme is saved as it changes; the save keeps the one in use
             CustomThemeColours = _shell.Theme.SavedCustomColours,
             GlobalFpsLimit = Settings.GlobalFpsLimit, // #310: the view's FPS Limit row writes its value over this
+            MainLayout = _shell.Layout.Saved.ToString(), // w14/layouts-a (#303/#306): saved as they change, kept as in use
+            DetailSelectedTab = _shell.Layout.SelectedTab == GamePageSections.Overview ? "" : _shell.Layout.SelectedTab,
+            UiScale = _shell.UiScale,
+            TopBarScale = _shell.TopBarScale,
+            GameListScale = _shell.GameListScale,
             CacheAllShaders = CacheAllShaders,
             VerboseLogging = VerboseLogging,
             AutoUpdateComponents = AutoUpdateComponents,

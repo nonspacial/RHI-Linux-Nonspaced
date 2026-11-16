@@ -28,10 +28,13 @@ internal static class TooltipSweep
 
     private static readonly Dictionary<string, string> SectionTips = new(StringComparer.Ordinal)
     {
-        ["Runtime"] = "Tip.SectionRuntime",
-        ["DlssStreamline"] = "Tip.SectionDlss",
-        ["ReShadeProfile"] = "Tip.SectionReShade",
+        // w14/layouts-a (#304): upstream's seven sections.
         ["ManagedComponents"] = "Tip.SectionComponents",
+        ["Runtime"] = "Tip.SectionRuntime",
+        ["NeuralRendering"] = "Tip.SectionNeural",
+        ["DlssStreamline"] = "Tip.SectionDlss",
+        ["DriverSettings"] = "Tip.SectionDriver",
+        ["Management"] = "Sec.ManagementNote",
         ["Extras"] = "Tip.SectionExtras",
     };
 

@@ -22,23 +22,26 @@ public sealed class DetailSectionLayoutStoreTests
         using var temp = new TempDir();
         var path = Path.Combine(temp.Path, "ui-settings.json");
         var store = new DetailSectionLayoutStore(path);
+        // w14/layouts-a (#304): upstream's seven sections.
         var expectedOrder = new[]
         {
             "Extras",
+            "Management",
             "ManagedComponents",
             "Runtime",
             "DlssStreamline",
-            "ReShadeProfile"
+            "DriverSettings",
+            "NeuralRendering"
         };
 
         store.Save(new DetailSectionLayoutSettings
         {
-            CollapsedSections = ["ReShadeProfile", "Extras"],
+            CollapsedSections = ["NeuralRendering", "Extras"],
             SectionOrder = [.. expectedOrder]
         });
 
         var loaded = store.Load();
-        Assert.Equal(new[] { "ReShadeProfile", "Extras" }, loaded.CollapsedSections);
+        Assert.Equal(new[] { "NeuralRendering", "Extras" }, loaded.CollapsedSections);
         Assert.Equal(expectedOrder, loaded.SectionOrder);
     }
 
@@ -52,8 +55,9 @@ public sealed class DetailSectionLayoutStoreTests
         });
 
         Assert.Equal(new[] { "Extras", "Runtime" }, normalized.CollapsedSections);
+        // w14/layouts-a (#304): a missing section goes after the nearest section upstream's order puts before it.
         Assert.Equal(
-            new[] { "Extras", "Runtime", "DlssStreamline", "ReShadeProfile", "ManagedComponents" },
+            new[] { "ManagedComponents", "Extras", "Runtime", "NeuralRendering", "DlssStreamline", "DriverSettings", "Management" },
             normalized.SectionOrder);
     }
 

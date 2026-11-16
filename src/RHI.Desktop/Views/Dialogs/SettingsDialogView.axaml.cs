@@ -191,14 +191,32 @@ public sealed partial class SettingsDialogView : UserControl
         ToolTip.SetShowOnDisabled(closeToTray, true);
         model.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(model.CloseToTrayEnabled)) SyncTray(); };
         SyncTray();
+        // w14/layouts-a (#306, upstream 2.9.0–2.9.3 Windows and Admin Mode): Interface size, Top bar size and Game list size,
+        // 50–200% in 5% steps, applied and saved as they change (the window's Ctrl + mouse wheel and edge drags set them too).
+        ComboBox SizeChoice(string name, Func<int> get, Func<int, string?> set)
+        {
+            var labels = InterfaceSize.Options.Select(InterfaceSize.Label).ToList();
+            var combo = new ComboBox { Name = name, ItemsSource = labels, MinWidth = 160, MaxDropDownHeight = 320 };
+            combo.SelectedIndex = InterfaceSize.Options.ToList().IndexOf(InterfaceSize.Nearest(get()));
+            combo.SelectionChanged += (_, _) =>
+            {
+                if (combo.SelectedIndex < 0) return;
+                var percent = InterfaceSize.Options[combo.SelectedIndex];
+                if (percent == InterfaceSize.Nearest(get())) return;
+                if (set(percent) is { } refused) Show(refused);
+            };
+            return combo;
+        }
         cards[SettingsSections.General].Add(SettingsLayout.Card(T("Set.CardWindows"), null,
+            SettingsLayout.Row(T("Size.Interface"), SizeChoice("UiScale", () => vm.UiScale, vm.SetUiScale), tip: T("Size.InterfaceTip")),
+            SettingsLayout.Row(T("Size.TopBar"), SizeChoice("TopBarScale", () => vm.TopBarScale, vm.SetTopBarScale), tip: T("Size.TopBarTip")),
+            SettingsLayout.Row(T("Size.GameList"), SizeChoice("GameListScale", () => vm.GameListScale, vm.SetGameListScale), tip: T("Size.GameListTip")),
             SettingsLayout.Row(T("Set.TrayIcon"), SettingsLayout.OnOff(() => model.TrayIconEnabled, v => { model.TrayIconEnabled = v; model.TrayIconClicked(); },
                 model, nameof(model.TrayIconEnabled), "TrayIcon"), T("Win.TraySupportDependsDesktopEnvironmentKDE"), T("Win.EnableSystemTrayIconStatusNotifierItemAppIndicat")),
             SettingsLayout.Row(T("Set.CloseToTray"), closeToTray, tip: T("Set.CloseToTrayTip")),
             SettingsLayout.Row(T("Ui.Language"), SettingsLayout.Choice(model.UiLanguages, () => model.UiLanguage, v => model.UiLanguage = v, model, nameof(model.UiLanguage), "UiLanguage"),
                 T("Ui.LanguageNote")),
-            SettingsLayout.Row(T("Ui.ViewMode"), SettingsLayout.Choice(model.ViewModes, () => model.ViewMode, v => model.ViewMode = v, model, nameof(model.ViewMode), "ViewMode"),
-                T("Win.CompactViewKeepsSelectedGameWorkflow")),
+            // w14/layouts-a (#303): the View mode row (Compact view) left: the top bar's layout switch replaced it, as upstream.
             SettingsLayout.Row(T("Set.MotdAtStart"), SettingsLayout.OnOff(() => model.ShowMotdOnStartup, v => model.ShowMotdOnStartup = v, model,
                 nameof(model.ShowMotdOnStartup), "ShowMotd"), tip: T("Win.ShowEachNewMOTDOnceAt"))));
         // #301 (upstream 2.9.3 Settings › General › Colour theme): the theme, Custom's colours, Share / Import theme.
