@@ -33,6 +33,15 @@ public sealed class CogTooltipTests : IDisposable
         Assert.Equal(rows.Length, rows.Select(r => r.Tip).Distinct().Count());
         if (language == "en-US")
             Assert.StartsWith("Game keeps the game's own frame generation. XeFG replaces the game's DLSS frame generation", rows[0].Tip);
+        // w14 final review m9: the Neural Rendering section and row are in the interface's language.
+        var sections = FgSettingsBuilder.RtxEncore(Path.Combine(_root, "rtx-encore.jsonc"));
+        var neural = UiLocalizationService.TextFor(language, "Sec.NeuralRendering");
+        Assert.Contains(sections, s => s.Title == neural && s.Rows.Any(r => r.Label == neural));
+        if (language == "pt-BR")
+        {
+            Assert.DoesNotContain(sections, s => s.Title == "Neural Rendering");
+            Assert.DoesNotContain(rows, r => r.Label == "Neural Rendering");
+        }
     }
 
     [Fact]

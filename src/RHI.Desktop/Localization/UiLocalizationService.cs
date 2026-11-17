@@ -144,7 +144,7 @@ public static class UiLocalizationService
         ["Ui.DlssEnablerStandaloneUpdate"] = "Atualizar",
         ["Ui.DlssEnablerStandaloneCompatibilityNote"] = "Compatibilidade experimental: confirme em jogo real sob Wine/Proton que o proxy escolhido é carregado sem crash, tela preta ou perda do dispositivo.",
         ["Ui.Rtx40MfgSettingsTip"] = "Configurações do Universal MFG Unlocker",
-        ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — nome do arquivo, Neural Rendering e atualização",
+        ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — nome do arquivo, Renderização Neural e atualização",
         ["Ui.Rtx40MfgTitle"] = "Universal MFG Unlocker",
         ["Ui.Rtx40MfgIntro"] = "Pressione Backspace no jogo para abrir o menu do Universal MFG Unlocker. Ele oferece estes modos:",
         ["Ui.Rtx40MfgProxy"] = "DLL proxy",
