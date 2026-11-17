@@ -182,15 +182,10 @@ public sealed class IntelXessFiles
                 entries.Add(new IntelXessEntry { File = step.File.Name, Path = step.Target, Sha256 = sha, Placement = IntelXessPlacement.Replaced, Backup = step.Backup });
                 continue;
             }
-            // Every folder level RHI creates is recorded, so removal can take each away again when it is empty.
-            var created = new List<string>();
-            for (var folder = System.IO.Path.GetDirectoryName(step.Target); folder is not null && !Directory.Exists(folder); folder = System.IO.Path.GetDirectoryName(folder))
-                created.Add(folder);
-            if (created.Count > 0)
-            {
-                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(step.Target)!);
-                entries.AddRange(created.Select(folder => new IntelXessEntry { File = "", Path = folder, Placement = IntelXessPlacement.Added }));
-            }
+            // Every folder level RHI creates is recorded, so removal can take each away again when it is empty; each is made
+            // through the scope, so a rollback takes it away too (w14 final review m13).
+            var created = await scope.CreateFoldersAsync(System.IO.Path.GetDirectoryName(step.Target)!, cancellationToken).ConfigureAwait(false);
+            entries.AddRange(created.Select(folder => new IntelXessEntry { File = "", Path = folder, Placement = IntelXessPlacement.Added }));
             await scope.PlaceCopyAsync(source, step.Target, cancellationToken, sha, overwrite: false).ConfigureAwait(false);
             entries.Add(new IntelXessEntry { File = step.File.Name, Path = step.Target, Sha256 = sha, Placement = IntelXessPlacement.Added });
         }
@@ -227,15 +222,19 @@ public sealed class IntelXessFiles
                 if (entry.Backup is { } kept && File.Exists(kept)) backupsLeft.Add(kept);
                 continue;
             }
-            if (entry.Placement == IntelXessPlacement.Replaced && entry.Backup is { } backup && File.Exists(backup))
+            if (entry.Placement == IntelXessPlacement.Replaced)
             {
-                await scope.PlaceCopyAsync(backup, entry.Path, cancellationToken).ConfigureAwait(false);
-                await scope.DeleteAsync(backup, cancellationToken).ConfigureAwait(false);
+                // The game's own file was replaced: only its backup may take its place. Without one, RHI's copy stays where
+                // the game expects its DLL (w14 final review M8) and is listed as left, never deleted.
+                if (entry.Backup is { } backup && File.Exists(backup))
+                {
+                    await scope.PlaceCopyAsync(backup, entry.Path, cancellationToken).ConfigureAwait(false);
+                    await scope.DeleteAsync(backup, cancellationToken).ConfigureAwait(false);
+                }
+                else changed.Add(entry.Path);
+                continue;
             }
-            else
-            {
-                await scope.DeleteAsync(entry.Path, cancellationToken).ConfigureAwait(false);
-            }
+            await scope.DeleteAsync(entry.Path, cancellationToken).ConfigureAwait(false);
         }
         return new IntelXessRemoved(changed, backupsLeft);
     }

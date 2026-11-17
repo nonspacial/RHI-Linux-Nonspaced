@@ -187,6 +187,22 @@ public sealed class DeploymentScope : IAsyncDisposable
     }
 
     /// <summary>Puts the operation id into <paramref name="record"/>'s metadata (its commit point); returns the record.</summary>
+    private readonly List<string> _createdFolders = [];
+
+    /// <summary>
+    /// w14 final review m13: creates <paramref name="folder"/> and every missing folder above it, outermost first. Journaled,
+    /// each is journaled before it is made (<see cref="RHI.Core.Deployment.CreatedDirectoryCompensator"/>); without a
+    /// journal the scope remembers them. Either way a rollback (or a crash before the commit) removes each again when it is
+    /// empty. Returns the folders made.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> CreateFoldersAsync(string folder, CancellationToken cancellationToken = default)
+    {
+        var created = new List<string>();
+        await AddonPathFolder.CreateJournaledAsync(folder, Operation, created, cancellationToken).ConfigureAwait(false);
+        if (Operation is null) _createdFolders.AddRange(created);
+        return created;
+    }
+
     public LinuxDeploymentRecord Stamp(LinuxDeploymentRecord record) => LinuxDeploymentRecovery.StampOperation(Operation, record);
 
     /// <summary>
@@ -219,6 +235,7 @@ public sealed class DeploymentScope : IAsyncDisposable
             ? await Operation.RollbackAsync().ConfigureAwait(false)
             : await Files.RollbackAsync(RollbackMode.InProcess).ConfigureAwait(false);
         _decision = result.Decision;
+        if (Operation is null && result.RolledBack) AddonPathFolder.RemoveCreated(_createdFolders); // journaled: the compensator
         return result;
     }
 
