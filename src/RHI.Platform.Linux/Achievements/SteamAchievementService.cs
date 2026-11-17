@@ -143,7 +143,8 @@ public sealed class SteamAchievementService
                 var hidden = display is not null && display.TryGetValue("hidden", out var h) && ToLong(h) != 0;
                 var isUnlocked = (mask & (1UL << bitIndex)) != 0;
                 DateTime? when = null;
-                if (isUnlocked && times is not null && times.TryGetValue(bitKey, out var t) && ToLong(t) > 0)
+                // Review nit: a time outside what a date can hold (a damaged cache) is no time, not a crash.
+                if (isUnlocked && times is not null && times.TryGetValue(bitKey, out var t) && ToLong(t) is > 0 and <= MaxUnixSeconds)
                     when = DateTimeOffset.FromUnixTimeSeconds(ToLong(t)).UtcDateTime;
                 var a = new Achievement(apiName, name, desc, hidden, isUnlocked, when, IconFile(display, "icon"), IconFile(display, "icon_gray"));
                 (isUnlocked ? unlocked : locked).Add((a, NumKey(blockKey) * 64 + bitIndex));
@@ -155,6 +156,8 @@ public sealed class SteamAchievementService
         return new AchievementSet(appId, items);
     }
 
+    private const long MaxUnixSeconds = 253402300799; // 9999-12-31
+
     private static Dictionary<string, object>? Child(Dictionary<string, object> node, string key)
         => node.TryGetValue(key, out var v) ? v as Dictionary<string, object> : null;
 
@@ -164,6 +167,7 @@ public sealed class SteamAchievementService
     {
         int i => i,
         long l => l,
+        ulong u when u > long.MaxValue => 0,
         ulong u => (long)u,
         float f => (long)f,
         string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) => p,
@@ -276,7 +280,7 @@ public sealed class SteamAchievementService
             }
             return map;
         }
-        catch (JsonException) { return null; }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException) { return null; } // review nit: JSON of another shape
     }
 
     // ---- icons -----------------------------------------------------------------------------------------------------
@@ -346,7 +350,8 @@ public sealed class SteamAchievementService
 
 /// <summary>
 /// Valve's binary KeyValues (appcache/stats files; upstream <c>SteamBinaryKv</c>). Types: 0 subtree, 1 string,
-/// 2/4/6 int32, 3 float, 7 uint64, 8/11 end of subtree. Keys case-insensitive. Throws <see cref="FormatException"/> on bad
+/// 2/4/6 int32, 3 float, 5 wide (UTF-16) string, 7 uint64, 10 int64, 8/11 end of subtree (5 and 10: w14 final review nit,
+/// so a file holding one is read rather than refused). Keys case-insensitive. Throws <see cref="FormatException"/> on bad
 /// data; nesting is limited so a damaged file cannot recurse without end.
 /// </summary>
 public static class SteamBinaryKv
@@ -375,7 +380,9 @@ public static class SteamBinaryKv
                 1 => ReadString(b, ref pos),
                 2 or 4 or 6 => (object)Read(b, ref pos, 4, BitConverter.ToInt32),
                 3 => Read(b, ref pos, 4, BitConverter.ToSingle),
+                5 => ReadWideString(b, ref pos),
                 7 => Read(b, ref pos, 8, BitConverter.ToUInt64),
+                10 => Read(b, ref pos, 8, BitConverter.ToInt64),
                 _ => throw new FormatException($"Unknown KeyValues type {type} at {pos - 1}"),
             };
         }
@@ -388,6 +395,18 @@ public static class SteamBinaryKv
         var s = Encoding.UTF8.GetString(b, pos, end - pos);
         pos = end + 1;
         return s;
+    }
+
+    private static string ReadWideString(byte[] b, ref int pos)
+    {
+        for (var end = pos; end + 1 < b.Length; end += 2)
+        {
+            if (b[end] != 0 || b[end + 1] != 0) continue;
+            var s = Encoding.Unicode.GetString(b, pos, end - pos);
+            pos = end + 2;
+            return s;
+        }
+        throw new FormatException("Unterminated KeyValues wide string");
     }
 
     private static T Read<T>(byte[] b, ref int pos, int size, Func<byte[], int, T> read)
