@@ -291,7 +291,7 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
             CacheAllShaders = CacheAllShaders,
             VerboseLogging = VerboseLogging,
             AutoUpdateComponents = AutoUpdateComponents,
-            UpdateCheckIntervalHours = 4,
+            UpdateCheckIntervalHours = Settings.UpdateCheckIntervalHours, // unused since the cadence follows the GitHub token (#298); kept as saved
             DefaultDlssVersion = DefaultDlss.Value,
             DefaultDlssdVersion = DefaultDlssd.Value,
             DefaultDlssgVersion = DefaultDlssg.Value,
