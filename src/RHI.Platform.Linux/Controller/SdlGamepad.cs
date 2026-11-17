@@ -34,6 +34,39 @@ public sealed unsafe class SdlGamepad : IDisposable
         ("SDL_JOYSTICK_HIDAPI_STEAM", "1"),
     ];
 
+    /// <summary>
+    /// SDL's buttons read, in XInput's layout (upstream's 14). Nothing else is read: an Xbox Elite Series 2's back paddles
+    /// (SDL's Paddle1–4, seen as extra buttons; upstream ignores them too), the Share / Misc1 button, the Guide button and a
+    /// PlayStation touchpad click do nothing in RHI. A paddle the controller itself maps to A, B, … (an Elite profile) arrives
+    /// as that button and works as it.
+    /// </summary>
+    internal static readonly IReadOnlyList<(GameControllerButton Button, ushort Bit)> ButtonMap =
+    [
+        (GameControllerButton.DpadUp, ControllerPoller.DPadUp),
+        (GameControllerButton.DpadDown, ControllerPoller.DPadDown),
+        (GameControllerButton.DpadLeft, ControllerPoller.DPadLeft),
+        (GameControllerButton.DpadRight, ControllerPoller.DPadRight),
+        (GameControllerButton.Start, ControllerPoller.Start),
+        (GameControllerButton.Back, ControllerPoller.BackBtn),
+        (GameControllerButton.Leftstick, ControllerPoller.LeftThumb),
+        (GameControllerButton.Rightstick, ControllerPoller.RightThumb),
+        (GameControllerButton.Leftshoulder, ControllerPoller.LeftShoulder),
+        (GameControllerButton.Rightshoulder, ControllerPoller.RightShoulder),
+        (GameControllerButton.A, ControllerPoller.A),
+        (GameControllerButton.B, ControllerPoller.B),
+        (GameControllerButton.X, ControllerPoller.X),
+        (GameControllerButton.Y, ControllerPoller.Y),
+    ];
+
+    /// <summary>The button bits (XInput's layout) from SDL's pressed buttons (<see cref="ButtonMap"/> only).</summary>
+    internal static ushort ButtonsFrom(Func<GameControllerButton, bool> isDown)
+    {
+        ushort buttons = 0;
+        foreach (var (button, bit) in ButtonMap)
+            if (isDown(button)) buttons |= bit;
+        return buttons;
+    }
+
     public SdlGamepad()
     {
         try
@@ -79,25 +112,7 @@ public sealed unsafe class SdlGamepad : IDisposable
             if (_pad is null) return false;
             AppLog.Warn("controller", "Controller connected: " + Name);
         }
-        ushort buttons = 0;
-        void Bit(GameControllerButton button, ushort bit)
-        {
-            if (sdl.GameControllerGetButton(_pad, button) != 0) buttons |= bit;
-        }
-        Bit(GameControllerButton.DpadUp, ControllerPoller.DPadUp);
-        Bit(GameControllerButton.DpadDown, ControllerPoller.DPadDown);
-        Bit(GameControllerButton.DpadLeft, ControllerPoller.DPadLeft);
-        Bit(GameControllerButton.DpadRight, ControllerPoller.DPadRight);
-        Bit(GameControllerButton.Start, ControllerPoller.Start);
-        Bit(GameControllerButton.Back, ControllerPoller.BackBtn);
-        Bit(GameControllerButton.Leftstick, ControllerPoller.LeftThumb);
-        Bit(GameControllerButton.Rightstick, ControllerPoller.RightThumb);
-        Bit(GameControllerButton.Leftshoulder, ControllerPoller.LeftShoulder);
-        Bit(GameControllerButton.Rightshoulder, ControllerPoller.RightShoulder);
-        Bit(GameControllerButton.A, ControllerPoller.A);
-        Bit(GameControllerButton.B, ControllerPoller.B);
-        Bit(GameControllerButton.X, ControllerPoller.X);
-        Bit(GameControllerButton.Y, ControllerPoller.Y);
+        var buttons = ButtonsFrom(button => sdl.GameControllerGetButton(_pad, button) != 0);
         short Axis(GameControllerAxis axis) => sdl.GameControllerGetAxis(_pad, axis);
         state = ControllerPoller.FromSdl(buttons, Axis(GameControllerAxis.Leftx), Axis(GameControllerAxis.Lefty), Axis(GameControllerAxis.Rightx),
             Axis(GameControllerAxis.Righty), Axis(GameControllerAxis.Triggerleft), Axis(GameControllerAxis.Triggerright));

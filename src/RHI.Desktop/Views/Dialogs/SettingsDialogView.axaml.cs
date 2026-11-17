@@ -605,6 +605,42 @@ public sealed partial class SettingsDialogView : UserControl
         if (key is not null && _model is not null) _model.LastSection = key; // remembered on close
     }
 
+    // ── The controller (w14 controller fixes; upstream 2.9.4 SettingsHandler.Navigation PadStartButton / PadJumpSection) ──
+
+    /// <summary>
+    /// Where the controller starts in Settings: the shown section's button in the index (with Tabs, its tab); on a narrow
+    /// window without the index, the section's first control.
+    /// </summary>
+    internal Control? PadStart()
+    {
+        var section = _sections.FirstOrDefault(s => s.Key == _current && s.Panel.IsVisible) ?? _sections.FirstOrDefault(s => s.Panel.IsVisible);
+        if (section is null) return null;
+        if (_model?.Tabbed == true && section.TabButton.IsEffectivelyVisible) return section.TabButton;
+        if (section.NavButton.IsEffectivelyVisible) return section.NavButton;
+        return PadControls.First(section.Panel, this);
+    }
+
+    /// <summary>Controller LB / RB: the previous / next section (stopping at the ends); its panel, to focus its first setting.</summary>
+    internal Control? PadJumpSection(int step)
+    {
+        var tabbed = _model?.Tabbed == true;
+        var keys = _sections.Where(s => tabbed || s.Panel.IsVisible || _results?.IsVisible == true).Select(s => s.Key).ToList();
+        if (PadRouter.StepSection(keys, _current, step) is not { } key) return null;
+        ClearSearch();
+        ShowSection(key, scroll: true);
+        return _sections.FirstOrDefault(s => s.Key == key)?.Panel;
+    }
+
+    /// <summary>The section list on the left (null while it is hidden: a narrow window, or Tabs).</summary>
+    internal Visual? PadNav => _nav is { IsEffectivelyVisible: true } nav ? nav : null;
+
+    /// <summary>The shown section's first setting (the D-pad's Right from the section list).</summary>
+    internal Control? PadSectionFirst()
+        => _sections.FirstOrDefault(s => s.Key == _current && s.Panel.IsVisible) is { } section ? PadControls.First(section.Panel, this) : null;
+
+    /// <summary>The settings' scroll area (the right stick).</summary>
+    internal ScrollViewer? PadScroller => _scroll;
+
     // ── Find a setting ───────────────────────────────────────────────────────
 
     private void ClearSearch()
