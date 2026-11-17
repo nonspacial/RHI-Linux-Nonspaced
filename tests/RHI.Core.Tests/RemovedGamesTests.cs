@@ -212,6 +212,18 @@ public sealed class RemovedGamesTests : IDisposable
     }
 
     [Fact]
+    public async Task Remove_WhileAnotherOperationRuns_SaysSo()
+    {
+        using var fx = await ViewModelFixture.StartAsync([Steam("Busy", 70050)]);
+        fx.Vm.SelectedGame = fx.Vm.AllLibraryGames.Single();
+        fx.Vm.StatusText = "";
+        using (((IPanelHost)fx.Vm).BeginOperation("install", cancellable: false))
+            await fx.Vm.RemoveFromRhiCommand.ExecuteAsync(null);
+        Assert.Equal("Another RHI operation is already running.", fx.Vm.StatusText);
+        Assert.Single(fx.Vm.AllLibraryGames);
+    }
+
+    [Fact]
     public async Task AManuallyAddedGame_IsNotOfferedRemoveFromRhi()
     {
         var dir = Directory.CreateDirectory(Path.Combine(_root, "Manual")).FullName;

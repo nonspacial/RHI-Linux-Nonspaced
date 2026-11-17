@@ -57,7 +57,14 @@ public partial class MainWindowViewModel
     [RelayCommand]
     private async Task RemoveFromRhiAsync()
     {
-        if (SelectedGame is not { IsManuallyAdded: false } game || IsBusy || LibraryWritesPaused()) return;
+        if (SelectedGame is not { IsManuallyAdded: false } game) return;
+        // w14 final review nit: busy is said, not a click that does nothing (the gate is asked again below).
+        if (IsBusy)
+        {
+            StatusText = T("Vm.AnotherRHIOperationAlreadyRunning");
+            return;
+        }
+        if (LibraryWritesPaused()) return;
         var prompt = RemoveFromRhiPromptFor(game);
         var uninstall = false;
         if (ConfirmRemoveFromRhiAsync is { } confirm)
@@ -71,7 +78,7 @@ public partial class MainWindowViewModel
         if (uninstall)
         {
             using var op = BeginOperation("component", cancellable: false);
-            if (op is null) return;
+            if (op is null) return; // BeginOperation said another operation runs
             StatusText = UiLocalizationService.Format("Removed.Uninstalling", game.Name);
             var result = await _managedComponents.RemoveAllComponentsAsync(game, op.Token);
             if (!result.Success)
