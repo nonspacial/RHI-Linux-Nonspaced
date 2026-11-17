@@ -33,13 +33,13 @@ Not on `main` yet.
 > There is no guard against this: 2.8.8 treats a component kind it does not know as damaged and leaves it out, so the
 > records cannot be written in a shape it would keep.
 
-- **Block Steam updates now holds on Linux** (#290): Steam replaces a game's app manifest by renaming a new file over it,
-  which a read-only file does not stop. Turning the block on now also sets the game to Steam's "Only update this game
-  when I launch it" and locks the manifest (immutable, `chattr +i`), which asks for your password through the desktop's
-  prompt (polkit); the ⚙ panel says "Blocked" only once the lock is confirmed. Without the lock (no `pkexec` or `chattr`,
-  a file system without immutable files, or the prompt cancelled) the manifest stays launch-only and read-only, and RHI
-  says that Steam may still update the game when you launch it, and why. Turning it off unlocks the manifest (password
-  again) and puts back its mode and update setting. While blocked, Steam may show an update error for the game.
+- **Block Steam updates now holds on Linux** (#290): Steam replaces a game's app manifest by renaming a new file over
+  it, which a read-only file does not stop. Turning the block on now also sets the game to Steam's "Only update this
+  game when I launch it" and locks the manifest (immutable, `chattr +i`), which asks for your password through the
+  desktop's prompt (polkit); the ⚙ panel says "Blocked" only once the lock is confirmed. Without the lock (no `pkexec`
+  or `chattr`, a file system without immutable files, or the prompt cancelled) the manifest stays launch-only and
+  read-only, and RHI says that Steam may still update the game when you launch it, and why. Turning it off unlocks the
+  manifest (password again) and puts back its mode and update setting. While blocked, Steam may show an update error.
 
 ### Wave 14 — renodx-reshade
 
