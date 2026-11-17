@@ -285,9 +285,10 @@ public static class TrustedDownload
         TrustedDownloadPolicy policy,
         string? accept = null,
         CancellationToken cancellationToken = default,
-        Action<HttpResponseMessage>? onResponse = null)
+        Action<HttpResponseMessage>? onResponse = null,
+        Action<HttpRequestMessage>? configureRequest = null)
     {
-        var bytes = await GetBytesAsync(http, url, policy, accept, cancellationToken, onResponse).ConfigureAwait(false);
+        var bytes = await GetBytesAsync(http, url, policy, accept, cancellationToken, onResponse, configureRequest).ConfigureAwait(false);
         using var buffer = new MemoryStream(bytes, writable: false);
         using var reader = new StreamReader(buffer, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
@@ -303,11 +304,13 @@ public static class TrustedDownload
         TrustedDownloadPolicy policy,
         string? accept = null,
         CancellationToken cancellationToken = default,
-        Action<HttpResponseMessage>? onResponse = null)
+        Action<HttpResponseMessage>? onResponse = null,
+        Action<HttpRequestMessage>? configureRequest = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, policy.Validate(url));
         request.Headers.UserAgent.Add(DefaultUserAgent);
         if (!string.IsNullOrWhiteSpace(accept)) request.Headers.Accept.ParseAdd(accept);
+        configureRequest?.Invoke(request); // w14/layouts-b (#305): a per-request header (SteamGridDB's key), never a default one
         return await SendCappedAsync(http, request, url, policy, cancellationToken, onResponse).ConfigureAwait(false);
     }
 

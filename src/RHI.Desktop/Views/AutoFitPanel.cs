@@ -19,7 +19,23 @@ public sealed class AutoFitPanel : Panel
     public static readonly StyledProperty<double> SpacingProperty =
         AvaloniaProperty.Register<AutoFitPanel, double>(nameof(Spacing), 12);
 
-    static AutoFitPanel() => AffectsMeasure<AutoFitPanel>(MinColumnWidthProperty, SpacingProperty);
+    /// <summary>w14/layouts-b (#305, upstream AutoFitGrid.MaxColumns): at most this many columns; 0 = no limit.</summary>
+    public static readonly StyledProperty<int> MaxColumnsProperty =
+        AvaloniaProperty.Register<AutoFitPanel, int>(nameof(MaxColumns));
+
+    static AutoFitPanel() => AffectsMeasure<AutoFitPanel>(MinColumnWidthProperty, SpacingProperty, MaxColumnsProperty);
+
+    public int MaxColumns
+    {
+        get => GetValue(MaxColumnsProperty);
+        set => SetValue(MaxColumnsProperty, value);
+    }
+
+    private int ColumnsFor(double width, int count)
+    {
+        var columns = Columns(width, count, MinColumnWidth, Spacing);
+        return MaxColumns > 0 ? Math.Min(columns, MaxColumns) : columns;
+    }
 
     public double MinColumnWidth
     {
@@ -122,7 +138,7 @@ public sealed class AutoFitPanel : Panel
     protected override Size MeasureOverride(Size availableSize)
     {
         var visible = Visible();
-        var columns = Columns(availableSize.Width, visible.Count, MinColumnWidth, Spacing);
+        var columns = ColumnsFor(availableSize.Width, visible.Count);
         var columnWidth = columns == 0 ? 0 : double.IsInfinity(availableSize.Width)
             ? MinColumnWidth
             : Math.Max(0, (availableSize.Width - Spacing * (columns - 1)) / columns);
@@ -138,7 +154,7 @@ public sealed class AutoFitPanel : Panel
     protected override Size ArrangeOverride(Size finalSize)
     {
         var visible = Visible();
-        var columns = Columns(finalSize.Width, visible.Count, MinColumnWidth, Spacing);
+        var columns = ColumnsFor(finalSize.Width, visible.Count);
         var columnWidth = columns == 0 ? 0 : Math.Max(0, (finalSize.Width - Spacing * (columns - 1)) / columns);
         var plan = Plan(visible.Select(c => c.DesiredSize.Height).ToList(), Math.Max(1, columns), columnWidth, Spacing, finalSize.Width,
             InsetAfter(visible), _inset?.DesiredSize.Height ?? 0);

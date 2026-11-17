@@ -225,6 +225,31 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy AnrFg = new(
         "ANR FG", "GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
 
+    /// <summary>
+    /// w14/layouts-b (#305): Spotlight's Steam artwork (banner and covers, upstream <c>SteamArtworkService</c>): Steam's image
+    /// CDN hosts only, 16 MiB per image (real ones are well under 2 MiB).
+    /// </summary>
+    public static readonly TrustedDownloadPolicy SteamArtwork = new(
+        "Steam artwork", "Steam's image servers",
+        ["cdn.cloudflare.steamstatic.com", "shared.akamai.steamstatic.com", "cdn.akamai.steamstatic.com", "shared.cloudflare.steamstatic.com",
+         "shared.fastly.steamstatic.com", "steamcdn-a.akamaihd.net"],
+        maxBytes: 16L * 1024 * 1024);
+
+    /// <summary>
+    /// w14/layouts-b (#305, #307): Steam's public Web API, no key (IStoreBrowseService for hashed artwork paths,
+    /// ISteamUserStats' global achievement percentages): api.steampowered.com only, 4 MiB.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy SteamWebApi = new(
+        "Steam Web API", "api.steampowered.com", ["api.steampowered.com"], maxBytes: 4L * 1024 * 1024);
+
+    /// <summary>w14/layouts-b (#305, upstream 2.9.5 beta <c>SteamGridDbService</c>): SteamGridDB's API, www.steamgriddb.com only, 4 MiB.</summary>
+    public static readonly TrustedDownloadPolicy SteamGridDbApi = new(
+        "SteamGridDB API", "www.steamgriddb.com", ["www.steamgriddb.com"], maxBytes: 4L * 1024 * 1024);
+
+    /// <summary>w14/layouts-b (#305): SteamGridDB's images (thumbnails and full covers / banners): its CDN only, 32 MiB.</summary>
+    public static readonly TrustedDownloadPolicy SteamGridDbImages = new(
+        "SteamGridDB image", "SteamGridDB's image servers", ["cdn2.steamgriddb.com", "cdn.steamgriddb.com"], maxBytes: 32L * 1024 * 1024);
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -267,5 +292,7 @@ public static class DownloadSources
         FoveatedDlss5,
         // w14/optiscaler-2 rows
         OptiScalerCustomBuild, AnrFg,
+        // w14/layouts-b rows
+        SteamArtwork, SteamWebApi, SteamGridDbApi, SteamGridDbImages,
     ];
 }

@@ -2,11 +2,14 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>RHI.Platform.Linux</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks><!-- w14/layouts-b (#308): SDL game controller handles -->
     <AssemblyName>RHI.Platform.Linux</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../RHI.Core/RHI.Core.csproj" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.71" />
+    <!-- w14/layouts-b (#308): SDL2 game controllers (Xbox-style, DualShock / DualSense, Steam Controller) for Spotlight. -->
+    <PackageReference Include="Silk.NET.SDL" Version="2.23.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- #97: upstream RHI 2.8.7's per-GPU OptiScaler.ini templates (GPL-3, as this project), seeded once, never overwritten. -->

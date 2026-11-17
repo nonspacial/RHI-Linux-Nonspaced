@@ -16,10 +16,12 @@ public static class SettingsSections
     public const string Driver = "Driver";
     public const string Components = "Components";
     public const string Tools = "Tools";
+    /// <summary>w14/layouts-b (#307, upstream 2.9.2): Achievements, just before Tools &amp; Maintenance.</summary>
+    public const string Achievements = "Achievements";
 
     /// <summary>Upstream's order: General, Accounts &amp; Data, ReShade &amp; RenoDX, Display &amp; HDR, DLSS / Streamline,
-    /// Driver Settings, Components, Tools &amp; Maintenance.</summary>
-    public static IReadOnlyList<string> Order { get; } = [General, Accounts, ReShade, Display, Dlss, Driver, Components, Tools];
+    /// Driver Settings, Components, Achievements (2.9.2), Tools &amp; Maintenance.</summary>
+    public static IReadOnlyList<string> Order { get; } = [General, Accounts, ReShade, Display, Dlss, Driver, Components, Achievements, Tools];
 
     public static string Title(string key) => UiLocalizationService.Text(key switch
     {
@@ -30,6 +32,7 @@ public static class SettingsSections
         Dlss => "Set.SectionDlss",
         Driver => "Set.SectionDriver",
         Components => "Set.SectionComponents",
+        Achievements => "Ach.Section",
         _ => "Set.SectionTools",
     });
 
@@ -42,6 +45,7 @@ public static class SettingsSections
         Dlss => "Set.SectionDlssDesc",
         Driver => "Set.SectionDriverDesc",
         Components => "Set.SectionComponentsDesc",
+        Achievements => "Ach.SectionDesc",
         _ => "Set.SectionToolsDesc",
     });
 

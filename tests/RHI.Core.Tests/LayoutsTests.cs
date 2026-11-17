@@ -19,11 +19,16 @@ public sealed class LayoutsTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"rhi-layouts-{Guid.NewGuid():N}");
 
-    public LayoutsTests() => UiLocalizationService.Apply("en-US");
+    public LayoutsTests()
+    {
+        UiLocalizationService.Apply("en-US");
+        // w14/layouts-b (#305) turned Spotlight on; these tests keep checking the switch's "not available" path.
+        GameLayoutPresenter.SpotlightAvailable = false;
+    }
 
     public void Dispose()
     {
-        GameLayoutPresenter.SpotlightAvailable = false;
+        GameLayoutPresenter.SpotlightAvailable = true;
         try { Directory.Delete(_root, true); } catch (IOException) { }
     }
 

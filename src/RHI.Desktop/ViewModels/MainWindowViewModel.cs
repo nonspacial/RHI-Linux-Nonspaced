@@ -1183,6 +1183,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         try
         {
             await launch();
+            GameLaunched?.Invoke(game); // w14/layouts-b (#308): Spotlight's controller brings RHI back when it closes
             return true;
         }
         catch (GameLaunchFailedException ex)
@@ -1733,6 +1734,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         items.Add(new("hide", HideActionText, ToggleHiddenCommand));
         items.Add(Collections.MenuFor(game)); // #300: Add to collection, under Hide as upstream
         if (DisplayModes.MenuFor(game) is { } displayMode) items.Add(displayMode); // w14/display-modes (#311): under Add to collection, as upstream
+        if (ArtworkMenuFor(game) is { } artwork) items.Add(artwork); // w14/layouts-b (#305): Spotlight's Artwork, under Hide as upstream
         if (SelectedGameHasNotes) items.Add(new("notes", T("Card.ViewNotes"), ViewNotesCommand, SeparatorBefore: true));
         // w3/parity card menu slot: Create shortcut (#162; only from this explicit choice, owner decision) and the game's
         // Nexus Mods page (#99, #174; only for a game Nexus has a page for). Both are left out where they do not apply.

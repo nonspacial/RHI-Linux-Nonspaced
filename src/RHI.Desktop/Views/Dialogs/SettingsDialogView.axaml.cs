@@ -218,7 +218,10 @@ public sealed partial class SettingsDialogView : UserControl
                 T("Ui.LanguageNote")),
             // w14/layouts-a (#303): the View mode row (Compact view) left: the top bar's layout switch replaced it, as upstream.
             SettingsLayout.Row(T("Set.MotdAtStart"), SettingsLayout.OnOff(() => model.ShowMotdOnStartup, v => model.ShowMotdOnStartup = v, model,
-                nameof(model.ShowMotdOnStartup), "ShowMotd"), tip: T("Win.ShowEachNewMOTDOnceAt"))));
+                nameof(model.ShowMotdOnStartup), "ShowMotd"), tip: T("Win.ShowEachNewMOTDOnceAt")),
+            // w14/layouts-b (#308, upstream 2.9.0 Settings › General › Windows): Controller support, saved at once.
+            SettingsLayout.Row(T("Pad.Setting"), SettingsLayout.OnOff(() => vm.SpotlightSettings.ControllerSupport,
+                v => vm.StatusText = vm.SetControllerSupport(v) ?? vm.StatusText, name: "ControllerSupport"), T("Pad.SettingHelp"), T("Pad.SettingTip"))));
         // #301 (upstream 2.9.3 Settings › General › Colour theme): the theme, Custom's colours, Share / Import theme.
         cards[SettingsSections.General].Add(SettingsLayout.Card(T("Theme.Title"), T("Theme.Intro"), SettingsLayout.Block(themeRows.Control)));
 
@@ -227,6 +230,9 @@ public sealed partial class SettingsDialogView : UserControl
             cards[SettingsSections.Accounts].Add(SettingsLayout.Card(T("Set.CardAccounts"), null,
                 SettingsLayout.Block(ParitySettingsTab.GitHubTokenSection(parity.GitHubToken)),
                 SettingsLayout.Block(ParitySettingsTab.NexusSection(parity.NexusAccount))));
+        // w14/layouts-b (#305, upstream 2.9.5 beta): SteamGridDB API key, for Spotlight › Artwork's community covers and banners.
+        if (vm.SteamGridDbKey is { } sgdbKey)
+            cards[SettingsSections.Accounts].Add(SettingsLayout.Card(T("Sgdb.KeyTitle"), null, SettingsLayout.Block(SteamGridDbKeySection.Create(sgdbKey))));
 
         // ── ReShade & RenoDX ── (upstream: Keys, screenshots and brightness; Shaders and addons)
         var screenshotFolder = SettingsLayout.Text(() => model.ScreenshotPath, v => model.ScreenshotPath = v, model, nameof(model.ScreenshotPath),
@@ -382,6 +388,12 @@ public sealed partial class SettingsDialogView : UserControl
             SettingsLayout.Help(T("Win.ClearCacheRemovesOnlyRHILinux")),
             SettingsLayout.SubHeading(T("Removed.Tab")),
             Unwrap(RemovedGamesSettingsTab.Create(vm, Show)))); // #293 Removed games
+        // w14/layouts-b (#307, upstream 2.9.2 Settings › Achievements): Steam (off by default) and Show hidden, saved at once.
+        cards[SettingsSections.Achievements].Add(SettingsLayout.Card(T("Ach.Stores"), T("Ach.StoresHelp"),
+            SettingsLayout.Row("Steam", SettingsLayout.OnOff(() => vm.Achievements.SteamOn, v => vm.StatusText = vm.Achievements.SetSteamOn(v) ?? vm.StatusText, name: "SteamAchievements"),
+                tip: T("Ach.SteamTip")),
+            SettingsLayout.Row(T("Ach.ShowHidden"), SettingsLayout.OnOff(() => vm.Achievements.ShowHidden, v => vm.StatusText = vm.Achievements.SetShowHidden(v) ?? vm.StatusText, name: "AchievementsShowHidden"),
+                tip: T("Ach.ShowHiddenTip"))));
         // w14 lane rows: Settings cards (add to cards[SettingsSections.<Key>])
         return cards;
     }

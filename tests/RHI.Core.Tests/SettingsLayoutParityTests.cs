@@ -18,8 +18,9 @@ public sealed class SettingsLayoutParityTests
     {
         UiLocalizationService.Apply("en-US");
         // Upstream 2.9.4 MainWindow.xaml: Tag="Section:<Key>" in this order, and the headings each section shows.
-        Assert.Equal(["General", "Accounts", "ReShade", "Display", "Dlss", "Driver", "Components", "Tools"], SettingsSections.Order);
-        Assert.Equal(["General", "Accounts & Data", "ReShade & RenoDX", "Display & HDR", "DLSS / Streamline", "Driver Settings", "Components", "Tools & Maintenance"],
+        // w14/layouts-b (#307): upstream 2.9.2 added Achievements just before Tools & Maintenance.
+        Assert.Equal(["General", "Accounts", "ReShade", "Display", "Dlss", "Driver", "Components", "Achievements", "Tools"], SettingsSections.Order);
+        Assert.Equal(["General", "Accounts & Data", "ReShade & RenoDX", "Display & HDR", "DLSS / Streamline", "Driver Settings", "Components", "Achievements", "Tools & Maintenance"],
             SettingsSections.Order.Select(SettingsSections.Title));
         foreach (var key in SettingsSections.Order)
         {

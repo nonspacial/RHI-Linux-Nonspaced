@@ -388,6 +388,27 @@ Wave 14 — extras-fg-2
 - **In Tabs, a component's ⚙ now opens right under the card you clicked**, and the cards after it move down; before,
   it opened under all the cards. In Extras it opens right under the row (#304).
 
+### Wave 14 — layouts-b
+
+- **Spotlight is here** (upstream 2.9.0–2.9.4): your games as a row of covers above the page (or below it: the strip's ⚙
+  › Covers below the game page; No background for the page colour), the game's Steam artwork as a large banner behind
+  its header, "What's installed" and "Tune this game" tiles, and a side panel that slides in with the section you
+  open; a component's ⚙ opens in it with a back button. Drag the banner's bottom edge or the covers' edge to resize
+  them, drag the covers to scroll; double-click an edge to reset. Covers with an update have a purple outline (#305).
+- **Artwork**: right-click a game › Artwork › Set custom cover / banner (your file is copied, never changed; Use Steam
+  cover / banner undoes it), or Browse covers / banners from SteamGridDB with your own free API key (Settings ›
+  Accounts & Data). Steam art is found for games from other stores too, including Microsoft Store names with
+  "- Windows", "(PC)" or an edition in them, and Steam's own copy on your PC is used first (#305).
+- **Screenshots** beside the game's ⚙ in Spotlight: its ReShade screenshots, newest first; open, set as the banner,
+  copy, show in the folder, or delete to the Trash (#305).
+- **Steam achievements** (opt-in, Settings › Achievements): progress, the latest and recent unlocks under Launch, and
+  the full list with dates, rarity, icons, search and hidden ones masked (Show hidden), refreshed as you unlock them.
+  Read from Steam's files on your PC (native or Flatpak Steam): no sign-in or API key (#307).
+- **Controller support in Spotlight** (Xbox, PlayStation and Steam controllers): upstream's buttons, a focus ring and
+  hints in the footer, only while RHI is the active window (Settings › General › Controller support). The right stick
+  click steps through your collections. RHI asks to come back to the front when a game it launched closes. If Steam
+  is running, Steam Input may hold the controller: see Settings' tooltip (#308).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

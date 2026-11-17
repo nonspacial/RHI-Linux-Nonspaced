@@ -279,6 +279,15 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
             UiScale = _shell.UiScale,
             TopBarScale = _shell.TopBarScale,
             GameListScale = _shell.GameListScale,
+            // w14/layouts-b rows (#305 #307 #308): Spotlight's sizes and places are saved as they change, kept as in use; the
+            // achievements and controller switches are the Achievements and General rows' (hosted rows write over these).
+            SpotlightHeroHeight = _shell.SpotlightSettings.SpotlightHeroHeight,
+            SpotlightCoverScale = _shell.SpotlightSettings.SpotlightCoverScale,
+            SpotlightShelfAtBottom = _shell.SpotlightSettings.SpotlightShelfAtBottom,
+            SpotlightShelfPlain = _shell.SpotlightSettings.SpotlightShelfPlain,
+            SteamAchievements = _shell.SpotlightSettings.SteamAchievements,
+            AchievementsShowHidden = _shell.SpotlightSettings.AchievementsShowHidden,
+            ControllerSupport = _shell.SpotlightSettings.ControllerSupport,
             CacheAllShaders = CacheAllShaders,
             VerboseLogging = VerboseLogging,
             AutoUpdateComponents = AutoUpdateComponents,

@@ -21,7 +21,8 @@ public sealed class LocalizationTableTests
         "Ui.UpliftVersion", "Ui.UpliftLaunchpad", "Ui.UpliftLink", "Uplift.CardTitle", // w14/nr (#274): product names
         "Ui.Dlss5ToolFoveated", "Ui.Dlss5ToolFoveatedLink", // w14/nr-2 (#276): the build's and project's names
         "Theme.Kiro", // w14/ui-logic (#301): the theme is named after the Kiro IDE
-        "Set.SectionDlss", "Set.AutoDlss", "Set.AutoStreamline" // w14/ui-settings (#296): product names
+        "Set.SectionDlss", "Set.AutoDlss", "Set.AutoStreamline", // w14/ui-settings (#296): product names
+        "Art.Banner", "Sgdb.Banners" // w14/layouts-b (#305): "banner" is the Portuguese word too
     };
 
     private static readonly Regex PortugueseLetters = new("[ãõçáâêôíúéóàÃÕÇÁÂÊÔÍÚÉÓÀ]");

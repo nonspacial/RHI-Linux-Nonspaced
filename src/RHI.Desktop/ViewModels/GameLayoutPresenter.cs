@@ -87,8 +87,8 @@ public sealed partial class GameLayoutPresenter : ObservableObject
         _save = save;
     }
 
-    /// <summary>Whether Spotlight can be chosen (the layouts-b lane, #305, turns it on).</summary>
-    public static bool SpotlightAvailable { get; set; }
+    /// <summary>Whether Spotlight can be chosen (on since the layouts-b lane, #305; the tests can turn it off).</summary>
+    public static bool SpotlightAvailable { get; set; } = true;
 
     /// <summary>Raised after the layout or the tab changed (the window re-arranges the page).</summary>
     public event Action? Changed;
@@ -100,6 +100,34 @@ public sealed partial class GameLayoutPresenter : ObservableObject
     public MainLayout Layout => Saved == MainLayout.Spotlight && !SpotlightAvailable ? MainLayout.Classic : Saved;
 
     public bool IsTabs => Layout == MainLayout.Tabs;
+
+    /// <summary>w14/layouts-b (#305): Spotlight is shown.</summary>
+    public bool IsSpotlight => Layout == MainLayout.Spotlight;
+
+    /// <summary>The Tabs header and card look: Tabs, and Spotlight (its banner holds the Tabs header, upstream).</summary>
+    public bool UsesTabsChrome => IsTabs || IsSpotlight;
+
+    /// <summary>
+    /// w14/layouts-b (#305): what Spotlight's side panel shows — a section's key, <see cref="GamePageSections.Overview"/> for the
+    /// component cards, or a built panel's key (<see cref="SpotlightPresenter"/>); null while it is closed. Not saved.
+    /// </summary>
+    public string? PanelKey { get; private set; }
+
+    /// <summary>Opens Spotlight's side panel on <paramref name="key"/> (only in Spotlight).</summary>
+    public void OpenPanel(string key)
+    {
+        if (!IsSpotlight || PanelKey == key) return;
+        PanelKey = key;
+        Notify();
+    }
+
+    /// <summary>Closes Spotlight's side panel.</summary>
+    public void ClosePanel()
+    {
+        if (PanelKey is null) return;
+        PanelKey = null;
+        Notify();
+    }
 
     /// <summary>The switch's three choices, in upstream's order, with their tooltips.</summary>
     public IReadOnlyList<LayoutChoice> Choices =>
@@ -118,6 +146,7 @@ public sealed partial class GameLayoutPresenter : ObservableObject
     {
         if (layout == MainLayout.Spotlight && !SpotlightAvailable) return T("Layout.SpotlightSoonTip");
         if (layout == Saved) return null;
+        PanelKey = null; // the side panel is Spotlight's
         var name = layout.ToString();
         if (_save(s => s.MainLayout = name) is { } refused) return refused;
         _settings().MainLayout = name;
@@ -152,15 +181,26 @@ public sealed partial class GameLayoutPresenter : ObservableObject
         return null;
     }
 
-    /// <summary>Opens the tab a section is on (an At a glance tile, or a ⚙ that belongs to another tab).</summary>
-    public string? ShowSection(string section) => SelectTab(GamePageSections.TabOf(section));
+    /// <summary>
+    /// Opens the tab a section is on (an At a glance tile, or a ⚙ that belongs to another tab); in Spotlight, the section in
+    /// the side panel (a Tune this game tile, upstream).
+    /// </summary>
+    public string? ShowSection(string section)
+    {
+        if (!IsSpotlight) return SelectTab(GamePageSections.TabOf(section));
+        OpenPanel(GamePageSections.TabOf(section));
+        return null;
+    }
 
-    /// <summary>Whether a section shows: always in Classic+; in Tabs only on its tab.</summary>
+    /// <summary>Whether a section shows: always in Classic+; in Tabs only on its tab; in Spotlight only in the side panel.</summary>
     public bool IsSectionShown(string section)
-        => !IsTabs || GamePageSections.SectionsOnTab(SelectedTab).Contains(section, StringComparer.OrdinalIgnoreCase);
+    {
+        if (IsSpotlight) return PanelKey is { } open && GamePageSections.SectionsOnTab(open).Contains(section, StringComparer.OrdinalIgnoreCase);
+        return !IsTabs || GamePageSections.SectionsOnTab(SelectedTab).Contains(section, StringComparer.OrdinalIgnoreCase);
+    }
 
-    /// <summary>Whether a section's header (≡, title, collapse arrow) shows: Classic+ only; the tab names the section in Tabs.</summary>
-    public bool ShowsSectionHeaders => !IsTabs;
+    /// <summary>Whether a section's header (≡, title, collapse arrow) shows: Classic+ only; the tab (or the side panel) names it.</summary>
+    public bool ShowsSectionHeaders => !UsesTabsChrome;
 
     /// <summary>Whether the Overview tab (cards and At a glance tiles) shows.</summary>
     public bool ShowsOverview => IsTabs && SelectedTab == GamePageSections.Overview;

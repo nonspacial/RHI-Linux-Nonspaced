@@ -233,6 +233,7 @@ public sealed partial class MainWindow
         ToolTip.SetTip(_gameListGrip, T("Size.GameListGripTip"));
         ToolTip.SetShowDelay(_gameListGrip, MiddleEllipsisText.TooltipDelay);
         Grid.SetColumn(_gameListGrip, 0);
+        Grid.SetRowSpan(_gameListGrip, 2); // w14/layouts-b: the main grid has Spotlight's strip row
         main.Children.Add(_gameListGrip);
         HookGrip(_gameListGrip, vertical: false);
     }
