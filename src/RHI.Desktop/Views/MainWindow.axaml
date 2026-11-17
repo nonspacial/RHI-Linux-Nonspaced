@@ -202,7 +202,8 @@
     <!-- w14/layouts-a (#303): upstream 2.9.0's top bar, used by every layout. Left: the brand, then Available Mods (with a
          green New tag) and Shaders & Addons; right: when RHI last checked, Refresh, Update All with its count, the layout
          switch (Classic+ | Tabs | Spotlight), Help and Settings. One row (ToolbarPanel): the brand subtitle hides first,
-         then the right group moves into the '…' menu from its right end; Settings stays pinned at the far right. The bar's
+         then the right group moves into the '…' menu from its right end, then (a narrow window at a large size) Shaders &
+         Addons and Available Mods follow it; Settings stays pinned at the far right. The bar's
          own size (#306) scales it on top of the interface size; its bottom edge drags. -->
     <Border x:Name="TopBar" Grid.Row="0" Padding="16,10" Background="{DynamicResource RhiToolbarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,0,1">
       <LayoutTransformControl x:Name="TopBarScaleBox">
@@ -219,7 +220,7 @@
             <TextBlock views:ToolbarPanel.Collapsible="True" Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="{DynamicResource RhiTaglineBrush}"/>
           </StackPanel>
         </StackPanel>
-        <Button x:Name="NavAvailableMods" views:ToolbarPanel.Slot="Leading" Classes="topNav" Click="NavAvailableMods_Click"
+        <Button x:Name="NavAvailableMods" views:ToolbarPanel.Slot="Leading" views:ToolbarPanel.Overflows="True" Classes="topNav" Click="NavAvailableMods_Click"
                 ToolTip.Tip="{Binding NavAvailableModsTip}" AutomationProperties.Name="{DynamicResource Ui.AvailableMods}">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <TextBlock Text="{DynamicResource Ui.AvailableMods}" VerticalAlignment="Center"/>
@@ -229,7 +230,7 @@
             </Border>
           </StackPanel>
         </Button>
-        <Button x:Name="NavShadersAddons" views:ToolbarPanel.Slot="Leading" Classes="topNav" Content="{DynamicResource Ui.ShadersAddons}"
+        <Button x:Name="NavShadersAddons" views:ToolbarPanel.Slot="Leading" views:ToolbarPanel.Overflows="True" Classes="topNav" Content="{DynamicResource Ui.ShadersAddons}"
                 ToolTip.Tip="{DynamicResource Top.ShadersAddonsTip}" AutomationProperties.Name="{DynamicResource Ui.ShadersAddons}">
           <Button.Flyout>
             <MenuFlyout Placement="BottomEdgeAlignedLeft">
@@ -497,86 +498,94 @@
               <Border x:Name="SpotlightHeroFadeBottom" IsVisible="False" IsHitTestVisible="False"/>
               <Border x:Name="SpotlightHeroFadeSide" IsVisible="False" IsHitTestVisible="False"/>
               <Border x:Name="SpotlightHeroContent" VerticalAlignment="Bottom">
+          <!-- w14 final review m4 (upstream 2.9.4 DetailLayoutHost.Header): two columns. Left: the name with the star, Hide and
+               the ⚙; the tags; the path; the links. Right, at its own width: Launch, then HDR on launch, the resolution switch, the
+               display modes and (Spotlight) the achievements strip. A narrow page puts the right column under the left. -->
           <StackPanel x:Name="TabsHeader" Spacing="10" IsVisible="False">
-            <DockPanel>
-              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <Button x:Name="TabsFavourite" Classes="tabsStar" Classes.on="{Binding SelectedGameIsFavourite}" Content="★"
-                        Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}" ToolTip.Tip="{Binding FavouriteActionTip}"/>
-                <Button x:Name="TabsHide" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-                <!-- w14/layouts-b (#305, upstream 2.9.3): Spotlight's Screenshots (the side panel), beside the Game settings ⚙. -->
-                <Button x:Name="SpotlightScreenshots" Classes="rhi" Padding="10,4" IsVisible="False" IsEnabled="{Binding HasSelectedGame}"
-                        Click="SpotlightScreenshots_Click" ToolTip.Tip="{DynamicResource Spot.Screenshots}" AutomationProperties.Name="{DynamicResource Spot.Screenshots}">
-                  <PathIcon Width="15" Height="15" Data="M3,5 H21 V19 H3 Z M5,17 L10,11 L13,14 L16,10 L19,17 Z M7,8.5 A1.5,1.5 0 1 0 7.01,8.5"/>
-                </Button>
-                <Button x:Name="TabsGameSettings" Classes="rhi" Content="⚙" Padding="10,4" IsVisible="{Binding ShowGameSettings}"
-                        ToolTip.Tip="{Binding GameSettingsTitle}" Click="GameSettings_Click"/>
+            <views:HeaderColumnsPanel x:Name="TabsHeaderColumns" Spacing="20" LeftMinWidth="340">
+              <StackPanel x:Name="TabsHeaderLeft" Spacing="10">
+                <DockPanel>
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button x:Name="TabsFavourite" Classes="tabsStar" Classes.on="{Binding SelectedGameIsFavourite}" Content="★"
+                            Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}" ToolTip.Tip="{Binding FavouriteActionTip}"/>
+                    <Button x:Name="TabsHide" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+                    <!-- w14/layouts-b (#305, upstream 2.9.3): Spotlight's Screenshots (the side panel), beside the Game settings ⚙. -->
+                    <Button x:Name="SpotlightScreenshots" Classes="rhi" Padding="10,4" IsVisible="False" IsEnabled="{Binding HasSelectedGame}"
+                            Click="SpotlightScreenshots_Click" ToolTip.Tip="{DynamicResource Spot.Screenshots}" AutomationProperties.Name="{DynamicResource Spot.Screenshots}">
+                      <PathIcon Width="15" Height="15" Data="M3,5 H21 V19 H3 Z M5,17 L10,11 L13,14 L16,10 L19,17 Z M7,8.5 A1.5,1.5 0 1 0 7.01,8.5"/>
+                    </Button>
+                    <Button x:Name="TabsGameSettings" Classes="rhi" Content="⚙" Padding="10,4" IsVisible="{Binding ShowGameSettings}"
+                            ToolTip.Tip="{Binding GameSettingsTitle}" Click="GameSettings_Click"/>
+                  </StackPanel>
+                  <TextBlock x:Name="TabsTitle" Text="{Binding SelectedTitle}" FontSize="28" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"
+                             TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}" VerticalAlignment="Center"/>
+                </DockPanel>
+                <ItemsControl x:Name="TabsTags" ItemsSource="{Binding HeaderTags}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6"/></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                      <Border Classes="tabsTag"><TextBlock Text="{Binding}"/></Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                  <views:MiddleEllipsisText FullText="{Binding SelectedInstallPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+                  <Button Grid.Column="2" Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+                </Grid>
+                <ItemsControl x:Name="TabsLinks" ItemsSource="{Binding HeaderLinks}" IsVisible="{Binding HasHeaderLinks}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="14" LineSpacing="4"/></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CardMenuItem">
+                      <Button Classes="tabsLink" Content="{Binding Label}" Command="{Binding Command}" ToolTip.Tip="{Binding Tip}"/>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
-              <TextBlock x:Name="TabsTitle" Text="{Binding SelectedTitle}" FontSize="28" FontWeight="SemiBold" Foreground="{DynamicResource RhiTextBrush}"
-                         TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}" VerticalAlignment="Center"/>
-            </DockPanel>
-            <ItemsControl x:Name="TabsTags" ItemsSource="{Binding HeaderTags}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6"/></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                  <Border Classes="tabsTag"><TextBlock Text="{Binding}"/></Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <views:MiddleEllipsisText FullText="{Binding SelectedInstallPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
-              <Button Grid.Column="1" Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
-              <Button Grid.Column="2" Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-            </Grid>
-            <ItemsControl x:Name="TabsLinks" ItemsSource="{Binding HeaderLinks}" IsVisible="{Binding HasHeaderLinks}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="14" LineSpacing="4"/></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:CardMenuItem">
-                  <Button Classes="tabsLink" Content="{Binding Label}" Command="{Binding Command}" ToolTip.Tip="{Binding Tip}"/>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="8">
-              <StackPanel Orientation="Horizontal" Spacing="0">
-                <Button x:Name="TabsLaunch" Classes="tabsLaunch" Content="{DynamicResource Tabs.Launch}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
-                        ToolTip.Tip="{Binding LaunchToolTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
-                <Button x:Name="TabsLaunchMenu" Classes="tabsLaunch menu" Content="▾" IsEnabled="{Binding HasSelectedGame}" Click="TabsLaunchMenu_Click"
-                        ToolTip.Tip="{DynamicResource Tabs.LaunchMenuTip}"/>
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="8" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrRow}"
-                          VerticalAlignment="Center">
-                <TextBlock Text="{DynamicResource Tabs.HdrOnLaunch}" Classes="muted" VerticalAlignment="Center"/>
-                <ComboBox x:Name="TabsHdrMode" MinWidth="170" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}"
-                          IsEnabled="{Binding CanEditHdrProfile}" ToolTip.Tip="{Binding HdrModeTip}" ToolTip.ShowDelay="2000">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-              </StackPanel>
-              <views:ResolutionToggleRow x:Name="TabsResolution" DataContext="{Binding Runtime}" IsVisible="{Binding ShowResolutionRow}" VerticalAlignment="Center"/>
-              <!-- w14/display-modes (#311, upstream 2.9.3/2.9.4: beside the HDR and resolution buttons in every layout): the same
-                   reusable switch as Classic+'s Game Overrides row, attached in MainWindow.DisplayModes.cs. -->
-              <StackPanel x:Name="TabsDisplayModes" Orientation="Horizontal" Spacing="8" IsVisible="{Binding DisplayModes.ShowSwitch}" VerticalAlignment="Center">
-                <TextBlock Text="{l:T Dm.Label}" Classes="muted" VerticalAlignment="Center"/>
-                <views:DisplayModeSwitchView x:Name="TabsDisplayModeSwitch" VerticalAlignment="Center"/>
-              </StackPanel>
-            </WrapPanel>
-            <!-- w14/layouts-b (#307, upstream 2.9.2 Spotlight): the Steam achievements strip under Launch — progress, the latest
-                 unlock and the recent ones; a click opens the full list in the side panel (Settings › Achievements › Steam). -->
-            <Button x:Name="SpotlightAchievementsStrip" Classes="achStrip" IsVisible="False" Click="AchievementsStrip_Click"
-                    HorizontalAlignment="Left" ToolTip.Tip="{DynamicResource Ach.StripTip}" AutomationProperties.Name="{DynamicResource Ach.StripTip}">
-              <StackPanel Orientation="Horizontal" Spacing="16">
-                <StackPanel Spacing="6" VerticalAlignment="Center">
-                  <TextBlock x:Name="AchProgressText" Classes="glanceTitle"/>
-                  <ProgressBar x:Name="AchProgressBar" Classes="achBar" Width="170" Height="4" MinHeight="4" Minimum="0" Maximum="100"/>
+              <StackPanel x:Name="TabsHeaderRight" Spacing="10" MinWidth="260" MaxWidth="440" HorizontalAlignment="Left">
+                <Grid x:Name="TabsLaunchSplit" ColumnDefinitions="*,Auto">
+                  <Button x:Name="TabsLaunch" Classes="tabsLaunch" Content="{DynamicResource Tabs.Launch}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                          ToolTip.Tip="{Binding LaunchToolTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                  <Button x:Name="TabsLaunchMenu" Grid.Column="1" Classes="tabsLaunch menu" Content="▾" IsEnabled="{Binding HasSelectedGame}" Click="TabsLaunchMenu_Click"
+                          ToolTip.Tip="{DynamicResource Tabs.LaunchMenuTip}"/>
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" IsVisible="{Binding ShowHdrRow}"
+                            VerticalAlignment="Center">
+                  <TextBlock Text="{DynamicResource Tabs.HdrOnLaunch}" Classes="muted" VerticalAlignment="Center"/>
+                  <ComboBox x:Name="TabsHdrMode" MinWidth="170" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}"
+                            IsEnabled="{Binding CanEditHdrProfile}" ToolTip.Tip="{Binding HdrModeTip}" ToolTip.ShowDelay="2000">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
                 </StackPanel>
-                <StackPanel x:Name="AchRecentIcons" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"/>
-                <TextBlock x:Name="AchLatestText" Classes="statusLine" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+                <views:ResolutionToggleRow x:Name="TabsResolution" DataContext="{Binding Runtime}" IsVisible="{Binding ShowResolutionRow}" VerticalAlignment="Center"/>
+                <!-- w14/display-modes (#311, upstream 2.9.3/2.9.4: beside the HDR and resolution buttons in every layout): the same
+                     reusable switch as Classic+'s Game Overrides row, attached in MainWindow.DisplayModes.cs. -->
+                <StackPanel x:Name="TabsDisplayModes" Orientation="Horizontal" Spacing="8" IsVisible="{Binding DisplayModes.ShowSwitch}" VerticalAlignment="Center">
+                  <TextBlock Text="{l:T Dm.Label}" Classes="muted" VerticalAlignment="Center"/>
+                  <views:DisplayModeSwitchView x:Name="TabsDisplayModeSwitch" VerticalAlignment="Center"/>
+                </StackPanel>
+                <!-- w14/layouts-b (#307, upstream 2.9.2 Spotlight): the Steam achievements strip under Launch — progress, the latest
+                     unlock and the recent ones; a click opens the full list in the side panel (Settings › Achievements › Steam). -->
+                <Button x:Name="SpotlightAchievementsStrip" Classes="achStrip" IsVisible="False" Click="AchievementsStrip_Click"
+                        HorizontalAlignment="Left" ToolTip.Tip="{DynamicResource Ach.StripTip}" AutomationProperties.Name="{DynamicResource Ach.StripTip}">
+                  <StackPanel Orientation="Horizontal" Spacing="16">
+                    <StackPanel Spacing="6" VerticalAlignment="Center">
+                      <TextBlock x:Name="AchProgressText" Classes="glanceTitle"/>
+                      <ProgressBar x:Name="AchProgressBar" Classes="achBar" Width="170" Height="4" MinHeight="4" Minimum="0" Maximum="100"/>
+                    </StackPanel>
+                    <StackPanel x:Name="AchRecentIcons" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="AchLatestText" Classes="statusLine" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+                  </StackPanel>
+                </Button>
               </StackPanel>
-            </Button>
+            </views:HeaderColumnsPanel>
           </StackPanel>
               </Border>
               <Border x:Name="SpotlightHeroGrip" Classes="resizeGrip" IsVisible="False" Height="10" VerticalAlignment="Bottom"
@@ -976,9 +985,9 @@
                   <Button x:Name="ManagementSectionToggle" Grid.Column="2" Tag="Management" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
-                <!-- w14/layouts-a (#304, upstream Management): Classic+ lays the actions out in one row in upstream's order; Tabs shows
-                     them as tiles with a line under each (Change install folder, Reset Overrides, Copy Report, Reset install folder,
-                     Remove from RHI). -->
+                <!-- w14/layouts-a (#304, upstream Management): Classic+ lays the actions out in one row in upstream's Classic+ order
+                     (as written here); Tabs and Spotlight show them as tiles with a line under each, in upstream's Tabs order and
+                     colours (ManagementActions; the window reorders them). -->
                 <StackPanel x:Name="ManagementSectionBody" Spacing="8">
                   <views:AutoFitPanel x:Name="ManagementActions" MinColumnWidth="150" Spacing="8">
                     <Button x:Name="ManagementChangeFolder" Classes="rhi managementTile" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
@@ -995,14 +1004,14 @@
                         <TextBlock Text="{DynamicResource Mgmt.ResetFolderDesc}" Classes="tileDesc"/>
                       </StackPanel>
                     </Button>
-                    <Button x:Name="ManagementRemove" Classes="rhi managementTile" Classes.remove="True" Command="{Binding RemoveFromRhiAnyCommand}" IsEnabled="{Binding CanRemoveFromRhiAny}"
+                    <Button x:Name="ManagementRemove" Classes="rhi managementTile remove" Command="{Binding RemoveFromRhiAnyCommand}" IsEnabled="{Binding CanRemoveFromRhiAny}"
                             ToolTip.Tip="{Binding RemoveFromRhiAnyTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
                       <StackPanel Spacing="2">
                         <TextBlock Text="{DynamicResource Removed.Remove}" Classes="tileTitle"/>
                         <TextBlock Text="{Binding RemoveFromRhiDesc}" Classes="tileDesc"/>
                       </StackPanel>
                     </Button>
-                    <Button x:Name="ManagementResetOverrides" Classes="rhi managementTile" Classes.remove="True" Command="{Binding ResetOverridesCommand}" IsEnabled="{Binding CanResetOverrides}"
+                    <Button x:Name="ManagementResetOverrides" Classes="rhi managementTile remove" Command="{Binding ResetOverridesCommand}" IsEnabled="{Binding CanResetOverrides}"
                             ToolTip.Tip="{DynamicResource Mgmt.ResetOverridesTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
                       <StackPanel Spacing="2">
                         <TextBlock Text="{DynamicResource Mgmt.ResetOverrides}" Classes="tileTitle"/>
@@ -1165,6 +1174,9 @@
                   <Button x:Name="ManagedComponentsSectionToggle" Grid.Column="3" Tag="ManagedComponents" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
+                <!-- w14 final review (upstream 2.9.4 DetailLayoutHost.Overview): Tabs' Overview heads its cards "Components", as
+                     it heads the tiles "At a glance" (the section's own header is hidden there). -->
+                <TextBlock x:Name="OverviewComponentsHeading" Text="{DynamicResource Sec.Components}" Classes="glanceHeading" IsVisible="False"/>
 
                 <ItemsControl x:Name="ManagedComponentsSectionBody" ItemsSource="{Binding Components}">
                   <ItemsControl.ItemTemplate>

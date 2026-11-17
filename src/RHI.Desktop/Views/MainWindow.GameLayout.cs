@@ -33,13 +33,25 @@ public sealed partial class MainWindow
     /// first line, then the description, then the buttons (the same controls, so every rule stays the row's).</summary>
     private const string RowColumns = "220,180,*,Auto,Auto,Auto,Auto", CardColumns = "*,Auto,*,Auto,Auto,Auto,Auto";
 
+    /// <summary>
+    /// w14 final review (upstream 2.9.4 OverviewCard: the buttons are a row of their own under the description): a card's
+    /// description never shares its line with the buttons, whatever the card's width, so every card places them alike.
+    /// </summary>
+    internal const double CardMinStarWidth = 100_000, RowMinStarWidth = 160;
+
+    internal static void ShapeComponentRow(ResponsiveRow row, bool cards)
+    {
+        row.Columns = cards ? CardColumns : RowColumns;
+        row.MinStarWidth = cards ? CardMinStarWidth : RowMinStarWidth;
+    }
+
     private void ShapeComponentRow(Control container)
     {
         if (container.GetVisualDescendants().OfType<ResponsiveRow>().FirstOrDefault() is { } row)
-            row.Columns = _cardsShown ? CardColumns : RowColumns;
+            ShapeComponentRow(row, _cardsShown);
     }
 
-    private sealed record InlineCog(CogHostWindow Window, Border Host, Control? Source, TaskCompletionSource Done);
+    private sealed record InlineCog(CogHostWindow Window, Border Host, Control? Source, TaskCompletionSource Done, CogGameWatch Watch);
 
     /// <summary>Arranges the game page for the saved layout and tab.</summary>
     private void ApplyGameLayout()
@@ -82,13 +94,28 @@ public sealed partial class MainWindow
         {
             management.MinColumnWidth = chrome ? 220 : 150;
             management.Classes.Set("tiles", chrome);
+            ArrangeManagement(management, chrome);
         }
 
         BuildTabStrip(vm);
         SetVisible("GlancePanel", layout.ShowsOverview);
+        SetVisible("OverviewComponentsHeading", layout.ShowsOverview);
         if (layout.ShowsOverview) RebuildGlance(vm);
         if (_inlineCog is { } open && (!tabs || open.Host.Parent is not Control { IsEffectivelyVisible: true })) CloseInlineCog(false);
         ApplySpotlightLayout(vm); // w14/layouts-b (#305)
+    }
+
+    /// <summary>Management's actions in the look's order and colours (upstream: <see cref="ViewModels.ManagementActions"/>).</summary>
+    internal static void ArrangeManagement(Panel management, bool tiles)
+    {
+        var byName = management.Children.OfType<Control>().Where(c => c.Name is not null).ToDictionary(c => c.Name!);
+        var order = ViewModels.ManagementActions.Order(tiles).Where(byName.ContainsKey).Select(n => byName[n]).ToList();
+        if (!order.SequenceEqual(management.Children.Where(byName.ContainsValue)))
+        {
+            foreach (var action in order) management.Children.Remove(action);
+            management.Children.AddRange(order);
+        }
+        foreach (var action in order) action.Classes.Set("remove", ViewModels.ManagementActions.IsDanger(action.Name!, tiles));
     }
 
     private void SetVisible(string name, bool visible)
@@ -178,7 +205,7 @@ public sealed partial class MainWindow
     {
         shown = Task.CompletedTask;
         if (TryShowCogInSpotlightPanel(dialog, out shown)) return true; // w14/layouts-b (#305): a ⚙ in Spotlight's side panel
-        if (dialog is not CogHostWindow cog || DataContext is not MainWindowViewModel { Layout.CogsOpenInline: true }) return false;
+        if (dialog is not CogHostWindow cog || DataContext is not MainWindowViewModel { Layout.CogsOpenInline: true } vm) return false;
         var source = _lastPressed?.FindAncestorOfType<Button>(includeSelf: true);
         if (_inlineCog is { } open)
         {
@@ -198,7 +225,8 @@ public sealed partial class MainWindow
         ToolTip.SetTip(close, T("Cog.CloseInline"));
         var host = new Border { Name = "InlineCog", Classes = { "inlineCog" }, Child = new Grid { Children = { frame, close } } };
         var done = new TaskCompletionSource();
-        _inlineCog = new InlineCog(cog, host, source, done);
+        // M1: the ⚙ acts on the game it opened for; another game closes it (as Spotlight's panel).
+        _inlineCog = new InlineCog(cog, host, source, done, new CogGameWatch(vm, () => CloseInlineCog(false)));
         close.Click += (_, _) => CloseInlineCog(false);
         cog.InlineClose = result => CloseInlineCog(result);
         PlaceInlineCog(host, source, panel);
@@ -240,6 +268,7 @@ public sealed partial class MainWindow
     {
         if (_inlineCog is not { } open) return;
         _inlineCog = null;
+        open.Watch.Dispose();
         if (open.Host.Parent is AutoFitPanel cards) cards.HideInset();
         else if (open.Host.Parent is Panel panel) panel.Children.Remove(open.Host);
         open.Window.InlineClose = null;

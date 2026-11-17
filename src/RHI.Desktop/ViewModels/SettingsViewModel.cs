@@ -90,106 +90,13 @@ public sealed class SettingsViewModel : PanelViewModel
     // w12/pins rows
     // w12/hdr-wsi rows
 
+    /// <summary>
+    /// Settings' working copy: every setting (w14 final review m10: a whole copy, not a hand-kept list, which had left out
+    /// OptiScaler's Default version and Remove old Nightly builds, so any Settings save put them back to their defaults).
+    /// </summary>
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
-        var copy = new LinuxAppSettings
-        {
-            UiLanguage = Host.Settings.UiLanguage,
-            ReShadeChannel = Host.Settings.ReShadeChannel,
-            ReShadeManageIni = Host.Settings.ReShadeManageIni,
-            ScreenshotPath = Host.Settings.ScreenshotPath,
-            OverlayHotkey = Host.Settings.OverlayHotkey,
-            ScreenshotHotkey = Host.Settings.ScreenshotHotkey,
-            PerGameScreenshotFolders = Host.Settings.PerGameScreenshotFolders,
-            AddonWatchFolder = Host.Settings.AddonWatchFolder,
-            AddonWatcherEnabled = Host.Settings.AddonWatcherEnabled,
-            ViewMode = Host.Settings.ViewMode,
-            TrayIconEnabled = Host.Settings.TrayIconEnabled,
-            CloseToTray = Host.Settings.CloseToTray,
-            ShowMotdOnStartup = Host.Settings.ShowMotdOnStartup,
-            CacheAllShaders = Host.Settings.CacheAllShaders,
-            VerboseLogging = Host.Settings.VerboseLogging,
-            AutoUpdateComponents = Host.Settings.AutoUpdateComponents,
-            UpdateCheckIntervalHours = Host.Settings.UpdateCheckIntervalHours,
-            DefaultDlssVersion = Host.Settings.DefaultDlssVersion,
-            DefaultDlssdVersion = Host.Settings.DefaultDlssdVersion,
-            DefaultDlssgVersion = Host.Settings.DefaultDlssgVersion,
-            DefaultDlssnrVersion = Host.Settings.DefaultDlssnrVersion,
-            DefaultStreamlineVersion = Host.Settings.DefaultStreamlineVersion,
-            OptiScalerGpuType = Host.Settings.OptiScalerGpuType, // w3/dllnames hook (#97)
-            OptiScalerDlssInputs = Host.Settings.OptiScalerDlssInputs, // w3/dllnames hook (#97)
-            // w5/update-policy rows
-            FollowNewestDlss = Host.Settings.FollowNewestDlss, // #177
-            FollowNewestStreamline = Host.Settings.FollowNewestStreamline, // #177
-            GlobalSkipReShadeUpdates = Host.Settings.GlobalSkipReShadeUpdates, // #178
-            GlobalSkipRenoDxUpdates = Host.Settings.GlobalSkipRenoDxUpdates,
-            GlobalSkipReLimiterUpdates = Host.Settings.GlobalSkipReLimiterUpdates,
-            GlobalSkipDisplayCommanderUpdates = Host.Settings.GlobalSkipDisplayCommanderUpdates,
-            GlobalSkipOptiScalerUpdates = Host.Settings.GlobalSkipOptiScalerUpdates,
-            GlobalSkipReFrameworkUpdates = Host.Settings.GlobalSkipReFrameworkUpdates,
-            // w5/catalogue-info rows
-            // w5/ini-presets rows
-            ReShadeVariableListUseTabs = Host.Settings.ReShadeVariableListUseTabs, // #181
-            ReLimiterOsdHotkey = Host.Settings.ReLimiterOsdHotkey, // #188
-            ReLimiterSharedPresets = Host.Settings.ReLimiterSharedPresets, // #188
-            ReLimiterDlssHooks = Host.Settings.ReLimiterDlssHooks, // #188
-            ReLimiterTargetFps = Host.Settings.ReLimiterTargetFps, // #188
-            PeakNits = Host.Settings.PeakNits, // #182
-            PeakNitsEnabled = Host.Settings.PeakNitsEnabled, // #182
-            PeakNitsPresets = [.. Host.Settings.PeakNitsPresets], // #182
-            // w5/shell-launch rows
-            OptiScalerMenuKey = Host.Settings.OptiScalerMenuKey, // #187 OptiScaler overlay key
-            // w5/reshade-core rows
-            // w7/smalls rows
-            // w7/reshade rows
-            // w7/shader-sets rows
-            // w7/nvapi-launch rows
-            // w7/dxvk-hdr rows
-            // w10 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
-            // w10/dlss-presets rows
-            DefaultSrPreset = Host.Settings.DefaultSrPreset, // #215
-            DefaultRrPreset = Host.Settings.DefaultRrPreset, // #215
-            DefaultFgPreset = Host.Settings.DefaultFgPreset, // #215
-            // w10/archives rows
-            // w10/journal-holds rows
-            // w11 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
-            // w11/download-idle rows
-            // w11/nr-gpu rows
-            // w11/nightly-switch rows
-            // w11/nr-check rows
-            // w12 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
-            // w12/mfg rows
-            // w12/shaders rows
-            // w12/update-all rows
-            // w12/github-cache rows
-            // w12/luma rows
-            // w12/epic rows
-            // w12/nr-logs rows
-            // w12/pins rows
-            // w12/hdr-wsi rows
-            // w14 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
-            // w14/nr rows
-            UpliftEnableKey = Host.Settings.UpliftEnableKey, // #274 GITC Uplift NR on/off key
-            // w14/ui-logic rows
-            ColourTheme = Host.Settings.ColourTheme, // #301 colour theme
-            CustomThemeColours = Host.Settings.CustomThemeColours, // #301
-            GlobalFpsLimit = Host.Settings.GlobalFpsLimit, // #310 global FPS limit
-            // w14/ui-settings rows
-            SettingsLastSection = Host.Settings.SettingsLastSection, // #296
-            SettingsTabbed = Host.Settings.SettingsTabbed, // #296
-            ShowHdrLaunchButton = Host.Settings.ShowHdrLaunchButton, // #312
-            ShowResLaunchButton = Host.Settings.ShowResLaunchButton, // #312
-            WhatsNewNavHidden = Host.Settings.WhatsNewNavHidden, // #309
-            WhatsNewFontSize = Host.Settings.WhatsNewFontSize, // #309
-            // w14/layouts-b rows
-            SpotlightHeroHeight = Host.Settings.SpotlightHeroHeight, // #305
-            SpotlightCoverScale = Host.Settings.SpotlightCoverScale, // #305
-            SpotlightShelfAtBottom = Host.Settings.SpotlightShelfAtBottom, // #305
-            SpotlightShelfPlain = Host.Settings.SpotlightShelfPlain, // #305
-            SteamAchievements = Host.Settings.SteamAchievements, // #307
-            AchievementsShowHidden = Host.Settings.AchievementsShowHidden, // #307
-            ControllerSupport = Host.Settings.ControllerSupport, // #308
-        };
+        var copy = System.Text.Json.JsonSerializer.Deserialize<LinuxAppSettings>(System.Text.Json.JsonSerializer.Serialize(Host.Settings)) ?? new LinuxAppSettings();
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }
 

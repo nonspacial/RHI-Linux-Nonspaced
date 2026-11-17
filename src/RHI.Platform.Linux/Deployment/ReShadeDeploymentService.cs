@@ -22,7 +22,7 @@ public sealed partial class ReShadeDeploymentService
 
     /// <summary>Fixed text before the component name when an add-on is refused over No Addons ReShade (PT-BR presentation pair).</summary>
     public const string NoAddonsBlocksAddonPrefix =
-        "ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ";
+        "ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly on the ReShade card in Game Overrides and apply it first: ";
 
     /// <summary>True when RHI's ReShade on this game is the No Addons build (#91): ReShade add-ons cannot load.</summary>
     public static bool LacksAddonSupport(LinuxDeploymentRecord? reShadeRecord)

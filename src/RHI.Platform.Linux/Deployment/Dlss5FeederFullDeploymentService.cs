@@ -335,7 +335,7 @@ public sealed class Dlss5FeederFullDeploymentService
         catch (Exception ex)
         {
             var installHint = game.SteamAppId.HasValue
-                ? "Use the 'Install via Protontricks' D3DCompiler button in the ReShade profile, or browse a native Microsoft D3DCompiler_47.dll."
+                ? "Use the 'Install via Protontricks' D3DCompiler button on the ReShade card in Game Overrides, or browse a native Microsoft D3DCompiler_47.dll."
                 : D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
                     ? $"Use the Winetricks button bound to the active {game.CompatibilityTool ?? game.Runner ?? game.Source} runner, or browse a native Microsoft D3DCompiler_47.dll."
                     : "Use the 'Install via Winetricks' D3DCompiler button, or browse a native Microsoft D3DCompiler_47.dll.";

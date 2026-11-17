@@ -11,7 +11,7 @@ namespace RHI.Core.Tests;
 /// tooltip only when Nexus has a newer file; pressing it opens the mod's Nexus page and downloads nothing. Without a Nexus
 /// account it reads "Open on Nexus" and the tooltip names Connect Nexus account; when Nexus has nothing newer it is hidden.
 /// Correction round 1: also "Open on Nexus" for a Nexus-only mod RHI has not installed (F2) and when Nexus refused the saved
-/// key (F3, tooltip names Settings → Accounts &amp; updates); an Unreal game keeps its Luma ⚙ beside it (F1).
+/// key (F3, tooltip names Settings › Accounts &amp; Data); an Unreal game keeps its Luma ⚙ beside it (F1).
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
 [System.Runtime.Versioning.SupportedOSPlatform("linux")]
@@ -48,8 +48,8 @@ public sealed class LumaNexusRowTests : IDisposable
     }
 
     [Theory]
-    [InlineData("en-US", "Open on Nexus", "Settings → Accounts & updates → Connect Nexus account")]
-    [InlineData("pt-BR", "Abrir no Nexus", "Configurações → Contas e atualizações → Conectar conta do Nexus")]
+    [InlineData("en-US", "Open on Nexus", "Settings › Accounts & Data › Accounts and mod data › Connect Nexus account")]
+    [InlineData("pt-BR", "Abrir no Nexus", "Configurações › Contas e dados › Contas e dados dos mods › Conectar conta do Nexus")]
     public async Task WithoutANexusAccount_TheRowOnlyOpensThePage_AndItsTipNamesConnectNexusAccount(string language, string label, string control)
     {
         using var fx = await StartAsync(language, key: null, newer: true);
@@ -142,8 +142,8 @@ public sealed class LumaNexusRowTests : IDisposable
     // Review F3: Nexus refused the saved key (401; w12 follow-up ruling: never a 403): "Open on Nexus", its tooltip names the
     // control that fixes it.
     [Theory]
-    [InlineData("en-US", System.Net.HttpStatusCode.Unauthorized, "Settings → Accounts & updates → Disconnect, then Connect Nexus account")]
-    [InlineData("pt-BR", System.Net.HttpStatusCode.Unauthorized, "Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus")]
+    [InlineData("en-US", System.Net.HttpStatusCode.Unauthorized, "Settings › Accounts & Data › Accounts and mod data › Disconnect, then Connect Nexus account")]
+    [InlineData("pt-BR", System.Net.HttpStatusCode.Unauthorized, "Configurações › Contas e dados › Contas e dados dos mods › Desconectar e depois Conectar conta do Nexus")]
     public async Task RefusedKey_TheRowOpensThePage_AndItsTipNamesAccountsAndUpdates(string language, System.Net.HttpStatusCode status, string control)
     {
         using var fx = await StartAsync(language, key: "revoked", newer: true, failNexus: true, failStatus: status);

@@ -95,9 +95,10 @@ internal sealed class ReLimiterSettingsRows
 
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(SettingsLayout.SubHeading("ReLimiter", UiLocalizationService.Text("Ini.ReLimiterApplyNote")));
+        // Upstream 2.9.4 (MainWindow.xaml, Components › ReLimiter): Overlay key, Target FPS, Shared presets, DLSS hooks.
         panel.Children.Add(Labeled(UiLocalizationService.Text("Set.OverlayKey"), _osdKey.Control));
-        panel.Children.Add(choices);
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.ReLimiterTargetFps"), fpsRow));
+        panel.Children.Add(choices);
         apply.Classes.Add("settingsPrimary");
         panel.Children.Add(SettingsLayout.Block(apply));
         panel.Children.Add(confirm.Control);

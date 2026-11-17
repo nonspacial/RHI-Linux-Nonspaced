@@ -11,26 +11,13 @@ using RHI.Desktop.ViewModels;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// Settings → "Accounts &amp; updates" (w3/parity): RHI-Linux updates (#100), GitHub token (#163), Nexus Mods (#99). Built in code like the other Settings tabs, from
-/// the parity presenters only; the Settings dialog adds it with one line. Hidden when the app was built without the
-/// parity features (tests that build the window over a bare view model).
+/// w3/parity rows of the Settings page: RHI-Linux updates (#100, General › Updates), GitHub token (#163) and Nexus Mods (#99)
+/// (Accounts &amp; Data). Built in code from the parity presenters only; the Settings page leaves them out when the app was
+/// built without the parity features (tests that build the window over a bare view model).
 /// </summary>
 internal static class ParitySettingsTab
 {
     private static string T(string key) => UiLocalizationService.Text(key);
-
-    public static TabItem Create(ParityFeatures? parity)
-    {
-        var tab = new TabItem { Header = T("Parity.AccountsTab"), IsVisible = parity is not null };
-        if (parity is null) return tab;
-        var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = T("Parity.AccountsTab"), FontSize = 20, FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(AppUpdateSection(parity.AppUpdate));
-        panel.Children.Add(GitHubTokenSection(parity.GitHubToken));
-        panel.Children.Add(NexusSection(parity.NexusAccount));
-        tab.Content = new ScrollViewer { Content = panel };
-        return tab;
-    }
 
     /// <summary>
     /// Runs <paramref name="sync"/> now and whenever <paramref name="source"/> changes while <paramref name="owner"/> is
@@ -53,7 +40,7 @@ internal static class ParitySettingsTab
         sync();
     }
 
-    internal static TextBlock Heading(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, FontSize = 15 };
+    internal static TextBlock Heading(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, FontSize = 15, Classes = { "settingsHead" } }; // a heading Find and help paths name
 
     internal static TextBlock Note(string text) => new() { Text = text, FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap };
 

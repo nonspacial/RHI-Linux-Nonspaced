@@ -237,7 +237,17 @@ public sealed partial class MainWindow
             item.Bind(IsEnabledProperty, button.GetObservable(IsEffectivelyEnabledProperty)),
             item.Bind(ToolTip.TipProperty, button.GetObservable(ToolTip.TipProperty))
         ];
-        item.Click += (_, _) => InvokeToolbarButton(button);
+        if (button.Flyout is MenuFlyout flyout)
+        {
+            // w14 final review m5: a button that opens a menu (Shaders & Addons) lists that menu's entries under it.
+            item.ItemsSource = flyout.Items.OfType<MenuItem>().Select(source =>
+            {
+                var sub = new MenuItem { Header = source.Header };
+                sub.Click += (_, _) => source.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, source));
+                return sub;
+            }).ToList();
+        }
+        else item.Click += (_, _) => InvokeToolbarButton(button);
         _overflowMenuItemFor[button] = new OverflowMenuEntry(item, bindings);
         return item;
     }

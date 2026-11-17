@@ -167,7 +167,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposab
         var result = await service.InstallAsync(fixture.Game);
 
         Assert.True(result.Success, result.Message);
-        Assert.Contains("Universal MFG", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Universal MFG Unlocker", result.Message, StringComparison.OrdinalIgnoreCase);
         var record = records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone)!;
         Assert.Equal(Rtx40MfgStandaloneDeploymentService.GpuGenRtx30, record.Metadata["UniversalMFG.GpuGeneration"]);
         Assert.Equal("version.dll", record.Metadata["UniversalMFG.ProxyName"]);

@@ -20,6 +20,31 @@ public enum MainLayout
 /// section containers (Classic+ stacks them, Tabs shows one tab at a time, Spotlight slides one in), so a section is built
 /// once and a new row in it works in every layout. The keys are the ones the Linux section store saves.
 /// </summary>
+/// <summary>
+/// The Management section's actions (by control name) and where they go. Upstream 2.9.4 orders them differently in its two
+/// looks (DetailPanelBuilder.Overrides.Dxvk.cs): the Classic+ row is Change install folder, Reset install folder, Remove
+/// from RHI, Reset Overrides, Copy Report, with Remove and Reset Overrides red; the Tabs tiles (Tabs and Spotlight) are
+/// Change install folder, Reset Overrides, Copy Report, Reset install folder, Remove from RHI, with only Remove red.
+/// </summary>
+public static class ManagementActions
+{
+    public const string ChangeFolder = "ManagementChangeFolder";
+    public const string ResetFolder = "ManagementResetFolder";
+    public const string Remove = "ManagementRemove";
+    public const string ResetOverrides = "ManagementResetOverrides";
+    public const string CopyReport = "ManagementCopyReport";
+
+    public static IReadOnlyList<string> Order(bool tiles) => tiles
+        ? [ChangeFolder, ResetOverrides, CopyReport, ResetFolder, Remove]
+        : [ChangeFolder, ResetFolder, Remove, ResetOverrides, CopyReport];
+
+    /// <summary>Shown red (upstream's AccentRed buttons).</summary>
+    public static bool IsDanger(string action, bool tiles) => action == Remove || (!tiles && action == ResetOverrides);
+
+    /// <summary>Reset install folder for a game added by hand: greyed in the Classic+ row, left out of the tiles (upstream).</summary>
+    public static bool ShowsResetFolder(bool manuallyAdded, bool tiles) => !manuallyAdded || !tiles;
+}
+
 public static class GamePageSections
 {
     /// <summary>The Tabs layout's first tab (component cards and At a glance tiles); not a section.</summary>

@@ -266,7 +266,7 @@ public sealed partial class LinuxManagedComponentService
         if (_records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null)
             return Task.FromResult(ComponentOperationResult.Fail("20/30 FG Unlock já está ativo. Remova-o antes de instalar MFG Unlock."));
         if (_records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
-            return Task.FromResult(ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar MFG Unlock."));
+            return Task.FromResult(ComponentOperationResult.Fail("Universal MFG Unlocker já está ativo. Remova-o antes de instalar MFG Unlock."));
         return InstallMfgUnlockWithFilesAsync(game, cancellationToken); // w14/extras-fg hook (#279)
     }
 

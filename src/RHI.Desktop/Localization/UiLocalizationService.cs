@@ -30,8 +30,6 @@ public static class UiLocalizationService
         ["Ui.LibraryToggle"] = "☰ Biblioteca",
         ["Ui.LibraryToggleTip"] = "Mostrar a biblioteca de jogos",
         ["Ui.MoreActions"] = "Mais ações",
-        ["Ui.ViewDetail"] = "Visualização detalhada",
-        ["Ui.ViewCompact"] = "Visualização compacta",
         ["Ui.SearchGames"] = "Filtrar jogos...",
         ["Ui.All"] = "Todos",
         ["Ui.Favourites"] = "Favoritos",
@@ -98,13 +96,13 @@ public static class UiLocalizationService
         ["Ui.CustomDll"] = "DLL personalizada",
         ["Ui.CustomDllPlaceholder"] = "Selecione uma DLL do ReShade ou digite o caminho",
         ["Ui.D3DCompilerPlaceholder"] = "Detectar no prefixo ou selecionar Microsoft D3DCompiler_47.dll",
-        ["Ui.D3DCompilerNote"] = "Os dois auxiliares instalam o d3dcompiler_47 nativo da Microsoft e o RHI aplica d3dcompiler_47=native,builtin apenas ao jogo selecionado. O Feeder Full aceita o compilador do prefixo sem diferenciar maiúsculas/minúsculas e pode usar diretamente a DLL da Microsoft selecionada; Aplicar continua salvando-a no perfil do ReShade. O RHI nunca redistribui essa DLL da Microsoft.",
+        ["Ui.D3DCompilerNote"] = "Os dois auxiliares instalam o d3dcompiler_47 nativo da Microsoft e o RHI aplica d3dcompiler_47=native,builtin apenas ao jogo selecionado. O Feeder Full aceita o compilador do prefixo sem diferenciar maiúsculas/minúsculas e pode usar diretamente a DLL da Microsoft selecionada; Aplicar no cartão ReShade continua salvando-a para o jogo. O RHI nunca redistribui essa DLL da Microsoft.",
         ["Ui.FeederConsumer"] = "Consumidor do Feeder",
         ["Ui.FeederRenoDxNote"] = "RenoDX DLSS5 é o consumidor neural padrão do Feeder. O RHI baixa a versão compatível automaticamente; não instala Deep Fried Chicken nem adiciona LoadFromDllMain do Chicken.",
         ["Ui.FeederPackagePlaceholder"] = "Selecione o pacote oficial Deep Fried Chicken (.zip ou .7z) antes de instalar o Feeder Full",
         ["Ui.FeederPackageNote"] = "O Feeder Full usa RenoDX DLSS5 como consumidor neural padrão e mantém Deep Fried Chicken como alternativa manual. Com RenoDX DLSS5, o RHI baixa o consumidor dedicado automaticamente. Com DFC, o pacote oficial é validado pelo SHA256SUMS.txt e pacotes AES conhecidos usam a senha pública do upstream sem persistência. Apenas um consumidor neural pode ser usado por instalação.",
         ["Ui.QuickPackages"] = "Pacotes rápidos:",
-        ["Ui.XdgSettingsNote"] = "As configurações são nativas do XDG e incluem monitor de add-ons opcional, visualização detalhada/compacta, bandeja/fechar para a bandeja e preferências de MOTD. Controles exclusivos do Windows, como NVAPI e perfis de driver, permanecem fora do RHI-Linux.",
+        ["Ui.XdgSettingsNote"] = "As configurações são nativas do XDG e incluem monitor de add-ons opcional, bandeja/fechar para a bandeja e preferências de MOTD. Controles exclusivos do Windows, como NVAPI e perfis de driver, permanecem fora do RHI-Linux.",
         ["Ui.ManagedComponentsNote"] = "ReShade, RenoDX HDR, RenoDX Upgrade, OptiScaler, RE Framework, ReLimiter, Display Commander e add-ons por jogo ficam disponíveis em alvos Wine/Proton compatíveis. A tradução DirectX continua sob responsabilidade do runner no Linux. Instalações externas permanecem protegidas contra remoção.",
         ["Ui.ExtrasNote"] = "Integrações extras · orquestração do UAL e ShortFuse.",
         ["Ui.PerGameOrchestration"] = "Orquestração por jogo",
@@ -144,7 +142,7 @@ public static class UiLocalizationService
         ["Ui.DlssEnablerStandaloneUpdate"] = "Atualizar",
         ["Ui.DlssEnablerStandaloneCompatibilityNote"] = "Compatibilidade experimental: confirme em jogo real sob Wine/Proton que o proxy escolhido é carregado sem crash, tela preta ou perda do dispositivo.",
         ["Ui.Rtx40MfgSettingsTip"] = "Configurações do Universal MFG Unlocker",
-        ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — nome do arquivo, Neural Rendering e atualização",
+        ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — nome do arquivo, Renderização Neural e atualização",
         ["Ui.Rtx40MfgTitle"] = "Universal MFG Unlocker",
         ["Ui.Rtx40MfgIntro"] = "Pressione Backspace no jogo para abrir o menu do Universal MFG Unlocker. Ele oferece estes modos:",
         ["Ui.Rtx40MfgProxy"] = "DLL proxy",
@@ -301,8 +299,6 @@ public static class UiLocalizationService
         ["Ui.LibraryToggle"] = "☰ Library",
         ["Ui.LibraryToggleTip"] = "Show the game library",
         ["Ui.MoreActions"] = "More actions",
-        ["Ui.ViewDetail"] = "Detailed view",
-        ["Ui.ViewCompact"] = "Compact view",
         ["Ui.SearchGames"] = "Filter games...",
         ["Ui.All"] = "All",
         ["Ui.Favourites"] = "Favourites",
@@ -369,14 +365,14 @@ public static class UiLocalizationService
         ["Ui.CustomDll"] = "Custom DLL",
         ["Ui.CustomDllPlaceholder"] = "Select a ReShade DLL or enter its path",
         ["Ui.D3DCompilerPlaceholder"] = "Detect in prefix or select Microsoft D3DCompiler_47.dll",
-        ["Ui.D3DCompilerNote"] = "Both helpers install Microsoft's native d3dcompiler_47 and RHI applies d3dcompiler_47=native,builtin only to the selected game. Feeder Full accepts the compiler from the prefix case-insensitively and can use the selected Microsoft DLL directly; Apply still saves it to the ReShade profile. RHI never redistributes this Microsoft DLL.",
+        ["Ui.D3DCompilerNote"] = "Both helpers install Microsoft's native d3dcompiler_47 and RHI applies d3dcompiler_47=native,builtin only to the selected game. Feeder Full accepts the compiler from the prefix case-insensitively and can use the selected Microsoft DLL directly; Apply on the ReShade card still saves it for the game. RHI never redistributes this Microsoft DLL.",
         ["Ui.FeederConsumer"] = "Feeder consumer",
         ["Ui.FeederRenoDxNote"] = "RenoDX DLSS5 is the default neural consumer for Feeder. RHI downloads the compatible version automatically; it does not install Deep Fried Chicken or add the Chicken LoadFromDllMain token.",
         ["Ui.FeederPackagePlaceholder"] = "Select the official Deep Fried Chicken package (.zip or .7z) before installing Feeder Full",
         ["Ui.FeederPackageNote"] = "Feeder Full uses RenoDX DLSS5 as the default neural consumer and keeps Deep Fried Chicken as a manual alternative. With RenoDX DLSS5, RHI downloads the dedicated consumer automatically. With DFC, the official package is validated against SHA256SUMS.txt and known AES packages use the public upstream password without persistence. Only one neural consumer may be used per installation.",
         ["Ui.QuickPackages"] = "Quick packages:",
-        ["Ui.XdgSettingsNote"] = "Settings are native XDG settings and include optional add-on monitoring, detailed/compact view, tray/close-to-tray and MOTD preferences. Windows-only controls such as NVAPI and driver profiles remain outside RHI-Linux.",
-        ["Ui.ManagedComponentsNote"] = "ReShade, RenoDX HDR, RenoDX Upgrade, OptiScaler, RE Framework, ReLimiter, Display Commander, Universal MFG, 20/30 FG Unlock, and per-game add-ons are available on compatible Wine/Proton targets. DirectX translation remains the runner's responsibility on Linux. External installations remain protected from removal.",
+        ["Ui.XdgSettingsNote"] = "Settings are native XDG settings and include optional add-on monitoring, tray/close-to-tray and MOTD preferences. Windows-only controls such as NVAPI and driver profiles remain outside RHI-Linux.",
+        ["Ui.ManagedComponentsNote"] = "ReShade, RenoDX HDR, RenoDX Upgrade, OptiScaler, RE Framework, ReLimiter, Display Commander, Universal MFG Unlocker, 20/30 FG Unlock, and per-game add-ons are available on compatible Wine/Proton targets. DirectX translation remains the runner's responsibility on Linux. External installations remain protected from removal.",
         ["Ui.ExtrasNote"] = "Extra integrations · UAL and ShortFuse orchestration.",
         ["Ui.PerGameOrchestration"] = "Per-game orchestration",
         ["Ui.LinuxPolicyNote"] = "Linux policy: DirectX translation belongs to the selected Wine/Proton runner; RHI-Linux does not install, update, replace or remove translation-layer DLLs, except DX9 HDR, which you add per game from its row. HDR only prepares a per-game launch profile. Store launchers must apply that profile; RHI does not wrap the launcher process.",
@@ -552,7 +548,7 @@ public static class UiLocalizationService
     };
 
 
-    private static readonly (string En, string Pt)[] ExactPresentationPairs =
+    internal static readonly (string En, string Pt)[] ExactPresentationPairs =
     [
         // LinuxGameLauncher.HandoffProfileRefused (#46).
         ("Launch profile not applied: a store launcher starts this game, so the profile has to be entered in that launcher.",
@@ -747,10 +743,10 @@ public static class UiLocalizationService
         // w12/github-cache rows
         // w12/luma rows
         (RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage,
-            "O RHI só verifica se há atualizações deste mod no Nexus Mods com uma conta do Nexus conectada: Configurações → Contas e atualizações → Conectar conta do Nexus."),
+            "O RHI só verifica se há atualizações deste mod no Nexus Mods com uma conta do Nexus conectada: Configurações › Contas e dados › Contas e dados dos mods › Conectar conta do Nexus."),
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusCurrentMessage, "Não há um arquivo Luma mais novo no Nexus Mods."),
         (RHI.Platform.Linux.Network.NexusModUpdateCheck.KeyRefusedMessage,
-            "O Nexus Mods recusou a chave do Nexus salva, então o RHI não pôde verificar se há atualizações deste mod. Conecte a conta de novo: Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus."),
+            "O Nexus Mods recusou a chave do Nexus salva, então o RHI não pôde verificar se há atualizações deste mod. Conecte a conta de novo: Configurações › Contas e dados › Contas e dados dos mods › Desconectar e depois Conectar conta do Nexus."),
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusOnlyInstallMessage,
             "O mod Luma deste jogo é publicado só no Nexus Mods, então o RHI não pode baixá-lo. Baixe-o na página dele no Nexus Mods e solte o arquivo no RHI para instalá-lo."),
         // w12/epic rows
@@ -777,7 +773,7 @@ public static class UiLocalizationService
             "O Nexus Mods não mostrou os arquivos deste mod (ele pode estar oculto ou removido), então o RHI não pôde verificar se há atualizações."),
     ];
 
-    private static readonly (string En, string Pt)[] PresentationPairs =
+    internal static readonly (string En, string Pt)[] PresentationPairs =
     [
         ("Winetricks is unavailable: this prefix was built by a Proton build that is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library. Missing Proton: ",
          "Winetricks indisponível: este prefixo foi criado por um Proton que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca. Proton ausente: "),
@@ -837,7 +833,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DownloadSources.RhiRepository.RefusalPrefix,
             "Download recusado: links de release do repositório do RHI devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.UniversalMfg.RefusalPrefix,
-            "Download recusado: links do Universal MFG devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+            "Download recusado: links do Universal MFG Unlocker devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.Dlssg2030.RefusalPrefix,
             "Download recusado: links do DLSSG 20/30 unlock devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.DgVoodoo.RefusalPrefix,
@@ -876,7 +872,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.Dlssg2030UnlockDeploymentService.OldLayoutSuffix, " (DLL única, antes do pacote da release)"),
         (RHI.Platform.Linux.Deployment.DeploymentMessages.PreviousFileKeptFragment, " O arquivo anterior não pôde ser recolocado; ele está guardado em: "),
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.RollbackIncompletePrefix, "A instalação do Luma Framework falhou e a reversão não foi concluída (detalhes em rhi.log): "),
-        ("Universal MFG update failed: ", "Falha na atualização do Universal MFG: "),
+        ("Universal MFG Unlocker update failed: ", "Falha na atualização do Universal MFG Unlocker: "),
         ("DLSS Enabler Standalone update failed: ", "Falha na atualização do DLSS Enabler Standalone: "),
         ("20/30 FG Unlock update failed: ", "Falha na atualização do 20/30 FG Unlock: "),
         ("RE Framework update failed: ", "Falha na atualização do RE Framework: "),
@@ -1243,7 +1239,7 @@ public static class UiLocalizationService
         // w3/scan rows
         ("The app that installed this game is working on it (installing, updating, preparing or running it); RHI changes nothing until it has finished.", "O app que instalou este jogo está trabalhando nele (instalando, atualizando, preparando ou executando); o RHI não altera nada até ele terminar."),
         ("The job list of the app that installed this game could not be read, so RHI cannot tell whether that app is changing it. File: ", "Não foi possível ler a lista de tarefas do app que instalou este jogo, então o RHI não sabe se esse app está alterando o jogo. Arquivo: "),
-        ("This game was installed by a copy of the Xbox app RHI does not know, so it cannot tell whether that app is changing it. Nothing was changed. Start that app once, or add its folder in Settings → Xbox / Game Pass folders. Folder: ", "Este jogo foi instalado por uma cópia do app do Xbox que o RHI não conhece, então não sabe se esse app está alterando o jogo. Nada foi alterado. Abra esse app uma vez ou adicione a pasta dele em Configurações → Pastas do Xbox / Game Pass. Pasta: "),
+        ("This game was installed by a copy of the Xbox app RHI does not know, so it cannot tell whether that app is changing it. Nothing was changed. Start that app once, or add its folder in Settings › Tools & Maintenance › Xbox / Game Pass folders. Folder: ", "Este jogo foi instalado por uma cópia do app do Xbox que o RHI não conhece, então não sabe se esse app está alterando o jogo. Nada foi alterado. Abra esse app uma vez ou adicione a pasta dele em Configurações › Ferramentas e manutenção › Pastas do Xbox / Game Pass. Pasta: "),
         ("An instance file of the Xbox app uses a newer format than this RHI reads (update RHI); that instance is not read from it. File: ", "Um arquivo de instância do app do Xbox usa um formato mais novo do que este RHI lê (atualize o RHI); essa instância não é lida dele. Arquivo: "),
         (RHI.Core.Services.XboxWriteGate.EncryptedExecutableMessage, "Não foi possível determinar se o executável do jogo é de 32 ou 64 bits: este pacote do Xbox o mantém criptografado no disco e não declara sua arquitetura, então o RHI não pode instalar mods nele."),
         ("RHI never changes this file of an Xbox package: the game would no longer start, or the app that installed it would put it back. File: ", "O RHI nunca altera este arquivo de um pacote Xbox: o jogo deixaria de iniciar, ou o app que o instalou o restauraria. Arquivo: "),
@@ -1309,8 +1305,15 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.OffNote,
             "Desligado pela versão Sem add-ons do ReShade: o add-on fica na pasta do jogo e volta a ligar quando o RHI instalar neste jogo o ReShade com suporte a add-ons (Estável ou Desenvolvimento)."),
         // #91 ReShade No Addons channel.
-        ("ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ",
-            "O ReShade deste jogo é a versão Sem add-ons, que não carrega add-ons; escolha Estável ou Desenvolvimento no perfil do ReShade e aplique antes: "),
+        // w14 final review m8: DLSS5 Feeder Full's D3DCompiler hint names the ReShade card (was "the ReShade profile").
+        ("DLSS5 Feeder Full could not resolve a usable native Microsoft D3DCompiler_47.dll. ",
+            "O DLSS5 Feeder Full não encontrou uma D3DCompiler_47.dll nativa da Microsoft que possa usar. "),
+        ("Use the 'Install via Protontricks' D3DCompiler button on the ReShade card in Game Overrides, or browse a native Microsoft D3DCompiler_47.dll.",
+            "Use o botão do D3DCompiler 'Instalar via Protontricks' no cartão ReShade em Substituições do jogo, ou procure uma D3DCompiler_47.dll nativa da Microsoft."),
+        ("Use the 'Install via Winetricks' D3DCompiler button, or browse a native Microsoft D3DCompiler_47.dll.",
+            "Use o botão do D3DCompiler 'Instalar via Winetricks', ou procure uma D3DCompiler_47.dll nativa da Microsoft."),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.NoAddonsBlocksAddonPrefix,
+            "O ReShade deste jogo é a versão Sem add-ons, que não carrega add-ons; escolha Estável ou Desenvolvimento no cartão ReShade de Substituições do jogo e aplique antes: "),
         ("ReShade No Addons update available: ", "Atualização do ReShade Sem add-ons disponível: "),
         ("ReShade No Addons is current: ", "O ReShade Sem add-ons está atualizado: "),
         ("Could not find the current ReShade download without add-on support on reshade.me.", "Não foi possível encontrar no reshade.me o download atual do ReShade sem suporte a add-ons."),
@@ -1728,7 +1731,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncFailedPrefix, "Os pacotes de shaders não foram alterados: "),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncDonePrefix, "Pacotes de shaders atualizados; o próprio ReShade não foi alterado. Pacotes: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote,
-            " Os pacotes de shaders do jogo não foram instalados: eles precisam de um D3DCompiler_47 nativo no prefixo Wine. Instale-o com o Protontricks ou o Winetricks na linha D3DCompiler 47 da seção ReShade e depois use Aplicar em Shaders/Add-ons; uma DLL escolhida ali com Procurar passa a valer com o Aplicar do perfil do ReShade."),
+            " Os pacotes de shaders do jogo não foram instalados: eles precisam de um D3DCompiler_47 nativo no prefixo Wine. Instale-o com o Protontricks ou o Winetricks na linha D3DCompiler 47 do cartão ReShade em Substituições do jogo e depois use Aplicar em Shaders/Add-ons; uma DLL escolhida ali com Procurar passa a valer com o Aplicar do cartão ReShade."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotOfferedMessage,
@@ -1981,16 +1984,16 @@ public static class UiLocalizationService
         // w11/nr-check rows
         // w12/mfg rows
         // #236: Universal MFG takes MFG Unlocker releases (asset/DLL naming refusals and the existing failure prefixes they reach).
-        ("Universal MFG download/validation failed: ", "Falha ao baixar ou validar o Universal MFG: "),
-        ("Universal MFG update check/download failed: ", "Falha ao verificar ou baixar a atualização do Universal MFG: "),
+        ("Universal MFG Unlocker download/validation failed: ", "Falha ao baixar ou validar o Universal MFG Unlocker: "),
+        ("Universal MFG Unlocker update check/download failed: ", "Falha ao verificar ou baixar a atualização do Universal MFG Unlocker: "),
         (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix,
-            "A versão do Universal MFG foi recusada: ela lista vários arquivos chamados "),
+            "A versão do Universal MFG Unlocker foi recusada: ela lista vários arquivos chamados "),
         (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.NoAssetMessage,
-            "A versão do Universal MFG foi recusada: ela não tem um arquivo MFGUnlocker-*.zip nem RTXMFG-*.zip."),
+            "A versão do Universal MFG Unlocker foi recusada: ela não tem um arquivo MFGUnlocker-*.zip nem RTXMFG-*.zip."),
         (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix,
-            "O pacote do Universal MFG foi recusado por ser ambíguo: ele contém várias entradas chamadas "),
+            "O pacote do Universal MFG Unlocker foi recusado por ser ambíguo: ele contém várias entradas chamadas "),
         (RHI.Platform.Linux.Deployment.Rtx40MfgStandaloneDeploymentService.NoDllMessage,
-            "O pacote do Universal MFG foi recusado: ele não contém MFGUnlocker.dll nem RTXMFG.dll."),
+            "O pacote do Universal MFG Unlocker foi recusado: ele não contém MFGUnlocker.dll nem RTXMFG.dll."),
         // #236/#237/#238: an update check that meets a component file removed or changed outside RHI (the path follows).
         (RHI.Platform.Linux.Deployment.ManagedUpdateFileGuard.RemovedOutsideRhiPrefix,
             "Não atualizado: este arquivo foi removido fora do RHI, e uma atualização nunca o coloca de volta. Remover apaga o registro dele no RHI: "),

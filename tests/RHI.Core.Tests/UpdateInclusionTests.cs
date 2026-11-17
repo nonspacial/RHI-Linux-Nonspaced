@@ -318,7 +318,7 @@ public sealed class UpdateInclusionTests : IDisposable
 
         Assert.NotNull(shown);
         Assert.Equal([ManagedComponentKind.OptiScaler], shown.Choices.Select(choice => choice.Kind)); // ReShade: left out for every game
-        Assert.Equal("Left out of Update All in every game (Settings → Maintenance): ReShade", shown.AllGamesNote);
+        Assert.Equal("Left out of Update All in every game (Settings › General › Updates › Components to check): ReShade", shown.AllGamesNote);
         Assert.Equal(UpdateExclusion.ThisGame, fx.Managed.UpdateExclusionFor(Row(fx, "Managed Quest").Game, ManagedComponentKind.OptiScaler));
         Assert.Equal(UpdateExclusion.AllGames, fx.Managed.UpdateExclusionFor(Row(fx, "Managed Quest").Game, ManagedComponentKind.ReShade));
         Assert.Contains(lines, line => line.StartsWith("Saved what Update All changes for Managed Quest.", StringComparison.Ordinal)); // a pending notice may ride along

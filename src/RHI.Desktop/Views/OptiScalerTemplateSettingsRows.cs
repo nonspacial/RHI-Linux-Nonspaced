@@ -84,10 +84,18 @@ internal sealed class OptiScalerTemplateSettingsRows
         panel.Children.Add(SettingsLayout.Block(_removeOldNightlies));
         panel.Children.Add(Labeled(UiLocalizationService.Text("Names.OptiScalerGpuType"), _gpu));
         panel.Children.Add(_dlssPanel);
+        _afterDlssInputs = panel.Children.Count;
         panel.Children.Add(Labeled(UiLocalizationService.Text("Names.OptiScalerTemplateHeading"), open));
         panel.Children.Add(SettingsLayout.Help(UiLocalizationService.Text("Names.OptiScalerTemplateNote")));
+        _panel = panel;
         Control = panel;
     }
+
+    private readonly StackPanel _panel;
+    private int _afterDlssInputs;
+
+    /// <summary>Upstream 2.9.4 (Components › OptiScaler): the overlay key and its Write key to all come right after DLSS inputs.</summary>
+    public void PlaceAfterDlssInputs(Control rows) => _panel.Children.Insert(_afterDlssInputs++, rows);
 
     public Control Control { get; }
 

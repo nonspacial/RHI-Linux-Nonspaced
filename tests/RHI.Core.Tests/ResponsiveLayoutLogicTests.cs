@@ -156,4 +156,55 @@ public sealed class ResponsiveLayoutLogicTests
     [Fact]
     public void MismatchedFlagsAreRejected()
         => Assert.Throws<ArgumentException>(() => ToolbarOverflow.VisibleCount([1, 2], [false], 8, 100, 10));
+
+    // ---- w14 final review m5: at 760 px and 150 % the leading nav buttons follow the items into the '…' menu ----------
+
+    [Fact]
+    public void LeadingOverflowables_GoFromTheRightEnd_UntilTheLeadingGroupFits()
+    {
+        // Library 95, brand 90, Available Mods 120, Shaders & Addons 125, gaps of 6: 451 wide.
+        const double leading = 95 + 90 + 120 + 125 + 3 * 6;
+        Assert.Equal(2, ToolbarOverflow.LeadingKept(leading, [120, 125], 6, maxLeadingWidth: 460));
+        Assert.Equal(1, ToolbarOverflow.LeadingKept(leading, [120, 125], 6, maxLeadingWidth: 400)); // Shaders & Addons goes
+        Assert.Equal(0, ToolbarOverflow.LeadingKept(leading, [120, 125], 6, maxLeadingWidth: 250));
+    }
+
+    [Fact]
+    public void ToolbarPanel_ANarrowRow_MovesTheLeadingNavButtonsIntoTheMenu_AfterEveryItem_SoNothingOverlaps()
+    {
+        static Avalonia.Controls.Border Box(double width, RHI.Desktop.Views.ToolbarSlot slot, string name, bool overflows = false)
+        {
+            var box = new Avalonia.Controls.Border { Width = width, Height = 30, Name = name };
+            RHI.Desktop.Views.ToolbarPanel.SetSlot(box, slot);
+            RHI.Desktop.Views.ToolbarPanel.SetOverflows(box, overflows);
+            return box;
+        }
+        var panel = new RHI.Desktop.Views.ToolbarPanel { Spacing = 8, LeadingSpacing = 6, MinGap = 16 };
+        panel.Children.Add(Box(90, RHI.Desktop.Views.ToolbarSlot.Leading, "Brand"));
+        panel.Children.Add(Box(120, RHI.Desktop.Views.ToolbarSlot.Leading, "Mods", overflows: true));
+        panel.Children.Add(Box(125, RHI.Desktop.Views.ToolbarSlot.Leading, "Shaders", overflows: true));
+        panel.Children.Add(Box(80, RHI.Desktop.Views.ToolbarSlot.Item, "Refresh"));
+        panel.Children.Add(Box(30, RHI.Desktop.Views.ToolbarSlot.Overflow, "More"));
+        panel.Children.Add(Box(40, RHI.Desktop.Views.ToolbarSlot.Trailing, "Settings"));
+        string[] Shown(double width)
+        {
+            panel.Measure(new Avalonia.Size(width, 40));
+            panel.Arrange(new Avalonia.Rect(0, 0, width, 40));
+            var shown = panel.Children.Where(c => c.IsVisible).ToList();
+            for (var i = 0; i < shown.Count; i++)
+                for (var j = i + 1; j < shown.Count; j++)
+                    Assert.False(shown[i].Bounds.Intersects(shown[j].Bounds) && shown[i].Bounds.Intersect(shown[j].Bounds).Width > 0,
+                        $"{width}: {shown[i].Name} overlaps {shown[j].Name}");
+            return shown.Select(c => c.Name!).ToArray();
+        }
+
+        Assert.Equal(["Brand", "Mods", "Shaders", "Refresh", "Settings"], Shown(600));
+        Assert.Equal(["Brand", "Mods", "Shaders", "More", "Settings"], Shown(450)); // Refresh goes first
+        Assert.Equal(["Refresh"], panel.OverflowItems.Select(c => c.Name));
+        Assert.Equal(["Brand", "Mods", "More", "Settings"], Shown(330)); // then Shaders & Addons
+        Assert.Equal(["Shaders", "Refresh"], panel.OverflowItems.Select(c => c.Name)); // listed first in the menu
+        Assert.Equal(["Brand", "More", "Settings"], Shown(220));
+        Assert.Equal(["Brand", "Mods", "Shaders", "Refresh", "Settings"], Shown(600)); // and back
+        Assert.Empty(panel.OverflowItems);
+    }
 }

@@ -159,6 +159,21 @@ public sealed class UpdateCheckPassTests : IDisposable
     }
 
     [Fact]
+    public void TopBar_NeverSaysAllUpToDate_BeforeAPassHasCoveredAGame()
+    {
+        var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var bar = new TopBarPresenter(() => DateTimeOffset.UtcNow, () => null, () => covered);
+        Assert.False(bar.AllUpToDate); // an empty library, nothing checked
+        bar.NoteCheckPass(new Dictionary<string, bool>(), notChecked: 0);
+        Assert.False(bar.AllUpToDate); // a pass that covered no game
+        covered.Add("a");
+        bar.NoteGame("a", hasUpdate: false); // only its own analysis
+        Assert.False(bar.AllUpToDate);
+        bar.NoteCheckPass(new Dictionary<string, bool> { ["a"] = false }, notChecked: 0);
+        Assert.True(bar.AllUpToDate);
+    }
+
+    [Fact]
     public void TopBar_HiddenGamesAreNotCovered()
     {
         var bar = new TopBarPresenter(() => DateTimeOffset.UtcNow, () => null, () => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "shown" });

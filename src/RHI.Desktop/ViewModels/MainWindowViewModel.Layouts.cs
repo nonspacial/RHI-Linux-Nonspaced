@@ -16,7 +16,13 @@ public partial class MainWindowViewModel
     private TopBarPresenter? _topBar;
 
     /// <summary>#303/#304: the layout switch and the Tabs layout's remembered tab.</summary>
-    public GameLayoutPresenter Layout => _layout ??= new GameLayoutPresenter(() => _settings, SaveLayoutSettings);
+    public GameLayoutPresenter Layout => _layout ??= WithManagementFollow(new GameLayoutPresenter(() => _settings, SaveLayoutSettings));
+
+    private GameLayoutPresenter WithManagementFollow(GameLayoutPresenter layout)
+    {
+        layout.Changed += () => OnPropertyChanged(nameof(ShowResetInstallFolder)); // the tiles leave it out for a game added by hand
+        return layout;
+    }
 
     /// <summary>#303: the top bar's "Checked … ago" and the Update All count.</summary>
     public TopBarPresenter TopBar => _topBar ??= WithRowMarks(new TopBarPresenter(
@@ -102,17 +108,18 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(UiScale));
         OnPropertyChanged(nameof(TopBarScale));
         OnPropertyChanged(nameof(GameListScale));
+        OnPropertyChanged(nameof(SpotlightSettings)); // m6: Settings' Controller support and achievements rows
         SizesChanged?.Invoke();
     }
 
     // ---- #303 Update All count --------------------------------------------------------------------------------------
 
-    /// <summary>A game's analysis was published: whether any of its components has an update (the top bar's count).</summary>
+    /// <summary>A game's analysis was published: whether it has an update Update All would make (the top bar's count),
+    /// by the check pass's rules.</summary>
     private void NoteAnalysisUpdates(DetectedGame game, GameAnalysis analysis)
-        => TopBar.NoteGame(LinuxGameLibraryStore.GameKey(game), analysis.Components.Any(c => c.Availability == ComponentAvailability.UpdateAvailable));
+        => TopBar.NoteGame(LinuxGameLibraryStore.GameKey(game), TopBarPresenter.AnalysisFindsUpdate(game, analysis.Components));
 
-    // ---- #304 Management (upstream Classic+ order: Change install folder, Reset install folder, Remove from RHI,
-    //      Reset Overrides, Copy Report) ------------------------------------------------------------------------------
+    // ---- #304 Management (each look's order and colours: ManagementActions) -------------------------------------------
 
     /// <summary>Reset install folder applies: a detected game whose folders were changed with Edit game.</summary>
     public bool CanResetInstallFolder => SelectedGame is { IsManuallyAdded: false } game && !IsBusy && HasGameEdit(game);
@@ -124,8 +131,8 @@ public partial class MainWindowViewModel
         _ => T("Mgmt.ResetFolderTip"),
     };
 
-    /// <summary>Upstream shows Reset install folder only for detected games (Tabs tiles).</summary>
-    public bool ShowResetInstallFolder => SelectedGame is { IsManuallyAdded: false };
+    /// <summary>Upstream: greyed for a game added by hand in the Classic+ row (its tip says why); left out of the Tabs tiles.</summary>
+    public bool ShowResetInstallFolder => SelectedGame is { } game && ManagementActions.ShowsResetFolder(game.IsManuallyAdded, Layout.UsesTabsChrome);
 
     private bool HasGameEdit(DetectedGame game) => _libraryState.GameEdits.ContainsKey(LinuxGameLibraryStore.GameKey(game));
 
@@ -332,7 +339,7 @@ public partial class MainWindowViewModel
             if (SelectedGame is not { } game || Parity is not { } parity) return [];
             var links = new List<CardMenuItem>();
             if (GameLinksPresenter.PageFor(game, parity.GameLinks.Games) is { } nexusUrl)
-                links.Add(new("nexus-page", "Nexus", new RelayCommand(() => OpenNexusPage(nexusUrl)), Tip: nexusUrl));
+                links.Add(new("nexus-page", T("Tabs.NexusLink"), new RelayCommand(() => OpenNexusPage(nexusUrl)), Tip: nexusUrl));
             links.AddRange(parity.GameLinks.MenuItemsFor(game, OpenNexusPage));
             return links;
         }

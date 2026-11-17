@@ -12,12 +12,12 @@ public sealed class MfgMessageLocalizationTests
 {
     public static TheoryData<string, string> FixedTexts => new()
     {
-        { "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoAssetMessage, "download/validation failed" },
-        { "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoAssetMessage, "has neither an" },
-        { "Universal MFG update check/download failed: " + Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-*.zip", "lists several assets" },
-        { "Universal MFG update check/download failed: " + Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-*.zip", "check/download failed" },
-        { "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix + "MFGUnlocker.dll", "refused as ambiguous" },
-        { "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoDllMessage, "holds neither" },
+        { "Universal MFG Unlocker download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoAssetMessage, "download/validation failed" },
+        { "Universal MFG Unlocker download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoAssetMessage, "has neither an" },
+        { "Universal MFG Unlocker update check/download failed: " + Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-*.zip", "lists several assets" },
+        { "Universal MFG Unlocker update check/download failed: " + Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-*.zip", "check/download failed" },
+        { "Universal MFG Unlocker download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix + "MFGUnlocker.dll", "refused as ambiguous" },
+        { "Universal MFG Unlocker download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoDllMessage, "holds neither" },
         { ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + "/jogos/exemplo/version.dll", "removed outside RHI" },
         { ManagedUpdateFileGuard.ChangedOutsideRhiPrefix + "/jogos/exemplo/renodx-mfgunlock.addon64", "changed outside RHI" },
         // Correction round 1 (review F5, F3)

@@ -25,6 +25,10 @@ public sealed partial class MainWindow
     private DateTime? _achStamp;
     private int _achSeq;
     private Action? _achPanelRefresh;
+    // w14 final review: each icon is fetched and decoded once (the strip and the list share them; an unlock rebuilds neither).
+    private readonly BoundedTaskCache<(int AppId, string File, int Pixels), Avalonia.Media.Imaging.Bitmap> _achIcons = new(512);
+    private Dictionary<AchievementRow, Border> _achRowViews = [];
+    private Dictionary<Achievement, Border> _achStripViews = [];
 
     /// <summary>Loads (or clears) the selected game's achievements and shows the strip (from ApplySpotlightLayout / selection).</summary>
     private void RefreshAchievements(bool force = false)
@@ -42,7 +46,7 @@ public sealed partial class MainWindow
         _achTimer ??= NewAchievementTimer();
         _achTimer.Start();
         if (!force && appId == _achAppId) return;
-        if (appId != _achAppId) { _achSet = null; SetVisible("SpotlightAchievementsStrip", false); }
+        if (appId != _achAppId) { _achSet = null; _achRowViews = []; _achStripViews = []; SetVisible("SpotlightAchievementsStrip", false); }
         _achAppId = appId;
         var service = vm!.Achievements.Service!;
         var seq = ++_achSeq;
@@ -89,12 +93,16 @@ public sealed partial class MainWindow
         if (this.FindControl<TextBlock>("AchLatestText") is { } latest) latest.Text = strip.Latest ?? "";
         if (this.FindControl<StackPanel>("AchRecentIcons") is { } icons)
         {
-            icons.Children.Clear();
-            foreach (var a in strip.Recent)
+            var views = KeyedViews.Reuse(strip.Recent, ref _achStripViews, a =>
             {
                 var icon = AchievementIcon(set.AppId, a.Icon, 32);
                 ToolTip.SetTip(icon, a.Name);
-                icons.Children.Add(icon);
+                return icon;
+            });
+            if (!icons.Children.SequenceEqual(views))
+            {
+                icons.Children.Clear();
+                icons.Children.AddRange(views);
             }
         }
     }
@@ -105,13 +113,18 @@ public sealed partial class MainWindow
         var border = new Border { Classes = { "achIcon" }, Width = size, Height = size, Child = image };
         if (_spotVm?.Achievements.Service is { } service && file is not null)
         {
+            var pixels = (int)(size * 2);
             var token = SpotlightLoads();
-            _ = Task.Run(async () =>
+            var load = _achIcons.GetOrAdd((appId, file, pixels), () => Task.Run(async () =>
             {
                 var path = await service.GetIconAsync(appId, file, token).ConfigureAwait(false);
-                var bitmap = path is null ? null : DecodeImage(path, (int)(size * 2));
-                if (bitmap is not null) Dispatcher.UIThread.Post(() => image.Source = bitmap);
-            }, CancellationToken.None);
+                return path is null ? null : DecodeImage(path, pixels);
+            }, CancellationToken.None));
+            if (load.IsCompletedSuccessfully) image.Source = load.Result;
+            else _ = load.ContinueWith(done =>
+            {
+                if (done.IsCompletedSuccessfully && done.Result is { } bitmap) Dispatcher.UIThread.Post(() => image.Source = bitmap);
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
         return border;
     }
@@ -136,20 +149,31 @@ public sealed partial class MainWindow
         root.Children.Add(bar);
         root.Children.Add(list);
 
+        // An unlock (or a search) rebuilds only the rows that changed; the rest keep their views and icons.
         void Fill()
         {
-            list.Children.Clear();
             if (_achSet is not { } set)
             {
                 summary.Text = "";
+                _achRowViews = [];
+                list.Children.Clear();
                 list.Children.Add(PanelText(T("Ach.None")));
                 return;
             }
             var strip = AchievementsPresenter.Strip(set, DateTime.UtcNow);
             summary.Text = strip.Progress;
             var rows = AchievementsPresenter.Rows(set, vm.Achievements.ShowHidden, search.Text, DateTime.UtcNow);
-            if (rows.Count == 0) list.Children.Add(PanelText(T("Ach.NoMatch")));
-            foreach (var row in rows) list.Children.Add(AchievementRowView(set.AppId, row));
+            var views = KeyedViews.Reuse(rows, ref _achRowViews, row => AchievementRowView(set.AppId, row));
+            if (rows.Count == 0)
+            {
+                list.Children.Clear();
+                list.Children.Add(PanelText(T("Ach.NoMatch")));
+            }
+            else if (!list.Children.SequenceEqual(views))
+            {
+                list.Children.Clear();
+                list.Children.AddRange(views);
+            }
         }
         search.TextChanged += (_, _) => Fill();
         showHidden.IsCheckedChanged += (_, _) =>
@@ -157,6 +181,7 @@ public sealed partial class MainWindow
             if (vm.Achievements.SetShowHidden(showHidden.IsChecked == true) is { } refused) vm.StatusText = refused;
             Fill();
         };
+        _achRowViews = []; // a new panel builds its own rows
         _achPanelRefresh = Fill;
         root.DetachedFromVisualTree += (_, _) => { if (_achPanelRefresh == Fill) _achPanelRefresh = null; };
         Fill();

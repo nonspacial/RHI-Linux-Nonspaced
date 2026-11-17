@@ -284,6 +284,128 @@ public sealed class SettingsLayoutParityTests
     }
 
     [Fact]
+    public async Task Components_ReLimiterAndOptiScalerRows_InUpstreamsOrder()
+    {
+        // Upstream 2.9.4 (MainWindow.xaml, Components › ReLimiter and OptiScaler): ReLimiter's Overlay key, Target FPS, Shared
+        // presets, DLSS hooks; OptiScaler's GPU type, DLSS inputs, then its Overlay key.
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var model = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
+        var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+        var section = view.GetLogicalDescendants().OfType<StackPanel>().Single(p => p.Tag as string == "Section:Components");
+        string[] labels = ["Overlay key", "Target FPS", "Shared presets", "DLSS hooks", "GPU type", UiLocalizationService.Text("Names.OptiScalerDlssInputs")];
+        var order = section.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text).Where(t => labels.Contains(t)).ToList();
+        Assert.Equal(["Overlay key", "Target FPS", "Shared presets", "DLSS hooks", "GPU type", labels[5], "Overlay key"], order);
+    }
+
+    [Fact]
+    public async Task Troubleshooting_FullRefreshComesFirst_Red_AndRescansTheLibrary()
+    {
+        // Upstream 2.9.4 Tools & Maintenance › Troubleshooting: Full refresh, then (Linux) Clear cache and Reset settings.
+        UiLocalizationService.Apply("en-US");
+        var steam = new CountingDetector("Steam");
+        using var fx = await ViewModelFixture.StartAsync([], detectors: [steam]);
+        var model = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
+        var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+        var tools = view.GetLogicalDescendants().OfType<StackPanel>().Single(p => p.Tag as string == "Section:Tools");
+        var buttons = tools.GetLogicalDescendants().OfType<Button>().Where(b => b.Classes.Contains("remove")).Select(b => b.Name).ToList();
+        Assert.Equal(["SettingsFullRefresh", "SettingsClearCache", "SettingsReset"], buttons);
+        Assert.Contains(view.Find("Full refresh"), r => r.Entry.SectionKey == "Tools" && r.Entry.Context.Contains("Troubleshooting", StringComparison.Ordinal));
+
+        var before = steam.Scans;
+        await model.FullRefreshCommand.ExecuteAsync(null);
+        Assert.True(steam.Scans > before);
+        Assert.Equal("Full refresh started: the main window shows its progress.", model.Status);
+    }
+
+    private sealed class CountingDetector(string name) : RHI.Core.Services.IGameDetector
+    {
+        private int _scans;
+        public int Scans => Volatile.Read(ref _scans);
+        public string Name => name;
+        public Task<IReadOnlyList<RHI.Core.Models.DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _scans);
+            return Task.FromResult<IReadOnlyList<RHI.Core.Models.DetectedGame>>([]);
+        }
+    }
+
+    // ---- w14 final review m6: rows that went stale ---------------------------------------------------------------------
+
+    [Fact]
+    public void Choice_ARefusedSave_PutsTheDropdownBackToTheSavedValue()
+    {
+        var saved = "Off";
+        var combo = RHI.Desktop.Views.SettingsLayout.Choice(["Off", "On"], () => saved, _ => { /* refused: nothing saved */ });
+        combo.SelectedItem = "On";
+        Assert.Equal("Off", combo.SelectedItem);
+        var accepting = RHI.Desktop.Views.SettingsLayout.Choice(["Off", "On"], () => saved, v => saved = v);
+        accepting.SelectedItem = "On";
+        Assert.Equal("On", accepting.SelectedItem);
+    }
+
+    [Fact]
+    public async Task SizeControllerAndAchievementRows_FollowTheirValues_AndResetSettings()
+    {
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var vm = fx.Vm;
+        var model = new SettingsDialogViewModel(vm, _ => null, _ => Task.FromResult<string?>(null));
+        RHI.Desktop.Views.SettingsLayout.RunOnUi = sync => sync();
+        try
+        {
+            var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+            ComboBox Row(string name) => view.GetLogicalDescendants().OfType<ComboBox>().Single(c => c.Name == name);
+
+            Assert.Null(vm.SetUiScale(150));
+            Assert.Null(vm.SetGameListScale(120));
+            Assert.Null(vm.SetControllerSupport(false));
+            Assert.Null(vm.Achievements.SetSteamOn(true));
+            Assert.Equal("150%", Row("UiScale").SelectedItem);
+            Assert.Equal("120%", Row("GameListScale").SelectedItem);
+            Assert.Equal("Off", Row("ControllerSupport").SelectedItem);
+            Assert.Equal("On", Row("SteamAchievements").SelectedItem);
+
+            model.ResetCommand.Execute(null);
+            Assert.Equal(InterfaceSize.Label(InterfaceSize.Normal), Row("UiScale").SelectedItem);
+            Assert.Equal(InterfaceSize.Label(InterfaceSize.Normal), Row("GameListScale").SelectedItem);
+            Assert.Equal("On", Row("ControllerSupport").SelectedItem);
+            Assert.Equal("Off", Row("SteamAchievements").SelectedItem);
+            Assert.Equal("Off", Row("AchievementsShowHidden").SelectedItem);
+        }
+        finally { RHI.Desktop.Views.SettingsLayout.RunOnUi = sync => Avalonia.Threading.Dispatcher.UIThread.Post(sync); }
+    }
+
+    [Fact]
+    public async Task ARefusedSave_IsShownInSettings_AndTheRowKeepsTheSavedValue()
+    {
+        if (!PermissionDenial.Enforced) return; // PermissionDenial.SkipReason
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var vm = fx.Vm;
+        var model = new SettingsDialogViewModel(vm, _ => null, _ => Task.FromResult<string?>(null));
+        var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+        ComboBox Row(string name) => view.GetLogicalDescendants().OfType<ComboBox>().Single(c => c.Name == name);
+        var mainLine = vm.StatusText;
+        PermissionDenial.MakeReadOnly(fx.ConfigDir);
+        try
+        {
+            foreach (var (name, picked) in new[] { ("UiScale", "150%"), ("ControllerSupport", "Off"), ("SteamAchievements", "On"), ("AchievementsShowHidden", "On") })
+            {
+                var before = Row(name).SelectedItem;
+                model.Status = "";
+                Row(name).SelectedItem = picked;
+                Assert.Equal(before, Row(name).SelectedItem);
+                Assert.False(string.IsNullOrEmpty(model.Status), name);
+            }
+        }
+        finally { PermissionDenial.MakeWritable(fx.ConfigDir); }
+        Assert.Equal(mainLine, vm.StatusText); // not on the main window's line
+        Assert.Equal(InterfaceSize.Normal, vm.UiScale);
+        Assert.True(vm.SpotlightSettings.ControllerSupport);
+    }
+
+    [Fact]
     public void TooltipSweep_EveryFilterAndSection_HasItsTooltip_InBothLanguages()
     {
         // #302 (upstream 2.8.9): the library filters and the game panel's sections explain themselves.
@@ -333,45 +455,101 @@ public sealed class SettingsLayoutParityTests
     }
 
     /// <summary>
-    /// w14 merge (ui-logic + ui-settings): Settings' save on change writes the snapshot copy, so both lanes' new fields
-    /// (colour theme, Custom colours, global FPS limit; last section, Tabs, HDR / Resolution rows, What's New view) must
-    /// survive a save of an unrelated setting and a load.
+    /// w14 final review m10: Settings' save on change writes the whole settings file from the copy it holds, so a field the
+    /// page does not show (or shows through a row another lane built) must come back as it was. Every
+    /// <see cref="LinuxAppSettings"/> property is set to a value that is not its default, the full page is composed (with the
+    /// rows it hosts), an unrelated setting is changed, and every property is compared after the save and a load.
     /// </summary>
     [Fact]
-    public async Task SaveOnChange_KeepsBothW14LanesFields_ThroughASaveAndALoad()
+    public async Task SaveOnChange_KeepsEverySetting_ThroughASaveAndALoad()
     {
         UiLocalizationService.Apply("en-US");
         using var fx = await ViewModelFixture.StartAsync([]);
+        var defaults = new LinuxAppSettings().Normalize();
         var start = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
-        start.ColourTheme = "OledBlack";
-        start.CustomThemeColours = "Background=#101010;Text=#F0F0F0";
-        start.GlobalFpsLimit = 141;
-        start.SettingsLastSection = "Driver";
-        start.SettingsTabbed = true;
-        start.ShowHdrLaunchButton = false;
-        start.ShowResLaunchButton = false;
-        start.WhatsNewNavHidden = true;
-        start.WhatsNewFontSize = 16;
+        foreach (var property in SettingsProperties) property.SetValue(start, NotDefault(property, property.GetValue(defaults)));
+        start.AddonWatchFolder = Directory.CreateDirectory(Path.Combine(fx.Root, "watched")).FullName; // a folder that exists
+        start.ScreenshotPath = Directory.CreateDirectory(Path.Combine(fx.Root, "shots")).FullName;
         fx.Vm.Settings.SaveLinuxSettings(start);
+        var expected = Saved(fx);
+        // Every value survived the store's own normalisation: the comparison below covers every property.
+        Assert.All(SettingsProperties, property => Assert.False(Json(property.GetValue(expected)) == Json(property.GetValue(defaults)),
+            $"{property.Name}: the test value did not survive the store; pick one Normalize keeps"));
         UiLocalizationService.Apply("en-US");
 
-        var dialog = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
-        dialog.UseSaveScheduler(run => run());
-        dialog.Composed();
-        dialog.VerboseLogging = !dialog.VerboseLogging; // an unrelated change: the whole snapshot is written
+        try
+        {
+            var dialog = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
+            _ = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = dialog }; // every row, the hosted ones too
+            dialog.UseSaveScheduler(run => run()); // the view's own scheduler waits for the UI thread
+            dialog.Composed();
+            dialog.VerboseLogging = !dialog.VerboseLogging; // an unrelated change: the whole file is written
+            dialog.FlushSave();
 
-        var saved = Saved(fx);
-        Assert.Equal(dialog.VerboseLogging, saved.VerboseLogging);
-        Assert.Equal("OledBlack", saved.ColourTheme);
-        Assert.Equal("Background=#101010;Text=#F0F0F0", saved.CustomThemeColours);
-        Assert.Equal(141u, saved.GlobalFpsLimit);
-        Assert.Equal("Driver", saved.SettingsLastSection);
-        Assert.True(saved.SettingsTabbed);
-        Assert.False(saved.ShowHdrLaunchButton);
-        Assert.False(saved.ShowResLaunchButton);
-        Assert.True(saved.WhatsNewNavHidden);
-        Assert.Equal(16, saved.WhatsNewFontSize);
+            var saved = Saved(fx);
+            Assert.True(!expected.VerboseLogging == saved.VerboseLogging, "not saved: " + dialog.Status);
+            var changed = SettingsProperties.Where(p => p.Name != nameof(LinuxAppSettings.VerboseLogging) && !NotPersisted.ContainsKey(p.Name))
+                .Where(p => Json(p.GetValue(saved)) != Json(p.GetValue(expected)))
+                .Select(p => $"{p.Name}: {Json(p.GetValue(expected))} became {Json(p.GetValue(saved))}").ToList();
+            Assert.True(changed.Count == 0, string.Join("\n", changed));
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
     }
+
+    /// <summary>Settings the page deliberately does not write back, each with its reason (none today).</summary>
+    private static readonly IReadOnlyDictionary<string, string> NotPersisted = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    private static readonly System.Reflection.PropertyInfo[] SettingsProperties = typeof(LinuxAppSettings)
+        .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+        .Where(p => p is { CanRead: true, CanWrite: true } && p.GetIndexParameters().Length == 0)
+        .ToArray();
+
+    private static string Json(object? value) => System.Text.Json.JsonSerializer.Serialize(value);
+
+    /// <summary>A value the store keeps (Normalize) that is not <paramref name="defaultValue"/>.</summary>
+    private static object? NotDefault(System.Reflection.PropertyInfo property, object? defaultValue) => property.Name switch
+    {
+        nameof(LinuxAppSettings.UiLanguage) => (string?)defaultValue == "pt-BR" ? "en-US" : "pt-BR",
+        nameof(LinuxAppSettings.ReShadeChannel) => "Nightly",
+        nameof(LinuxAppSettings.OverlayHotkey) => "45,0,0,0",
+        nameof(LinuxAppSettings.ScreenshotHotkey) => "46,1,0,0",
+        nameof(LinuxAppSettings.ViewMode) => "Compact",
+        nameof(LinuxAppSettings.UpdateCheckIntervalHours) => 6,
+        nameof(LinuxAppSettings.OptiScalerGpuType) => "AMD",
+        nameof(LinuxAppSettings.OptiScalerDlssInputs) => false,
+        nameof(LinuxAppSettings.OptiScalerDefaultVersion) => "Nightly",
+        nameof(LinuxAppSettings.ReLimiterOsdHotkey) => "Ctrl+F11",
+        nameof(LinuxAppSettings.ReLimiterTargetFps) => 141,
+        nameof(LinuxAppSettings.PeakNits) => 800,
+        nameof(LinuxAppSettings.PeakNitsPresets) => new List<int> { 2 },
+        nameof(LinuxAppSettings.OptiScalerMenuKey) => "0x2D",
+        nameof(LinuxAppSettings.UpliftEnableKey) => 0x77,
+        nameof(LinuxAppSettings.DefaultSrPreset) or nameof(LinuxAppSettings.DefaultRrPreset) or nameof(LinuxAppSettings.DefaultFgPreset) => 6u,
+        nameof(LinuxAppSettings.ColourTheme) => "OledBlack",
+        nameof(LinuxAppSettings.CustomThemeColours) => "Background=#101010;Text=#F0F0F0",
+        nameof(LinuxAppSettings.GlobalFpsLimit) => 141u,
+        nameof(LinuxAppSettings.SettingsLastSection) => "Driver",
+        nameof(LinuxAppSettings.WhatsNewFontSize) => 16d,
+        nameof(LinuxAppSettings.MainLayout) => "Tabs",
+        nameof(LinuxAppSettings.DetailSelectedTab) => "Extras",
+        nameof(LinuxAppSettings.UiScale) => 125,
+        nameof(LinuxAppSettings.TopBarScale) => 90,
+        nameof(LinuxAppSettings.GameListScale) => 110,
+        nameof(LinuxAppSettings.SpotlightHeroHeight) => 400d,
+        nameof(LinuxAppSettings.SpotlightCoverScale) => 1.2,
+        nameof(LinuxAppSettings.DefaultDlssVersion) or nameof(LinuxAppSettings.DefaultDlssdVersion) or nameof(LinuxAppSettings.DefaultDlssgVersion)
+            or nameof(LinuxAppSettings.DefaultDlssnrVersion) or nameof(LinuxAppSettings.DefaultStreamlineVersion) => "310.2.1.0",
+        _ => defaultValue switch
+        {
+            bool b => !b,
+            int i => i + 7,
+            uint u => u + 7,
+            double d => d + 1,
+            string => "/tmp/rhi-settings-" + property.Name,
+            null when property.PropertyType == typeof(string) => "/tmp/rhi-settings-" + property.Name,
+            _ => throw new InvalidOperationException($"{property.Name}: give it a test value"),
+        },
+    };
 
     private static LinuxAppSettings Saved(ViewModelFixture fx) => new LinuxSettingsStore(fx.Settings.SettingsPath).Load();
 

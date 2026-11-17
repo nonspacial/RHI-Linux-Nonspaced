@@ -52,7 +52,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadeDeploymentService.NightlyLookupFailedMessage;
         yield return $"{LumaEngineIniOverrideManager.LinkRefusalPrefix}/prefixo/drive_c/Engine.ini -> /outro/Engine.ini";
         yield return LumaFrameworkDeploymentService.RollbackIncompletePrefix + E;
-        yield return $"Universal MFG update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
+        yield return $"Universal MFG Unlocker update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
         yield return $"DLSS Enabler Standalone update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
         yield return $"20/30 FG Unlock update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-2";
         yield return $"RE Framework update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-1";
@@ -187,14 +187,14 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ShortFuseDeploymentService.RemovedMessage;
         yield return $"{ShortFuseDeploymentService.RemovedUalKeptMessage} {ShortFuseDeploymentService.UalKeptPrefix}{E}";
         yield return $"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {E}";
-        yield return $"Universal MFG removal failed and was rolled back as far as possible: {E}";
+        yield return $"Universal MFG Unlocker removal failed and was rolled back as far as possible: {E}";
         yield return $"20/30 FG Unlock removal failed and was rolled back as far as possible: {E}";
         yield return $"Ultimate ASI Loader removal failed and was rolled back as far as possible: {E}";
         yield return $"ShortFuse install failed and was rolled back as far as possible: {E}";
         yield return $"ReLimiter removal failed: {E}";
         yield return $"Protected modified file: {P} no longer matches the RHI-managed hash, so it was not deleted.";
         yield return $"DLSS Enabler Standalone install rolled back: {E}";
-        yield return $"Universal MFG update failed and was rolled back as far as possible: {E}";
+        yield return $"Universal MFG Unlocker update failed and was rolled back as far as possible: {E}";
         yield return $"Ultimate ASI Loader update failed: {E}";
         yield return $"ReShade Addon Manager failed: {E}";
         yield return $"Display Commander install failed: {E}";
@@ -621,10 +621,10 @@ public sealed class WaveOneMessageLocalizationTests
         // w11/nr-check rows
         // w12/mfg rows
         // #236 / #237 / #238
-        yield return "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoAssetMessage;
-        yield return "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-*.zip";
-        yield return "Universal MFG download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix + "MFGUnlocker.dll";
-        yield return "Universal MFG update check/download failed: " + Rtx40MfgStandaloneDeploymentService.NoDllMessage;
+        yield return "Universal MFG Unlocker download/validation failed: " + Rtx40MfgStandaloneDeploymentService.NoAssetMessage;
+        yield return "Universal MFG Unlocker download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralAssetsPrefix + "MFGUnlocker-*.zip";
+        yield return "Universal MFG Unlocker download/validation failed: " + Rtx40MfgStandaloneDeploymentService.SeveralDllsPrefix + "MFGUnlocker.dll";
+        yield return "Universal MFG Unlocker update check/download failed: " + Rtx40MfgStandaloneDeploymentService.NoDllMessage;
         yield return ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + "/jogos/exemplo/version.dll";
         yield return ManagedUpdateFileGuard.ChangedOutsideRhiPrefix + "/jogos/exemplo/renodx-mfgunlock.addon64";
         yield return ManagedUpdateFileGuard.NoRecordedHashPrefix + "/jogos/exemplo/winmm.dll"; // correction round 1 (F5)

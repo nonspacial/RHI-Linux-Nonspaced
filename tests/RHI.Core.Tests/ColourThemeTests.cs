@@ -234,6 +234,7 @@ public sealed class ColourThemeTests : IDisposable
     [Fact]
     public void ShareAndImport_UseUpstreamsCodes()
     {
+        UiLocalizationService.Apply("en-US"); // w14 final review m11: its messages are English whatever ran before
         var (theme, store, applied) = NewPresenter();
         var (imported, message) = theme.Import("Try my theme! " + UpstreamCode + " enjoy");
         Assert.True(imported, message);

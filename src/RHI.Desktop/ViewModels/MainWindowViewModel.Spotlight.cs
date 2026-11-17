@@ -51,13 +51,23 @@ public partial class MainWindowViewModel
         _spotlightPcgw = pcgw;
         Artwork = artwork ?? (http is null ? null : new SteamArtworkService(http));
         SteamGridDb = steamGridDb ?? (http is null ? null : new SteamGridDbService(http, new SecretFileStore(SteamGridDbService.DefaultKeyPath, "steamgriddb")));
-        _achievements = new AchievementsPresenter(() => _settings, SaveLayoutSettings, achievements ?? new RHI.Platform.Linux.Achievements.SteamAchievementService(http: http));
+        _achievements = Followed(new AchievementsPresenter(() => _settings, SaveLayoutSettings, achievements ?? new RHI.Platform.Linux.Achievements.SteamAchievementService(http: http)));
     }
 
     private AchievementsPresenter? _achievements;
 
     /// <summary>#307: Settings › Achievements and Spotlight's achievements (Steam's local files).</summary>
-    public AchievementsPresenter Achievements => _achievements ??= new AchievementsPresenter(() => _settings, SaveLayoutSettings, null);
+    public AchievementsPresenter Achievements => _achievements ??= Followed(new AchievementsPresenter(() => _settings, SaveLayoutSettings, null));
+
+    /// <summary>
+    /// w14 final review m6: Settings' rows that read <see cref="SpotlightSettings"/> (Controller support, Steam achievements,
+    /// Show hidden) follow this property's change: raised when one of them is saved and when settings are saved or reset.
+    /// </summary>
+    private AchievementsPresenter Followed(AchievementsPresenter presenter)
+    {
+        presenter.Changed += () => OnPropertyChanged(nameof(SpotlightSettings));
+        return presenter;
+    }
 
     /// <summary>Starts reading PCGamingWiki's data, which names the Steam AppID of games from other stores (Spotlight only).</summary>
     public void PrefetchArtworkNames() => _spotlightPcgw?.Prefetch();
@@ -136,6 +146,7 @@ public partial class MainWindowViewModel
         if (SaveLayoutSettings(s => s.ControllerSupport = on) is { } refused) return refused;
         _settings.ControllerSupport = on;
         ControllerSettingChanged?.Invoke();
+        OnPropertyChanged(nameof(SpotlightSettings));
         return null;
     }
 

@@ -33,7 +33,7 @@ internal static class SettingsUiStrings
         ("Set.FindOne", "1 configuração corresponde a \"{0}\"", "1 setting matches \"{0}\""),
         ("Set.FindMany", "{0} configurações correspondem a \"{1}\"", "{0} settings match \"{1}\""),
         ("Set.FindCapped", ". Mostrando as primeiras {0}; continue digitando para filtrar.", ". Showing the first {0}; keep typing to narrow it down."),
-        ("Set.Tabs", "Abas", "Tabs"),
+        ("Set.Tabs", "Tabs", "Tabs"), // the layout's name, as the top bar's switch says it
         ("Set.TabsTip", "Mostra uma seção por vez, com abas no topo. Clique de novo para ver todas as seções numa página só.", "Shows one section at a time, with tabs along the top. Click again for every section on one page."),
         ("Set.Show", "Mostrar", "Show"),
         ("Set.Hide", "Ocultar", "Hide"),
@@ -123,6 +123,10 @@ internal static class SettingsUiStrings
         ("Set.OpenDataTip", "Abrir a pasta de dados do RHI", "Open RHI's data folder"),
         ("Set.CardTroubleshooting", "Solução de problemas", "Troubleshooting"),
         ("Set.TroubleshootingDesc", "Use estes se algo der muito errado. Cada um pergunta antes, com Cancelar como padrão.", "Use these if something is badly wrong. Each asks first, with Cancel as the default."),
+        ("Set.FullRefresh", "Atualização completa", "Full refresh"),
+        ("Set.FullRefreshTip", "Procura de novo os jogos em todas as lojas e pastas e relê os arquivos de cada jogo. Use se faltam jogos, se pastas mudaram ou se o DLSS foi adicionado a um jogo.", "Scans every store and folder for games again and re-reads each game's files. Use it if games are missing, folders have changed, or DLSS was added to a game."),
+        ("Set.FullRefreshAsk", "Procurar todos os jogos de novo? Pode levar um tempo; nada instalado nos jogos muda.", "Scan for every game again? It can take a while; nothing installed in games changes."),
+        ("Set.FullRefreshStarted", "Atualização completa iniciada: a janela principal mostra o andamento.", "Full refresh started: the main window shows its progress."),
         ("Set.ClearCacheAsk", "Limpar o cache do RHI-Linux? Pacotes e shaders baixados são apagados e baixados de novo quando necessários. Componentes instalados nos jogos não mudam.", "Clear RHI-Linux's cache? Downloaded packages and shaders are deleted and downloaded again when needed. Components installed in games are not changed."),
         ("Set.ResetSettingsTip", "Volta todas as configurações aos padrões. Não toca em nada instalado nos jogos.", "Puts every setting back to its default. Nothing installed in games is touched."),
         ("Set.ResetSettingsAsk", "Voltar todas as configurações aos padrões? Isto não pode ser desfeito. Nada instalado nos jogos muda.", "Put every setting back to its default? This can't be undone. Nothing installed in games changes."),
@@ -142,7 +146,7 @@ internal static class SettingsUiStrings
         ("Tip.SectionNeural", "O método de Renderização Neural recomendado, as versões de cada ferramenta e da DLL do NR.", "The recommended Neural Rendering method, and the versions of each tool and of the NR DLL."), // w14/layouts-a
         ("Tip.SectionDriver", "As opções do driver deste jogo; no Linux, o limite de FPS pelo DXVK / VKD3D-Proton.", "This game's driver options; on Linux, the FPS limit through DXVK / VKD3D-Proton."), // w14/layouts-a
         ("Tip.SectionComponents", "Os componentes que o RHI instala, atualiza e remove neste jogo.", "The components RHI installs, updates and removes in this game."),
-        ("Tip.SectionExtras", "Desbloqueios de geração de quadros, ASI Loader e outros extras.", "Frame generation unlocks, ASI Loader and other extras."),
+        ("Tip.SectionExtras", "O Ultimate ASI Loader, a orquestração do ShortFuse e outros extras. Os desbloqueios de geração de quadros ficam em Componentes.", "Ultimate ASI Loader, ShortFuse's set-up and other extras. The frame generation unlocks are in Components."),
         ("Tip.SectionSummary", "O que a seção recolhida contém. API = API gráfica forçada; os números são as versões instaladas.", "What the collapsed section holds. API = forced graphics API; the numbers are the installed versions."),
         ("Tip.DlssSummary", "Padrões que Aplicar padrões coloca no jogo. SR = Super Resolution (nvngx_dlss.dll), RR = Ray Reconstruction (nvngx_dlssd.dll), FG = Frame Generation (nvngx_dlssg.dll), NR = Neural Rendering (nvngx_dlssnr.dll), SL = Streamline; — = não muda.", "The defaults Apply defaults puts on the game. SR = Super Resolution (nvngx_dlss.dll), RR = Ray Reconstruction (nvngx_dlssd.dll), FG = Frame Generation (nvngx_dlssg.dll), NR = Neural Rendering (nvngx_dlssnr.dll), SL = Streamline; — = not changed."),
         ("Tip.GraphicsApi", "A API gráfica que o jogo usa (DirectX 9/11/12, Vulkan, OpenGL), detectada no executável ou nos dados do RHI. Decide qual DLL do ReShade é usada.", "The graphics API the game uses (DirectX 9/11/12, Vulkan, OpenGL), detected from its executable or RHI's data. It decides which ReShade DLL is used."),

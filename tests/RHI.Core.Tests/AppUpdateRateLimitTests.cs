@@ -97,8 +97,8 @@ public sealed class AppUpdateRateLimitTests : IDisposable
     }
 
     [Theory]
-    [InlineData("en-US", "GitHub's hourly request limit is reached, so RHI could not check for updates; this is 1.0.0. A GitHub token (Settings → Accounts & updates) raises the limit.")]
-    [InlineData("pt-BR", "O limite de pedidos por hora do GitHub foi atingido, então o RHI não pôde procurar atualizações; esta é a 1.0.0. Um token do GitHub (Configurações → Contas e atualizações) aumenta o limite.")]
+    [InlineData("en-US", "GitHub's hourly request limit is reached, so RHI could not check for updates; this is 1.0.0. A GitHub token (Settings › Accounts & Data › GitHub token) raises the limit.")]
+    [InlineData("pt-BR", "O limite de pedidos por hora do GitHub foi atingido, então o RHI não pôde procurar atualizações; esta é a 1.0.0. Um token do GitHub (Configurações › Contas e dados › Token do GitHub) aumenta o limite.")]
     public async Task Presenter_RateLimited_SaysSo_AndOffersNoReleasePage(string language, string expected)
     {
         UiLocalizationService.Apply(language);

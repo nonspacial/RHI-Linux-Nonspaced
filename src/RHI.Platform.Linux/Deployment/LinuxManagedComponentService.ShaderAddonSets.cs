@@ -196,7 +196,7 @@ public sealed partial class LinuxManagedComponentService
     /// D3DCompiler_47 could be had for its prefix (review major 2; PT-BR pair). ReShade itself is installed.
     /// </summary>
     public const string ShaderPacksNotInstalledNote =
-        " The game's shader packs were not installed: they need a native D3DCompiler_47 in its Wine prefix. Install it with Protontricks or Winetricks on the D3DCompiler 47 row in the ReShade section, then Apply in Shaders/Add-ons; a DLL picked there with Browse takes effect with the ReShade profile's Apply instead.";
+        " The game's shader packs were not installed: they need a native D3DCompiler_47 in its Wine prefix. Install it with Protontricks or Winetricks on the D3DCompiler 47 row of the ReShade card in Game Overrides, then Apply in Shaders/Add-ons; a DLL picked there with Browse takes effect with the ReShade card's Apply instead.";
 
     /// <summary>
     /// Review major 2: ReShade's install and update read the game's effective set inside ReShade's own install

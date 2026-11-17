@@ -291,7 +291,7 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
             CacheAllShaders = CacheAllShaders,
             VerboseLogging = VerboseLogging,
             AutoUpdateComponents = AutoUpdateComponents,
-            UpdateCheckIntervalHours = 4,
+            UpdateCheckIntervalHours = Settings.UpdateCheckIntervalHours, // unused since the cadence follows the GitHub token (#298); kept as saved
             DefaultDlssVersion = DefaultDlss.Value,
             DefaultDlssdVersion = DefaultDlssd.Value,
             DefaultDlssgVersion = DefaultDlssg.Value,
@@ -380,6 +380,17 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
         CanClearCache = false;
         try { Status = await _shell.Settings.PurgeLinuxCacheAsync(); }
         finally { CanClearCache = true; }
+    }, "Settings_Click");
+
+    /// <summary>
+    /// Tools &amp; Maintenance › Troubleshooting › Full refresh (upstream 2.9.4): the library's full rescan, as the top bar's
+    /// Refresh (queued behind a running operation). It runs in the main window; this line says it started.
+    /// </summary>
+    [RelayCommand]
+    private Task FullRefresh() => UiExceptionGuard.RunAsync(async () =>
+    {
+        Status = T("Set.FullRefreshStarted");
+        await _shell.RefreshCommand.ExecuteAsync(null);
     }, "Settings_Click");
 
     [RelayCommand(AllowConcurrentExecutions = true)]

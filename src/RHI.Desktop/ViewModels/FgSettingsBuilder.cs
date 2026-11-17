@@ -243,7 +243,7 @@ public static class FgSettingsBuilder
         };
         var neural = new[]
         {
-            Row(RtxEncoreSettings.NrEnabled, "Neural Rendering", tip: T("Enc.TipNrEnabled")),
+            Row(RtxEncoreSettings.NrEnabled, T("Sec.NeuralRendering"), tip: T("Enc.TipNrEnabled")),
             Row(RtxEncoreSettings.NrModel, T("Enc.NrModel"), ["B", "A", T("Ini.PeakAuto")], tip: T("Enc.TipNrModel")),
             Row(RtxEncoreSettings.NrPrecision, T("Enc.NrPrecision"), [T("Dsg.SpeedExact"), T("Dsg.SpeedFast")], tip: T("Enc.TipNrPrecision")),
             Row(RtxEncoreSettings.NrFast, T("Enc.NrFast"), tip: T("Enc.TipNrFast")),
@@ -264,7 +264,7 @@ public static class FgSettingsBuilder
             new ComponentSettingSection(T("Enc.SectionQuality"), quality, Compact: true),
             new ComponentSettingSection(T("Enc.SectionHud"), hud, Compact: true),
             new ComponentSettingSection(T("Enc.SectionUpscaling"), upscaling, Compact: true),
-            new ComponentSettingSection("Neural Rendering", neural, Compact: true),
+            new ComponentSettingSection(T("Sec.NeuralRendering"), neural, Compact: true),
             new ComponentSettingSection(T("Enc.SectionCompatibility"), compatibility, Compact: true),
         ];
     }

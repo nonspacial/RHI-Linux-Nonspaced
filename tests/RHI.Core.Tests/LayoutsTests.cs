@@ -238,6 +238,27 @@ public sealed class LayoutsTests : IDisposable
     }
 
     [Fact]
+    public void AnAnalysis_CountsAnUpdate_ByTheCheckPassesRules()
+    {
+        // w14 final review m7: as LinuxUpdateAllService.CheckOnlyAsync, a component left out of Update All (#178), one RHI
+        // did not install, one Update All does not update, or a game whose executable is not confirmed adds nothing.
+        var game = new DetectedGame { Name = "Count Game", InstallPath = "/games/count" };
+        Assert.True(game.HasConfirmedPatchTarget);
+        ManagedComponent Row(ManagedComponentKind kind, UpdateExclusion exclusion = UpdateExclusion.None, bool rhi = true) => new()
+        {
+            Kind = kind, DisplayName = kind.ToString(), Availability = ComponentAvailability.UpdateAvailable, ManagedByRhi = rhi, UpdateExclusion = exclusion,
+        };
+        Assert.True(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade)]));
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade, UpdateExclusion.ThisGame)])); // its only update is left out
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade, UpdateExclusion.AllGames)]));
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade, rhi: false)]));
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.Dlss)])); // not an Update All component
+        var missing = new DetectedGame { Name = "Missing", InstallPath = "/games/missing", FolderMissing = true };
+        Assert.False(missing.HasConfirmedPatchTarget);
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(missing, [Row(ManagedComponentKind.ReShade)])); // updates blocked
+    }
+
+    [Fact]
     public void UpdateAllCount_CountsGamesWithUpdates_ThatUpdateAllCovers_AndStartsAgainAfterUpdateAll()
     {
         var covered = new HashSet<string> { "a", "b" };
@@ -378,10 +399,40 @@ public sealed class LayoutsTests : IDisposable
 
         fx.Vm.SelectedGame = Library(fx, "Hand Added");
         Assert.False(fx.Vm.CanResetInstallFolder);
-        Assert.False(fx.Vm.ShowResetInstallFolder);
+        Assert.True(fx.Vm.ShowResetInstallFolder); // Classic+: greyed, its tip says why (upstream)
+        var shown = new List<bool>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainWindowViewModel.ShowResetInstallFolder)) shown.Add(fx.Vm.ShowResetInstallFolder); };
+        shown.Clear();
+        fx.Vm.Layout.SetLayout(MainLayout.Tabs);
+        Assert.False(fx.Vm.ShowResetInstallFolder); // the tiles leave it out
+        Assert.False(shown.LastOrDefault(true)); // and the page is told
+        fx.Vm.Layout.SetLayout(MainLayout.Classic);
         Assert.Equal("You added this game yourself, so there's no detected folder to go back to. Use Change install folder.", fx.Vm.ResetInstallFolderTip);
         Assert.True(fx.Vm.CanRemoveFromRhiAny);
         Assert.Equal("Remove this game you added yourself", fx.Vm.RemoveFromRhiDesc);
+    }
+
+    [Fact]
+    public void Management_ClassicPlusRow_AndTabsTiles_FollowUpstreamsOrderAndColours()
+    {
+        // Upstream 2.9.4 DetailPanelBuilder.Overrides.Dxvk.cs: the Classic+ row, then the Tabs tiles (Tabs and Spotlight).
+        Assert.Equal(["ManagementChangeFolder", "ManagementResetFolder", "ManagementRemove", "ManagementResetOverrides", "ManagementCopyReport"],
+            ManagementActions.Order(tiles: false));
+        Assert.Equal(["ManagementChangeFolder", "ManagementResetOverrides", "ManagementCopyReport", "ManagementResetFolder", "ManagementRemove"],
+            ManagementActions.Order(tiles: true));
+        Assert.True(ManagementActions.IsDanger(ManagementActions.ResetOverrides, tiles: false));
+        Assert.False(ManagementActions.IsDanger(ManagementActions.ResetOverrides, tiles: true));
+        Assert.True(ManagementActions.IsDanger(ManagementActions.Remove, tiles: true));
+
+        // The window rearranges the same buttons both ways.
+        var panel = new Avalonia.Controls.StackPanel();
+        foreach (var name in ManagementActions.Order(tiles: false)) panel.Children.Add(new Avalonia.Controls.Button { Name = name });
+        MainWindow.ArrangeManagement(panel, tiles: true);
+        Assert.Equal(ManagementActions.Order(tiles: true), panel.Children.Select(c => c.Name));
+        Assert.Equal(["ManagementRemove"], panel.Children.Where(c => c.Classes.Contains("remove")).Select(c => c.Name));
+        MainWindow.ArrangeManagement(panel, tiles: false);
+        Assert.Equal(ManagementActions.Order(tiles: false), panel.Children.Select(c => c.Name));
+        Assert.Equal(["ManagementRemove", "ManagementResetOverrides"], panel.Children.Where(c => c.Classes.Contains("remove")).Select(c => c.Name));
     }
 
     [Fact]
@@ -444,6 +495,105 @@ public sealed class LayoutsTests : IDisposable
             named["ManagementActions"].Elements().Select(Name));
         // Remove from RHI left the Game settings ⚙ (Management holds it, as upstream); Block Steam updates stays there.
         Assert.DoesNotContain("RemoveFromRhi", File.ReadAllText(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "Views", "GameSettingsView.cs")));
+    }
+
+    [Theory]
+    [InlineData("en-US", "Game list options")]
+    [InlineData("pt-BR", "Opções da lista de jogos")]
+    public void HeaderNexusLink_AndTheStripsGear_SayWhatUpstreamSays(string language, string stripGear)
+    {
+        Assert.Equal("Nexus Mods", UiLocalizationService.TextFor(language, "Tabs.NexusLink"));
+        Assert.Equal(stripGear, UiLocalizationService.TextFor(language, "Spot.ShelfOptionsTip"));
+    }
+
+    [Theory]
+    [InlineData(260)]
+    [InlineData(650)]
+    [InlineData(1100)]
+    public void AComponentCard_PutsItsButtonsOnALineOfTheirOwn_AtAnyWidth(double width)
+    {
+        // Upstream 2.9.4 OverviewCard: name and status, the description, then the buttons as a row of their own.
+        var row = new ResponsiveRow { ColumnSpacing = 12, LineSpacing = 8, HeadColumns = 2, SkipEmptyColumns = "3" };
+        Avalonia.Controls.Border Cell(int column, double w, double h = 20)
+        {
+            var cell = new Avalonia.Controls.Border { Width = w, Height = h };
+            if (column == 2) cell = new Avalonia.Controls.Border { MinWidth = w, Height = h };
+            Avalonia.Controls.Grid.SetColumn(cell, column);
+            row.Children.Add(cell);
+            return cell;
+        }
+        Cell(0, 90);
+        Cell(1, 70);
+        var description = Cell(2, 60, 18); // a short description
+        var gear = Cell(4, 32, 32);
+        var install = Cell(5, 80, 32);
+        var info = Cell(6, 32, 32);
+        MainWindow.ShapeComponentRow(row, cards: true);
+        row.Measure(new Avalonia.Size(width, double.PositiveInfinity));
+        row.Arrange(new Avalonia.Rect(0, 0, width, row.DesiredSize.Height));
+
+        Assert.True(gear.Bounds.Y >= description.Bounds.Bottom, $"{width}: the buttons share the description's line");
+        Assert.Equal(0, gear.Bounds.X);
+        Assert.Equal(gear.Bounds.Y, install.Bounds.Y);
+        Assert.Equal(gear.Bounds.Y, info.Bounds.Y);
+
+        MainWindow.ShapeComponentRow(row, cards: false); // Classic+'s row keeps one line where it fits
+        row.Measure(new Avalonia.Size(1100, double.PositiveInfinity));
+        row.Arrange(new Avalonia.Rect(0, 0, 1100, row.DesiredSize.Height));
+        Assert.False(row.IsWrapped);
+    }
+
+    [Fact]
+    public void TabsOverview_HeadsTheComponentCards_LikeTheGlanceTiles()
+    {
+        // Upstream 2.9.4 DetailLayoutHost.Overview: "Components" over the cards, "At a glance" over the tiles.
+        var named = MainWindowXaml().Descendants().Where(e => Name(e) is not null).ToDictionary(e => Name(e)!);
+        var heading = named["OverviewComponentsHeading"];
+        Assert.Contains(heading, named["ManagedComponentsSection"].Descendants());
+        Assert.Equal("{DynamicResource Sec.Components}", (string?)heading.Attribute("Text"));
+        Assert.Equal("glanceHeading", (string?)heading.Attribute("Classes"));
+    }
+
+    [Fact]
+    public void TabsHeader_HasUpstreamsTwoColumns_LaunchOnTopOfTheRightOne()
+    {
+        // Upstream 2.9.4 DetailLayoutHost.Header: the name, tags, path and links on the left; Launch, then HDR, resolution and
+        // display modes on the right.
+        var named = MainWindowXaml().Descendants().Where(e => Name(e) is not null).ToDictionary(e => Name(e)!);
+        Assert.Equal(["TabsHeaderLeft", "TabsHeaderRight"], named["TabsHeaderColumns"].Elements().Select(Name));
+        foreach (var left in new[] { "TabsTitle", "TabsTags", "TabsLinks", "TabsFavourite", "TabsGameSettings" })
+            Assert.Contains(named[left], named["TabsHeaderLeft"].Descendants());
+        var right = named["TabsHeaderRight"].Elements().ToList();
+        Assert.Equal("TabsLaunchSplit", Name(right[0]));
+        Assert.Contains(named["TabsHdrMode"], right[1].Descendants());
+        Assert.Equal("TabsResolution", Name(right[2]));
+        Assert.Equal("TabsDisplayModes", Name(right[3]));
+    }
+
+    [Fact]
+    public void TabsHeaderColumns_PutTheRightColumnUnderTheLeft_WhenTheLeftWouldGetTooNarrow()
+    {
+        Assert.False(HeaderColumnsPanel.Stacks(available: 1000, leftMinWidth: 340, rightWidth: 300, spacing: 20));
+        Assert.True(HeaderColumnsPanel.Stacks(available: 640, leftMinWidth: 340, rightWidth: 300, spacing: 20));
+        Assert.False(HeaderColumnsPanel.Stacks(double.PositiveInfinity, 340, 300, 20));
+
+        var left = new Avalonia.Controls.Border { Height = 120 };
+        var right = new Avalonia.Controls.Border { Width = 300, Height = 90, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        var panel = new HeaderColumnsPanel { Spacing = 20, LeftMinWidth = 340, Children = { left, right } };
+        void Lay(double width)
+        {
+            panel.Measure(new Avalonia.Size(width, double.PositiveInfinity));
+            panel.Arrange(new Avalonia.Rect(0, 0, width, panel.DesiredSize.Height));
+        }
+        Lay(1000);
+        Assert.False(panel.IsStacked);
+        Assert.Equal(new Avalonia.Rect(0, 0, 680, 120), left.Bounds);
+        Assert.Equal(new Avalonia.Rect(700, 0, 300, 90), right.Bounds); // beside it, at its own width
+        Lay(600);
+        Assert.True(panel.IsStacked);
+        Assert.Equal(new Avalonia.Rect(0, 0, 600, 120), left.Bounds);
+        Assert.Equal(140, right.Bounds.Y); // under the left column
+        Assert.Equal(230, panel.DesiredSize.Height);
     }
 
     [Fact]
