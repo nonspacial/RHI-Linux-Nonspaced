@@ -15,6 +15,30 @@ upstream's release leaves beta; until then its builds carry a beta label (such a
 
 Not on `main` yet.
 
+> [!WARNING]
+> Before going back to 2.8.8 (or an older build), do these first as well as those in the wave-13 and wave-12 entries;
+> 2.8.8 does not know what wave 14 added, and going back without them damages installs:
+>
+> - **Set every game's OptiScaler back to Stable, Nightly or Legacy** if this build put a fork or a custom build in it
+>   (its version row reads `Fork:` or `Custom:`). 2.8.8 reads those as Stable, so its Update and Update All lay the
+>   Stable files over the fork's. Switch it here, or remove OptiScaler and install it again after going back.
+> - **Expect your per-game OptiScaler version choices to be set aside.** 2.8.8 cannot read this build's
+>   `optiscaler-variants.json`: it keeps a copy beside it (`optiscaler-variants.json.corrupt-<date>`), and every game
+>   follows the default there. Coming back to this build, put that copy back in its place to keep the choices.
+> - **Remove GITC Uplift, the DLSS5 Tool and HSF from every game** where this build installed them. 2.8.8 drops their
+>   install records the next time it saves its ledger, so their files stay in the game folder with nothing that owns
+>   them: no Update, no Remove, and ReShade keeps loading the add-ons. Install them again once you are back on this
+>   build.
+>
+> There is no guard against this: 2.8.8 treats a component kind it does not know as damaged and leaves it out, so the
+> records cannot be written in a shape it would keep.
+
+- Known limitation: **Block Steam updates** makes the game's Steam app manifest read-only, as upstream does, but on
+  Linux Steam replaces that file by renaming a new one over it, which a read-only file does not prevent. The block
+  lasts until Steam next rewrites the game's manifest (for example when it queues an update); the switch then reads
+  "Block Steam updates" again. For a block that holds, use Steam's own "Only update this game when I launch it" in the
+  game's properties. Details in UPSTREAM.md (#290).
+
 ### Wave 14 — renodx-reshade
 
 - The generic Unity RenoDX add-on comes from its new location (Voosh's GitHub Pages, 64-bit), and the upstream
