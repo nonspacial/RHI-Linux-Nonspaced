@@ -4,8 +4,8 @@
 
 ### Native Linux port of RHI for Steam / Proton, Heroic, Lutris, Wine and Xbox / Game Pass
 
-[![Release](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-2.8.8-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)
-[![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.8.8-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
+[![Release](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-2.9.4-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)
+[![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.9.4-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
 [![Linux](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4?style=for-the-badge\&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/github/license/nonspacial/RHI-Linux-Nonspaced?style=for-the-badge)](LICENSE)
@@ -50,10 +50,10 @@
 ## 🚀 Status
 
 **Project:** [nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced)
-**Release:** `v2.8.8` ([GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)), level with upstream RHI 2.8.8
-**Upstream target:** `RHI 2.8.8`
+**Release:** `v2.9.4` ([GitHub Releases](https://github.com/nonspacial/RHI-Linux-Nonspaced/releases)), level with upstream RHI 2.9.4
+**Upstream target:** `RHI 2.9.4`
 
-RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton. It follows upstream RHI up to 2.8.8 and adds Linux-specific safety around installs, downloads and Wine prefixes. It started from [wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux) (GPL-3.0).
+RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton. It follows upstream RHI up to 2.9.4 and adds Linux-specific safety around installs, downloads and Wine prefixes. It started from [wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux) (GPL-3.0).
 
 The project targets functional parity with upstream RHI where the same functionality can be implemented reliably on Linux.
 
@@ -79,7 +79,7 @@ RHI Linux Nonspaced:
 * **never leaves a game half-modded.** Installs, updates and removals are journaled and roll back as a whole if anything fails, including after a crash or power cut.
 * **checks what it downloads.** Each download source has its own list of allowed hosts and a size limit, and published checksums are verified. A download that stops sending data is given up after a minute instead of holding up Update All.
 * **leaves your Wine prefixes alone while they run**, and keeps DLL overrides you set yourself.
-* **follows upstream RHI to 2.8.8**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler, RTX Encore, Control Ultimate Edition frame generation, Universal MFG's MFG Unlocker releases and Nexus-only Luma mods.
+* **follows upstream RHI to 2.9.4**, including its Tabs and Spotlight layouts, ⚙ Game settings, Display modes, the redesigned Settings window and controller navigation, as well as OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler, RTX Encore, Control Ultimate Edition frame generation, Universal MFG's MFG Unlocker releases and Nexus-only Luma mods.
 * **lists Xbox / Game Pass games** from Xodus-format installs and from a configurable list of Xbox game folders.
 * **lists games from other store launchers inside Wine prefixes** (Epic Games Launcher, EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io), from the itch.io app for Linux, and non-Steam games added to Steam.
 * **adds RTX Encore** as a managed component (not yet confirmed on Linux).
@@ -175,10 +175,10 @@ Pick the one for your system:
 
 | Download | For |
 |---|---|
-| `RHI-Linux-v2.8.8-x86_64.AppImage` | any distribution; runs without installing |
-| `rhi-linux_2.8.8_amd64.deb` | Debian, Ubuntu, Linux Mint, Pop!_OS and other Debian-based systems |
-| `rhi-linux-2.8.8-1.x86_64.rpm` | Fedora, openSUSE |
-| `RHI-Linux-v2.8.8-x86_64.tar.gz` | any distribution; a folder you unpack where you like |
+| `RHI-Linux-v2.9.4-x86_64.AppImage` | any distribution; runs without installing |
+| `rhi-linux_2.9.4_amd64.deb` | Debian, Ubuntu, Linux Mint, Pop!_OS and other Debian-based systems |
+| `rhi-linux-2.9.4-1.x86_64.rpm` | Fedora, openSUSE |
+| `RHI-Linux-v2.9.4-x86_64.tar.gz` | any distribution; a folder you unpack where you like |
 
 ### Check the download
 
@@ -193,8 +193,8 @@ It must print `OK` for your file; if it does not, delete the file and download i
 ### AppImage
 
 ```bash
-chmod +x RHI-Linux-v2.8.8-x86_64.AppImage
-./RHI-Linux-v2.8.8-x86_64.AppImage
+chmod +x RHI-Linux-v2.9.4-x86_64.AppImage
+./RHI-Linux-v2.9.4-x86_64.AppImage
 ```
 
 To remove it, delete the file.
@@ -202,7 +202,7 @@ To remove it, delete the file.
 ### Debian, Ubuntu and derivatives (.deb)
 
 ```bash
-sudo apt install ./rhi-linux_2.8.8_amd64.deb
+sudo apt install ./rhi-linux_2.9.4_amd64.deb
 ```
 
 The `./` matters: without it apt looks for the name in its repositories. To remove it: `sudo apt remove rhi-linux`.
@@ -210,7 +210,7 @@ The `./` matters: without it apt looks for the name in its repositories. To remo
 ### Fedora (.rpm)
 
 ```bash
-sudo dnf install ./rhi-linux-2.8.8-1.x86_64.rpm
+sudo dnf install ./rhi-linux-2.9.4-1.x86_64.rpm
 ```
 
 To remove it: `sudo dnf remove rhi-linux`.
@@ -218,7 +218,7 @@ To remove it: `sudo dnf remove rhi-linux`.
 ### openSUSE (.rpm)
 
 ```bash
-sudo zypper install --allow-unsigned-rpm ./rhi-linux-2.8.8-1.x86_64.rpm
+sudo zypper install --allow-unsigned-rpm ./rhi-linux-2.9.4-1.x86_64.rpm
 ```
 
 The package is not signed (the `SHA256SUMS` check above stands in for that), so zypper needs `--allow-unsigned-rpm`.
@@ -230,8 +230,8 @@ package manager installs the system libraries it needs (fontconfig, zlib, ICU, O
 ### Any distribution (.tar.gz)
 
 ```bash
-tar -xzf RHI-Linux-v2.8.8-x86_64.tar.gz
-./RHI-Linux-v2.8.8/RHI
+tar -xzf RHI-Linux-v2.9.4-x86_64.tar.gz
+./RHI-Linux-v2.9.4/RHI
 ```
 
 `INSTALL.txt` in the folder shows how to add it to your menu, and how to remove it again.
@@ -293,6 +293,14 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 
 > [!NOTE]
 > A build from before 15 October 2026 does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering choice, and the saved OptiScaler DLL name, for every game where that component is not installed; choose them again once you are back on the current build. **Remove RTX Encore from every game before going back.** An older build cannot update or remove it, and the first time it saves any install record it drops RTX Encore's record for good: after that even this build can no longer update or remove it, and its `nvngx_dlssnr.dll.original` and Wine override are left behind. Also switch No Addons games back to ReShade Stable or Nightly first, so their add-ons are turned back on.
+
+> [!WARNING]
+> Before going back to 2.8.8 (16 November 2026), do these first as well as those below; it does not know what 2.9.4 added:
+>
+> * **Set every game's OptiScaler back to Stable, Nightly or Legacy** if 2.9.4 put a fork or a custom build in it (its version row reads `Fork:` or `Custom:`). 2.8.8 reads those as Stable, so its Update and Update All lay the Stable files over the fork's.
+> * **Expect your per-game OptiScaler version choices to be set aside.** 2.8.8 cannot read `optiscaler-variants.json`: it keeps a copy beside it (`optiscaler-variants.json.corrupt-<date>`) and every game follows the default. Put that copy back when you return to 2.9.4.
+> * **Remove GITC Uplift, the DLSS5 Tool and HSF from every game** where 2.9.4 installed them. 2.8.8 drops their install records, so their files stay in the game folder with nothing that owns them. Install them again once you are back on 2.9.4.
+> * **Turn Block Steam updates off** for games where it is on, so the manifest is unlocked (2.8.8 cannot unlock a manifest made immutable), and use **Remove from Steam launch options** on games where you added RHI's arguments to Steam, Lutris or Heroic.
 
 > [!WARNING]
 > Before going back to 2.8.7.1 or 2.8.7 (the earlier releases, 28 and 27 October 2026; the same app), do these first; it does not know what 2.8.8 added:
@@ -460,7 +468,7 @@ Everything below is on the `main` branch. Dated entries are in [`CHANGELOG.md`](
 * **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu, with the game's own icon; created only when you choose it), **Nexus Mods page** for every game Nexus has a page for (no account needed), **Choose what Update All changes…**, **Discussion / instructions** and **Web pages** (PCGamingWiki, Ultra+, ultrawide fix, HDR Gaming Database, each only where the game has one), **Copy game report** and, for Xbox games, **Show in the app that installed it**.
 * **Edit game** can change the launch command, the name a game is shown under, the wiki mod name used to find its RenoDX mod, and its bitness.
 * **Support:** Settings → Support copies all logs as one zip with your home folder, user name, Steam IDs, tokens and saved keys masked, opens the logs folder and exports the library's game data.
-* **Ported from upstream RHI 2.7.6–2.8.8:** update history, the Available mods list, manifest install warnings, the Donate dialog, mod authors and add-on file names on the game page, Unity per-game RenoDX settings, Control UE ray-reconstruction setup, Neural Rendering version swaps, ShortFuse ZZZ load order, PCGamingWiki single-file data, Luma mods published before they reach the wiki, manifest DLSS/Streamline folder overrides, deferred updates of games that were running, and the Epic Games Launcher inside prefixes.
+* **Ported from upstream RHI 2.7.6–2.9.4:** the Tabs and Spotlight layouts, ⚙ Game settings (Block Steam updates), Display modes, OptiScaler forks and custom builds, GITC Uplift, the DLSS5 Tool, HSF, update history, the Available mods list, manifest install warnings, the Donate dialog, mod authors and add-on file names on the game page, Unity per-game RenoDX settings, Control UE ray-reconstruction setup, Neural Rendering version swaps, ShortFuse ZZZ load order, PCGamingWiki single-file data, Luma mods published before they reach the wiki, manifest DLSS/Streamline folder overrides, deferred updates of games that were running, and the Epic Games Launcher inside prefixes.
 
 ## Interface & languages
 
@@ -522,7 +530,7 @@ RHI Linux Nonspaced ports **[RankFTW/RHI](https://github.com/RankFTW/RHI)**, the
 The current synchronization target is:
 
 ```text
-RHI 2.8.8 (tag RHI-2.8.8)
+RHI 2.9.4 (tag RHI-2.9.4)
 ```
 
 RHI Linux aims to preserve the functionality and workflow of the original RHI project while adapting Windows-specific behavior for Linux, Wine and Proton.
@@ -588,7 +596,7 @@ Third-party projects and components retain their respective original licenses.
 
 **Native Linux tooling for the RHI ecosystem.**
 
-Release `v2.8.8` · level with upstream RHI `2.8.8`
+Release `v2.9.4` · level with upstream RHI `2.9.4`
 
 [Back to top](#rhi-linux)
 

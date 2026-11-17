@@ -13,7 +13,18 @@ upstream's release leaves beta; until then its builds carry a beta label (such a
 
 ## In progress
 
-Not on `main` yet.
+Not on `main` yet: nothing at the moment.
+
+## 2.9.4 — 2026-11-17: level with upstream RHI 2.9.4
+
+- The third upstream level: the same downloads as 2.8.8 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one `SHA256SUMS`).
+  It holds everything in the wave entries below, up to and including wave 14, and is level with the upstream RHI 2.9.4
+  release (tag `RHI-2.9.4`); upstream's 2.8.9 to 2.9.3 have no separate releases here. How each upstream feature was
+  adapted for Linux: [`UPSTREAM.md`](UPSTREAM.md).
+- The app now reports version `2.9.4`, so 2.8.8 and older builds announce this release as newer.
+- Before going back to 2.8.8 or older, read the notes at the top of the wave-14, wave-13 and wave-12 entries below.
+
+## Wave 14 — 2026-11-17: upstream RHI 2.8.9 to 2.9.4 — Tabs and Spotlight layouts, display modes, OptiScaler forks
 
 > [!WARNING]
 > Before going back to 2.8.8 (or an older build), do these first as well as those in the wave-13 and wave-12 entries;
@@ -29,245 +40,105 @@ Not on `main` yet.
 >   install records the next time it saves its ledger, so their files stay in the game folder with nothing that owns
 >   them: no Update, no Remove, and ReShade keeps loading the add-ons. Install them again once you are back on this
 >   build.
+> - **Turn Block Steam updates off** for games where it is on, so RHI unlocks the manifest (2.8.8 cannot unlock an
+>   immutable manifest), and use **Remove from Steam launch options** (or Lutris / Heroic arguments) where you added
+>   RHI's arguments to the launcher, or 2.8.8's Launch passes them twice.
 >
 > There is no guard against this: 2.8.8 treats a component kind it does not know as damaged and leaves it out, so the
 > records cannot be written in a shape it would keep.
 
-- **Block Steam updates now holds on Linux** (#290): Steam replaces a game's app manifest by renaming a new file over
-  it, which a read-only file does not stop. Turning the block on now also sets the game to Steam's "Only update this
-  game when I launch it" and locks the manifest (immutable, `chattr +i`), which asks for your password through the
-  desktop's prompt (polkit); the ⚙ panel says "Blocked" only once the lock is confirmed. Without the lock (no `pkexec`
-  or `chattr`, a file system without immutable files, or the prompt cancelled) the manifest stays launch-only and
-  read-only, and RHI says that Steam may still update the game when you launch it, and why. Turning it off unlocks the
-  manifest (password again) and puts back its mode and update setting. While blocked, Steam may show an update error.
+### Layouts: Classic+, Tabs and Spotlight
 
-### Wave 14 — renodx-reshade
+- **Three layouts, switched from the top bar: Classic+ | Tabs | Spotlight** (upstream 2.9.0). Classic+ is the page
+  you know, now with upstream's seven sections in its order: Components, Game Overrides, Neural Rendering, DLSS /
+  Streamline, Driver Settings, Management and Extras. Tabs shows a large game header, then one tab at a time: Overview
+  (each component as a card, and an At a glance tile for every other tab), Game Overrides, Extras, DLSS / Streamline,
+  Driver Settings, Neural Rendering and Management. RHI remembers the layout and the tab (#303, #304).
+- **In Tabs, a component's ⚙ opens on the page, right under the card you clicked**, and the cards after it move down;
+  in Extras it opens right under the row. Click the same ⚙ again, or ✕, to close it (#304).
+- **Spotlight** (upstream 2.9.0–2.9.4): your games as a row of covers above the page (or below it: the strip's ⚙ ›
+  Covers below the game page; No background for the page colour), the game's Steam artwork as a large banner behind
+  its header, "What's installed" and "Tune this game" tiles, and a side panel that slides in with the section you
+  open; a component's ⚙ opens in it with a back button. Drag the banner's bottom edge or the covers' edge to resize
+  them, drag the covers to scroll; double-click an edge to reset. Covers with an update have a purple outline (#305).
+- **Artwork**: right-click a game › Artwork › Set custom cover / banner (your file is copied, never changed; Use Steam
+  cover / banner undoes it), or Browse covers / banners from SteamGridDB with your own free API key (Settings ›
+  Accounts & Data). Steam art is found for games from other stores too, including Microsoft Store names with "-
+  Windows", "(PC)" or an edition in them, and Steam's own copy on your PC is used first (#305).
+- **Screenshots** beside the game's ⚙ in Spotlight: its ReShade screenshots, newest first; open, set as the banner,
+  copy, show in the folder, or delete to the Trash (#305).
+- **Steam achievements** (opt-in, Settings › Achievements): progress, the latest and recent unlocks under Launch, and
+  the full list with dates, rarity, icons, search and hidden ones masked (Show hidden), refreshed as you unlock them.
+  Read from Steam's files on your PC (native or Flatpak Steam): no sign-in or API key (#307).
+- **New top bar, the same in every layout** (upstream 2.9.0): Available Mods (with a green New tag when new mods have
+  arrived) and Shaders & Addons (Global Shaders, Global Addons) on the left; when RHI last checked, Refresh, Update
+  All with how many games have updates, the layout switch, a Help menu (Quick Start, Guide, Discord, the RenoDX and
+  Luma wikis, the GitHub pages, Patch notes, Message of the day, Update log, About, Donate) and Settings, lit while
+  Settings is open. Quick start, Links, MOTD, Updates and Donate moved into Help; Batch DLSS is in Settings › DLSS /
+  Streamline; Add game is the green + beside the search box; the Compact view button is gone (#303).
+- **The game list matches upstream's**: dark navy, All | Installed | Favourites | Hidden under the search box, your
+  collections under that, and a Filters button beside the counts for the Unreal, Unity, Other, RenoDX and Luma filters
+  (#303).
+- **Management** (upstream 2.9.0): Change install folder, Reset install folder, Remove from RHI, Reset Overrides and
+  Copy Report, in one row in Classic+ and as tiles in Tabs. Reset Overrides puts the forced API, Luma mode, DLL names,
+  Update All inclusion and NVIDIA settings back to the defaults (#304).
+- Tooltips, menus and pop-ups use upstream's dark navy look (#303).
 
-- The generic Unity RenoDX add-on comes from its new location (Voosh's GitHub Pages, 64-bit), and the upstream
-  manifest can move it again without an app update. Games with the add-on from the old link show an update. When a
-  link cannot be reached, RHI tries the add-on's older links in turn (#268).
-- Shader packs you have downloaded are checked for updates at every start, whether or not a game uses them and with
-  "Download all shaders" on or off; packs you never used are still downloaded only when needed (#267). Packs that
-  come as a branch archive (most of them) now update when their author changes them; before, the first download was
-  kept for good. Packs the online manifest adds (SD Shaders, UltrawideSideGlass) update like the others, and
-  UltrawideSideGlass, a single `.fx` file, now installs at all (#265). Zenteon+ Shaders, a free file on Patreon, now
-  downloads: only Patreon's file links and file servers are allowed for it, each redirect is checked, and no cookies
-  or tokens are sent (#265).
-- RenoDX add-ons hosted on a modder's own site (such as UE-Extended) install from the same file on the modder's
-  GitHub when the site cannot be reached. A second download of an add-on (`renodx-x (1).addon64`) no longer blocks an
-  install or update: it is renamed so ReShade does not load it twice (the file is kept), and a dropped one installs
-  under the add-on's own name. Games that RHI's data lists as Unreal Engine 4 or 5 get the generic Unreal mod even when
-  the folder scan did not recognise the engine (#287).
-- Vulkan ReShade: checked against upstream's three Vulkan fixes. Each Vulkan game here has its own ReShade layer, so
-  updates show and Update All applies them, and Stable, Nightly and Legacy each switch that game's layer; new tests
-  keep it that way (#288).
-- Source engine games (Half-Life 2, Portal, Counter-Strike: Source and the others in RenoDX's Source list) now show
-  RenoDX's Source engine mod on their RenoDX row. RHI does not install it yet: the mod needs DXVK set up in front of
-  ReShade, and how to do that under Proton is waiting for a test on a real game. Install says so and points to the
-  RenoDX wiki's manual steps (#286, partial).
+### Interface and Settings
 
-Wave 14 — library-updates
+- **Settings looks like upstream's** (upstream 2.8.9/2.9.3): eight sections in upstream's order with an index on the
+  left, Find a setting (it scrolls to the setting and outlines it), a Tabs button for one section at a time, and
+  Settings reopens where you left it. Settings save as soon as you change them; there is no Save button. Clear cache
+  and Reset settings are red and ask first, with Cancel as the default (#296).
+- **Interface size** from 50% to 200% in 5% steps (Settings › General › Windows, or hold Ctrl and turn the mouse
+  wheel; the status bar says the new size), and **Top bar size** and **Game list size** of their own: pick them in
+  Settings or drag the top bar's bottom edge and the game list's right edge; double-click an edge to reset it (#306).
+- **Colour themes** (upstream 2.9.3): Settings › General › **Colour theme** — Default, OLED Black, Midnight Blue,
+  Ember, Forest, Kiro, Slate, High Contrast or Colour-blind Friendly. RHI changes colour straight away, no restart.
+  - **Custom** lets you choose your own colours: background, panels, text, accent, buttons and the status colours
+    (installed, update available, warning, error), with a colour picker beside each colour's hex box. It starts from
+    the theme you had; Start from a theme… and Reset to default are there too. RHI warns you if text would be hard to
+    read (#301).
+  - **Share theme** copies your colours as one line of text (`RHI-THEME:…`) and **Import theme** takes a code someone
+    shared. Codes from RHI on Windows work here and the other way round.
+  - The favourite star keeps its amber in every theme that keeps upstream's warning colour (#301).
+- **Hide the HDR or Resolution row on game pages** (upstream 2.9.3): Settings › Display & HDR. The game's own choice
+  still applies when you launch it (#312).
+- **Every component ⚙ looks the same**, as in RHI 2.9.0: cards, the setting's name on the left with its option beside
+  it, a short explanation under each setting, and a scroll bar when there is a lot to show. RenoDX's and OptiScaler's
+  compatibility settings (and Display Commander's and RTX Encore's) stay two per row; hover a setting for its
+  explanation (#297).
+- **Settings in a ⚙ save as soon as you change them**; one that can't be saved goes back to its saved value and the ⚙
+  says why. DX9 HDR's preset no longer needs Apply. The ⚙ window has a Close button, and messages such as "Deployed
+  ReShade.ini", a saved setting or an error appear inside it, not only on the game page behind it (#297).
+- **New buttons to open ReShade.ini, ReShade.log, relimiter.ini, the ReLimiter log, DisplayCommander.ini,
+  OptiScaler.ini, HSF.ini and HSF's helper log** from their ⚙ (#297).
+- **Components with nothing to set say so**: DOF Fix and ASI Loader (between Install and Remove) have a ⚙ that says
+  there is nothing to set, and Luma's ⚙ on a game that isn't Unreal Engine says there is nothing to set there instead
+  of having no ⚙ (#297).
+- **More tooltips** (upstream 2.8.9): the library filters, section headings and summaries, and the DLSS defaults
+  abbreviations. RTX Encore's ⚙ explains every setting in its tooltip, and a greyed setting says why it is greyed (for
+  example, Multiplier is only used when Mode is Fixed) (#302).
+- **The status bar**, bottom left, shows what RHI is doing in the background (scanning your games, checking for
+  updates, updating DLSS, checking custom game folders) and, when idle, when RHI last checked for updates and when the
+  next check is due ("Last checked: 18m ago · Next check in 2h 41m"). A status line shows there for 10 seconds; the
+  last one stays in the bar's tooltip (#298).
+- **Help's Quick Start is rewritten** for the current app: welcome and the GitHub token, picking a game, ReShade,
+  RenoDX and Luma, shaders, DOF Fix and frame limiters, DLSS / Streamline, Neural Rendering, OptiScaler, frame
+  generation unlocks, HDR and resolution on launch, adding games, updating and troubleshooting (#309).
+- **Smaller changes from upstream** (#309):
+  - Links in the message of the day can be clicked (web links only).
+  - What's New has a version list with a search box, an arrow that hides them to widen the notes, and + / − for the
+    text size. RHI remembers both.
+  - Support the Mod Authors shows Ko-fi and Patreon buttons for authors who have both.
+  - Clicking the store badge on a game's page opens the game's Steam Community page, when RHI knows its Steam app id.
+  - A greyed game name in the library means ReShade isn't installed for that game; its tooltip says so.
+  - The mod author credit says which mod it is for: "RenoDX: Marat", "Luma: Pumbo".
+  - A game you add yourself opens straight away; a search or filter that would hide it is cleared.
+  - Hovering the HDR mode and "Change resolution while playing" says whether they are on for the game.
+  - The Favourite button is quieter: "★ Favourited" in amber once a game is a favourite.
 
-- **The RHI-Linux update check no longer says "You have the newest version" after GitHub's hourly request limit was
-  reached** (upstream 2.9.4). It says the limit is reached and that a GitHub token raises it, or that it could not
-  check.
-- **Hidden games are left alone by everything that runs over the whole library** (upstream 2.8.9): Update All, automatic
-  component updates, Follow newest DLSS / Streamline and Settings' "Apply to all games" buttons. To update a hidden
-  game, show it again or use its own buttons.
-- **Automatic updates run every 4 hours, every hour with a GitHub token, and count across restarts** (upstream
-  2.8.9/2.9.2): a start runs them at once only when the last run is 4 hours (1 hour) ago or more, and saving Settings no
-  longer starts an extra run.
-- **The Ultra+ and ultrawide fix lists are checked every 4 hours** instead of once a day, also while RHI stays open.
-- **Update History lists DLSS and Streamline swaps and restores** made from the DLSS section, the DLSS batch and the
-  DLSS defaults (upstream 2.9.3), with the version before and after.
-- **Settings no longer saves an add-on watch folder that does not exist**: it says so and saves the rest (upstream
-  2.8.9).
-- **An invalid ReLimiter custom FPS is no longer saved as "no cap" without a word**: the saved cap stays and RHI says
-  the value must be a whole number from 20 to 1000 (upstream 2.8.9).
-- **Games that ship FFmpeg, Qt, SDL or a web view no longer read as DirectX 12** when nothing else says which API they
-  use (OpenMW, for example; upstream 2.9.2).
-- **Block Steam updates** (upstream 2.9.4): a new action beside Favourite and Hide for Steam games stops Steam updating
-  the game (the app manifest set to launch-only, read-only and locked; see above), so your mods keep working until
-  they're updated. Allow Steam updates turns it off. Refused while Steam is in the middle of updating the game.
-- **Remove from RHI** (upstream 2.9.0): takes a game out of every list, Hidden included, and scans don't bring it back.
-  **Settings → Removed games** lists them with Restore. Components RHI installed in the game stay installed.
-
-Not on `main` yet:
-
-- Wave 14 — extras-addons
-  - ReShade's ⚙ has **Load ReShade as ASI** (upstream 2.8.9): ReShade becomes `ReShade64.asi` / `ReShade32.asi` for an
-    ASI loader, installs and updates keep that name, Off goes back to its DLL name. Not for Vulkan games (#283).
-  - ASI Loader and the extras (upstream 2.9.0): with ASI Loader installed as `version.dll`, 20/30 FG Unlock, Universal
-    MFG, RTX Encore and DLSS Enabler offer `versionHooked.dll`, which ASI Loader loads. Names another component uses
-    are greyed with its name. Installing ASI Loader over an extra moves the extra to the Hooked name and RHI follows it;
-    removing ASI Loader moves it back, Wine overrides included (#284).
-  - Display Commander's ⚙ has its main settings (upstream 2.8.9): FPS Limit (VRR presets or your own value), FPS Limiter
-    Mode, Inject Reflex, Window Mode, the four Reflex options and Win+Up grace time, saved to the game's
-    `DisplayCommander.ini`, and Open DisplayCommander.ini (#282).
-  - HSF frame generation (upstream 2.9.3, HSF 0.9.8) in Extras: one click installs HSF's add-on, Streamline and frame
-    generation files, HSF.ini, HSF.fx and iMMERSE Launchpad; DirectX 12 games work from the first launch; updates keep
-    your HSF settings; the ⚙ sets the DirectX 12 mode and Launchpad; RTX 20/30/40 cards are offered Universal MFG
-    Unlocker. HSF needs RHI's ReShade installed first (#277).
-
-### Wave 14 — optiscaler
-
-- OptiPatcher shows its real build again and its cache is named by build: since November 2026 its release notes put a
-  `^G` before the commit, which RHI did not read (#264, upstream 2.9.3).
-- OptiPatcher now loads with OptiScaler Nightly, DLSS NR, F5 and the forks: it goes to `OptiScaler/plugins`, where
-  those builds look, instead of the game's `plugins` folder, which only Stable reads. Games that already have it show
-  an update; Update moves it (#273, upstream 2.8.9).
-- OptiScaler versions (#270, upstream 2.9.0–2.9.2):
-  - New **Default version** setting next to OptiScaler's GPU Type: the version a game installs when you haven't picked
-    one in its ⚙. Games that already have OptiScaler keep theirs.
-  - New **DXGI Spoofing** setting in OptiScaler's ⚙ on every version (Auto, True, False). Presets save it.
-  - The ⚙ shows the installed and the newest version, with **Check now**, and **Update** when there is one.
-  - New **Release** setting in the ⚙: keep a game on an older release of Stable, DLSS NR or F5 DLSSNR. Pinned games are
-    not updated.
-  - New **Remove old Nightly builds** setting (off by default): deletes old downloaded Nightly builds, keeping the
-    newest and any a game uses.
-- OptiScaler's ⚙ opens with a Presets panel on every version, Stable included (#269, upstream 2.8.9):
-  - Recommended presets in one click: Real DLSS FG, DLSS Enabler FG and UMFG XeFG (which installs Universal MFG
-    Unlocker if it's missing). The one matching the game is ticked. New ones can arrive without an app update.
-  - Your four preset slots are one dropdown with Apply, Save current (Overwrite) and a … button to rename or clear.
-  - New **Replace with a fresh copy…** at the bottom: asks first, then gives the game the same OptiScaler.ini as a
-    fresh install (your GPU, DLSS Inputs and its version). The old file is kept in RHI's data folder.
-- More OptiScaler versions: the recommended forks Venom, NR PreSR MFG, Feeder NR and OpenNR sit beside Stable,
-  Nightly, DLSS NR and F5 DLSSNR. RHI downloads them from their GitHub releases and keeps them up to date like the
-  others; the Neural Rendering forks get NVIDIA's Neural Rendering file (#271, upstream 2.9.2/2.9.3). Custom OptiScaler
-  builds are not in this build yet.
-- OptiScaler ⚙: FG Nvngx Override lists custom frame generation providers found in OptiScaler's custom folder by name
-  (#272, upstream 2.9.3).
-
-Not on `main` yet:
-
-- Wave 14 — nr
-  - DLSS5 Feeder 2.0 (#275): new installs use the motion vectors built into Feeder 2.0, so LumeniteFX is no longer
-    downloaded for it; games that already use LumeniteFX keep it. Feeder is added to the game's own ReShade preset
-    instead of replacing it, so your other effects and their settings stay, and removing Feeder takes out only what it
-    added (a preset that was there before is never deleted). The Feeder row shows "Built-in motion vectors" or
-    "LumeniteFX motion vectors" and mentions the Feeder menu (Alt+C).
-  - GITC Uplift (#274): a new Neural Rendering method by ghostinthecamera for almost any game on an RTX card (DirectX
-    9–12, Vulkan, OpenGL; 32 and 64-bit). Install it from its row in Managed components; in the game open ReShade
-    (Home), go to the GITC Uplift tab and tick Enable. Uplift Version (under NR versions) follows the latest release
-    or stays on one; the add-on and its helper always update together. It brings iMMERSE Launchpad for motion vectors
-    (on by default in games without DLSS, with a check box per game) and keeps it at the top of the game's ReShade
-    effects. Settings › DLSS/Streamline has a GITC Uplift card with the NR on/off key and "Write key to all Uplift
-    games". OpenGL games are set up so Uplift works with anti-aliasing on. It is the recommended method for 64-bit
-    DX11, DX12 and Vulkan games without DLSS.
-
-Wave 14 — extras-fg
-
-- **Closed-source notice** (upstream 2.9.3): installing RTX Encore or 20/30 FG Unlock first says the mod is
-  closed source (its author publishes only the DLL, not the code), with Install, Cancel and **Don't show this
-  again**. The tick is remembered per mod, also when you press Cancel. The ⓘ on the RTX Encore, 20/30 FG Unlock,
-  Universal MFG Unlocker and MFG Unlock rows opens the mod's GitHub page.
-- **Universal MFG Unlocker** (formerly Universal MFG / RTX 40 MFG, upstream 2.8.9): the row has the mod's name and links
-  to its new GitHub page. The GPU generation choice is gone: RTX 30 is supported (RTX 20 experimental) and XeSS frame
-  generation (XeMFG) runs on any GPU, in DirectX 12 and (experimentally) Vulkan games.
-  - Installing it also puts Intel's `libxess_fg.dll` and `libxell.dll` in an `RTXMFG-XeSS` folder beside it, which
-    the mod's "XeMFG standalone" mode needs. Files you put there yourself are left alone. **Existing installs get them
-    with Update or Update All.**
-  - With RHI's OptiScaler Nightly, F5 DLSSNR or DLSS NR in the same game it installs as an OptiScaler plugin
-    (`OptiScaler/plugins/MFGUnlocker.asi`), as its author recommends; installing such an OptiScaler moves an existing
-    install in, and removing OptiScaler moves it back beside the game first. Choose DLSSG or XeFG with FG Output in
-    OptiScaler's ⚙.
-  - Installing it where ReShade is warns that XeMFG standalone does not start while ReShade is loaded, with **Don't
-    show this again**. The ⚙ explains XeMFG, says whether its files are there and warns about ReShade as `dxgi.dll`.
-- **MFG Unlock** (formerly MFG Ada Unlock, upstream 2.8.9/2.9.2): the row and its messages use the mod's new name;
-  your installs carry over. Its new ⚙ has the **Frame generation method** (NVIDIA DLSS-G, Intel XeMFG (CUDA), XeMFG via
-  DLSS-G (XMX)) and **DLSS-SR input (experimental)** for XeMFG (CUDA), saved in the game's `MFGAdaUnlock.ini`, and an
-  Open MFGAdaUnlock.ini button.
-  - Installing it also installs Intel's XeSS files its XeMFG modes need in the game folder. A game's own older copies
-    (Of Ash and Steel) are kept as `<file>.mfgada-original` and put back when you remove the mod. **Existing installs
-    get them with Update or Update All**, and the ⚙ says whether the right files are there.
-  - The ⚙ warns when the game can't use it: DirectX 11 and older don't work, Vulkan is experimental.
-- **20/30 FG Unlock ⚙** (upstream 2.8.9): the mod's main settings as dropdowns — Frame Generation, Engine (DLSS or
-  XeSS), Max Frames (2X to 6X), Preset (A, B, C: FG Lite), Speed Tier and Super Resolution (preset M or L) — saved in
-  the game's `dlssg_sm86.ini`, so you can't enter a value that would switch frame generation off. XeSS goes up to 4X.
-  Your settings are kept when the mod updates. Open dlssg_sm86.ini and Open log buttons. The GPU generation setting is
-  gone: the mod detects RTX 20 and 30 cards by itself.
-- **RTX Encore** is no longer labelled Beta (upstream 2.8.9–2.9.3).
-  - Its ⚙ has RTX Encore's settings — frame generation, the XeFG engine, generated frame quality, HUD and UI,
-    upscaling, Neural Rendering and compatibility — written straight into the game's `rtx-encore.jsonc`, keeping the
-    file's comments, and an Open rtx-encore.jsonc button.
-  - Installing it also installs Intel's XeSS files the way RTX Encore Hub does: the game's own copies are replaced where
-    they are and put back when you remove RTX Encore; the rest, and Intel's licence, go in RTX Encore's own folder.
-  - The Neural Rendering file RHI installs for it is now 310.9.16.
-  - **Existing installs get the XeSS files and the 310.9.16 file with Update or Update All.**
-  - The Bink names (`binkw64.dll`, `bink2w64.dll`) are offered: the game's own Bink file is kept beside it as
-    `binkw64Hooked.dll` / `bink2w64Hooked.dll` and put back on removal.
-  - `rtx-encore.asi` installs the separate ASI build from RTX Encore's release. An `.asi` install from an older build is
-    corrected by Update.
-  - The DLL name list puts the name the RHI manifest recommends for a game first and uses it by default (Euro Truck
-    Simulator 2: `winmm.dll`); the ⚙ names it.
-
-Wave 14 — library-folders
-
-- **Custom game folders** (upstream 2.9.0): Settings → Custom game folders lists folders where you keep DRM-free or
-  other non-store games. RHI checks them at start, on Refresh and with Scan now, and never adds a game on its own: the
-  status line says "N new games found in your custom folders · Review". In the review you fix the name, choose the exe
-  (RHI picks the likely one and says "Check the exe" when two look alike) and, as in Add game, the Wine/Proton prefix
-  and launch command. Ignore selected, or removing a game you added this way, stops it being offered; Forget ignored
-  games undoes that.
-- **Remove from RHI asks first and can uninstall the game's components** at the same time (upstream 2.9.0). A component
-  that cannot be removed is named, and comes back with the game on Restore.
-- **Changing or resetting a game's install folder moves its mods, settings and presets** (upstream 2.9.2): Edit game and
-  Restore automatic detection ask, and when RHI corrects a folder itself (the online manifest) the mods move on their
-  own. Nothing moves while the game is running, a file you changed is never overwritten, and a failed move is undone.
-
-Wave 14 — extras-fg-2
-
-- **20/30 FG Unlock on RTX 30** (upstream 2.8.9+): RTX 30 owners are no longer sent to Universal MFG Unlocker; 20/30
-  FG Unlock installs on RTX 20 and 30 alike, and the mod finds the card itself. Both rows are offered on every card, as
-  upstream's are. Their notes now give upstream's description instead of a "legacy RTX 20" path or a card generation
-  you never picked, and every message calls the mod 20/30 FG Unlock (#281).
-- **RTX Encore ⚙ warns while the game is running** (upstream 2.9.0): changes apply the next time it starts, and RTX
-  Encore's in-game menu may overwrite them while it's open (#280).
-
-- Wave 14 — nr-2
-  - DLSS5 Tool (#317): RenoDX's DLSS5 Tool is now a Neural Rendering method of its own, as in upstream RHI, for 64-bit
-    games with native DLSS. Install it from its row in Managed components; it brings NVIDIA's Neural Rendering file when
-    the game has none. DLSS5 Tool Version (under NR versions) follows the latest release or stays on one, and switching
-    version swaps the add-on in place. The DX11 Bridge row now installs "DLSS5 Tool + DX11 Bridge" (the bridge alone did
-    nothing); a bridge installed earlier says it needs DLSS5 Tool. Check Neural Rendering lists it.
-  - Foveated DLSS5 Tool (#276): a Foveated check box under NR versions installs FoveatedDLSS5 (by maximedgoulet) instead
-    of the stock add-on: full-resolution Neural Rendering in the middle of the screen, less around it, for a large
-    performance gain. Every download is checked against the hash published with it. Latest keeps it current, stock
-    updates never replace it, and switching while installed swaps the add-on in place.
-  - GITC Uplift's NR on/off key (Settings › DLSS/Streamline › GITC Uplift) is set by clicking the box and pressing the
-    key, as in upstream RHI; Backspace or ↺ sets None. Keys saved before stay as they were.
-  - HSF and GITC Uplift now share one iMMERSE Launchpad: a game with both never gets two, removing one leaves what the
-    other still uses, and Launchpad stays at the top of the game's ReShade effects for HSF too. Existing HSF installs
-    move their Launchpad into the shared place the next time RHI checks them (not while the game is running).
-
-### Wave 14 — optiscaler-2
-
-- **Custom OptiScaler builds** (#271, upstream 2.9.2): Settings › DLSS/Streamline › Custom OptiScaler builds. Add any
-  OptiScaler build from a download link, a zip/7z/rar, a folder or an OptiScaler.dll, or drop one on the card. It
-  appears as a version in every game's OptiScaler ⚙ and in Default version. RHI installs it like the other versions but
-  never updates it. Replace swaps its files and offers to update the games that use it (their OptiScaler.ini is kept);
-  Rename and Remove are next to it, with a **DLSS NR DLL** tick for Neural Rendering forks. Only add builds from people
-  you trust: the card says so.
-- The recommended OptiScaler forks now come from the online manifest, so a new fork appears without an app update. The
-  four known forks stay as a fallback, and a fork the manifest drops keeps working in the games that have it. Forks are
-  listed by name, as upstream lists them. Saved choices, Default version, release pins and installed games all keep the
-  version they had.
-- **OptiScaler presets remember their version** (upstream): a preset saved on F5 (or any version) switches the game to
-  that version when you apply it. RHI asks first, because that reinstalls OptiScaler; your OptiScaler.ini settings are
-  kept and a copy goes to RHI's data folder. Presets saved before this build keep the game's version.
-- **All Settings in OptiScaler's ⚙** (#272, upstream 2.9.3): every setting of the game's OptiScaler.ini, with the
-  options the installed build lists in its own INI (forks and custom builds show theirs). Pick a section or search;
-  nothing is written until you press Apply, and the old file is backed up first. Applied changes are written again
-  after a reinstall or a version switch; Forget saved edits stops that.
-- **Save ini… / Load saved ini…** in OptiScaler's ⚙ (#272): keep any game's OptiScaler.ini under a name ("F5 super
-  ini"), add one from a file, and use it for any game. The game remembers it and gets it back after a reinstall or a
-  version switch.
-- **ANR FG preset** in OptiScaler's ⚙ (#272, upstream 2.9.3): Apex Neural Rendering frame generation in place of the
-  game's DLSS frame generation. It first says ANR FG is closed source (#285), checks that the game's OptiScaler build
-  can load it (Nightly from late October 2026, or a build based on it), then downloads the newest ANR FG release,
-  checked against its published hashes, into OptiScaler's custom folder. Your `nr_fg.ini` is kept.
-
-### Wave 14 — ui-logic
+### Library, search and collections
 
 - **Game search like Steam's** (upstream 2.9.3): punctuation and spaces are ignored (fear finds F.E.A.R.), words can
   come in any order (batman lego), initials work (gta, rdr2, ff7, hl2, mw3), Roman numerals match numbers (gta 3 finds
@@ -276,171 +147,55 @@ Wave 14 — extras-fg-2
   Stores, runners, engines, graphics APIs, authors and folders match whole words only: st no longer lists every Steam
   game; type steam, unreal, dx12 or vulkan to list those games.
 - **Game collections** (upstream 2.9.2): make your own lists of games, like Racing or Souls-likes. Right-click a game
-  and choose **Add to collection** (tick a collection, or New collection…); a game can be in as many as you like.
-  Your collections show as buttons under the filter tabs: click one to show only its games, click it again to show
+  and choose **Add to collection** (tick a collection, or New collection…); a game can be in as many as you like. Your
+  collections show as buttons under the filter tabs: click one to show only its games, click it again to show
   everything. Right-click one to rename, move or delete it; deleting a collection never removes any games. Picking a
   filter tab leaves the collection, and RHI remembers the one you had open.
-- **Colour themes** (upstream 2.9.3): Settings › General › **Colour theme** — Default, OLED Black, Midnight Blue,
-  Ember, Forest, Kiro, Slate, High Contrast or Colour-blind Friendly. RHI changes colour straight away, no restart.
-  - **Custom** lets you choose your own colours: background, panels, text, accent, buttons and the status colours
-    (installed, update available, warning, error). It starts from the theme you had; Start from a theme… and Reset
-    to default are there too. RHI warns you if text would be hard to read.
-  - **Share theme** copies your colours as one line of text (`RHI-THEME:…`) and **Import theme** takes a code someone
-    shared. Codes from RHI on Windows work here and the other way round.
-- **Per-game FPS limit** (upstream 2.8.9): the DLSS section of each Wine/Proton game has an **FPS Limit**, so you can
-  cap one game without capping them all. Global follows the new FPS Limit in Settings › Driver Settings, Off turns
-  the limit off for that game, and Custom… takes 20 to 1000; upstream's VRR caps (59 FPS for 60 Hz up to 416 FPS for
-  480 Hz) are in the list. On Linux RHI hands the cap to DXVK (`DXVK_FRAME_RATE`, Direct3D 8–11) and VKD3D-Proton
-  (`VKD3D_FRAME_RATE`, Direct3D 12) when it starts the game; for Steam, Heroic and Lutris it shows the launch options to
-  paste. As upstream, Global does not cap games with ReLimiter or Display Commander, so the two limiters don't fight.
+- **Custom game folders** (upstream 2.9.0): Settings › Custom game folders lists folders where you keep DRM-free or
+  other non-store games. RHI checks them at start, on Refresh and with Scan now, and never adds a game on its own: the
+  status line says "N new games found in your custom folders · Review". In the review you fix the name, choose the exe
+  (RHI picks the likely one and says "Check the exe" when two look alike) and, as in Add game, the Wine/Proton prefix
+  and launch command. Ignore selected, or removing a game you added this way, stops it being offered; Forget ignored
+  games undoes that.
+- **Remove from RHI** (upstream 2.9.0), in Management: takes a game out of every list, Hidden included, and scans
+  don't bring it back. It asks first and can uninstall the game's components at the same time; otherwise they stay
+  installed. A component that cannot be removed is named, and comes back with the game on Restore. **Settings ›
+  Removed games** lists them with Restore.
+- **Hidden games are left alone by everything that runs over the whole library** (upstream 2.8.9): Update All,
+  automatic component updates, Follow newest DLSS / Streamline and Settings' "Apply to all games" buttons. To update a
+  hidden game, show it again or use its own buttons.
+- **Changing or resetting a game's install folder moves its mods, settings and presets** (upstream 2.9.2): Edit game
+  and Restore automatic detection ask, and when RHI corrects a folder itself (the online manifest) the mods move on
+  their own. Nothing moves while the game is running, a file you changed is never overwritten, and a failed move is
+  undone.
 
-### Wave 14 — ui-settings
+### Game settings and Steam
 
-- **Settings looks like upstream's** (upstream 2.8.9/2.9.3): eight sections in upstream's order with an index on the
-  left, Find a setting (it scrolls to the setting and outlines it), a Tabs button for one section at a time, and
-  Settings reopens where you left it. Settings save as soon as you change them; there is no Save button. Clear cache and
-  Reset settings are red and ask first, with Cancel as the default (#296).
-- **Hide the HDR or Resolution row on game pages** (upstream 2.9.3): Settings › Display & HDR. The game's own choice
-  still applies when you launch it (#312).
-- **More tooltips** (upstream 2.8.9): the library filters, section headings and summaries, the DLSS defaults
-  abbreviations, and greyed settings say why they're greyed (#302).
-- Every component ⚙ now looks the same, as in RHI 2.9.0: cards, the setting's name on the left with its option beside
-  it,
-  a short explanation under each setting, and a scroll bar when there is a lot to show. RenoDX's and OptiScaler's
-  compatibility settings (and Display Commander's and RTX Encore's) stay two per row; hover a setting for its
-  explanation (#297).
-- Messages such as "Deployed ReShade.ini", a saved setting or an error now appear inside the ⚙ window, not only on the
-  game
-  page behind it (#297).
-- Settings in a ⚙ save as soon as you change them; one that can't be saved goes back to its saved value and the ⚙ says
-  why.
-  DX9 HDR's preset no longer needs Apply. The ⚙ window has a Close button (#297).
-- New buttons to open ReShade.ini, ReShade.log, relimiter.ini, the ReLimiter log, DisplayCommander.ini, OptiScaler.ini,
-  HSF.ini and HSF's helper log from their ⚙ (#297).
-- Components with nothing to set say so: DOF Fix has a ⚙ that says it has no settings, and Luma's ⚙ on a game that isn't
-  Unreal Engine says there is nothing to set there instead of having no ⚙ (#297).
-- RTX Encore's ⚙ explains every setting in its tooltip, and a greyed setting in a ⚙ says why it is greyed (for example,
-  Multiplier is only used when Mode is Fixed) (#302).
-- The status bar, bottom left, shows what RHI is doing in the background (scanning your games, checking for updates,
-  updating DLSS, checking custom game folders) and, when idle, when RHI last checked for updates and when the next
-  check is due ("Last checked: 18m ago · Next check in 2h 41m"). A status line shows there for 10 seconds; the last
-  one stays in the bar's tooltip (#298).
-- Help's Quick Start is rewritten for the current app: welcome and the GitHub token, picking a game, ReShade, RenoDX
-  and Luma, shaders, DOF Fix and frame limiters, DLSS / Streamline, Neural Rendering, OptiScaler, frame generation
-  unlocks, HDR and resolution on launch, adding games, updating and troubleshooting (#309).
-- Links in the message of the day can be clicked (web links only) (#309).
-- What's New has a version list with a search box, an arrow that hides them to widen the notes, and + / − for the text
-  size. RHI remembers both (#309).
-- Support the Mod Authors shows Ko-fi and Patreon buttons for authors who have both (#309).
-- Clicking the store badge on a game's page opens the game's Steam Community page, when RHI knows its Steam app id
-  (#309).
-- A greyed game name in the library means ReShade isn't installed for that game; its tooltip says so (#309).
-- The mod author credit says which mod it is for: "RenoDX: Marat", "Luma: Pumbo" (#309).
-- A game you add yourself opens straight away; a search or filter that would hide it is cleared (#309).
-- Hovering the HDR mode and "Change resolution while playing" says whether they are on for the game (#309).
-- The Favourite button is quieter: "★ Favourited" in amber once a game is a favourite (#309).
-- A ⚙ beside the game's name opens Game settings, with Block Steam updates as an On/Off switch (upstream 2.9.4) and
-  Remove from RHI; both left the row of buttons beside Favourite and Hide.
-- Installing DLSS5 Tool (or DLSS5 Tool + DX11 Bridge) also brings the game's DLSS Super Resolution, Ray Reconstruction
-  and Frame Generation files to the newest, through the DLSS / Streamline section: the originals are kept there and
-  Restore puts them back, and Updates lists the swaps. A game whose update inclusion leaves DLSS out keeps its files
-  (#317).
+- **Game settings**: a ⚙ beside the game's name opens them. For Steam games it holds **Block Steam updates** as an
+  On/Off switch (upstream 2.9.4), which stops Steam updating the game so your mods keep working until they're updated.
+  Refused while Steam is in the middle of updating the game.
+- **Block Steam updates holds on Linux** (#290): Steam replaces a game's app manifest by renaming a new file over it,
+  which a read-only file does not stop. Turning the block on also sets the game to Steam's "Wait until I launch the
+  game" and locks the manifest (immutable, `chattr +i`), which asks for your password through the desktop's prompt
+  (polkit); the ⚙ says "Blocked" only once the lock is confirmed. Without the lock (no `pkexec` or `chattr`, a file
+  system without immutable files, or the prompt cancelled) the manifest stays launch-only and read-only, and RHI says
+  that Steam may still update the game when you launch it, and why. Turning it off unlocks the manifest (password
+  again) and puts back its mode and update setting. While blocked, Steam may show an update error. The ⚙ uses Steam's
+  current name for the setting.
 
-### Wave 14 — display-modes
-
-- **Display modes** (upstream 2.9.3): save sets of the settings RHI applies to a game — e.g. Monitor and TV, up to six
-  modes — and switch a game between them from its page. Turn them on in Settings › Display & HDR › Display modes, where
-  you add, rename, reorder and delete modes and set each mode's values with Edit…. A mode can set RenoDX's peak, game
-  and UI brightness, the ReLimiter and Display Commander caps, the game's FPS limit, DLSS frame generation, the DLSS
-  Super Resolution / Ray Reconstruction presets and render scales, the ReShade preset, the ReShade overlay and
-  screenshot keys, controller navigation in ReShade, the ReLimiter OSD key, the HDR mode the game launches with and the
-  resolution switch. Anything a mode does not set keeps the game's normal value (#311).
-- The mode switch sits beside HDR and resolution in both layouts (in Classic+ under the resolution row in Game
-  Overrides, in Tabs in the game header beside HDR on launch and the resolution switch), with a ⚙ for the game's
-  display mode settings; the game menu has a Display mode submenu, and the game's own ⚙ a Display modes row. Click
-  the game's active mode again (or pick Off) to turn its mode off: it goes back to your global settings (and what it
-  had before modes for settings without a global value). Switch all games switches every game, or turns every game's
-  mode off; hidden and running games are left out. In a game's ⚙ you can make a Custom mode just for that game (#311).
-- While a game is in a mode, ReShade, RenoDX, ReLimiter and Display Commander installs and updates, and the Settings
-  "write to all games" buttons, keep that game's mode values (#311).
-- Not on Linux: RTX HDR peak brightness and the choice of display for HDR (no Wine/Proton equivalent). Launch
-  arguments per mode wait for an owner decision (#311).
-
-### Wave 14 — layouts-a
-
-- **Three layouts, switched from the top bar: Classic+ | Tabs | Spotlight** (upstream 2.9.0). Classic+ is the page you
-  know, now with upstream's seven sections in its order: Components, Game Overrides, Neural Rendering, DLSS /
-  Streamline, Driver Settings, Management and Extras. Tabs shows a large game header, then one tab at a time: Overview
-  (each component as a card, and an At a glance tile for every other tab), Game Overrides, Extras, DLSS / Streamline,
-  Driver Settings, Neural Rendering and Management. RHI remembers the layout and the tab. Spotlight comes in a later
-  update; its switch is there, greyed (#303, #304).
-- **New top bar, the same in every layout** (upstream 2.9.0): Available Mods (with a green New tag when new mods have
-  arrived) and Shaders & Addons (Global Shaders, Global Addons) on the left; when RHI last checked, Refresh, Update All
-  with how many games have updates, the layout switch, a Help menu (Quick Start, Guide, Discord, the RenoDX and Luma
-  wikis, the GitHub pages, Patch notes, Message of the day, Update log, About, Donate) and Settings, lit while Settings
-  is open. Quick start, Links, MOTD, Updates and Donate moved into Help; Batch DLSS is in Settings › DLSS / Streamline;
-  Add game is the green + beside the search box; the Compact view button is gone (#303).
-- **The game list matches upstream's**: dark navy, All | Installed | Favourites | Hidden under the search box, your
-  collections under that, and a Filters button beside the counts for the Unreal, Unity, Other, RenoDX and Luma filters
-  (#303).
-- **Management** (upstream 2.9.0): Change install folder, Reset install folder, Remove from RHI (moved out of the
-  Game settings ⚙; Block Steam updates stays there), Reset Overrides and Copy Report, in one row in Classic+ and as
-  tiles in Tabs. Reset Overrides puts the forced API, Luma mode, DLL names, Update All inclusion and NVIDIA settings
-  back to the defaults (#304).
-- **In Tabs, a component's ⚙ opens on the page, right under it**; click the same ⚙ again, or ✕, to close it (#304).
-- **Interface size** from 50% to 200% in 5% steps (Settings › General › Windows, or hold Ctrl and turn the mouse wheel;
-  the status bar says the new size), and **Top bar size** and **Game list size** of their own: pick them in Settings or
-  drag the top bar's bottom edge and the game list's right edge; double-click an edge to reset it (#306).
-- Tooltips, menus and pop-ups use upstream's dark navy look (#303).
-- Custom colour themes have a real colour picker beside each colour's hex box, and the favourite star keeps its amber
-  in every theme that keeps upstream's warning colour (#301).
-- ASI Loader has a ⚙, between Install and Remove, that says it has nothing to set, as upstream (#297).
-
-### Wave 14 — layouts-c
+### Launching
 
 - **Launch arguments for each game** (upstream 2.9.0): type them in Game Overrides › Launch arguments (saved when you
-  leave the box or press Enter), or reach the box from Tabs' Launch ▾ › Launch arguments…. RHI adds them when it starts
-  a standalone Wine game itself, and starts a Steam game with `steam -applaunch <id>` and your arguments. Under the box
-  RHI says how they reach the game, or, for Heroic, Lutris, a store client, a non-Steam shortcut or a launch command you
-  typed in Edit game, where to add them instead: RHI never changes a command you typed. **Reset launch options** clears
-  the arguments and the launch command typed in Edit game; Management's Reset Overrides clears the arguments too
-  (#304).
-- Tabs' Launch ▾ menu has upstream's entries: Executable (opens Edit game), Launch arguments…, then Copy launch profile
-  and Create shortcut (#304).
-- **Display modes can swap the launch arguments** (upstream 2.9.3): set them in a mode's Edit… or a game's Custom mode
-  (empty means no arguments in that mode); Off puts the game's own back (#311).
-- **Update All shows how many games have updates, or "All up to date"** (upstream 2.9.0): RHI now checks every game
-  for updates at start and then every 4 hours (every hour with a GitHub token), whether or not automatic updates are on.
-  The check only looks: it changes no file, leaves hidden games out and stops when GitHub's hourly request limit is
-  reached, saying how many games it did not check. Games with an update are marked in the game list (#303).
-- **In Tabs, a component's ⚙ now opens right under the card you clicked**, and the cards after it move down; before,
-  it opened under all the cards. In Extras it opens right under the row (#304).
-
-### Wave 14 — layouts-b
-
-- **Spotlight is here** (upstream 2.9.0–2.9.4): your games as a row of covers above the page (or below it: the strip's ⚙
-  › Covers below the game page; No background for the page colour), the game's Steam artwork as a large banner behind
-  its header, "What's installed" and "Tune this game" tiles, and a side panel that slides in with the section you
-  open; a component's ⚙ opens in it with a back button. Drag the banner's bottom edge or the covers' edge to resize
-  them, drag the covers to scroll; double-click an edge to reset. Covers with an update have a purple outline (#305).
-- **Artwork**: right-click a game › Artwork › Set custom cover / banner (your file is copied, never changed; Use Steam
-  cover / banner undoes it), or Browse covers / banners from SteamGridDB with your own free API key (Settings ›
-  Accounts & Data). Steam art is found for games from other stores too, including Microsoft Store names with
-  "- Windows", "(PC)" or an edition in them, and Steam's own copy on your PC is used first (#305).
-- **Screenshots** beside the game's ⚙ in Spotlight: its ReShade screenshots, newest first; open, set as the banner,
-  copy, show in the folder, or delete to the Trash (#305).
-- **Steam achievements** (opt-in, Settings › Achievements): progress, the latest and recent unlocks under Launch, and
-  the full list with dates, rarity, icons, search and hidden ones masked (Show hidden), refreshed as you unlock them.
-  Read from Steam's files on your PC (native or Flatpak Steam): no sign-in or API key (#307).
-- **Controller support in Spotlight** (Xbox, PlayStation and Steam controllers): upstream's buttons, a focus ring and
-  hints in the footer, only while RHI is the active window (Settings › General › Controller support). The right stick
-  click steps through your collections. RHI asks to come back to the front when a game it launched closes. If Steam
-  is running, Steam Input may hold the controller: see Settings' tooltip (#308).
-
-### Wave 14 — launcher-options
-
-- **Add to Steam launch options** (a Linux addition): a button on Game Overrides' Launch arguments row, and in the Tabs
-  Launch ▾ menu, writes the game's arguments into the launcher's own options, so the game gets them however it is
+  leave the box or press Enter), or reach the box from Tabs' Launch ▾ › Launch arguments…. RHI adds them when it
+  starts a standalone Wine game itself, and starts a Steam game with `steam -applaunch <id>` and your arguments. Under
+  the box RHI says how they reach the game, or, for Heroic, Lutris, a store client, a non-Steam shortcut or a launch
+  command you typed in Edit game, where to add them instead: RHI never changes a command you typed. **Reset launch
+  options** clears the arguments and the launch command typed in Edit game; Management's Reset Overrides clears the
+  arguments too (#304).
+- Tabs' Launch ▾ menu has upstream's entries: Executable (opens Edit game), Launch arguments…, then Copy launch
+  profile and Create shortcut (#304).
+- **Add to Steam launch options** (a Linux addition): a button on Game Overrides' Launch arguments row, and in the
+  Tabs Launch ▾ menu, writes the game's arguments into the launcher's own options, so the game gets them however it is
   started (the Steam client, a shortcut or RHI). Lutris games get "Add to Lutris arguments" and Heroic games "Add to
   Heroic game arguments". Your own options are kept: RHI adds its part (for Steam right after `%command%`) and
   remembers exactly what it added (#318).
@@ -451,13 +206,250 @@ Wave 14 — extras-fg-2
 - **Nothing is written while the launcher is running** (it would save its own copy over RHI's change): the row says so
   and RHI makes the change once Steam, Lutris or Heroic has closed, unless you click Stop waiting. Every write is
   journaled with a byte-exact copy of the file; a write that fails, or is cut short by a crash, is put back (#318).
+- **Per-game FPS limit** (upstream 2.8.9): the DLSS section of each Wine/Proton game has an **FPS Limit**, so you can
+  cap one game without capping them all. Global follows the new FPS Limit in Settings › Driver Settings, Off turns the
+  limit off for that game, and Custom… takes 20 to 1000; upstream's VRR caps (59 FPS for 60 Hz up to 416 FPS for 480
+  Hz) are in the list. On Linux RHI hands the cap to DXVK (`DXVK_FRAME_RATE`, Direct3D 8–11) and VKD3D-Proton
+  (`VKD3D_FRAME_RATE`, Direct3D 12) when it starts the game; for Steam, Heroic and Lutris it shows the launch options
+  to paste. As upstream, Global does not cap games with ReLimiter or Display Commander, so the two limiters don't
+  fight.
 
-### Wave 14 — owner test fixes
+### Display modes
 
-- **The ⚙ Game settings panel is no longer cut off on the left.** Flyouts had room for 456 px and scrolled wider content
-  sideways; they now fit the panel and wrap their text.
-- **Block Steam updates names Steam's current setting**, "Wait until I launch the game" (Steam renamed "Only update
-  this game when I launch it"; the manifest value is the same).
+- **Display modes** (upstream 2.9.3): save sets of the settings RHI applies to a game — e.g. Monitor and TV, up to six
+  modes — and switch a game between them from its page. Turn them on in Settings › Display & HDR › Display modes,
+  where you add, rename, reorder and delete modes and set each mode's values with Edit…. A mode can set RenoDX's peak,
+  game and UI brightness, the ReLimiter and Display Commander caps, the game's FPS limit, DLSS frame generation, the
+  DLSS Super Resolution / Ray Reconstruction presets and render scales, the ReShade preset, the ReShade overlay and
+  screenshot keys, controller navigation in ReShade, the ReLimiter OSD key, the HDR mode the game launches with, the
+  resolution switch and the launch arguments (empty means no arguments in that mode; Off puts the game's own back).
+  Anything a mode does not set keeps the game's normal value (#311).
+- The mode switch sits beside HDR and resolution in both layouts (in Classic+ under the resolution row in Game
+  Overrides, in Tabs in the game header beside HDR on launch and the resolution switch), with a ⚙ for the game's
+  display mode settings; the game menu has a Display mode submenu, and the game's own ⚙ a Display modes row. Click the
+  game's active mode again (or pick Off) to turn its mode off: it goes back to your global settings (and what it had
+  before modes for settings without a global value). Switch all games switches every game, or turns every game's mode
+  off; hidden and running games are left out. In a game's ⚙ you can make a Custom mode just for that game (#311).
+- While a game is in a mode, ReShade, RenoDX, ReLimiter and Display Commander installs and updates, and the Settings
+  "write to all games" buttons, keep that game's mode values (#311).
+- Not on Linux: RTX HDR peak brightness and the choice of display for HDR (no Wine/Proton equivalent) (#311).
+
+### Updates
+
+- **Update All shows how many games have updates, or "All up to date"** (upstream 2.9.0): RHI now checks every game
+  for updates at start and then every 4 hours (every hour with a GitHub token), whether or not automatic updates are
+  on. The check only looks: it changes no file, leaves hidden games out and stops when GitHub's hourly request limit
+  is reached, saying how many games it did not check. Games with an update are marked in the game list (#303).
+- **Automatic updates run every 4 hours, every hour with a GitHub token, and count across restarts** (upstream
+  2.8.9/2.9.2): a start runs them at once only when the last run is 4 hours (1 hour) ago or more, and saving Settings
+  no longer starts an extra run.
+- **The Ultra+ and ultrawide fix lists are checked every 4 hours** instead of once a day, also while RHI stays open.
+- **Update History lists DLSS and Streamline swaps and restores** made from the DLSS section, the DLSS batch and the
+  DLSS defaults (upstream 2.9.3), with the version before and after.
+- **The RHI-Linux update check no longer says "You have the newest version" after GitHub's hourly request limit was
+  reached** (upstream 2.9.4). It says the limit is reached and that a GitHub token raises it, or that it could not
+  check.
+
+### OptiScaler
+
+- **OptiScaler versions** (#270, upstream 2.9.0–2.9.2):
+  - New **Default version** setting next to OptiScaler's GPU Type: the version a game installs when you haven't picked
+    one in its ⚙. Games that already have OptiScaler keep theirs.
+  - New **DXGI Spoofing** setting in OptiScaler's ⚙ on every version (Auto, True, False). Presets save it.
+  - The ⚙ shows the installed and the newest version, with **Check now**, and **Update** when there is one.
+  - New **Release** setting in the ⚙: keep a game on an older release of Stable, DLSS NR or F5 DLSSNR. Pinned games
+    are not updated.
+  - New **Remove old Nightly builds** setting (off by default): deletes old downloaded Nightly builds, keeping the
+    newest and any a game uses.
+- **OptiScaler forks** (#271, upstream 2.9.2/2.9.3): the recommended forks (Venom, NR PreSR MFG, Feeder NR and OpenNR
+  today) sit beside Stable, Nightly, DLSS NR and F5 DLSSNR, listed by name as upstream lists them. RHI downloads them
+  from their GitHub releases and keeps them up to date like the others; the Neural Rendering forks get NVIDIA's Neural
+  Rendering file. The list comes from the online manifest, so a new fork appears without an app update; the four known
+  forks stay as a fallback, and a fork the manifest drops keeps working in the games that have it.
+- **Custom OptiScaler builds** (#271, upstream 2.9.2): Settings › DLSS/Streamline › Custom OptiScaler builds. Add any
+  OptiScaler build from a download link, a zip/7z/rar, a folder or an OptiScaler.dll, or drop one on the card. It
+  appears as a version in every game's OptiScaler ⚙ and in Default version. RHI installs it like the other versions
+  but never updates it. Replace swaps its files and offers to update the games that use it (their OptiScaler.ini is
+  kept); Rename and Remove are next to it, with a **DLSS NR DLL** tick for Neural Rendering forks. Only add builds
+  from people you trust: the card says so.
+- **OptiScaler's ⚙ opens with a Presets panel** on every version, Stable included (#269, upstream 2.8.9):
+  - Recommended presets in one click: Real DLSS FG, DLSS Enabler FG and UMFG XeFG (which installs Universal MFG
+    Unlocker if it's missing). The one matching the game is ticked. New ones can arrive without an app update.
+  - Your four preset slots are one dropdown with Apply, Save current (Overwrite) and a … button to rename or clear.
+  - **Presets remember their version** (upstream): a preset saved on F5 (or any version) switches the game to that
+    version when you apply it. RHI asks first, because that reinstalls OptiScaler; your OptiScaler.ini settings are
+    kept and a copy goes to RHI's data folder. Presets saved before this build keep the game's version.
+  - New **Replace with a fresh copy…** at the bottom: asks first, then gives the game the same OptiScaler.ini as a
+    fresh install (your GPU, DLSS Inputs and its version). The old file is kept in RHI's data folder.
+- **ANR FG preset** in OptiScaler's ⚙ (#272, upstream 2.9.3): Apex Neural Rendering frame generation in place of the
+  game's DLSS frame generation. It first says ANR FG is closed source (#285), checks that the game's OptiScaler build
+  can load it (Nightly from late October 2026, or a build based on it), then downloads the newest ANR FG release,
+  checked against its published hashes, into OptiScaler's custom folder. Your `nr_fg.ini` is kept.
+- **All Settings in OptiScaler's ⚙** (#272, upstream 2.9.3): every setting of the game's OptiScaler.ini, with the
+  options the installed build lists in its own INI (forks and custom builds show theirs). Pick a section or search;
+  nothing is written until you press Apply, and the old file is backed up first. Applied changes are written again
+  after a reinstall or a version switch; Forget saved edits stops that.
+- **Save ini… / Load saved ini…** in OptiScaler's ⚙ (#272): keep any game's OptiScaler.ini under a name ("F5 super
+  ini"), add one from a file, and use it for any game. The game remembers it and gets it back after a reinstall or a
+  version switch.
+- **FG Nvngx Override** in OptiScaler's ⚙ lists custom frame generation providers found in OptiScaler's custom folder
+  by name (#272, upstream 2.9.3).
+- **OptiPatcher loads with OptiScaler Nightly, DLSS NR, F5 and the forks**: it goes to `OptiScaler/plugins`, where
+  those builds look, instead of the game's `plugins` folder, which only Stable reads. Games that already have it show
+  an update; Update moves it (#273, upstream 2.8.9).
+- **OptiPatcher shows its real build again** and its cache is named by build: since November 2026 its release notes
+  put a `^G` before the commit, which RHI did not read (#264, upstream 2.9.3).
+
+### Neural Rendering
+
+- **GITC Uplift** (#274): a new Neural Rendering method by ghostinthecamera for almost any game on an RTX card
+  (DirectX 9–12, Vulkan, OpenGL; 32 and 64-bit). Install it from its row in Managed components; in the game open
+  ReShade (Home), go to the GITC Uplift tab and tick Enable. Uplift Version (under NR versions) follows the latest
+  release or stays on one; the add-on and its helper always update together. It brings iMMERSE Launchpad for motion
+  vectors (on by default in games without DLSS, with a check box per game) and keeps it at the top of the game's
+  ReShade effects. OpenGL games are set up so Uplift works with anti-aliasing on. It is the recommended method for
+  64-bit DX11, DX12 and Vulkan games without DLSS.
+  - Settings › DLSS/Streamline has a GITC Uplift card with the NR on/off key and "Write key to all Uplift games". The
+    key is set by clicking the box and pressing the key, as in upstream RHI; Backspace or ↺ sets None.
+- **DLSS5 Tool** (#317): RenoDX's DLSS5 Tool is now a Neural Rendering method of its own, as in upstream RHI, for
+  64-bit games with native DLSS. Install it from its row in Managed components; it brings NVIDIA's Neural Rendering
+  file when the game has none. DLSS5 Tool Version (under NR versions) follows the latest release or stays on one, and
+  switching version swaps the add-on in place. The DX11 Bridge row now installs "DLSS5 Tool + DX11 Bridge" (the bridge
+  alone did nothing); a bridge installed earlier says it needs DLSS5 Tool. Check Neural Rendering lists it.
+  - Installing DLSS5 Tool (or DLSS5 Tool + DX11 Bridge) also brings the game's DLSS Super Resolution, Ray
+    Reconstruction and Frame Generation files to the newest, through the DLSS / Streamline section: the originals are
+    kept there and Restore puts them back, and Updates lists the swaps. A game whose update inclusion leaves DLSS out
+    keeps its files.
+- **Foveated DLSS5 Tool** (#276): a Foveated check box under NR versions installs FoveatedDLSS5 (by maximedgoulet)
+  instead of the stock add-on: full-resolution Neural Rendering in the middle of the screen, less around it, for a
+  large performance gain. Every download is checked against the hash published with it. Latest keeps it current, stock
+  updates never replace it, and switching while installed swaps the add-on in place.
+- **DLSS5 Feeder 2.0** (#275): new installs use the motion vectors built into Feeder 2.0, so LumeniteFX is no longer
+  downloaded for it; games that already use LumeniteFX keep it. Feeder is added to the game's own ReShade preset
+  instead of replacing it, so your other effects and their settings stay, and removing Feeder takes out only what it
+  added (a preset that was there before is never deleted). The Feeder row shows "Built-in motion vectors" or
+  "LumeniteFX motion vectors" and mentions the Feeder menu (Alt+C).
+- **HSF and GITC Uplift share one iMMERSE Launchpad**: a game with both never gets two, removing one leaves what the
+  other still uses, and Launchpad stays at the top of the game's ReShade effects for HSF too. Existing HSF installs
+  move their Launchpad into the shared place the next time RHI checks them (not while the game is running).
+
+### Frame generation and extras
+
+- **Closed-source notice** (upstream 2.9.3): installing RTX Encore or 20/30 FG Unlock first says the mod is closed
+  source (its author publishes only the DLL, not the code), with Install, Cancel and **Don't show this again**. The
+  tick is remembered per mod, also when you press Cancel. The ⓘ on the RTX Encore, 20/30 FG Unlock, Universal MFG
+  Unlocker and MFG Unlock rows opens the mod's GitHub page.
+- **HSF frame generation** (upstream 2.9.3, HSF 0.9.8) in Extras: one click installs HSF's add-on, Streamline and
+  frame generation files, HSF.ini, HSF.fx and iMMERSE Launchpad; DirectX 12 games work from the first launch; updates
+  keep your HSF settings; the ⚙ sets the DirectX 12 mode and Launchpad; RTX 20/30/40 cards are offered Universal MFG
+  Unlocker. HSF needs RHI's ReShade installed first (#277).
+- **Universal MFG Unlocker** (formerly Universal MFG / RTX 40 MFG, upstream 2.8.9): the row has the mod's name and
+  links to its new GitHub page. The GPU generation choice is gone: RTX 30 is supported (RTX 20 experimental) and XeSS
+  frame generation (XeMFG) runs on any GPU, in DirectX 12 and (experimentally) Vulkan games.
+  - Installing it also puts Intel's `libxess_fg.dll` and `libxell.dll` in an `RTXMFG-XeSS` folder beside it, which the
+    mod's "XeMFG standalone" mode needs. Files you put there yourself are left alone. **Existing installs get them
+    with Update or Update All.**
+  - With RHI's OptiScaler Nightly, F5 DLSSNR or DLSS NR in the same game it installs as an OptiScaler plugin
+    (`OptiScaler/plugins/MFGUnlocker.asi`), as its author recommends; installing such an OptiScaler moves an existing
+    install in, and removing OptiScaler moves it back beside the game first. Choose DLSSG or XeFG with FG Output in
+    OptiScaler's ⚙.
+  - Installing it where ReShade is warns that XeMFG standalone does not start while ReShade is loaded, with **Don't
+    show this again**. The ⚙ explains XeMFG, says whether its files are there and warns about ReShade as `dxgi.dll`.
+- **MFG Unlock** (formerly MFG Ada Unlock, upstream 2.8.9/2.9.2): the row and its messages use the mod's new name;
+  your installs carry over. Its new ⚙ has the **Frame generation method** (NVIDIA DLSS-G, Intel XeMFG (CUDA), XeMFG
+  via DLSS-G (XMX)) and **DLSS-SR input (experimental)** for XeMFG (CUDA), saved in the game's `MFGAdaUnlock.ini`, and
+  an Open MFGAdaUnlock.ini button.
+  - Installing it also installs Intel's XeSS files its XeMFG modes need in the game folder. A game's own older copies
+    (Of Ash and Steel) are kept as `<file>.mfgada-original` and put back when you remove the mod. **Existing installs
+    get them with Update or Update All**, and the ⚙ says whether the right files are there.
+  - The ⚙ warns when the game can't use it: DirectX 11 and older don't work, Vulkan is experimental.
+- **20/30 FG Unlock** (upstream 2.8.9+): it installs on RTX 20 and 30 alike and the mod finds the card itself, so the
+  GPU generation setting is gone and RTX 30 owners are no longer sent to Universal MFG Unlocker. Both rows are offered
+  on every card, as upstream's are; their notes give upstream's description, and every message calls the mod 20/30 FG
+  Unlock (#281).
+  - Its new ⚙ has the mod's main settings as dropdowns — Frame Generation, Engine (DLSS or XeSS), Max Frames (2X to
+    6X), Preset (A, B, C: FG Lite), Speed Tier and Super Resolution (preset M or L) — saved in the game's
+    `dlssg_sm86.ini`, so you can't enter a value that would switch frame generation off. XeSS goes up to 4X. Your
+    settings are kept when the mod updates. Open dlssg_sm86.ini and Open log buttons.
+- **RTX Encore** is no longer labelled Beta (upstream 2.8.9–2.9.3).
+  - Its ⚙ has RTX Encore's settings — frame generation, the XeFG engine, generated frame quality, HUD and UI,
+    upscaling, Neural Rendering and compatibility — written straight into the game's `rtx-encore.jsonc`, keeping the
+    file's comments, and an Open rtx-encore.jsonc button. It warns while the game is running: changes apply the next
+    time it starts, and RTX Encore's in-game menu may overwrite them while it's open (#280).
+  - Installing it also installs Intel's XeSS files the way RTX Encore Hub does: the game's own copies are replaced
+    where they are and put back when you remove RTX Encore; the rest, and Intel's licence, go in RTX Encore's own
+    folder.
+  - The Neural Rendering file RHI installs for it is now 310.9.16.
+  - **Existing installs get the XeSS files and the 310.9.16 file with Update or Update All.**
+  - The Bink names (`binkw64.dll`, `bink2w64.dll`) are offered: the game's own Bink file is kept beside it as
+    `binkw64Hooked.dll` / `bink2w64Hooked.dll` and put back on removal.
+  - `rtx-encore.asi` installs the separate ASI build from RTX Encore's release. An `.asi` install from an older build
+    is corrected by Update.
+  - The DLL name list puts the name the RHI manifest recommends for a game first and uses it by default (Euro Truck
+    Simulator 2: `winmm.dll`); the ⚙ names it.
+- **ASI Loader and the extras** (upstream 2.9.0): with ASI Loader installed as `version.dll`, 20/30 FG Unlock,
+  Universal MFG Unlocker, RTX Encore and DLSS Enabler offer `versionHooked.dll`, which ASI Loader loads. Names another
+  component uses are greyed with its name. Installing ASI Loader over an extra moves the extra to the Hooked name and
+  RHI follows it; removing ASI Loader moves it back, Wine overrides included (#284).
+- **Display Commander's ⚙ has its main settings** (upstream 2.8.9): FPS Limit (VRR presets or your own value), FPS
+  Limiter Mode, Inject Reflex, Window Mode, the four Reflex options and Win+Up grace time, saved to the game's
+  `DisplayCommander.ini`, and Open DisplayCommander.ini (#282).
+
+### ReShade, RenoDX and shaders
+
+- **Load ReShade as ASI** in ReShade's ⚙ (upstream 2.8.9): ReShade becomes `ReShade64.asi` / `ReShade32.asi` for an
+  ASI loader, installs and updates keep that name, Off goes back to its DLL name. Not for Vulkan games (#283).
+- **Vulkan ReShade** matches upstream's three Vulkan fixes: each Vulkan game here has its own ReShade layer, so
+  updates show and Update All applies them, and Stable, Nightly and Legacy each switch that game's layer (#288).
+- **Shader packs you have downloaded are checked for updates at every start**, whether or not a game uses them and
+  with "Download all shaders" on or off; packs you never used are still downloaded only when needed (#267). Packs that
+  come as a branch archive (most of them) now update when their author changes them; before, the first download was
+  kept for good. Packs the online manifest adds (SD Shaders, UltrawideSideGlass) update like the others, and
+  UltrawideSideGlass, a single `.fx` file, now installs at all (#265). Zenteon+ Shaders, a free file on Patreon, now
+  downloads: only Patreon's file links and file servers are allowed for it, each redirect is checked, and no cookies
+  or tokens are sent (#265).
+- **The generic Unity RenoDX add-on comes from its new location** (Voosh's GitHub Pages, 64-bit), and the upstream
+  manifest can move it again without an app update. Games with the add-on from the old link show an update. When a
+  link cannot be reached, RHI tries the add-on's older links in turn (#268).
+- **RenoDX add-ons hosted on a modder's own site** (such as UE-Extended) install from the same file on the modder's
+  GitHub when the site cannot be reached. A second download of an add-on (`renodx-x (1).addon64`) no longer blocks an
+  install or update: it is renamed so ReShade does not load it twice (the file is kept), and a dropped one installs
+  under the add-on's own name. Games that RHI's data lists as Unreal Engine 4 or 5 get the generic Unreal mod even
+  when the folder scan did not recognise the engine (#287).
+- **Source engine games** (Half-Life 2, Portal, Counter-Strike: Source and the others in RenoDX's Source list) now
+  show RenoDX's Source engine mod on their RenoDX row. RHI does not install it yet: the mod needs DXVK set up in front
+  of ReShade, and how to do that under Proton is waiting for a test on a real game. Install says so and points to the
+  RenoDX wiki's manual steps (#286, partial).
+
+### Controller
+
+- **Controller support in Spotlight** (Xbox, PlayStation and Steam controllers): upstream's buttons, a focus ring and
+  hints in the footer, only while an RHI window is the active window (Settings › General › Controller support). RHI
+  asks to come back to the front when a game it launched closes. If Steam is running, Steam Input may hold the
+  controller: see Settings' tooltip (#308). Owner testing on an Xbox Elite Series 2 shaped the rest:
+  - **Right stick click is upstream's Home**: on the covers with nothing open it steps through your collections, then
+    back to All games; anywhere else it goes back to the selected game's cover, closing the ⚙, the side panel or
+    Settings.
+  - **Left stick click** cycles All, Installed and Favourites, as upstream.
+  - **The pad works in Settings and in RHI's dialogs and ⚙ windows.** In Settings, Menu and B close it, LB / RB move
+    between sections, the D-pad moves row by row between the section list and the settings, a drop-down opens on its
+    current choice (A picks, B closes it unchanged) and the right stick scrolls. In the other windows the D-pad moves,
+    A picks and B closes.
+  - **The right stick scrolls the cover shelf sideways** as well as up and down (a Linux addition).
+  - **The pad takes control back after the mouse is used or the window is focused again**: moving the mouse hides the
+    pad's hints; the next pad input takes control back, a resting pointer no longer hovers, and the focus returns to
+    where the pad left it (or to the selected cover). Before, the pad could stop answering until you switched layouts.
+  - **Elite paddles are ignored**: only upstream's 14 buttons are read (the paddles, Share, Guide and the touchpad do
+    nothing), and an Elite controller gets Xbox hints.
+
+### Fixes
+
+- **Settings no longer saves an add-on watch folder that does not exist**: it says so and saves the rest (upstream
+  2.8.9).
+- **An invalid ReLimiter custom FPS is no longer saved as "no cap" without a word**: the saved cap stays and RHI says
+  the value must be a whole number from 20 to 1000 (upstream 2.8.9).
+- **Games that ship FFmpeg, Qt, SDL or a web view no longer read as DirectX 12** when nothing else says which API they
+  use (OpenMW, for example; upstream 2.9.2).
 
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
