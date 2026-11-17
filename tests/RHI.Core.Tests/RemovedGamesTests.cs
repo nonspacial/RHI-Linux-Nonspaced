@@ -130,6 +130,87 @@ public sealed class RemovedGamesTests : IDisposable
         Assert.Contains("modified after installation", fx.Vm.StatusText, StringComparison.Ordinal);
     }
 
+    // A file the ledger owns for <paramref name="kind"/> in the game folder (hash recorded, so its removal finds it unchanged).
+    private static string Owned(ViewModelFixture fx, DetectedGame game, ManagedComponentKind kind, string fileName)
+    {
+        var path = Path.Combine(game.InstallPath, fileName);
+        File.WriteAllText(path, kind.ToString());
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind,
+            BinaryDirectory = game.InstallPath, Version = "1.0",
+            Files = [new LinuxDeployedFile { Path = path, Sha256 = FileHash.Sha256Hex(path) }]
+        });
+        return path;
+    }
+
+    // w14 final review M1: every kind a record can carry (bar the DLSS/Streamline swaps and the Addon Manager selection,
+    // which are not components of their own) is offered and attempted by "Also uninstall".
+    [Fact]
+    public async Task EveryKindThatCanHaveARecord_IsRemovable()
+    {
+        var game = Steam("All Kinds", 70006);
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var notComponents = new[] { ManagedComponentKind.Unknown, ManagedComponentKind.Dlss, ManagedComponentKind.Streamline, ManagedComponentKind.ReShadeAddonManager };
+        var kinds = Enum.GetValues<ManagedComponentKind>().Except(notComponents).ToArray();
+        foreach (var kind in kinds) Owned(fx, game, kind, kind + ".bin");
+        foreach (var kind in notComponents.Skip(1)) Owned(fx, game, kind, kind + ".bin");
+
+        var removable = fx.Managed.RemovableComponents(game);
+
+        Assert.Equal(kinds.OrderBy(k => k), removable.OrderBy(k => k));
+        Assert.All(notComponents, kind => Assert.False(LinuxManagedComponentService.IsRemovableComponent(kind)));
+        // What others sit on goes last; the add-ons that depend on ReShade go before it.
+        Assert.Equal([ManagedComponentKind.UltimateAsiLoader, ManagedComponentKind.ReShade, ManagedComponentKind.REFramework], removable.TakeLast(3));
+        Assert.True(removable.ToList().IndexOf(ManagedComponentKind.GitcUplift) < removable.ToList().IndexOf(ManagedComponentKind.ReShade));
+        Assert.True(removable.ToList().IndexOf(ManagedComponentKind.NrCostScaler) == 0);
+    }
+
+    // w14 final review M1: HSF, GITC Uplift and DLSS5 Tool were never attempted, so ReShade refused and their files and
+    // records stayed with a game that had left RHI. Each now goes through its own removal.
+    [Theory]
+    [InlineData(ManagedComponentKind.Hsf, "hsf.addon64")]
+    [InlineData(ManagedComponentKind.GitcUplift, "gitc-uplift.addon64")]
+    [InlineData(ManagedComponentKind.Dlss5Tool, "renodx-dlss5.addon64")]
+    public async Task AlsoUninstall_TakesOutTheWave14Components(ManagedComponentKind kind, string fileName)
+    {
+        var game = Steam("Wave14 " + kind, 70007 + (int)kind);
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var file = Owned(fx, game, kind, fileName);
+        fx.Vm.SelectedGame = fx.Vm.AllLibraryGames.Single();
+        fx.Vm.ConfirmRemoveFromRhiAsync = _ => Task.FromResult<bool?>(true);
+
+        await fx.Vm.RemoveFromRhiCommand.ExecuteAsync(null);
+
+        Assert.Empty(fx.Vm.AllLibraryGames);
+        Assert.DoesNotContain("Still installed", fx.Vm.StatusText, StringComparison.Ordinal);
+        Assert.False(File.Exists(file));
+        Assert.Null(fx.Records.Find(game, kind));
+    }
+
+    // w14 final review M1: a removal that leaves components behind names each one with its reason (the library-folders
+    // rule), and the game still leaves RHI as upstream does; nothing that had a record goes unmentioned.
+    [Fact]
+    public async Task AlsoUninstall_ThatLeavesComponentsBehind_NamesEachWithItsReason()
+    {
+        var game = Steam("Left Behind", 70040);
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var gitc = Owned(fx, game, ManagedComponentKind.GitcUplift, "gitc-uplift.addon64");
+        Owned(fx, game, ManagedComponentKind.ReShade, "dxgi.dll");
+        File.WriteAllText(gitc, "the user changed it");
+        fx.Vm.SelectedGame = fx.Vm.AllLibraryGames.Single();
+        fx.Vm.ConfirmRemoveFromRhiAsync = _ => Task.FromResult<bool?>(true);
+
+        await fx.Vm.RemoveFromRhiCommand.ExecuteAsync(null);
+
+        Assert.Empty(fx.Vm.AllLibraryGames);
+        Assert.Contains("Still installed (they come back with the game on Restore): ", fx.Vm.StatusText, StringComparison.Ordinal);
+        Assert.Contains($"{GitcUpliftDeploymentService.DisplayName} ({GitcUpliftDeploymentService.ModifiedPrefix}", fx.Vm.StatusText, StringComparison.Ordinal);
+        Assert.Contains($"{LinuxManagedComponentService.DisplayDependencyName(ManagedComponentKind.ReShade)} (Remove RHI-managed {GitcUpliftDeploymentService.DisplayName} first.", fx.Vm.StatusText, StringComparison.Ordinal);
+        Assert.NotNull(fx.Records.Find(game, ManagedComponentKind.GitcUplift));
+        Assert.NotNull(fx.Records.Find(game, ManagedComponentKind.ReShade));
+    }
+
     [Fact]
     public async Task AManuallyAddedGame_IsNotOfferedRemoveFromRhi()
     {
