@@ -106,7 +106,7 @@ public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         var result = service.SetPreferences(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx30, "winmm.dll");
 
         Assert.True(result.Success, result.Message);
-        Assert.DoesNotContain("Universal MFG", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Universal MFG Unlocker", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("winmm.dll", service.GetPreferences(fixture.Game).ProxyName);
     }
 

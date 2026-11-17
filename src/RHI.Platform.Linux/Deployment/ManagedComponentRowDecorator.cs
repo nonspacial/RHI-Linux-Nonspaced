@@ -536,7 +536,7 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedRtx40Mfg is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar MFG Unlock; mantenha uma única autoridade de Frame Generation.";
+                            component.Note = "Universal MFG Unlocker já está ativo. Remova-o antes de instalar MFG Unlock; mantenha uma única autoridade de Frame Generation.";
                         }
                         else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || GameArchitecture.Of(game) != PeArchitecture.X64)
                         {
@@ -630,7 +630,7 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedRtx40Mfg is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "Universal MFG já está ativo. Remova-o antes de instalar 20/30 FG Unlock.";
+                            component.Note = "Universal MFG Unlocker já está ativo. Remova-o antes de instalar 20/30 FG Unlock.";
                         }
                         else if (managedMfgAdaUnlock is not null)
                         {
@@ -688,17 +688,17 @@ internal sealed class ManagedComponentRowDecorator
                         else if (managedMfgAdaUnlock is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar Universal MFG.";
+                            component.Note = "MFG Unlock já está ativo. Remova-o antes de instalar Universal MFG Unlocker.";
                         }
                         else if (managedDlssg2030 is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "20/30 FG Unlock já está ativo. Remova-o antes de instalar Universal MFG.";
+                            component.Note = "20/30 FG Unlock já está ativo. Remova-o antes de instalar Universal MFG Unlocker.";
                         }
                         else if (managedShortFuse is not null)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "ShortFuse já gerencia Frame Generation. Remova-o antes de instalar Universal MFG.";
+                            component.Note = "ShortFuse já gerencia Frame Generation. Remova-o antes de instalar Universal MFG Unlocker.";
                         }
                         else
                         {
@@ -728,7 +728,7 @@ internal sealed class ManagedComponentRowDecorator
                     if (managedRtx40Mfg is not null)
                     {
                         component.ActionAllowed = false;
-                        component.Note = "Universal MFG Experimental já está ativo. Remova-o antes de instalar ShortFuse.";
+                        component.Note = "Universal MFG Unlocker já está ativo. Remova-o antes de instalar ShortFuse.";
                     }
                     else if (managedDlssg2030 is not null)
                     {

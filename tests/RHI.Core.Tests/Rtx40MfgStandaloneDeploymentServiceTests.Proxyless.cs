@@ -37,12 +37,12 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
         var remove = await service.RemoveAsync(fixture.Game);
 
         Assert.True(remove.Success, remove.Message);
-        Assert.Equal("Universal MFG" + ProxylessRecordRemoval.RemovedSuffix, remove.Message);
+        Assert.Equal("Universal MFG Unlocker" + ProxylessRecordRemoval.RemovedSuffix, remove.Message);
         Assert.False(File.Exists(target));
         Assert.Null(Override(fixture, "winmm"));
         Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
         var pt = UiLocalizationService.PresentFor("pt-BR", remove.Message);
-        Assert.StartsWith("Universal MFG removido. O registro do RHI não tinha o nome da DLL proxy", pt, StringComparison.Ordinal);
+        Assert.StartsWith("Universal MFG Unlocker removido. O registro do RHI não tinha o nome da DLL proxy", pt, StringComparison.Ordinal);
         Assert.Empty(UiLocalizationService.EnglishMarkersIn(pt));
         Assert.Equal(remove.Message, UiLocalizationService.PresentFor("en-US", remove.Message));
 
@@ -71,7 +71,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests
 
         Assert.True(remove.Success, remove.Message);
         Assert.Equal(changed, File.ReadAllBytes(target));
-        Assert.Equal("Universal MFG" + ProxylessRecordRemoval.RemovedSuffix + ProxylessRecordRemoval.NotDeletedPrefix + target, remove.Message);
+        Assert.Equal("Universal MFG Unlocker" + ProxylessRecordRemoval.RemovedSuffix + ProxylessRecordRemoval.NotDeletedPrefix + target, remove.Message);
         Assert.Null(Override(fixture, "winmm"));
         Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
         var pt = UiLocalizationService.PresentFor("pt-BR", remove.Message);

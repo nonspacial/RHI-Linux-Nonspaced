@@ -33,13 +33,13 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     public static readonly IReadOnlyList<string> ReleaseAssetPrefixes = ["MFGUnlocker-", "RTXMFG-"];
 
     /// <summary>#236: a release listing more than one zip of the chosen naming; the naming follows.</summary>
-    public const string SeveralAssetsPrefix = "Universal MFG release refused: it lists several assets named ";
+    public const string SeveralAssetsPrefix = "Universal MFG Unlocker release refused: it lists several assets named ";
     /// <summary>#236: a release without a zip of either naming.</summary>
-    public const string NoAssetMessage = "Universal MFG release refused: it has neither an MFGUnlocker-*.zip nor an RTXMFG-*.zip asset.";
+    public const string NoAssetMessage = "Universal MFG Unlocker release refused: it has neither an MFGUnlocker-*.zip nor an RTXMFG-*.zip asset.";
     /// <summary>#236: a zip holding more than one DLL of the chosen name; the name follows.</summary>
-    public const string SeveralDllsPrefix = "Universal MFG archive refused as ambiguous: it holds several entries named ";
+    public const string SeveralDllsPrefix = "Universal MFG Unlocker archive refused as ambiguous: it holds several entries named ";
     /// <summary>#236: a zip holding neither DLL name.</summary>
-    public const string NoDllMessage = "Universal MFG archive refused: it holds neither MFGUnlocker.dll nor RTXMFG.dll.";
+    public const string NoDllMessage = "Universal MFG Unlocker archive refused: it holds neither MFGUnlocker.dll nor RTXMFG.dll.";
     public const string DefaultProxyName = "version.dll";
     public const string GpuGenRtx40 = "RTX 40 Series";
     public const string GpuGenRtx30 = "RTX 30 Series";
@@ -136,21 +136,21 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     public ComponentOperationResult SetPreferences(DetectedGame game, string gpuGeneration, string proxyName)
     {
         if (GetRecord(game) is not null)
-            return ComponentOperationResult.Fail("Universal MFG já está instalado. Remova e reinstale para trocar a geração da GPU ou a DLL proxy.");
+            return ComponentOperationResult.Fail("Universal MFG Unlocker já está instalado. Remova e reinstale para trocar a geração da GPU ou a DLL proxy.");
 
         var normalizedGpu = NormalizeGpuGeneration(gpuGeneration);
         if (!GpuGenerations.Contains(normalizedGpu, StringComparer.OrdinalIgnoreCase))
-            return ComponentOperationResult.Fail($"Geração de GPU não suportada pelo Universal MFG: {gpuGeneration}.");
+            return ComponentOperationResult.Fail($"Geração de GPU não suportada pelo Universal MFG Unlocker: {gpuGeneration}.");
 
         var requested = CanonicalProxyOrNull(proxyName);
         if (requested is null)
-            return ComponentOperationResult.Fail($"DLL proxy não suportada pelo Universal MFG: {proxyName}.");
+            return ComponentOperationResult.Fail($"DLL proxy não suportada pelo Universal MFG Unlocker: {proxyName}.");
         if (IsBinkProxy(requested))
             return ComponentOperationResult.Fail("Os proxies Bink exigem chaining da DLL original (*Hooked.dll). Esse fluxo ainda não é automatizado no RHI-Linux; escolha outro proxy.");
 
         try { _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = normalizedGpu, ProxyName = requested }); }
         catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
-        return ComponentOperationResult.Ok($"Universal MFG: {normalizedGpu}, proxy {requested}.");
+        return ComponentOperationResult.Ok($"Universal MFG Unlocker: {normalizedGpu}, proxy {requested}.");
     }
 
     public static string NormalizeGpuGeneration(string? value)
@@ -195,20 +195,20 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     {
         var gpu = NormalizeGpuGeneration(gpuGeneration);
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            return "Universal MFG é um proxy DLL Windows e não se aplica a jogos Linux nativos.";
+            return "Universal MFG Unlocker é um proxy DLL Windows e não se aplica a jogos Linux nativos.";
         if (!game.HasConfirmedPatchTarget)
             return "Selecione primeiro o executável real do jogo em Editar jogo.";
         if (ResolveArchitecture(game) != PeArchitecture.X64)
-            return "Universal MFG exige um executável Windows x64.";
+            return "Universal MFG Unlocker exige um executável Windows x64.";
         if (game.EffectiveGraphicsApi is not (GraphicsApi.DirectX12 or GraphicsApi.Vulkan))
-            return "Universal MFG usa DirectX 12 como caminho principal e Vulkan experimental; DirectX 11 não é elegível.";
+            return "Universal MFG Unlocker usa DirectX 12 como caminho principal e Vulkan experimental; DirectX 11 não é elegível.";
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
-            return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o Universal MFG.";
+            return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o Universal MFG Unlocker.";
         if (ResolveBinaryDirectory(game) is null)
             return "O diretório do executável alvo não pôde ser resolvido.";
         if (!HasStreamlineFrameGeneration(game, managedOptiScaler))
-            return "Universal MFG exige Streamline DLSS Frame Generation funcional: integração nativa do jogo (Streamline + nvngx_dlssg.dll) ou a pilha OptiScaler Nightly/DLSS NR/F5 DLSSNR gerenciada pelo RHI com Streamline + DLSS Enabler e FG Output=DLSSG / FGNvngxReplacement=Arturs.";
-        return $"Compatível com o caminho experimental Universal MFG: {gpu} + Streamline DLSS Frame Generation + prefixo Wine/Proton inicializado.";
+            return "Universal MFG Unlocker exige Streamline DLSS Frame Generation funcional: integração nativa do jogo (Streamline + nvngx_dlssg.dll) ou a pilha OptiScaler Nightly/DLSS NR/F5 DLSSNR gerenciada pelo RHI com Streamline + DLSS Enabler e FG Output=DLSSG / FGNvngxReplacement=Arturs.";
+        return $"Compatível com o caminho experimental Universal MFG Unlocker: {gpu} + Streamline DLSS Frame Generation + prefixo Wine/Proton inicializado.";
     }
 
     public async Task<ComponentOperationResult> InstallAsync(
@@ -217,7 +217,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         CancellationToken cancellationToken = default)
     {
         if (GetRecord(game) is not null)
-            return ComponentOperationResult.Fail("Universal MFG já é gerenciado pelo RHI para este jogo.");
+            return ComponentOperationResult.Fail("Universal MFG Unlocker já é gerenciado pelo RHI para este jogo.");
 
         var preferences = GetPreferences(game);
         var selectedGpu = NormalizeGpuGeneration(preferences.GpuGeneration);
@@ -229,14 +229,14 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
 
         var conflict = FindFrameGenerationConflict(game);
         if (conflict is not null)
-            return ComponentOperationResult.Fail($"{conflict} já está ativo. Remova esse método antes de instalar Universal MFG para manter uma única autoridade de Frame Generation.");
+            return ComponentOperationResult.Fail($"{conflict} já está ativo. Remova esse método antes de instalar Universal MFG Unlocker para manter uma única autoridade de Frame Generation.");
 
         // #278: with OptiScaler Nightly, F5 or DLSS NR the mod goes in OptiScaler's plugins folder, as its author recommends.
         var asPlugin = IsPluginHost(managedOptiScaler);
         var requested = proxyName ?? preferences.ProxyName;
         var selectedProxy = asPlugin ? PluginRelativePath : CanonicalProxyOrNull(requested);
         if (selectedProxy is null)
-            return ComponentOperationResult.Fail($"Proxy não suportado pelo Universal MFG: {requested}.");
+            return ComponentOperationResult.Fail($"Proxy não suportado pelo Universal MFG Unlocker: {requested}.");
         if (IsBinkProxy(selectedProxy))
             return ComponentOperationResult.Fail("Proxy Bink requer preservar/renomear a DLL original para *Hooked.dll. O RHI-Linux ainda não automatiza esse chaining; escolha outro proxy.");
         if (ExtraDllNames.HookedRefusal(_records, game, selectedProxy) is { } notHooked) return ComponentOperationResult.Fail(notHooked); // #284
@@ -264,7 +264,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"Universal MFG download/validation failed: {ex.Message}");
+            return ComponentOperationResult.Fail($"Universal MFG Unlocker download/validation failed: {ex.Message}");
         }
         // #278: the Intel files XeMFG standalone needs (not for a plugin install: OptiScaler brings its own). A download that
         // fails does not stop the install (upstream); the files then come with the next Update.
@@ -277,7 +277,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
         // leaves an entry start-up recovery rolls back, never an override nothing owns.
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
-            _journal, "Universal MFG install: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
+            _journal, "Universal MFG Unlocker install: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         var operation = scope.Operation;
@@ -345,16 +345,16 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         {
             if (tempPath is not null) FileCleanup.TryDelete(tempPath);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", changedFiles: targetPath);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG Unlocker", changedFiles: targetPath);
             if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
-            return ComponentOperationResult.Fail($"Universal MFG install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"Universal MFG Unlocker install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: it is the commit point. Nothing after it rolls back.
         await scope.CommitAsync().ConfigureAwait(false);
         if (asPlugin)
             return ComponentOperationResult.Ok(InstalledAsPluginPrefix + release.Version, targetPath);
         return ComponentOperationResult.Ok(
-            $"Universal MFG {release.Version} instalado para {selectedGpu} como {selectedProxy}. Pressione Backspace no jogo para abrir o menu upstream; a compatibilidade sob Wine/Proton deve ser confirmada no jogo."
+            $"Universal MFG Unlocker {release.Version} instalado para {selectedGpu} como {selectedProxy}. Pressione Backspace no jogo para abrir o menu upstream; a compatibilidade sob Wine/Proton deve ser confirmada no jogo."
             + (xessPlaced is not null ? IntelXessFiles.Notes(xessPlaced) : xessFailure is not null ? XessNotInstalledPrefix + xessFailure : ""),
             targetPath);
     }
@@ -365,7 +365,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     {
         var record = GetRecord(game);
         if (record is null)
-            return ComponentOperationResult.Fail("Universal MFG não é gerenciado pelo RHI para este jogo. Instalações externas permanecem protegidas.");
+            return ComponentOperationResult.Fail("Universal MFG Unlocker não é gerenciado pelo RHI para este jogo. Instalações externas permanecem protegidas.");
 
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
@@ -378,7 +378,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, targetPath));
         if (fileRecord?.Sha256 is not { Length: > 0 })
-            return ComponentOperationResult.Fail("Registro do Universal MFG perdeu o hash de ownership; remoção bloqueada.");
+            return ComponentOperationResult.Fail("Registro do Universal MFG Unlocker perdeu o hash de ownership; remoção bloqueada.");
 
         if (File.Exists(targetPath))
         {
@@ -390,7 +390,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         // Journaled (#23): the record is stamped with the removal's id first; a crash before it is removed puts the proxy
         // and the override back as the record still describes them.
         var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
-            _journal, _records, "Universal MFG removal: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
+            _journal, _records, "Universal MFG Unlocker removal: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
@@ -410,16 +410,16 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
             // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
             // value stays, #30); the record kept so the restored files stay owned.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "universal-mfg").ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", removal: true);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG Unlocker", removal: true);
             if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            return ComponentOperationResult.Fail($"Universal MFG removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"Universal MFG Unlocker removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record is gone: the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
         IntelXessFiles.DeleteEmptyFolders(xessEntries);
         if (IsPluginRecord(record)) DeleteEmptyPluginFolder(record.BinaryDirectory);
-        return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado."
+        return ComponentOperationResult.Ok("Universal MFG Unlocker removido e o override Wine anterior foi restaurado."
             + WineDllOverrideService.KeptValueNotes(overrideRestore)
             + (xessRemoved is not null ? IntelXessFiles.Notes(xessRemoved) : ""));
     }
@@ -437,7 +437,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         var plan = await ProxylessRecordRemoval.PlanAsync(record, cancellationToken).ConfigureAwait(false);
 
         var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
-            _journal, _records, "Universal MFG removal: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
+            _journal, _records, "Universal MFG Unlocker removal: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
@@ -452,13 +452,13 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "universal-mfg").ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", removal: true);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG Unlocker", removal: true);
             if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            return ComponentOperationResult.Fail($"Universal MFG removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"Universal MFG Unlocker removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("Universal MFG", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
+        return ComponentOperationResult.Ok(ProxylessRecordRemoval.Message("Universal MFG Unlocker", plan.Left, WineDllOverrideService.KeptValueNotes(overrideRestore)));
     }
 
     public async Task<Rtx40MfgUpdateStatus> CheckLatestAsync(
@@ -473,14 +473,14 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
             var hasUpdate = record is not null && !string.Equals(current, latest.Version, StringComparison.OrdinalIgnoreCase);
             return new(true, current, latest.Version, hasUpdate,
                 record is null
-                    ? $"Último Universal MFG upstream: {latest.Version}."
+                    ? $"Último Universal MFG Unlocker upstream: {latest.Version}."
                     : hasUpdate
                         ? $"Atualização disponível: {current ?? "desconhecida"} → {latest.Version}."
-                        : $"Universal MFG {current ?? latest.Version} está atualizado.");
+                        : $"Universal MFG Unlocker {current ?? latest.Version} está atualizado.");
         }
         catch (Exception ex)
         {
-            return new(false, GetRecord(game)?.Version, null, false, $"Falha ao verificar Universal MFG: {ex.Message}");
+            return new(false, GetRecord(game)?.Version, null, false, $"Falha ao verificar Universal MFG Unlocker: {ex.Message}");
         }
     }
 
@@ -490,7 +490,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     {
         var record = GetRecord(game);
         if (record is null)
-            return ComponentOperationResult.Fail("Universal MFG não é gerenciado pelo RHI para este jogo.");
+            return ComponentOperationResult.Fail("Universal MFG Unlocker não é gerenciado pelo RHI para este jogo.");
 
         // F1 (review w12/mfg; toolkit rule since w10 D15): the hold's restart text before the hash check below.
         if (await DeploymentScope.HoldRefusalAsync(_journal, game, ManagedComponentKind.Rtx40MfgStandalone).ConfigureAwait(false) is { } held)
@@ -501,13 +501,13 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, targetPath));
         if (fileRecord?.Sha256 is not { Length: > 0 })
-            return ComponentOperationResult.Fail("Ownership hash do Universal MFG está ausente; update bloqueado.");
+            return ComponentOperationResult.Fail("Ownership hash do Universal MFG Unlocker está ausente; update bloqueado.");
         if (!File.Exists(targetPath))
-            return ComponentOperationResult.Fail("A DLL gerenciada do Universal MFG não existe mais; update não recriará um slot perdido silenciosamente.");
+            return ComponentOperationResult.Fail("A DLL gerenciada do Universal MFG Unlocker não existe mais; update não recriará um slot perdido silenciosamente.");
 
         var currentHash = await FileHash.Sha256HexAsync(targetPath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(currentHash, fileRecord.Sha256, StringComparison.OrdinalIgnoreCase))
-            return ComponentOperationResult.Fail("A DLL gerenciada do Universal MFG foi modificada externamente; update bloqueado.");
+            return ComponentOperationResult.Fail("A DLL gerenciada do Universal MFG Unlocker foi modificada externamente; update bloqueado.");
 
         Rtx40MfgReleaseInfo latest;
         string payloadPath;
@@ -517,16 +517,16 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
             if (string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase))
                 return NeedsXessFiles(record)
                     ? await AddXessFilesAsync(game, record, cancellationToken).ConfigureAwait(false) // #278: an install from before
-                    : ComponentOperationResult.Ok($"Universal MFG {record.Version} já está atualizado.");
+                    : ComponentOperationResult.Ok($"Universal MFG Unlocker {record.Version} já está atualizado.");
             payloadPath = await EnsureCachedPayloadAsync(latest, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"Universal MFG update check/download failed: {ex.Message}");
+            return ComponentOperationResult.Fail($"Universal MFG Unlocker update check/download failed: {ex.Message}");
         }
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
-            _journal, "Universal MFG update: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
+            _journal, "Universal MFG Unlocker update: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         string? staged = null;
@@ -562,11 +562,11 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
             if (staged is not null) FileCleanup.TryDelete(staged);
             // The previous DLL goes back from the scope's verified copy; a copy that cannot be put back is kept and named.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", changedFiles: targetPath);
-            return ComponentOperationResult.Fail($"Universal MFG update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG Unlocker", changedFiles: targetPath);
+            return ComponentOperationResult.Fail($"Universal MFG Unlocker update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok($"Universal MFG atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);
+        return ComponentOperationResult.Ok($"Universal MFG Unlocker atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);
     }
 
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(
@@ -575,7 +575,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
     {
         var record = GetRecord(game);
         if (record is null)
-            return new ManagedUpdateCheck(false, false, "Universal MFG is not RHI-managed.");
+            return new ManagedUpdateCheck(false, false, "Universal MFG Unlocker is not RHI-managed.");
         // F1 (review w12/mfg): a game held by its own earlier undo gets the hold's restart text before its files are read.
         if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, ManagedComponentKind.Rtx40MfgStandalone, record.Version).ConfigureAwait(false) is { } held)
             return held;

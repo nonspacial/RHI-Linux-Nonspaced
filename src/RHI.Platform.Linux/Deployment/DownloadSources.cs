@@ -59,7 +59,7 @@ public static class DownloadSources
 
     /// <summary>Universal MFG (RTX40MFG-Unlock): GitHub releases and their SHA256SUMS.txt.</summary>
     public static readonly TrustedDownloadPolicy UniversalMfg = new(
-        "Universal MFG", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
+        "Universal MFG Unlocker", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
 
     /// <summary>DLSSG 20/30 unlock (#261): the release package of sdli1995/dlssg_for_sm86 (about 90 MB since 0.4.2).</summary>
     public static readonly TrustedDownloadPolicy Dlssg2030 = new(

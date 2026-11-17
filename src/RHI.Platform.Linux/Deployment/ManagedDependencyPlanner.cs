@@ -159,14 +159,14 @@ internal sealed class ManagedDependencyPlanner
         if (target == ManagedComponentKind.MfgAdaUnlock && _records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null)
             return ComponentOperationResult.Fail("20/30 FG Unlock já está ativo. Remova-o antes de instalar MFG Unlock.");
         if (target == ManagedComponentKind.MfgAdaUnlock && _records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
-            return ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar MFG Unlock.");
+            return ComponentOperationResult.Fail("Universal MFG Unlocker já está ativo. Remova-o antes de instalar MFG Unlock.");
 
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.OptiScaler) is not null)
             return ComponentOperationResult.Fail("OptiScaler já está ativo. ShortFuse não reescreve automaticamente essa cadeia ReShade/OptiScaler.");
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.Dlssg2030Unlock) is not null)
             return ComponentOperationResult.Fail("20/30 FG Unlock já está ativo. Remova-o antes de instalar ShortFuse.");
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
-            return ComponentOperationResult.Fail("Universal MFG Experimental já está ativo. Remova-o antes de instalar ShortFuse.");
+            return ComponentOperationResult.Fail("Universal MFG Unlocker já está ativo. Remova-o antes de instalar ShortFuse.");
         // w4/encore (#158): never switch away from RTX Encore's Neural Rendering file; the user removes it first. Refused
         // here, before any dependency (ReShade) is installed.
         if (target is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Tool // w14/nr-2 (#317)

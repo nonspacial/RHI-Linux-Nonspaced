@@ -112,7 +112,7 @@ public sealed class MfgUpdateAllTests
         release.Add("1.7.0", "MFGUnlocker-", "MFGUnlocker.dll", 0x52);
         release.Active = "1.4.2";
         using var fx = await ViewModelFixture.StartAsync([], httpResponse: release.Answer);
-        var game = StreamlineGame(fx.Root, "Universal MFG Game");
+        var game = StreamlineGame(fx.Root, "Universal MFG Unlocker Game");
         Assert.True(fx.Managed.SetRtx40MfgPreferences(game, "dinput8.dll").Success);
         var install = await fx.Managed.InstallAsync(game, ManagedComponentKind.Rtx40MfgStandalone, []);
         Assert.True(install.Success, install.Message);

@@ -294,7 +294,7 @@ public sealed class WineRegistryJournalTests : IDisposable
         D3DCompilerToolInstaller.OverrideNotSetWineRunningPrefix + "/jogos/prefixo",
         LinuxDeploymentRecovery.JournalUnavailablePrefix + "E/S negada); nothing was changed.",
         // The kept-value note rides on a removal message (here one the platform writes in Portuguese).
-        "Universal MFG removido e o override Wine anterior foi restaurado."
+        "Universal MFG Unlocker removido e o override Wine anterior foi restaurado."
             + WineDllOverrideService.KeptValueNotes(new WineOverrideRestoreResult(WineOverrideRestoreOutcome.KeptLaterValue, "dxgi", "builtin")),
     };
 

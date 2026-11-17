@@ -265,7 +265,7 @@ public sealed partial class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail("MFG Unlock já está ativo. Remova-o antes de instalar o 20/30 FG Unlock; os dois métodos de desbloqueio de Frame Generation não devem compartilhar o mesmo processo.");
 
         if (_records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
-            return ComponentOperationResult.Fail("Universal MFG já está ativo. Remova-o antes de instalar o 20/30 FG Unlock; os dois métodos não devem disputar o mesmo pipeline de Frame Generation.");
+            return ComponentOperationResult.Fail("Universal MFG Unlocker já está ativo. Remova-o antes de instalar o 20/30 FG Unlock; os dois métodos não devem disputar o mesmo pipeline de Frame Generation.");
 
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null)
             return ComponentOperationResult.Fail("ShortFuse já está ativo e gerencia a pilha DLSS/Frame Generation deste jogo. Remova-o antes de usar o 20/30 FG Unlock para evitar duas autoridades sobre o mesmo runtime.");

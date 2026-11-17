@@ -103,7 +103,7 @@ public sealed partial class Rtx40MfgStandaloneDeploymentService
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             if (rollback.Committed) return DeploymentScope.Landed(DisplayName);
-            return ComponentOperationResult.Fail($"Universal MFG update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"Universal MFG Unlocker update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(XessAddedMessage + IntelXessFiles.Notes(placed));
