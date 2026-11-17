@@ -51,6 +51,28 @@ public sealed partial class LinuxManagedComponentService
     public IReadOnlyList<MfgUnlockXessFile> MfgUnlockXessState(string binaryDirectory)
         => MfgUnlockFiles?.State(binaryDirectory) ?? [];
 
+    /// <summary>
+    /// w14 final review M5: the ⚙'s Frame generation method in MFGAdaUnlock.ini, one journaled operation on MFG Unlock's
+    /// record (a file it creates is listed, so removal takes it while unchanged). Refused while RHI's MFG Unlock is not
+    /// installed or the game has no confirmed patch target.
+    /// </summary>
+    public Task<ComponentOperationResult> SetMfgUnlockMethodAsync(DetectedGame game, MfgUnlockMethod method, CancellationToken cancellationToken = default)
+        => WriteMfgUnlockIniAsync(game, directory => MfgUnlockIni.WriteMethod(directory, method), cancellationToken);
+
+    /// <summary>w14 final review M5: the ⚙'s DLSS-SR input in MFGAdaUnlock.ini (as <see cref="SetMfgUnlockMethodAsync"/>).</summary>
+    public Task<ComponentOperationResult> SetMfgUnlockDlssSrAsync(DetectedGame game, bool on, CancellationToken cancellationToken = default)
+        => WriteMfgUnlockIniAsync(game, directory => MfgUnlockIni.WriteDlssSr(directory, on), cancellationToken);
+
+    private Task<ComponentOperationResult> WriteMfgUnlockIniAsync(DetectedGame game, Action<string> write, CancellationToken cancellationToken)
+    {
+        if (PatchTargetGuard(game) is { } guard) return Task.FromResult(guard);
+        if (_records.Find(game, ManagedComponentKind.MfgAdaUnlock) is not { } record || string.IsNullOrWhiteSpace(record.BinaryDirectory))
+            return Task.FromResult(ComponentOperationResult.Fail(ComponentSettingsFile.NotInstalledPrefix + "MFG Unlock"));
+        var directory = record.BinaryDirectory;
+        return ComponentSettingsFile.WriteAsync(MfgUnlockFiles?.Journal, _records, game, ManagedComponentKind.MfgAdaUnlock, "MFG Unlock",
+            MfgUnlockIni.PathIn(directory), () => write(directory), cancellationToken);
+    }
+
     /// <summary>RHI's MFG Unlock record for the game, or null.</summary>
     public LinuxDeploymentRecord? GetMfgUnlockRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.MfgAdaUnlock);
 }

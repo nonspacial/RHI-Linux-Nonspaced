@@ -27,6 +27,9 @@ public sealed partial class LinuxManagedComponentService
 
     public OptiScalerIniChoices GetOptiScalerIniChoices(DetectedGame game) => OptiScalerIniChoices.Get(game);
 
+    /// <summary>Where the installed build's own OptiScaler.ini is kept for the game's All Settings (RHI's data folder).</summary>
+    public string OptiScalerReferenceIniPath(DetectedGame game) => _optiscaler.ReferenceIniPath(game);
+
     /// <summary>The folder Apply, Load saved ini and a version switch back the game's OptiScaler.ini up to.</summary>
     public string OptiScalerIniBackupFolder(DetectedGame game) => _optiscaler.IniBackupFolder(game);
 

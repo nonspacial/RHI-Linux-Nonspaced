@@ -35,20 +35,30 @@ public static class FgSettingsBuilder
         }
     }
 
+    /// <summary>w14 final review M5: a ⚙ write done by the platform (journaled); its refusal or failure is the line to show.</summary>
+    private static (bool, string) Saved(Func<ComponentOperationResult> write, string label)
+    {
+        var result = write();
+        return result.Success ? (true, T("Fg.Saved")) : (false, TF("Fg.SaveFailed", label, UiLocalizationService.Present(result.Message)));
+    }
+
     /// <summary>
     /// #279 (upstream 2.8.9 <c>BuildMfgAdaCogContent</c>): Frame generation method and DLSS-SR input in
     /// <c>MFGAdaUnlock.ini</c>, whether Intel's XeSS files are right, the graphics-API warning, and Open MFGAdaUnlock.ini.
     /// </summary>
-    public static FgSettingsContent MfgUnlock(DetectedGame game, string? binaryDirectory, IReadOnlyList<MfgUnlockXessFile> xess, bool installed, Action<string> show)
+    /// <param name="setMethod">Writes the method (journaled on MFG Unlock's record, w14 final review M5).</param>
+    /// <param name="setDlssSr">Writes DLSS-SR input (journaled likewise).</param>
+    public static FgSettingsContent MfgUnlock(DetectedGame game, string? binaryDirectory, IReadOnlyList<MfgUnlockXessFile> xess, bool installed, Action<string> show,
+        Func<MfgUnlockMethod, ComponentOperationResult> setMethod, Func<bool, ComponentOperationResult> setDlssSr)
     {
-        var available = binaryDirectory is not null;
+        var available = installed && binaryDirectory is not null; // M5: the rows write MFG Unlock's file only while it is installed
         var method = available ? MfgUnlockIni.ReadMethod(binaryDirectory!) : MfgUnlockMethod.DlssG;
         ComponentSettingRow? methodRow = null;
         methodRow = new ComponentSettingRow(T("Mfgu.Method"), T("Mfgu.MethodTip"), MfgUnlockMethods, (int)method)
         {
             Available = available,
             UnavailableReason = T("Cog.GreyedNotInstalled"), // #302: why it is greyed
-            Apply = index => Saved(() => MfgUnlockIni.WriteMethod(binaryDirectory!, (MfgUnlockMethod)index), T("Mfgu.Method"))
+            Apply = index => Saved(() => setMethod((MfgUnlockMethod)index), T("Mfgu.Method"))
         };
         var dlssSr = new ComponentSettingRow(T("Mfgu.DlssSr"), T("Mfgu.DlssSrTip"), [T("Ini.Off"), T("Ini.On")],
             available && MfgUnlockIni.ReadDlssSr(binaryDirectory!) ? 1 : 0)
@@ -57,7 +67,7 @@ public static class FgSettingsBuilder
             EnabledWhen = () => methodRow.SelectedIndex == (int)MfgUnlockMethod.XeMfgCuda,
             DisabledReason = T("Cog.GreyedXeMfgCuda"), // #302: why it is greyed
             UnavailableReason = T("Cog.GreyedNotInstalled"),
-            Apply = index => Saved(() => MfgUnlockIni.WriteDlssSr(binaryDirectory!, index == 1), T("Mfgu.DlssSr"))
+            Apply = index => Saved(() => setDlssSr(index == 1), T("Mfgu.DlssSr"))
         };
 
         var lines = new List<ComponentDialogLine>();
@@ -161,7 +171,8 @@ public static class FgSettingsBuilder
     /// sections, written straight into <c>rtx-encore.jsonc</c> beside RTX Encore (comments kept; created when missing).
     /// Greyed out until RTX Encore is installed. Smooth Motion is left out on Linux (it needs the Windows driver).
     /// </summary>
-    public static IReadOnlyList<ComponentSettingSection> RtxEncore(string? configPath)
+    /// <param name="set">Writes one value (section, key, value), journaled on RTX Encore's record (w14 final review M5).</param>
+    public static IReadOnlyList<ComponentSettingSection> RtxEncore(string? configPath, Func<string, string, string, ComponentOperationResult> set)
     {
         var available = configPath is not null;
         var text = available ? RtxEncoreConfig.Read(configPath!) : null;
@@ -173,7 +184,7 @@ public static class FgSettingsBuilder
             string? tip = null, string? greyed = null)
         {
             var current = RtxEncoreSettings.ValueOf(text, setting);
-            (bool, string) Write(int value) => Saved(() => RtxEncoreConfig.SetInFile(configPath!, setting.Section, setting.Key,
+            (bool, string) Write(int value) => Saved(() => set(setting.Section, setting.Key,
                 setting.IsNumber ? value.ToString(System.Globalization.CultureInfo.InvariantCulture) : setting.Values[value]), label);
             var row = setting.IsNumber
                 ? new ComponentSettingRow(label, tip, int.TryParse(current, out var number) ? number : int.Parse(setting.Default, System.Globalization.CultureInfo.InvariantCulture), setting.Min, setting.Max)

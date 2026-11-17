@@ -230,6 +230,59 @@ public sealed class IntelXessFilesTests : IDisposable
         Assert.False(File.Exists(target + ".bak"));
     }
 
+    // w14 final review M8: a replaced file whose backup is gone stays (it is where the game expects its DLL) and is named.
+    [Fact]
+    public async Task Remove_AReplacedFileWithoutItsBackup_IsLeftAndNamed()
+    {
+        var fg = FakeDll("libxess_fg.dll", 1);
+        var cached = await Cache(fg);
+        var target = Path.Combine(_root, "game", "libxess_fg.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, "game's copy");
+        await using var scope = DeploymentScope.Unjournaled();
+        var placed = await IntelXessFiles.PlaceAsync(scope, [new(fg.File, target, target + ".encore-original")], cached);
+        await scope.CommitAsync();
+        File.Delete(target + ".encore-original");
+
+        await using var remove = DeploymentScope.Unjournaled();
+        var removed = await IntelXessFiles.RemoveAsync(remove, placed.Entries);
+        await remove.CommitAsync();
+
+        Assert.Equal(fg.Bytes, File.ReadAllBytes(target));
+        Assert.Equal([target], removed.ChangedLeft);
+        Assert.StartsWith(IntelXessFiles.ChangedLeftPrefix + target, IntelXessFiles.Notes(removed), StringComparison.Ordinal);
+    }
+
+    // w14 final review m13: the folders made for added files go with a rollback, journaled (the compensator, also after a
+    // crash) or not (the scope's own list); a folder that was already there stays.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ARolledBackOperation_RemovesTheFoldersItCreated(bool journaled)
+    {
+        var fg = FakeDll("libxess_fg.dll", 1);
+        var cached = await Cache(fg);
+        var game = Path.Combine(_root, "game-" + journaled);
+        Directory.CreateDirectory(game);
+        var folder = Path.Combine(game, "OptiScaler", "RTXMFG-XeSS");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records-" + journaled + ".json"));
+        var detected = new RHI.Core.Models.DetectedGame { Name = "Game", InstallPath = game, BinaryDirectory = game };
+        var (opened, refusal) = journaled
+            ? await DeploymentScope.BeginAsync(SimulatedDeath.NewJournal(Path.Combine(_root, "journal"), records).Journal, "xess", detected,
+                RHI.Core.Models.ManagedComponentKind.MfgAdaUnlock, CancellationToken.None)
+            : (DeploymentScope.Unjournaled(), null);
+        Assert.Null(refusal);
+        await using var scope = opened!;
+
+        var placed = await IntelXessFiles.PlaceAsync(scope, [new(fg.File, Path.Combine(folder, fg.File.Name))], cached);
+        Assert.Equal(3, placed.Entries.Count); // OptiScaler, RTXMFG-XeSS and the file
+        var rollback = await scope.RollbackAsync();
+
+        Assert.True(rollback.RolledBack);
+        Assert.False(Directory.Exists(Path.Combine(game, "OptiScaler")));
+        Assert.True(Directory.Exists(game));
+    }
+
     [Fact]
     public async Task StateOf_TellsRhisFileFromAnotherVersion()
     {

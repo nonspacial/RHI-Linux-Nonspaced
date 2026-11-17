@@ -52,6 +52,13 @@ public sealed class UltimateAsiLoaderDeploymentService
     private const string Asset64 = "Ultimate-ASI-Loader_x64.zip";
     internal const string MetaProxyName = "UAL.ProxyName";
     private const string MetaHookedPath = "UAL.HookedPath";
+
+    /// <summary>
+    /// w14 final review m12: where ASI Loader moved the game's own DLL it took the name of (<c>&lt;name&gt;Hooked.dll</c>),
+    /// or null when it took a free name.
+    /// </summary>
+    public static string? HookedPathOf(LinuxDeploymentRecord record)
+        => record.Component == ManagedComponentKind.UltimateAsiLoader && record.Metadata.GetValueOrDefault(MetaHookedPath) is { Length: > 0 } path ? path : null;
     private const string MetaHadOriginal = "UAL.HadOriginal";
     private const string MetaAssetSha256 = "UAL.AssetSha256";
     private const string MetaArchitecture = "UAL.Architecture";

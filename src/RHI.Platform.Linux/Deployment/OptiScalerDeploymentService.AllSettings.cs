@@ -30,8 +30,31 @@ public sealed partial class OptiScalerDeploymentService
 
     public string ReferenceIniPath(DetectedGame game) => Path.Combine(ReferenceIniDirectory, GameFileTag(game) + ".ini");
 
-    private static string GameFileTag(DetectedGame game)
-        => string.Concat(LinuxDeploymentRecordStore.GameKey(game).Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_'));
+    private static string GameFileTag(DetectedGame game) => FileTag(LinuxDeploymentRecordStore.GameKey(game));
+
+    private static string FileTag(string key) => string.Concat(key.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_'));
+
+    /// <summary>w14 final review m5: the reference INI follows a game whose key changed (folder move, Repair after move).</summary>
+    internal Settings.IGameStateStore ReferenceIniState => _referenceIniState ??= new ReferenceIniMove(this);
+
+    private Settings.IGameStateStore? _referenceIniState;
+
+    private sealed class ReferenceIniMove(OptiScalerDeploymentService owner) : Settings.IGameStateStore
+    {
+        /// <summary>The old key's copy under the new key's name (the new key's own copy, if any, wins); the old file stays unused.</summary>
+        public Persistence.StagedFileWrite? StageMove(Settings.GameStateMove move)
+        {
+            ArgumentNullException.ThrowIfNull(move);
+            var target = Path.Combine(owner.ReferenceIniDirectory, FileTag(move.NewRecordKey) + ".ini");
+            if (File.Exists(target)) return null;
+            foreach (var old in move.OldRecordKeys)
+            {
+                var source = Path.Combine(owner.ReferenceIniDirectory, FileTag(old) + ".ini");
+                if (File.Exists(source)) return new Persistence.StagedFileWrite(target, null, File.ReadAllBytes(source));
+            }
+            return null;
+        }
+    }
 
     /// <summary>
     /// After an install or update: a copy of the package's OptiScaler.ini describes All Settings; a package without one (a

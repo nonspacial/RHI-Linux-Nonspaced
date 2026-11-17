@@ -109,7 +109,8 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 IsInstalled = record is not null;
                 ShowsCheck = false;
                 var content = FgSettingsBuilder.MfgUnlock(shell.SelectedGame!, record?.BinaryDirectory ?? shell.SelectedGame?.BinaryDirectory,
-                    record is null ? [] : shell.ManagedForFgSettings.MfgUnlockXessState(record.BinaryDirectory), record is not null, ShowMessage);
+                    record is null ? [] : shell.ManagedForFgSettings.MfgUnlockXessState(record.BinaryDirectory), record is not null, ShowMessage,
+                    shell.SetMfgUnlockMethod, shell.SetMfgUnlockDlssSr); // w14 final review M5: journaled writes
                 (Sections, Lines, FileButtons) = (content.Sections, content.Lines, content.Files);
                 CheckLabel = "";
                 UpdateLabel = "";
@@ -138,7 +139,7 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 InstalledText = record is null ? null : TF("Win.RtxEncoreInstalled", record.Version ?? "?", chosen);
                 // #280: RTX Encore's settings in rtx-encore.jsonc, its XeSS files and the manifest's recommended name.
                 var configPath = shell.RtxEncoreConfigPath();
-                Sections = FgSettingsBuilder.RtxEncore(configPath);
+                Sections = FgSettingsBuilder.RtxEncore(configPath, shell.SetRtxEncoreSetting); // w14 final review M5: journaled writes
                 Lines = FgSettingsBuilder.RtxEncoreLines(record is not null, configPath is not null && File.Exists(configPath),
                     shell.RtxEncoreXessStatus(), shell.SelectedGame is { } encoreGame ? RtxEncoreDeploymentService.RecommendedName(encoreGame) : null,
                     shell.SelectedGameRunning()); // w14/extras-fg-2 (#280)

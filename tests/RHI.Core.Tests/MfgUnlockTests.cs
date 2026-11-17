@@ -23,6 +23,13 @@ public sealed class MfgUnlockTests : IDisposable
 
     private string Bin(string name) => Directory.CreateDirectory(Path.Combine(_root, name, "bin")).FullName;
 
+    // The ⚙ rows' writers (the app passes the managed service's journaled writes, w14 final review M5).
+    private static Func<MfgUnlockMethod, ComponentOperationResult> WriteMethod(string bin)
+        => method => { MfgUnlockIni.WriteMethod(bin, method); return ComponentOperationResult.Ok(""); };
+
+    private static Func<bool, ComponentOperationResult> WriteDlssSr(string bin)
+        => on => { MfgUnlockIni.WriteDlssSr(bin, on); return ComponentOperationResult.Ok(""); };
+
     [Fact]
     public void RowIsCalledMfgUnlock_InternalKeyUnchanged()
     {
@@ -152,7 +159,7 @@ public sealed class MfgUnlockTests : IDisposable
         var bin = Bin("cog");
         var game = new DetectedGame { Name = "Cog", InstallPath = bin, BinaryDirectory = bin, Source = "Test", GraphicsApi = GraphicsApi.DirectX12 };
         string? shown = null;
-        var content = FgSettingsBuilder.MfgUnlock(game, bin, [], installed: true, line => shown = line);
+        var content = FgSettingsBuilder.MfgUnlock(game, bin, [], installed: true, line => shown = line, WriteMethod(bin), WriteDlssSr(bin));
         var (method, dlssSr) = (content.Sections[0].Rows[0], content.Sections[0].Rows[1]);
         foreach (var row in content.Sections[0].Rows) { row.Changed = line => shown = line; row.Refresh(); }
 
@@ -175,6 +182,19 @@ public sealed class MfgUnlockTests : IDisposable
         Assert.Equal(UiLocalizationService.Text("Mfgu.OtherSettings"), content.Lines[^1].Text);
     }
 
+    // w14 final review M5: without RHI's MFG Unlock the rows are greyed (they would write a file no record lists).
+    [Fact]
+    public void Settings_AreGreyedWhileMfgUnlockIsNotInstalled()
+    {
+        var bin = Bin("not-installed");
+        var game = new DetectedGame { Name = "None", InstallPath = bin, BinaryDirectory = bin, Source = "Test", GraphicsApi = GraphicsApi.DirectX12 };
+        var rows = FgSettingsBuilder.MfgUnlock(game, bin, [], installed: false, _ => { }, WriteMethod(bin), WriteDlssSr(bin)).Sections[0].Rows;
+        foreach (var row in rows) row.Refresh();
+
+        Assert.All(rows, row => Assert.False(row.IsEnabled));
+        Assert.False(File.Exists(MfgUnlockIni.PathIn(bin)));
+    }
+
     [Fact]
     public void Settings_StatusLines_ForXessFilesAndOlderApis()
     {
@@ -182,12 +202,12 @@ public sealed class MfgUnlockTests : IDisposable
         var dx11 = new DetectedGame { Name = "Old", InstallPath = bin, BinaryDirectory = bin, Source = "Test", GraphicsApi = GraphicsApi.DirectX11 };
         var lines = FgSettingsBuilder.MfgUnlock(dx11, bin,
             [new MfgUnlockXessFile("libxess_fg.dll", IntelXessFileState.Missing, null), new MfgUnlockXessFile("libxell.dll", IntelXessFileState.OtherVersion, "1.3.0.4")],
-            installed: true, _ => { }).Lines;
+            installed: true, _ => { }, WriteMethod(bin), WriteDlssSr(bin)).Lines;
 
         Assert.Equal(ComponentDialogLine.Warning(UiLocalizationService.Format("Mfgu.XessMissing", "libxess_fg.dll")), lines[0]);
         Assert.Equal(ComponentDialogLine.Warning(UiLocalizationService.Format("Mfgu.ApiNotSupported", "DirectX 11")), lines[1]);
 
-        var other = FgSettingsBuilder.MfgUnlock(dx11, bin, [new MfgUnlockXessFile("libxell.dll", IntelXessFileState.OtherVersion, "1.3.0.4")], installed: true, _ => { }).Lines;
+        var other = FgSettingsBuilder.MfgUnlock(dx11, bin, [new MfgUnlockXessFile("libxell.dll", IntelXessFileState.OtherVersion, "1.3.0.4")], installed: true, _ => { }, WriteMethod(bin), WriteDlssSr(bin)).Lines;
         Assert.Equal(UiLocalizationService.Format("Mfgu.XessOtherVersion", "libxell.dll 1.3.0.4"), other[0].Text);
         Assert.Equal("This game uses DirectX 11. As of MFG Unlock 1.8.0, it only works in DirectX 12 games (and experimentally in Vulkan games), so it won't work here.",
             UiLocalizationService.FormatFor("en-US", "Mfgu.ApiNotSupported", "DirectX 11"));

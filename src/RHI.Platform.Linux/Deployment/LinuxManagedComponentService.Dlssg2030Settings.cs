@@ -11,6 +11,25 @@ public sealed partial class LinuxManagedComponentService
     public string? SetDlssg2030IniSetting(DetectedGame game, Dlssg2030Setting setting, int index)
         => PatchTargetGuard(game)?.Message ?? _dlssg2030.SetIniSetting(game, setting, index);
 
+    /// <summary>
+    /// w14 final review M5: one RTX Encore ⚙ setting in rtx-encore.jsonc, one journaled operation on RTX Encore's record
+    /// (a file it creates is listed, so removal takes it while unchanged). Refused while RHI's RTX Encore is not installed
+    /// or the game has no confirmed patch target. Blocks until written (the ⚙ rows save synchronously).
+    /// </summary>
+    public ComponentOperationResult SetRtxEncoreSetting(DetectedGame game, string section, string key, string value)
+        => PatchTargetGuard(game)
+           ?? (_rtxEncore is null
+               ? ComponentOperationResult.Fail(ComponentSettingsFile.NotInstalledPrefix + RtxEncoreDeploymentService.DisplayName)
+               : Task.Run(() => _rtxEncore.SetConfigValueAsync(game, section, key, value)).GetAwaiter().GetResult());
+
+    /// <summary>w14 final review M5: <see cref="SetMfgUnlockMethodAsync"/> for the ⚙ rows, which save synchronously.</summary>
+    public ComponentOperationResult SetMfgUnlockMethod(DetectedGame game, MfgUnlockMethod method)
+        => Task.Run(() => SetMfgUnlockMethodAsync(game, method)).GetAwaiter().GetResult();
+
+    /// <summary>w14 final review M5: <see cref="SetMfgUnlockDlssSrAsync"/> for the ⚙ rows, which save synchronously.</summary>
+    public ComponentOperationResult SetMfgUnlockDlssSr(DetectedGame game, bool on)
+        => Task.Run(() => SetMfgUnlockDlssSrAsync(game, on)).GetAwaiter().GetResult();
+
     /// <summary>#280: rtx-encore.jsonc beside RHI's RTX Encore, or null.</summary>
     public string? RtxEncoreConfigPath(DetectedGame game) => _rtxEncore?.ConfigPath(game);
 

@@ -25,6 +25,8 @@ public sealed partial class OptiScalerDeploymentService
     public const string AnrFgDownloadFailedPrefix = "Couldn't download ANR FG: ";
     /// <summary>The file follows.</summary>
     public const string AnrFgForeignFilePrefix = "A file RHI did not install is in ANR FG's folder, so nothing was changed: ";
+    /// <summary>w14 final review m14: a file RHI put in ANR FG's folder was changed since; the file follows.</summary>
+    public const string AnrFgChangedFilePrefix = "A file RHI put in ANR FG's folder was changed since, so nothing was changed: ";
     public const string AnrFgFailedPrefix = "ANR FG was not installed: ";
     /// <summary>The tag follows.</summary>
     public const string AnrFgInstalledPrefix = "ANR FG is in place: ";
@@ -71,7 +73,11 @@ public sealed partial class OptiScalerDeploymentService
             if (File.Exists(target))
             {
                 if (userIni) { keptIni = true; continue; } // the user's settings, whoever put the file there (upstream)
-                if (!owned.ContainsKey(target)) return ComponentOperationResult.Fail(AnrFgForeignFilePrefix + target);
+                if (!owned.TryGetValue(target, out var mine)) return ComponentOperationResult.Fail(AnrFgForeignFilePrefix + target);
+                // w14 final review m14: RHI's own file the user changed since is never overwritten.
+                if (mine.Sha256 is not { Length: > 0 } recorded
+                    || !FileHash.HexEquals(await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false), recorded))
+                    return ComponentOperationResult.Fail(AnrFgChangedFilePrefix + target);
             }
             plan.Add((source2, target, userIni));
         }

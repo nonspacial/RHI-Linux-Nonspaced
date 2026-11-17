@@ -168,6 +168,14 @@ public sealed partial class OptiScalerCustomBuildTests
         Assert.DoesNotContain(record.Files, file => file.Path.EndsWith("nr_fg.ini", StringComparison.Ordinal)); // the user's file stays theirs
         Assert.True((await managed.EnsureAnrFgAsync(game)).Success); // again: RHI's own files are replaced
 
+        // w14 final review m14: RHI's own file the user changed since is never overwritten.
+        var dlssg = Path.Combine(provider, "dlssg", "nvngx_dlssg.dll");
+        File.WriteAllText(dlssg, "the user's own build");
+        var changed = await managed.EnsureAnrFgAsync(game);
+        Assert.Equal(OptiScalerDeploymentService.AnrFgChangedFilePrefix + dlssg, changed.Message);
+        Assert.Equal("the user's own build", File.ReadAllText(dlssg));
+        File.Delete(dlssg);
+
         // A file RHI did not put there refuses the install, changing nothing.
         File.WriteAllText(Path.Combine(provider, "dlssg", "path_table.json"), "{}");
         File.Delete(Path.Combine(provider, "dlssg", "nvngx_dlssg.dll"));
@@ -189,6 +197,52 @@ public sealed partial class OptiScalerCustomBuildTests
             File.WriteAllText(Path.Combine(provider, "dlssg", "nr_fg.ini"), "build = shipped\n");
             if (Extra is not null) File.WriteAllText(Path.Combine(provider, Extra), "[]");
             return Task.FromResult(new AnrFgPackage("FG-V.B18", provider, new RHI.Core.Deployment.VerifiedDownload("/cache/anr.zip", new string('A', 64), new string('A', 64))));
+        }
+    }
+}
+
+/// <summary>
+/// w14 final review m2: ANR FG's files are on OptiScaler's record, so a version switch removes them; the switch puts ANR
+/// FG back for the new version, or — when the new version can't load it — sets FG Nvngx Replacement to None and says so.
+/// </summary>
+public sealed partial class OptiScalerCustomBuildTests
+{
+    private const string FrameGenIni = "[FrameGen]\nFGNvngxReplacement=None\n";
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SwitchVersion_CarriesAnrFgAcross_OrClearsItsProvider(bool newBuildLoadsProviders)
+    {
+        var a = (await Import(WriteBuild(Path.Combine(_root, "anr-sa"), os10: true, marker: "A", iniExtra: FrameGenIni, dllText: "Custom DLSSG providers"), "Build A")).Build!;
+        var b = (await Import(WriteBuild(Path.Combine(_root, "anr-sb"), os10: true, marker: "B", iniExtra: FrameGenIni, dllText: newBuildLoadsProviders ? "Custom DLSSG providers" : ""), "Build B")).Build!;
+        var (game, store) = Game("anr-switch-" + newBuildLoadsProviders);
+        var managed = Managed(store, out var optiscaler);
+        optiscaler.AnrFg = new FakeAnr(Path.Combine(_root, "anr-switch-package-" + newBuildLoadsProviders));
+        Assert.True((await managed.InstallOptiScalerAsync(game, a.Variant)).Success);
+        var anrIn = await managed.EnsureAnrFgAsync(game);
+        Assert.True(anrIn.Success, anrIn.Message);
+        var ini = Path.Combine(game.BinaryDirectory!, "OptiScaler.ini");
+        OptiScalerIniEditor.SetValuesInFile(ini, [("FrameGen", "FGNvngxReplacement", AnrFgProvider.ProviderName)]);
+        var dll = Path.Combine(game.BinaryDirectory!, "OptiScaler", "custom", AnrFgProvider.ProviderName, "dlssg", "nvngx_dlssg.dll");
+
+        var switched = await managed.SwitchOptiScalerVersionAsync(game, b.Variant);
+
+        Assert.True(switched.Success, switched.Message);
+        Assert.Equal(b.Variant, managed.GetInstalledOptiScalerVariant(game));
+        if (newBuildLoadsProviders)
+        {
+            Assert.EndsWith(LinuxManagedComponentService.SwitchAnrFgCarriedNote, switched.Message, StringComparison.Ordinal);
+            Assert.True(File.Exists(dll));
+            Assert.Contains(store.Find(game, ManagedComponentKind.OptiScaler)!.Files, file => file.Path == dll);
+            Assert.Equal(AnrFgProvider.ProviderName, OptiScalerIniEditor.GetValueInFile(ini, "FrameGen", "FGNvngxReplacement"));
+        }
+        else
+        {
+            Assert.Contains(LinuxManagedComponentService.SwitchAnrFgDroppedPrefix + OptiScalerDeploymentService.AnrFgUnsupportedPrefix, switched.Message, StringComparison.Ordinal);
+            Assert.EndsWith(LinuxManagedComponentService.SwitchAnrFgClearedNote, switched.Message, StringComparison.Ordinal);
+            Assert.False(File.Exists(dll));
+            Assert.Equal("None", OptiScalerIniEditor.GetValueInFile(ini, "FrameGen", "FGNvngxReplacement"));
         }
     }
 }

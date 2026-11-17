@@ -27,7 +27,7 @@ public sealed class CogTooltipTests : IDisposable
     public void EveryRtxEncoreRow_HasUpstreamsExplanation(string language)
     {
         UiLocalizationService.Apply(language);
-        var rows = FgSettingsBuilder.RtxEncore(Path.Combine(_root, "rtx-encore.jsonc")).SelectMany(s => s.Rows).ToArray();
+        var rows = FgSettingsBuilder.RtxEncore(Path.Combine(_root, "rtx-encore.jsonc"), FgSettingsWriters.Encore(Path.Combine(_root, "rtx-encore.jsonc"))).SelectMany(s => s.Rows).ToArray();
         Assert.True(rows.Length > 30);
         Assert.All(rows, row => Assert.False(string.IsNullOrWhiteSpace(row.Tip), row.Label));
         Assert.Equal(rows.Length, rows.Select(r => r.Tip).Distinct().Count());
@@ -39,7 +39,7 @@ public sealed class CogTooltipTests : IDisposable
     public void AGreyedRow_SaysWhyItIsGreyed_ThenItsExplanation()
     {
         UiLocalizationService.Apply("en-US");
-        var rows = FgSettingsBuilder.RtxEncore(Path.Combine(_root, "rtx-encore.jsonc")).SelectMany(s => s.Rows).ToArray();
+        var rows = FgSettingsBuilder.RtxEncore(Path.Combine(_root, "rtx-encore.jsonc"), FgSettingsWriters.Encore(Path.Combine(_root, "rtx-encore.jsonc"))).SelectMany(s => s.Rows).ToArray();
         foreach (var row in rows) row.Refresh();
         var multiplier = rows.Single(r => r.Label == UiLocalizationService.Text("Enc.Multiplier"));
         Assert.False(multiplier.IsEnabled); // Mode is "Game decides" in a new file
@@ -48,7 +48,7 @@ public sealed class CogTooltipTests : IDisposable
         Assert.True(engine.IsEnabled);
         Assert.Equal(engine.Tip, engine.ControlTip); // enabled: just the explanation
 
-        var notInstalled = FgSettingsBuilder.RtxEncore(null).SelectMany(s => s.Rows).ToArray();
+        var notInstalled = FgSettingsBuilder.RtxEncore(null, FgSettingsWriters.NotInstalled).SelectMany(s => s.Rows).ToArray();
         foreach (var row in notInstalled) row.Refresh();
         Assert.All(notInstalled, row => Assert.StartsWith(UiLocalizationService.Text("Enc.NotInstalled"), row.ControlTip));
     }

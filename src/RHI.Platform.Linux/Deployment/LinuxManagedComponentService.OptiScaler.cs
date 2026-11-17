@@ -75,23 +75,36 @@ public sealed partial class LinuxManagedComponentService
 
     /// <summary>
     /// Nightly installs take the game's saved nightly build pin (#156); Stable, DLSS NR and F5 its saved release pin (#270).
-    /// Null pin = Latest.
+    /// Null pin = Latest. The one saved slot holds either kind, so each channel reads only its own kind: a release tag never
+    /// reaches a Nightly install (w14 final review M4).
     /// </summary>
     public Task<ComponentOperationResult> InstallOptiScalerAsync(
         DetectedGame game,
         OptiScalerVariant variant,
         CancellationToken cancellationToken = default)
+        => variant == OptiScalerVariant.Nightly
+            ? InstallOptiScalerPinnedAsync(game, variant, GetOptiScalerNightlyChoice(game), releaseTag: null, cancellationToken)
+            : InstallOptiScalerPinnedAsync(game, variant, nightlyBuild: null, GetOptiScalerReleasePin(game, variant), cancellationToken);
+
+    /// <summary>
+    /// Every OptiScaler install: the guards, then the install under the chosen name, then Universal MFG Unlocker moved into
+    /// OptiScaler's plugins folder (#278) — on the pinned-release path too (w14 final review m2).
+    /// </summary>
+    private Task<ComponentOperationResult> InstallOptiScalerPinnedAsync(
+        DetectedGame game,
+        OptiScalerVariant variant,
+        string? nightlyBuild,
+        string? releaseTag,
+        CancellationToken cancellationToken,
+        PreparedOptiScalerInstall? prepared = null)
     {
-        if (variant == OptiScalerVariant.Nightly || GetOptiScalerReleasePin(game, variant) is not { } releaseTag)
-            return InstallOptiScalerAsync(game, variant,
-                variant == OptiScalerVariant.Nightly ? _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler) : null,
-                cancellationToken);
-        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler)
-                    ?? VulkanLayerConflict(game, ManagedComponentKind.OptiScaler);
+        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler) // w3/parity (#96)
+                    ?? VulkanLayerConflict(game, ManagedComponentKind.OptiScaler); // w5/reshade-core (#92)
         return guard is not null
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
-                () => InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild: null, cancellationToken, releaseTag));
+                () => MovingUniversalMfgIntoOptiScalerAsync(game,
+                    InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild, cancellationToken, releaseTag, prepared), cancellationToken)); // #172; w14/extras-fg hook (#278)
     }
 
     /// <summary>The separator between the channel and the tag of a saved release pin ("F5+v0.1.29"); never part of a channel name.</summary>
@@ -212,14 +225,7 @@ public sealed partial class LinuxManagedComponentService
         OptiScalerVariant variant,
         string? nightlyBuild,
         CancellationToken cancellationToken = default)
-    {
-        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler) // w3/parity (#96)
-                    ?? VulkanLayerConflict(game, ManagedComponentKind.OptiScaler); // w5/reshade-core (#92)
-        return guard is not null
-            ? Task.FromResult(guard)
-            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
-                () => MovingUniversalMfgIntoOptiScalerAsync(game, InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild, cancellationToken), cancellationToken)); // #172; w14/extras-fg hook (#278)
-    }
+        => InstallOptiScalerPinnedAsync(game, variant, nightlyBuild, releaseTag: null, cancellationToken);
 
     /// <summary>
     /// The game's nightly build (#156): the installed record's pin while RHI's OptiScaler is installed, otherwise the saved

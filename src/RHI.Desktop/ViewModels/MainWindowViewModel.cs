@@ -283,6 +283,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public LinuxDeploymentRecord? GetMfgUnlockRecord() => SelectedGame is null ? null : _managedComponents.GetMfgUnlockRecord(SelectedGame);
     /// <summary>#280: rtx-encore.jsonc beside RHI's RTX Encore (null when it is not installed).</summary>
     public string? RtxEncoreConfigPath() => SelectedGame is null ? null : _managedComponents.RtxEncoreConfigPath(SelectedGame);
+    /// <summary>w14 final review M5: the MFG Unlock ⚙'s method, written journaled on its record.</summary>
+    public ComponentOperationResult SetMfgUnlockMethod(MfgUnlockMethod method)
+        => SelectedGame is { } game ? _managedComponents.SetMfgUnlockMethod(game, method) : ComponentOperationResult.Fail(ComponentSettingsFile.NotInstalledPrefix + "MFG Unlock");
+    /// <summary>w14 final review M5: the MFG Unlock ⚙'s DLSS-SR input, written journaled on its record.</summary>
+    public ComponentOperationResult SetMfgUnlockDlssSr(bool on)
+        => SelectedGame is { } game ? _managedComponents.SetMfgUnlockDlssSr(game, on) : ComponentOperationResult.Fail(ComponentSettingsFile.NotInstalledPrefix + "MFG Unlock");
+    /// <summary>w14 final review M5: one RTX Encore ⚙ value in rtx-encore.jsonc, written journaled on its record.</summary>
+    public ComponentOperationResult SetRtxEncoreSetting(string section, string key, string value)
+        => SelectedGame is { } game ? _managedComponents.SetRtxEncoreSetting(game, section, key, value)
+            : ComponentOperationResult.Fail(ComponentSettingsFile.NotInstalledPrefix + RtxEncoreDeploymentService.DisplayName);
     /// <summary>#280: whether RTX Encore's Intel XeSS files are in place (null when it is not installed).</summary>
     public RtxEncoreXessStatus? RtxEncoreXessStatus() => SelectedGame is null ? null : _managedComponents.RtxEncoreXessStatus(SelectedGame);
     // w14/extras-fg-2 rows
@@ -2115,7 +2125,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         => TF("Vm.FolderMissingRemoveOrEdit", game.Name, game.LibraryIdentityPath ?? game.InstallPath);
 
     /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
-    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore, _managedComponents.OptiScalerIniChoices]; // #272
+    // #272's OptiScalerIniChoices is the managed service's own store now (w14 final review m5: a folder move carries it too).
+    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
 
     /// <summary>
     /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only

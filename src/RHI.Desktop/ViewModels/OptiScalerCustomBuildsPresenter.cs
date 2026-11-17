@@ -133,6 +133,9 @@ public sealed partial class OptiScalerCustomBuildsPresenter : ObservableObject
 
     public void SetNeedsNrDll(OptiScalerCustomBuild build, bool on)
     {
+        // w14 final review m6: an install reading the build's files (and this tick) runs behind the operation gate too.
+        using var op = BeginBuildChange();
+        if (op is null) return;
         if (!Store.SetNeedsNrDll(build.Variant, on)) Say(T("Osc.CouldNotSave"), error: true);
         RowsChanged?.Invoke();
     }
@@ -143,6 +146,8 @@ public sealed partial class OptiScalerCustomBuildsPresenter : ObservableObject
         var message = games.Count == 0 ? T("Osc.RemoveUnused") : UiLocalizationService.Format("Osc.RemoveUsed", games.Count);
         if (Prompts is { } prompts && !await prompts.ConfirmAsync(UiLocalizationService.Format("Osc.RemoveTitle", build.Name), message, T("Vm.Remove")))
             return;
+        using var op = BeginBuildChange(); // m6: never while an install copies from the build
+        if (op is null) return;
         if (!Store.Remove(build.Variant)) Say(T("Osc.CouldNotRemove"), error: true);
         else Say(UiLocalizationService.Format("Osc.RemovedDone", build.Name), error: false);
         RowsChanged?.Invoke();
@@ -162,6 +167,10 @@ public sealed partial class OptiScalerCustomBuildsPresenter : ObservableObject
             name = asked;
         }
 
+        // w14 final review m6: a Replace swaps the build's folder that an install copies from, so it (and the redeploy it
+        // offers) runs behind the app's operation gate; adding a new build touches nothing an install reads.
+        using var op = replace is null ? null : BeginBuildChange();
+        if (replace is not null && op is null) return false;
         IsBusy = true;
         try
         {
@@ -208,6 +217,14 @@ public sealed partial class OptiScalerCustomBuildsPresenter : ObservableObject
             ? UiLocalizationService.Format("Osc.UpdatedAll", ok)
             : UiLocalizationService.Format("Osc.UpdatedSome", ok, games.Count, lastFailure), error: ok != games.Count);
         RowsChanged?.Invoke();
+    }
+
+    /// <summary>The app's operation gate for a change to a build's files; null (said on the card) while another operation runs.</summary>
+    private OperationScope? BeginBuildChange()
+    {
+        var op = ((IPanelHost)_shell).BeginOperation("component", cancellable: false);
+        if (op is null) Say(T("Vm.AnotherRHIOperationAlreadyRunning"), error: true);
+        return op;
     }
 
     private bool Say(string text, bool error)

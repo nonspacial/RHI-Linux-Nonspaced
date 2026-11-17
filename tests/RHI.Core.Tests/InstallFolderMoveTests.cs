@@ -213,6 +213,42 @@ public sealed class InstallFolderMoveTests : IDisposable
         Assert.Equal(LinuxDeploymentRecordStore.GameKey(moved), fx.Records.Find(moved, ManagedComponentKind.DofFix)!.GameKey);
     }
 
+    // w14 final review m5: OptiScaler's All Settings edits, the saved INI choice and the build's reference INI follow a
+    // folder-keyed game to its new key (they used to stay under the old key).
+    [Fact]
+    public async Task AFolderKeyedGame_TakesItsOptiScalerAllSettingsToItsNewKey()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var (old, _, oldDir, _) = Game(source: "Manual");
+        var otherRoot = Directory.CreateDirectory(Path.Combine(_root, "Elsewhere")).FullName;
+        File.WriteAllText(Path.Combine(otherRoot, "Game.exe"), "copy");
+        var moved = old.ShallowClone();
+        moved.InstallPath = otherRoot;
+        moved.ExecutablePath = Path.Combine(otherRoot, "Game.exe");
+        moved.BinaryDirectory = otherRoot;
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(old), GameName = old.Name, Component = ManagedComponentKind.DofFix, BinaryDirectory = oldDir,
+            Files = [Owned(Path.Combine(oldDir, "dof.addon64"), "dof")]
+        });
+        fx.Managed.OptiScalerIniChoices = new RHI.Platform.Linux.Paths.OptiScalerIniChoicesStore(Path.Combine(_root, "ini-choices.json"));
+        fx.Managed.OptiScalerIniChoices.AddEdits(old, [new("Upscalers|Dx12Upscaler", "xess")]);
+        fx.Managed.OptiScalerIniChoices.SetSavedIni(old, "Mine");
+        var reference = fx.Managed.OptiScalerReferenceIniPath(old);
+        Directory.CreateDirectory(Path.GetDirectoryName(reference)!);
+        File.WriteAllText(reference, "; the build's own ini\n[Upscalers]\nDx12Upscaler=auto\n");
+        Assert.NotEqual(reference, fx.Managed.OptiScalerReferenceIniPath(moved));
+        fx.Managed.FolderMoveRunningProbe = new Running(false);
+
+        var result = await fx.Managed.MoveInstallFolderAsync(old, moved, oldDir, otherRoot);
+
+        Assert.True(result.Success, result.Message);
+        var choices = fx.Managed.GetOptiScalerIniChoices(moved);
+        Assert.Equal("xess", choices.Edits["Upscalers|Dx12Upscaler"]);
+        Assert.Equal("Mine", choices.SavedIni);
+        Assert.Equal(File.ReadAllText(reference), File.ReadAllText(fx.Managed.OptiScalerReferenceIniPath(moved)));
+    }
+
     [Fact]
     public async Task AWineOverrideForAnotherExecutable_IsRefused()
     {

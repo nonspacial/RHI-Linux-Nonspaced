@@ -30,6 +30,16 @@ public sealed partial class RtxEncoreDeploymentService
     /// <summary>#280: <c>rtx-encore.jsonc</c> beside RHI's RTX Encore (its own folder), or null when it is not installed.</summary>
     public string? ConfigPath(DetectedGame game) => GetRecord(game) is { } record ? Path.Combine(ModDirectory(record), RtxEncoreConfig.FileName) : null;
 
+    /// <summary>
+    /// w14 final review M5: one value in rtx-encore.jsonc beside RHI's RTX Encore (created when missing), journaled with
+    /// RTX Encore's record as the commit point; a file it creates is listed so removal takes it while unchanged.
+    /// </summary>
+    public Task<ComponentOperationResult> SetConfigValueAsync(DetectedGame game, string section, string key, string value, CancellationToken cancellationToken = default)
+        => ConfigPath(game) is not { } path
+            ? Task.FromResult(ComponentOperationResult.Fail(ComponentSettingsFile.NotInstalledPrefix + DisplayName))
+            : ComponentSettingsFile.WriteAsync(_journal, _records, game, ManagedComponentKind.RtxEncore, DisplayName, path,
+                () => RtxEncoreConfig.SetInFile(path, section, key, value), cancellationToken);
+
     public static string? RecommendedName(DetectedGame game)
         => RtxEncoreNames.Canonical(game.RtxEncoreRecommendedDllName) is { } name && !RtxEncoreNames.IsAsi(name) ? name : null;
 }

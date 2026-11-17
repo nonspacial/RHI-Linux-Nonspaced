@@ -92,6 +92,10 @@ public sealed class HsfPresenter(LinuxManagedComponentService components)
     public async Task<string?> PrepareGearAsync(MainWindowViewModel vm)
     {
         if (vm.SelectedGame is not { } game || components.Hsf is not { } hsf) return null;
+        // w14 final review m11: a journaled change behind the operation gate like every other; while another operation runs
+        // the ⚙ just opens (the order is fixed the next time it opens).
+        using var op = vm.Operations.TryBegin("component", cancellable: false);
+        if (op is null) return null;
         var result = await hsf.KeepLaunchpadFirstAsync(game);
         return result.Success && result.Message == "moved" ? T("Hsf.LaunchpadMoved") : null;
     }

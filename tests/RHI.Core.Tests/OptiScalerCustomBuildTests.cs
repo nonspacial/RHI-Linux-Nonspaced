@@ -313,6 +313,30 @@ public sealed partial class OptiScalerCustomBuildTests : IDisposable
         Assert.Contains("[Upscalers]", File.ReadAllText(ini), StringComparison.Ordinal); // the template's text, not the package's (it has none)
     }
 
+    // w14 final review m6: a Replace that fails after moving the old build aside puts it back.
+    [Fact]
+    public async Task Replace_ThatFailsAtTheSwap_PutsThePreviousBuildBack()
+    {
+        var build = (await Import(WriteBuild(Path.Combine(_root, "swap-v1"), os10: true, marker: "one"), "Swap")).Build!;
+        _store.BeforeSwapForTesting = () => throw new IOException("disk full");
+
+        var replaced = await _store.ImportAsync(WriteBuild(Path.Combine(_root, "swap-v2"), os10: true, marker: "two"), "Swap", build.Variant,
+            new HttpClient(new LinkHandler()), new ZipExtractor());
+
+        Assert.Null(replaced.Build);
+        Assert.Equal(OptiScalerCustomBuildStore.CouldNotAddPrefix + "disk full", replaced.Error);
+        Assert.Equal("one", File.ReadAllText(Path.Combine(OptiScalerCustomBuilds.Get(build.Variant)!.Directory, "marker.dll")));
+        Assert.False(Directory.Exists(Path.Combine(Path.GetDirectoryName(OptiScalerCustomBuilds.Get(build.Variant)!.Directory)!) + ".old"));
+    }
+
+    // Nit (log redaction): a signed link is logged up to its path only.
+    [Theory]
+    [InlineData("https://cdn.example.com/attachments/1/2/OptiScaler.zip?ex=abc&hm=secret", "https://cdn.example.com/attachments/1/2/OptiScaler.zip?…")]
+    [InlineData("https://github.com/a/b/releases/download/v1/x.7z", "https://github.com/a/b/releases/download/v1/x.7z")]
+    [InlineData("/home/me/build.zip", "/home/me/build.zip")]
+    public void LinksInTheLog_StopAtTheirPath(string source, string logged)
+        => Assert.Equal(logged, OptiScalerCustomBuildStore.ForLog(source));
+
     // ── Version switch (#273: presets carry the version) ─────────────────────
 
     [Fact]
@@ -331,7 +355,8 @@ public sealed partial class OptiScalerCustomBuildTests : IDisposable
 
         Assert.True(switched.Success, switched.Message);
         Assert.StartsWith(LinuxManagedComponentService.SwitchedPrefix + "Custom: Build A → Custom: Build B.", switched.Message, StringComparison.Ordinal);
-        Assert.EndsWith(LinuxManagedComponentService.SwitchKeptSuffix + "1", switched.Message, StringComparison.Ordinal);
+        Assert.Contains(LinuxManagedComponentService.SwitchKeptSuffix + "1 ", switched.Message, StringComparison.Ordinal);
+        Assert.EndsWith("installed from the custom build in RHI's data folder as dxgi.dll.", switched.Message, StringComparison.Ordinal); // the install's own line stays
         Assert.Equal(b.Variant, managed.GetInstalledOptiScalerVariant(game));
         Assert.Contains("B", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "marker.dll")), StringComparison.Ordinal);
         Assert.Equal("true", OptiScalerIniEditor.GetValueInFile(ini, "Plugins", "LoadReshade")); // the user's value

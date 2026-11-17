@@ -16,7 +16,7 @@ namespace RHI.Core.Tests;
 /// write, and the commit-point agreement at every ledger write.
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("linux")]
-public sealed class MfgAdaUnlockUpdateTests : IDisposable
+public sealed partial class MfgAdaUnlockUpdateTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-mfg-ada-tests-" + Guid.NewGuid().ToString("N"));
 
