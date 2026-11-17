@@ -46,7 +46,13 @@ public sealed class SteamArtworkService
     private readonly Func<DateTime> _utcNow;
     private readonly SemaphoreSlim _gate = new(4); // parallel downloads, as upstream
     private readonly ConcurrentDictionary<string, Task<string?>> _inFlight = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<int, Task<IReadOnlyDictionary<string, string>?>> _assetLookups = new();
+    private readonly ConcurrentDictionary<int, Task<AssetLookup>> _assetLookups = new();
+
+    // w14 final review m17: what a download or a store lookup learnt. Only an answer from Steam ("not there", an empty store
+    // result) is a miss; a network error or a cancel says nothing about the game and leaves no marker.
+    private enum Fetch { Got, NotThere, Failed }
+
+    private sealed record AssetLookup(IReadOnlyDictionary<string, string>? Assets, bool Answered);
 
     private readonly Func<int, ArtworkKind, string?> _steamLibraryCache;
 
@@ -250,18 +256,30 @@ public sealed class SteamArtworkService
         try
         {
             var dest = LocalPath(appId, kind);
+            var confirmed = true; // every source answered "not there"
             foreach (var url in CdnLinks(appId, kind))
-                if (await TryDownloadAsync(url, dest, cancellationToken).ConfigureAwait(false)) return dest;
+            {
+                var fetch = await TryDownloadAsync(url, dest, cancellationToken).ConfigureAwait(false);
+                if (fetch == Fetch.Got) return dest;
+                confirmed &= fetch == Fetch.NotThere;
+            }
 
             // Newer games use hashed asset paths only the store API knows. The wide header is the banner's last resort;
             // covers without one show the game's name instead (upstream).
-            var assets = await _assetLookups.GetOrAdd(appId, id => LookupAssetsAsync(id, cancellationToken)).ConfigureAwait(false);
+            var lookup = await _assetLookups.GetOrAdd(appId, id => LookupAssetsAsync(id, cancellationToken)).ConfigureAwait(false);
+            if (!lookup.Answered) _assetLookups.TryRemove(appId, out _); // m17: a failed lookup is asked again next time
+            confirmed &= lookup.Answered;
             var names = kind == ArtworkKind.Hero ? new[] { "library_hero", "header" } : new[] { "library_capsule" };
-            if (assets is not null)
+            if (lookup.Assets is { } assets)
                 foreach (var name in names)
-                    if (assets.TryGetValue(name, out var url) && await TryDownloadAsync(url, dest, cancellationToken).ConfigureAwait(false))
-                        return dest;
+                {
+                    if (!assets.TryGetValue(name, out var url)) continue;
+                    var fetch = await TryDownloadAsync(url, dest, cancellationToken).ConfigureAwait(false);
+                    if (fetch == Fetch.Got) return dest;
+                    confirmed &= fetch == Fetch.NotThere;
+                }
 
+            if (!confirmed || cancellationToken.IsCancellationRequested) return null; // m17: offline or cancelled: no marker
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(miss)!);
@@ -278,26 +296,32 @@ public sealed class SteamArtworkService
         finally { _gate.Release(); }
     }
 
-    private async Task<bool> TryDownloadAsync(string url, string dest, CancellationToken cancellationToken)
+    // Got: saved. NotThere: Steam answered without art (404/403, a web page or a file that is no image). Failed: no answer
+    // (offline, a timeout, a file that could not be written).
+    private async Task<Fetch> TryDownloadAsync(string url, string dest, CancellationToken cancellationToken)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             using var download = await TrustedDownload.DownloadToTempAsync(_http, url, dest, DownloadSources.SteamArtwork,
                 cancellationToken: cancellationToken, onResponse: RequireImage).ConfigureAwait(false);
-            if (download.Length < 1024 || !LooksLikeImage(download.Path)) return false;
+            if (download.Length < 1024 || !LooksLikeImage(download.Path)) return Fetch.NotThere;
             download.MoveTo(dest);
-            return true;
+            return Fetch.Got;
         }
         catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)
         {
-            return false;
+            return Fetch.NotThere;
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or InvalidDataException
-                                       or UntrustedDownloadException)
+        catch (InvalidDataException ex)
+        {
+            AppLog.Warn("artwork", $"Steam art {url} is not an image", ex);
+            return Fetch.NotThere;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or UntrustedDownloadException)
         {
             AppLog.Warn("artwork", $"Steam art {url} not downloaded", ex);
-            return false;
+            return Fetch.Failed;
         }
     }
 
@@ -316,20 +340,20 @@ public sealed class SteamArtworkService
         return "https://api.steampowered.com/IStoreBrowseService/GetItems/v1?input_json=" + Uri.EscapeDataString(input);
     }
 
-    private async Task<IReadOnlyDictionary<string, string>?> LookupAssetsAsync(int appId, CancellationToken cancellationToken)
+    private async Task<AssetLookup> LookupAssetsAsync(int appId, CancellationToken cancellationToken)
     {
         try
         {
             var json = await TrustedDownload.GetStringAsync(_http, AssetLookupUrl(appId), DownloadSources.SteamWebApi,
                 "application/json", cancellationToken).ConfigureAwait(false);
-            return ParseAssets(json);
+            return new AssetLookup(ParseAssets(json), Answered: true); // no assets in Steam's answer: a real "none"
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidDataException or UntrustedDownloadException)
         {
             AppLog.Warn("artwork", $"Steam store assets for {appId} not read", ex);
-            return null;
+            return new AssetLookup(null, Answered: false);
         }
-        catch (OperationCanceledException) { return null; }
+        catch (OperationCanceledException) { return new AssetLookup(null, Answered: false); }
     }
 
     /// <summary>
@@ -352,7 +376,7 @@ public sealed class SteamArtworkService
                     result[name] = "https://shared.akamai.steamstatic.com/store_item_assets/" + format.Replace("${FILENAME}", f, StringComparison.Ordinal);
             return result;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException) // review nit: JSON of another shape
         {
             return null;
         }

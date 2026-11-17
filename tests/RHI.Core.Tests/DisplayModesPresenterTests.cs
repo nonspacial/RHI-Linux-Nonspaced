@@ -119,7 +119,7 @@ public sealed class DisplayModesPresenterTests : IDisposable
         dm.Enabled = true;
         dm.SetModeValue("tv", DisplayModeItemKeys.DriverFpsCap, "60");
 
-        var (switched, running) = await dm.SwitchAllAsync("tv");
+        var (switched, running, _) = await dm.SwitchAllAsync("tv");
         Assert.Equal((1, 1), (switched, running));
         Assert.Equal("tv", dm.ActiveModeId(alpha));
         Assert.Null(dm.ActiveModeId(beta));
@@ -127,7 +127,7 @@ public sealed class DisplayModesPresenterTests : IDisposable
         Assert.Equal(60u, fx.Library.Load().FpsLimits![LinuxGameLibraryStore.GameKey(alpha)]);
 
         probe.Running = null;
-        Assert.Equal((1, 0), await dm.SwitchAllAsync(null)); // Off: only games in a mode
+        Assert.Equal((1, 0, 0), await dm.SwitchAllAsync(null)); // Off: only games in a mode
         Assert.Null(dm.ActiveModeId(alpha));
         Assert.Null(fx.Library.Load().FpsLimits);
     }

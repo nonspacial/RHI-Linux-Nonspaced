@@ -131,7 +131,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             StatusText = UiLocalizationService.UpdateAllSummary(result) + Shell.F5Driver.UpdateAllNote(games, result); // w11/nr-gpu hook (#231)
             // #292 (upstream: a manual check restarts the countdown): the next automatic pass is a whole interval away.
             RecordPass();
-            Shell.TopBar.UpdateAllRan(); // w14/layouts-a (#303): the top bar's count starts again
+            UpdateAllFinished(); // w14/layouts-a (#303): the top bar's count starts again
             _ = RequestCheckPass(); // w14/layouts-c: and is counted again from what is left
             if (_backgroundUpdateCts is not null) RestartBackgroundUpdateLoop(runImmediate: false);
         }
@@ -238,6 +238,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             {
                 await InvalidateAllAndReprobeSelectedAsync();
                 StatusText = UiLocalizationService.UpdateAllSummary(result) + Shell.F5Driver.UpdateAllNote(games, result) + T("Vm.Background"); // w11/nr-gpu hook (#231)
+                Interlocked.Increment(ref _checkGeneration); // m16: a pass that started before it is older than what it updated
                 _ = RequestCheckPass(); // w14/layouts-c: the top bar's count follows what was updated
             }
         }
@@ -460,11 +461,25 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     /// </summary>
     internal async Task RunCheckOnlyPassAsync(CancellationToken cancellationToken)
     {
-        await Host.Operations.WhenIdleAsync(cancellationToken);
-        var games = Host.UnattendedGames.ToArray();
-        using var activity = Shell.BeginActivity("Sb.ActCheckingLibrary");
-        var result = await Task.Run(() => _updateAll.CheckOnlyAsync(games, IndexForCheckAsync, GitHubRateLimited, cancellationToken), cancellationToken);
-        if (result is null) return; // one is running already
+        LinuxUpdateCheckPassResult? result;
+        while (true)
+        {
+            await Host.Operations.WhenIdleAsync(cancellationToken);
+            // w14 final review m16: an Update All that finishes while this pass runs makes its findings older than the
+            // count Update All started again; they are dropped and the pass runs again.
+            var generation = Volatile.Read(ref _checkGeneration);
+            var games = Host.UnattendedGames.ToArray();
+            // w14 final review M7: the selection analysis's file indexes are read here, on the caller's thread, as the
+            // Follow newest pass does; the check itself runs off it.
+            var cached = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            foreach (var game in games)
+                if (Host.Session.CachedFiles(game) is { } files) cached[Key(game)] = files;
+            using (Shell.BeginActivity("Sb.ActCheckingLibrary"))
+                result = await Task.Run(() => _updateAll.CheckOnlyAsync(games, (game, token) => IndexForCheckAsync(game, cached, token), GitHubRateLimited, cancellationToken), cancellationToken);
+            if (result is null) return; // one is running already (it sees the newer generation and runs again)
+            if (CheckPassFinishedForTesting is { } finished) await finished();
+            if (generation == Volatile.Read(ref _checkGeneration)) break;
+        }
         LastCheckPass = Now();
         Shell.TopBar.NoteCheckPass(result.Games.ToDictionary(pair => LinuxGameLibraryStore.GameKey(pair.Key), pair => pair.Value, StringComparer.OrdinalIgnoreCase),
             result.NotChecked);
@@ -472,11 +487,25 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         if (result.CutShort) StatusText = TF("Top.CheckCutShortStatus", result.NotChecked);
     }
 
-    // The file index a check needs (RenoDX finds its add-on by it): the selection analysis's, else built off the UI thread.
-    private async Task<IReadOnlyList<string>> IndexForCheckAsync(DetectedGame game, CancellationToken cancellationToken)
+    private int _checkGeneration;
+
+    /// <summary>Tests: runs after a check pass's checks and before its findings are noted.</summary>
+    internal Func<Task>? CheckPassFinishedForTesting { get; set; }
+
+    /// <summary>An Update All finished: the top bar's count starts again, and a check pass running now is older (m16).</summary>
+    internal void UpdateAllFinished()
+    {
+        Interlocked.Increment(ref _checkGeneration);
+        Shell.TopBar.UpdateAllRan();
+    }
+
+    // The file index a check needs (RenoDX finds its add-on by it): the selection analysis's (read before the pass), else
+    // built off the UI thread.
+    private static async Task<IReadOnlyList<string>> IndexForCheckAsync(DetectedGame game, IReadOnlyDictionary<string, IReadOnlyList<string>> cachedIndexes,
+        CancellationToken cancellationToken)
     {
         if (!game.HasConfirmedPatchTarget) return Array.Empty<string>();
-        if (Host.Session.CachedFiles(game) is { } cached) return cached;
+        if (cachedIndexes.TryGetValue(Key(game), out var cached)) return cached;
         if (string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath)) return Array.Empty<string>();
         return await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, cancellationToken), cancellationToken);
     }

@@ -128,6 +128,50 @@ public sealed class InstallFolderMoveViewModelTests : IDisposable
         }
     }
 
+    // w14 final review m15: a reset saved before its move question was answered (RHI closed there) leaves the installs in
+    // the chosen folder and the game on its detected one. Reset, and Edit game, still offer to move them from there.
+    [Fact]
+    public async Task AResetThatStoppedBeforeItsQuestion_LeavesInstallsThatResetCanStillMove()
+    {
+        var (fx, _, root, bin, binExe) = await ManualGameAsync(answer: true);
+        using var __ = fx;
+        var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(binExe, root, bin, null, null);
+        Assert.True(saved, message);
+        await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromSeconds(60));
+        var addon = Addon(fx, fx.Vm.SelectedGame!, bin);
+        var state = fx.Library.Load(); // the reset's save landed; the move question never came
+        state.GameEdits.Clear();
+        fx.Library.Save(state);
+        await fx.Vm.RefreshCommand.ExecuteAsync(null);
+        await fx.WhenSelectionProbeIdleAsync(TimeSpan.FromSeconds(60));
+        Assert.Equal(root, fx.Vm.SelectedGame!.BinaryDirectory);
+
+        var (reset, resetMessage) = await fx.Vm.ManualGames.ResetSelectedGameEditAsync();
+
+        Assert.True(reset, resetMessage);
+        Assert.StartsWith($"Moved Tunic's mods to {root}.", resetMessage, StringComparison.Ordinal);
+        Assert.False(File.Exists(addon));
+        Assert.True(File.Exists(Path.Combine(root, "dof.addon64")));
+        Assert.Equal(root, Assert.Single(fx.Records.All()).BinaryDirectory);
+    }
+
+    [Fact]
+    public async Task EditGame_MovesInstallsLeftInAnEarlierFolder()
+    {
+        var (fx, _, root, bin, _) = await ManualGameAsync(answer: true);
+        using var __ = fx;
+        var addon = Addon(fx, fx.Vm.SelectedGame!, bin); // left in bin; the game uses its root
+        var other = Directory.CreateDirectory(Path.Combine(root, "other")).FullName;
+        var otherExe = Path.Combine(other, "Tunic.exe");
+        File.WriteAllBytes(otherExe, [0x4D, 0x5A]);
+
+        var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(otherExe, root, other, null, null);
+
+        Assert.True(saved, message);
+        Assert.False(File.Exists(addon));
+        Assert.True(File.Exists(Path.Combine(other, "dof.addon64")));
+    }
+
     private DetectedGame ManifestMoved(string name, int appId, out string oldDir, out string newDir)
     {
         var root = Directory.CreateDirectory(Path.Combine(_root, name)).FullName;

@@ -350,6 +350,7 @@ public sealed partial class LinuxManagedComponentService
             ManagedComponentKind.GitcUplift when GitcUplift is not null => GitcUplift.RemoveAsync(game, cancellationToken), // #274
             // w14/nr-2 rows
             ManagedComponentKind.Dlss5Tool when Dlss5Tool is not null => Dlss5Tool.RemoveAsync(game, cancellationToken), // #317
+            ManagedComponentKind.Hsf when Hsf is not null => Hsf.RemoveAsync(game, cancellationToken), // w14 final review M1 (#277)
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

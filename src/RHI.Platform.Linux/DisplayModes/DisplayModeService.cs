@@ -19,23 +19,46 @@ public sealed class DisplayModeService(DisplayModeStore store, IDisplayModeIo io
     /// </summary>
     public Func<DisplayModeContext, string, string?>? GlobalValue { get; set; }
 
-    /// <summary>What happened to one item.</summary>
-    public sealed record ItemResult(DisplayModeItem Item, bool Written, string? Value, DisplayModeUnavailable Unavailable, string? Problem);
+    /// <summary>
+    /// What happened to one item. <paramref name="NotRestored"/> (Off): it has a value from before modes that could not
+    /// be written back (its file could not be written, or its folder cannot be written now).
+    /// </summary>
+    public sealed record ItemResult(DisplayModeItem Item, bool Written, string? Value, DisplayModeUnavailable Unavailable, string? Problem, bool NotRestored = false);
 
-    /// <summary>Result of one switch (<see cref="ModeId"/> null = turned off).</summary>
+    /// <summary>
+    /// Result of one switch (<see cref="ModeId"/> null = in no mode). w14 final review M3/m7: a switch stopped by a file
+    /// it could not read has <see cref="Error"/> (what it had written was put back, nothing was recorded, the game is in
+    /// the mode it was in); an Off that could not write every value back stays in its mode (<see cref="NotRestored"/>).
+    /// </summary>
     public sealed record SwitchResult(string GameName, string? ModeId, string ModeName, IReadOnlyList<ItemResult> Items)
     {
-        public bool TurnedOff => ModeId is null;
+        /// <summary>The file read that stopped the switch (everything it wrote was put back), or null.</summary>
+        public string? Error { get; init; }
+        /// <summary>Not everything that stopped the switch could be put back (the files it names keep the new value).</summary>
+        public string? RollbackProblem { get; init; }
+        /// <summary>The switch asked for Off.</summary>
+        public bool OffRequested { get; init; }
+        public bool TurnedOff => OffRequested && ModeId is null && Error is null && !NotRestored.Any();
+        /// <summary>Off kept the game in its mode: these values from before modes were not written back (try Off again).</summary>
+        public IEnumerable<ItemResult> NotRestored => Items.Where(i => i.NotRestored);
         public IEnumerable<ItemResult> Written => Items.Where(i => i.Written);
         /// <summary>Items that had a value to write and could not take it.</summary>
         public IEnumerable<ItemResult> Failed => Items.Where(i => !i.Written && i.Problem is not null);
         /// <summary>True when one of <paramref name="targets"/> was written (the page reloads those controls).</summary>
-        public bool WroteTo(DisplayModeTarget target) => Written.Any(i => i.Item.Target == target);
+        public bool WroteTo(DisplayModeTarget target) => Error is null && Written.Any(i => i.Item.Target == target);
+    }
+
+    // What a game goes back to for an item: Has = false: nothing (no global setting, nothing recorded); Value null = it had
+    // none (remove it).
+    private readonly record struct Normal(bool Has, string? Value)
+    {
+        public static readonly Normal None = new(false, null);
     }
 
     /// <summary>
     /// Switches the game to <paramref name="targetModeId"/>. Switching to the mode it is already in writes that mode's
-    /// values again (nothing is remembered, since nothing is being left).
+    /// values again (nothing is remembered, since nothing is being left). A file that cannot be read stops the switch:
+    /// what it wrote is put back and nothing is recorded (w14 final review m7).
     /// </summary>
     public async Task<SwitchResult> SwitchAsync(DisplayModeContext ctx, string targetModeId, CancellationToken cancellationToken = default)
     {
@@ -44,34 +67,46 @@ public sealed class DisplayModeService(DisplayModeStore store, IDisplayModeIo io
         {
             var key = ctx.Key;
             var from = store.ActiveModeId(key); // null = Off
+            var pending = store.HasRestorePending(key);
             var leaving = from is null || !from.Equals(targetModeId, StringComparison.OrdinalIgnoreCase);
             var results = new List<ItemResult>();
             var entries = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-            foreach (var item in Items(key))
+            var originals = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            var written = new List<(DisplayModeItem Item, string? Before)>();
+            try
             {
-                var reason = io.Unavailable(ctx, item);
-                if (reason != DisplayModeUnavailable.None)
+                foreach (var item in Items(key))
                 {
-                    entries[item.Key] = null; // not readable in this mode: nothing to remember when leaving it
-                    results.Add(new ItemResult(item, false, null, reason, null));
-                    continue;
-                }
-                var current = io.Read(ctx, item);
-                if (leaving && current is not null) RememberLeaving(key, from, item, current);
+                    var reason = io.Unavailable(ctx, item);
+                    if (reason != DisplayModeUnavailable.None)
+                    {
+                        entries[item.Key] = null; // not readable in this mode: nothing to remember when leaving it
+                        results.Add(new ItemResult(item, false, null, reason, null));
+                        continue;
+                    }
+                    var current = io.Read(ctx, item);
+                    if (leaving) RememberLeaving(originals, key, from is null && !pending, item, current);
 
-                // The mode's value, else the game's normal value (a mode only needs what differs).
-                // A value the game already has is not written again (upstream re-writes it; the file ends the same).
-                var value = store.Effective(key, targetModeId, item.Key) ?? NormalValue(ctx, item);
-                if (value is null || value.Equals(current, StringComparison.Ordinal))
-                {
-                    entries[item.Key] = current; // nothing to write
-                    results.Add(new ItemResult(item, false, null, DisplayModeUnavailable.None, null));
-                    continue;
+                    // The mode's value, else the game's normal value (a mode only needs what differs).
+                    // A value the game already has is not written again (upstream re-writes it; the file ends the same).
+                    var value = store.Effective(key, targetModeId, item.Key) is { } modeValue ? new Normal(true, modeValue) : NormalFor(ctx, item, originals);
+                    if (!value.Has || string.Equals(value.Value, current, StringComparison.Ordinal))
+                    {
+                        entries[item.Key] = current; // nothing to write
+                        results.Add(new ItemResult(item, false, null, DisplayModeUnavailable.None, null));
+                        continue;
+                    }
+                    var error = await io.WriteAsync(ctx, item, value.Value, cancellationToken).ConfigureAwait(false);
+                    if (error is null) written.Add((item, current));
+                    entries[item.Key] = error is null ? io.Read(ctx, item) ?? value.Value : current;
+                    results.Add(new ItemResult(item, error is null, value.Value, DisplayModeUnavailable.None, error));
                 }
-                var error = await io.WriteAsync(ctx, item, value, cancellationToken).ConfigureAwait(false);
-                entries[item.Key] = error is null ? io.Read(ctx, item) ?? value : current;
-                results.Add(new ItemResult(item, error is null, value, DisplayModeUnavailable.None, error));
             }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return await RolledBackAsync(ctx, from, results, written, ex).ConfigureAwait(false);
+            }
+            foreach (var (item, value) in originals) store.RecordOriginal(key, item, value);
             store.SetActive(key, targetModeId);
             store.SetEntries(key, entries);
             return new SwitchResult(ctx.GameName, targetModeId, store.NameOf(targetModeId) ?? targetModeId, results);
@@ -81,7 +116,9 @@ public sealed class DisplayModeService(DisplayModeStore store, IDisplayModeIo io
 
     /// <summary>
     /// Turns the game's mode off: writes its normal values (the global setting, else what it had before it entered a
-    /// mode). Already off = nothing to do.
+    /// mode; a key or file it did not have goes again). Already off = nothing to do. w14 final review M3: the game is set
+    /// to Off only once every value from before modes is back; else it stays in its mode with those values kept, and
+    /// Off can be tried again. A file that cannot be read stops it, as a switch (m7).
     /// </summary>
     public async Task<SwitchResult> TurnOffAsync(DisplayModeContext ctx, CancellationToken cancellationToken = default)
     {
@@ -90,48 +127,101 @@ public sealed class DisplayModeService(DisplayModeStore store, IDisplayModeIo io
         {
             var key = ctx.Key;
             var from = store.ActiveModeId(key);
+            var pending = store.HasRestorePending(key);
             var results = new List<ItemResult>();
-            if (from is null) return new SwitchResult(ctx.GameName, null, "Off", results);
-            foreach (var item in Items(key))
+            if (from is null && !pending) return new SwitchResult(ctx.GameName, null, "Off", results) { OffRequested = true };
+            var originals = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            var written = new List<(DisplayModeItem Item, string? Before)>();
+            // A pending restore is a mode left without a switch: the items listed are the ones it recorded.
+            var items = pending ? Items(key).Concat(RecordedItems(key)).Distinct().ToList() : Items(key).ToList();
+            try
             {
-                var reason = io.Unavailable(ctx, item);
-                if (reason != DisplayModeUnavailable.None)
+                foreach (var item in items)
                 {
-                    results.Add(new ItemResult(item, false, null, reason, null));
-                    continue;
+                    var reason = io.Unavailable(ctx, item);
+                    if (reason != DisplayModeUnavailable.None)
+                    {
+                        // A folder RHI cannot write to now still has the values to put back; a component that is gone took
+                        // its file with it.
+                        var stuck = reason == DisplayModeUnavailable.NoGameFolder && store.TryGetOriginal(key, item.Key, out _);
+                        results.Add(new ItemResult(item, false, null, reason, null, NotRestored: stuck));
+                        continue;
+                    }
+                    var current = io.Read(ctx, item);
+                    RememberLeaving(originals, key, fromOff: false, item, current);
+                    var value = NormalFor(ctx, item, originals);
+                    if (!value.Has || string.Equals(value.Value, current, StringComparison.Ordinal))
+                    {
+                        results.Add(new ItemResult(item, false, null, DisplayModeUnavailable.None, null)); // no normal value, or it has it
+                        continue;
+                    }
+                    var error = await io.WriteAsync(ctx, item, value.Value, cancellationToken).ConfigureAwait(false);
+                    if (error is null) written.Add((item, current));
+                    results.Add(new ItemResult(item, error is null, value.Value, DisplayModeUnavailable.None, error, NotRestored: error is not null));
                 }
-                var current = io.Read(ctx, item);
-                if (current is not null) RememberLeaving(key, from, item, current);
-                var value = NormalValue(ctx, item);
-                if (value is null || value.Equals(current, StringComparison.Ordinal))
-                {
-                    results.Add(new ItemResult(item, false, null, DisplayModeUnavailable.None, null)); // no normal value, or it has it
-                    continue;
-                }
-                var error = await io.WriteAsync(ctx, item, value, cancellationToken).ConfigureAwait(false);
-                results.Add(new ItemResult(item, error is null, value, DisplayModeUnavailable.None, error));
             }
-            store.SetOff(key);
-            return new SwitchResult(ctx.GameName, null, "Off", results);
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                var failed = await RolledBackAsync(ctx, from, results, written, ex).ConfigureAwait(false);
+                return failed with { OffRequested = true };
+            }
+            foreach (var (item, value) in originals) store.RecordOriginal(key, item, value);
+            var off = results.All(r => !r.NotRestored);
+            if (off) store.SetOff(key);
+            return new SwitchResult(ctx.GameName, off ? null : from, off ? "Off" : store.NameOf(from) ?? from ?? "Off", results) { OffRequested = true };
         }
         finally { _gate.Release(); }
     }
 
-    /// <summary>
-    /// Before a new value is written: coming from Off, the current value is the game's value from before modes. Leaving a
-    /// mode, a value is remembered only for an item that was not recorded on entry (it started being swapped while in the
-    /// mode): that is the game's normal value. A value it still has from the mode it is leaving is not that mode's to keep.
-    /// </summary>
-    private void RememberLeaving(string key, string? from, DisplayModeItem item, string current)
+    // m7: a read failed part-way. What this pass wrote goes back (newest first, each through its own journaled write),
+    // nothing is recorded, and the game stays in the mode it was in.
+    private async Task<SwitchResult> RolledBackAsync(DisplayModeContext ctx, string? from, List<ItemResult> results,
+        List<(DisplayModeItem Item, string? Before)> written, Exception ex)
     {
-        if (from is null)
+        var notPutBack = new List<string>();
+        for (var i = written.Count - 1; i >= 0; i--)
         {
-            store.SetOriginal(key, item.Key, current);
+            var (item, before) = written[i];
+            string? problem;
+            try { problem = await io.WriteAsync(ctx, item, before, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception putBack) when (putBack is IOException or UnauthorizedAccessException) { problem = putBack.Message; }
+            if (problem is not null) notPutBack.Add(item.Key + ": " + problem);
+        }
+        RHI.Core.Services.AppLog.Warn("display-modes", $"Switching {ctx.GameName} stopped: a file could not be read", ex);
+        var items = results.Select(r => r with { Written = false }).ToList();
+        return new SwitchResult(ctx.GameName, from, store.NameOf(from) ?? from ?? "Off", items)
+        {
+            Error = ex.Message,
+            RollbackProblem = notPutBack.Count == 0 ? null : string.Join("; ", notPutBack)
+        };
+    }
+
+    /// <summary>
+    /// Before a new value is written: coming from Off, the current value is the game's value from before modes (none when
+    /// it has none: m8). Leaving a mode, a value is remembered only for an item that was not recorded on entry (it started
+    /// being swapped while in the mode): that is the game's normal value. A value it still has from the mode it is leaving
+    /// is not that mode's to keep. Recorded in <paramref name="originals"/> and saved once the switch is through.
+    /// </summary>
+    private void RememberLeaving(Dictionary<string, string?> originals, string key, bool fromOff, DisplayModeItem item, string? current)
+    {
+        if (fromOff)
+        {
+            originals[item.Key] = current;
             return;
         }
-        if (!store.TryGetEntry(key, item.Key, out _) && store.OriginalValue(key, item.Key) is null)
-            store.SetOriginal(key, item.Key, current);
+        if (!store.TryGetEntry(key, item.Key, out _) && !store.TryGetOriginal(key, item.Key, out _) && current is not null)
+            originals[item.Key] = current;
     }
+
+    private Normal NormalFor(DisplayModeContext ctx, DisplayModeItem item, IReadOnlyDictionary<string, string?> originals)
+    {
+        if (GlobalValue?.Invoke(ctx, item.Key) is { } global) return new Normal(true, global);
+        if (originals.TryGetValue(item.Key, out var pending)) return new Normal(true, pending);
+        return store.TryGetOriginal(ctx.Key, item.Key, out var original) ? new Normal(true, original) : Normal.None;
+    }
+
+    private IEnumerable<DisplayModeItem> RecordedItems(string key)
+        => DisplayModeItems.All.Where(item => store.TryGetOriginal(key, item.Key, out _));
 
     /// <summary>The game's normal value for an item: the global setting, else its value from before modes. Null = none.</summary>
     public string? NormalValue(DisplayModeContext ctx, DisplayModeItem item)
@@ -148,10 +238,14 @@ public sealed class DisplayModeService(DisplayModeStore store, IDisplayModeIo io
         try
         {
             if (io.Unavailable(ctx, item) != DisplayModeUnavailable.None) return null; // the dialog already says why
-            if (value.Equals(io.Read(ctx, item), StringComparison.Ordinal)) return null;
-            var error = await io.WriteAsync(ctx, item, value, cancellationToken).ConfigureAwait(false);
-            if (error is null && store.IsManaged(ctx.Key)) store.SetEntry(ctx.Key, item.Key, io.Read(ctx, item) ?? value);
-            return error;
+            try
+            {
+                if (value.Equals(io.Read(ctx, item), StringComparison.Ordinal)) return null;
+                var error = await io.WriteAsync(ctx, item, value, cancellationToken).ConfigureAwait(false);
+                if (error is null && store.IsManaged(ctx.Key)) store.SetEntry(ctx.Key, item.Key, io.Read(ctx, item) ?? value);
+                return error;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ex.Message; } // m7: a file that cannot be read
         }
         finally { _gate.Release(); }
     }

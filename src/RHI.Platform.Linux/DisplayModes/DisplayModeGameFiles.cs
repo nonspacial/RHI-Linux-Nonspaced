@@ -41,6 +41,11 @@ public sealed class DisplayModeGameFiles(LinuxDeploymentRecordStore records, Dep
         }
     }
 
+    /// <summary>
+    /// The game's value, or null when it has none: the key is not in the file, or (Display Commander) there is no file.
+    /// w14 final review m8: a missing key reads as "none", not as a value, so Off can remove it again. Throws an
+    /// <see cref="IOException"/> when a file cannot be read.
+    /// </summary>
     public string? Read(DisplayModeContext ctx, DisplayModeItem item)
     {
         var game = ctx.Game;
@@ -56,7 +61,7 @@ public sealed class DisplayModeGameFiles(LinuxDeploymentRecordStore records, Dep
                     DisplayModeItemKeys.RsPreset => IniLines.Get(lines, "GENERAL", "PresetPath"),
                     DisplayModeItemKeys.RsOverlayKey => IniLines.Get(lines, "INPUT", "KeyOverlay"),
                     DisplayModeItemKeys.RsScreenshotKey => IniLines.Get(lines, "INPUT", "KeyScreenshot"),
-                    DisplayModeItemKeys.RsGamepadNav => IniLines.Get(lines, "INPUT", "GamepadNavigation") == "1" ? "1" : "0",
+                    DisplayModeItemKeys.RsGamepadNav => IniLines.Get(lines, "INPUT", "GamepadNavigation") is { } nav ? nav == "1" ? "1" : "0" : null,
                     _ => null
                 };
             case DisplayModeTarget.ReLimiterIni:
@@ -69,108 +74,61 @@ public sealed class DisplayModeGameFiles(LinuxDeploymentRecordStore records, Dep
             case DisplayModeTarget.DisplayCommanderIni:
                 var dc = UserIniService.AddonIniPath(game, ManagedComponentKind.DisplayCommander);
                 if (!File.Exists(dc)) return null; // a missing ini is no value, not 0
-                return double.TryParse(IniLines.Get(IniLines.Read(dc), DisplayCommanderSettingsService.Section, DisplayCommanderSettingsService.FpsLimitKey),
-                    NumberStyles.Float, CultureInfo.InvariantCulture, out var limit) && limit > 0
+                if (IniLines.Get(IniLines.Read(dc), DisplayCommanderSettingsService.Section, DisplayCommanderSettingsService.FpsLimitKey) is not { } text) return null;
+                return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var limit) && limit > 0
                     ? Math.Round(limit, 3).ToString("0.###", CultureInfo.InvariantCulture) : "0";
             default:
                 return null;
         }
     }
 
-    public async Task<string?> WriteAsync(DisplayModeContext ctx, DisplayModeItem item, string value, CancellationToken cancellationToken)
+    /// <summary>
+    /// Writes <paramref name="value"/>, or with null removes it (w14 final review m8: the game had none before modes — the
+    /// key goes, and a Display Commander ini that holds nothing else and no record lists goes too). Null on success, else
+    /// the problem. The files are read inside the journal scope (w14 final review m10), so what is written is planned from
+    /// what is on disk once the operation holds the game.
+    /// </summary>
+    public async Task<string?> WriteAsync(DisplayModeContext ctx, DisplayModeItem item, string? value, CancellationToken cancellationToken)
     {
         var game = ctx.Game;
         if (writeRefusal(game) is { } refused) return refused;
-        var bin = game.BinaryDirectory!;
-        var writes = new List<IniFileWrite>();
-        ManagedComponentKind owner;
-        try
+        if (item.Target == DisplayModeTarget.DisplayCommanderIni && value is not null
+            && DisplayCommanderSettingsService.Normalize(DisplayCommanderSettingsService.FpsLimitKey, value) is null)
+            return DisplayCommanderSettingsService.InvalidValuePrefix + value;
+        var owner = item.Target switch
         {
-            switch (item.Target)
-            {
-                case DisplayModeTarget.RenoDxIni:
-                {
-                    owner = ManagedComponentKind.RenoDX;
-                    var ini = XboxWriteGate.Checked(ReShadeIni(game) ?? throw new FileNotFoundException("ReShade.ini was not found.", bin));
-                    var lines = IniLines.Read(ini);
-                    if (RenoDxNitsIni.Write(lines, RenoDxNitsIni.KeyFor(item.Key), value)) writes.Add(ReShadeIniManager.PlannedWrite(ini, lines, bin, game.InstallPath));
-                    break;
-                }
-                case DisplayModeTarget.ReShadeIni:
-                {
-                    owner = ManagedComponentKind.ReShade;
-                    var main = XboxWriteGate.Checked(ReShadeIni(game) ?? throw new FileNotFoundException("ReShade.ini was not found.", bin));
-                    // The preset is the main file's; keys go into every ReShade*.ini of the game, as the ReShade ⚙ writes them.
-                    var files = item.Key == DisplayModeItemKeys.RsPreset ? [main] : new[] { main }.Concat(ReShadeGlobalSettingsApplier.NumberedInis(bin)).ToList();
-                    foreach (var file in files)
-                    {
-                        var lines = IniLines.Read(XboxWriteGate.Checked(file));
-                        var changed = item.Key switch
-                        {
-                            DisplayModeItemKeys.RsPreset => IniLines.Set(lines, "GENERAL", "PresetPath", value),
-                            DisplayModeItemKeys.RsOverlayKey => IniLines.Set(lines, "INPUT", "KeyOverlay", value),
-                            DisplayModeItemKeys.RsScreenshotKey => IniLines.Set(lines, "INPUT", "KeyScreenshot", value),
-                            DisplayModeItemKeys.RsGamepadNav => IniLines.Set(lines, "INPUT", "GamepadNavigation", value == "1" ? "1" : "0"),
-                            _ => false
-                        };
-                        if (changed) writes.Add(ReShadeIniManager.PlannedWrite(file, lines, bin, game.InstallPath));
-                    }
-                    break;
-                }
-                case DisplayModeTarget.ReLimiterIni:
-                {
-                    owner = ManagedComponentKind.ReLimiter;
-                    var roots = ReShadeGlobalSettingsApplier.GameRoots(game, bin);
-                    foreach (var file in UserIniService.ReLimiterInis(game))
-                    {
-                        var lines = IniLines.Read(XboxWriteGate.Checked(file));
-                        // target_fps 0 = off: the key goes, as ReLimiter's "Apply to all games" does.
-                        var changed = item.Key == DisplayModeItemKeys.UlOsdKey
-                            ? IniLines.Set(lines, ReLimiterSection, "osd_toggle_key", value)
-                            : value == "0" ? IniLines.Remove(lines, ReLimiterSection, "target_fps") : IniLines.Set(lines, ReLimiterSection, "target_fps", value);
-                        if (changed) writes.Add(IniLines.PlannedWrite(file, lines, roots));
-                    }
-                    break;
-                }
-                case DisplayModeTarget.DisplayCommanderIni:
-                {
-                    owner = ManagedComponentKind.DisplayCommander;
-                    if (DisplayCommanderSettingsService.Normalize(DisplayCommanderSettingsService.FpsLimitKey, value) is not { } fps)
-                        return DisplayCommanderSettingsService.InvalidValuePrefix + value;
-                    var file = XboxWriteGate.Checked(UserIniService.AddonIniPath(game, ManagedComponentKind.DisplayCommander));
-                    var lines = IniLines.Read(file);
-                    if (IniLines.Set(lines, DisplayCommanderSettingsService.Section, DisplayCommanderSettingsService.FpsLimitKey, fps))
-                        writes.Add(IniLines.PlannedWrite(file, lines, ReShadeGlobalSettingsApplier.GameRoots(game, bin)));
-                    break;
-                }
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(item), item.Target, "Not a game-file item.");
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            return ex.Message;
-        }
-        return writes.Count == 0 ? null : await WriteJournaledAsync(game, owner, item.Key, writes, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<string?> WriteJournaledAsync(DetectedGame game, ManagedComponentKind owner, string itemKey, IReadOnlyList<IniFileWrite> writes, CancellationToken cancellationToken)
-    {
+            DisplayModeTarget.RenoDxIni => ManagedComponentKind.RenoDX,
+            DisplayModeTarget.ReShadeIni => ManagedComponentKind.ReShade,
+            DisplayModeTarget.ReLimiterIni => ManagedComponentKind.ReLimiter,
+            DisplayModeTarget.DisplayCommanderIni => ManagedComponentKind.DisplayCommander,
+            _ => throw new ArgumentOutOfRangeException(nameof(item), item.Target, "Not a game-file item.")
+        };
         // Find hands out a copy; the ledger changes only through the stamped Upsert below.
         if (records.Find(game, owner) is not { } record) return null;
-        List<string> targets;
-        try { targets = writes.Select(w => AtomicFile.ResolveUserFileTarget(w.Path, w.Policy)).ToList(); } // refused before anything is written
+        try
+        {
+            // Nothing to change: no journal entry (looked at again inside the scope, which decides).
+            if (Plan(game, item, value, record).IsEmpty) return null;
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { return ex.Message; }
 
-        var (opened, refusal) = await DeploymentScope.BeginAsync(journal, $"Display mode {itemKey}: {game.Name}", game, owner, cancellationToken).ConfigureAwait(false);
+        var (opened, refusal) = await DeploymentScope.BeginAsync(journal, $"Display mode {item.Key}: {game.Name}", game, owner, cancellationToken).ConfigureAwait(false);
         if (refusal is not null) return refusal;
         await using var scope = opened!;
         try
         {
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            await scope.TrackAllAsync(targets, cancellationToken).ConfigureAwait(false);
-            IniLines.WriteAll(writes);
+            var plan = Plan(game, item, value, record);
+            if (plan.IsEmpty)
+            {
+                await scope.CommitAsync().ConfigureAwait(false);
+                return null;
+            }
+            var targets = plan.Writes.Select(w => AtomicFile.ResolveUserFileTarget(w.Path, w.Policy)).ToList();
+            await scope.TrackAllAsync(targets.Concat(plan.Deletes), cancellationToken).ConfigureAwait(false);
+            IniLines.WriteAll(plan.Writes);
             foreach (var target in targets) await scope.DeclareWrittenContentAsync(target, cancellationToken).ConfigureAwait(false);
+            foreach (var path in plan.Deletes) await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
             records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -180,6 +138,89 @@ public sealed class DisplayModeGameFiles(LinuxDeploymentRecordStore records, Dep
         }
         await scope.CommitAsync().ConfigureAwait(false);
         return null;
+    }
+
+    private sealed record WritePlan(List<IniFileWrite> Writes, List<string> Deletes)
+    {
+        public bool IsEmpty => Writes.Count == 0 && Deletes.Count == 0;
+    }
+
+    // The files one write changes, read now. Each keeps its line endings and BOM (w14 final review nit).
+    private static WritePlan Plan(DetectedGame game, DisplayModeItem item, string? value, LinuxDeploymentRecord record)
+    {
+        var bin = game.BinaryDirectory!;
+        var plan = new WritePlan([], []);
+        switch (item.Target)
+        {
+            case DisplayModeTarget.RenoDxIni:
+            {
+                var ini = XboxWriteGate.Checked(ReShadeIni(game) ?? throw new FileNotFoundException("ReShade.ini was not found.", bin));
+                var lines = IniLines.Read(ini, out var style);
+                var key = RenoDxNitsIni.KeyFor(item.Key);
+                if (value is null ? RenoDxNitsIni.Remove(lines, key) : RenoDxNitsIni.Write(lines, key, value))
+                    plan.Writes.Add(ReShadeIniManager.PlannedWrite(ini, lines, bin, game.InstallPath) with { Style = style });
+                break;
+            }
+            case DisplayModeTarget.ReShadeIni:
+            {
+                var main = XboxWriteGate.Checked(ReShadeIni(game) ?? throw new FileNotFoundException("ReShade.ini was not found.", bin));
+                // The preset is the main file's; keys go into every ReShade*.ini of the game, as the ReShade ⚙ writes them.
+                var files = item.Key == DisplayModeItemKeys.RsPreset ? [main] : new[] { main }.Concat(ReShadeGlobalSettingsApplier.NumberedInis(bin)).ToList();
+                var (section, key) = item.Key switch
+                {
+                    DisplayModeItemKeys.RsPreset => ("GENERAL", "PresetPath"),
+                    DisplayModeItemKeys.RsOverlayKey => ("INPUT", "KeyOverlay"),
+                    DisplayModeItemKeys.RsScreenshotKey => ("INPUT", "KeyScreenshot"),
+                    DisplayModeItemKeys.RsGamepadNav => ("INPUT", "GamepadNavigation"),
+                    _ => ("", "")
+                };
+                if (key.Length == 0) break;
+                if (item.Key == DisplayModeItemKeys.RsGamepadNav && value is not null) value = value == "1" ? "1" : "0";
+                foreach (var file in files)
+                {
+                    var lines = IniLines.Read(XboxWriteGate.Checked(file), out var style);
+                    var changed = value is null ? IniLines.Remove(lines, section, key) : IniLines.Set(lines, section, key, value);
+                    if (changed) plan.Writes.Add(ReShadeIniManager.PlannedWrite(file, lines, bin, game.InstallPath) with { Style = style });
+                }
+                break;
+            }
+            case DisplayModeTarget.ReLimiterIni:
+            {
+                var roots = ReShadeGlobalSettingsApplier.GameRoots(game, bin);
+                foreach (var file in UserIniService.ReLimiterInis(game))
+                {
+                    var lines = IniLines.Read(XboxWriteGate.Checked(file), out var style);
+                    // target_fps 0 = off: the key goes, as ReLimiter's "Apply to all games" does.
+                    var changed = item.Key == DisplayModeItemKeys.UlOsdKey
+                        ? value is null ? IniLines.Remove(lines, ReLimiterSection, "osd_toggle_key") : IniLines.Set(lines, ReLimiterSection, "osd_toggle_key", value)
+                        : value is null or "0" ? IniLines.Remove(lines, ReLimiterSection, "target_fps") : IniLines.Set(lines, ReLimiterSection, "target_fps", value);
+                    if (changed) plan.Writes.Add(IniLines.PlannedWrite(file, lines, roots) with { Style = style });
+                }
+                break;
+            }
+            case DisplayModeTarget.DisplayCommanderIni:
+            {
+                var file = XboxWriteGate.Checked(UserIniService.AddonIniPath(game, ManagedComponentKind.DisplayCommander));
+                var lines = IniLines.Read(file, out var style);
+                var roots = ReShadeGlobalSettingsApplier.GameRoots(game, bin);
+                if (value is null)
+                {
+                    if (!IniLines.Remove(lines, DisplayCommanderSettingsService.Section, DisplayCommanderSettingsService.FpsLimitKey)) break;
+                    // A file a mode created (no record lists it) that holds nothing else goes with its key.
+                    var listed = record.Files.Any(f => PathIdentity.AreSame(f.Path, file));
+                    if (!listed && !IniLines.Entries(lines).Any()) plan.Deletes.Add(file);
+                    else plan.Writes.Add(IniLines.PlannedWrite(file, lines, roots) with { Style = style });
+                    break;
+                }
+                var fps = DisplayCommanderSettingsService.Normalize(DisplayCommanderSettingsService.FpsLimitKey, value)!;
+                if (IniLines.Set(lines, DisplayCommanderSettingsService.Section, DisplayCommanderSettingsService.FpsLimitKey, fps))
+                    plan.Writes.Add(IniLines.PlannedWrite(file, lines, roots) with { Style = style });
+                break;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(item), item.Target, "Not a game-file item.");
+        }
+        return plan;
     }
 
     private static string? ReShadeIni(DetectedGame game)

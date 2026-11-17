@@ -160,6 +160,23 @@ public static class DisplayModeText
     /// <summary>One line for the status bar (upstream <c>SwitchResult.Summary</c>).</summary>
     public static string Summary(DisplayModeService.SwitchResult result)
     {
+        // w14 final review m7: a file that could not be read stopped the switch; what it wrote went back.
+        if (result.Error is { } error)
+        {
+            var stopped = TF("Dm.SwitchStopped", result.GameName, UiLocalizationService.Present(error).TrimEnd('.'));
+            return result.RollbackProblem is { } notBack ? stopped + " " + TF("Dm.SwitchStoppedNotPutBack", UiLocalizationService.Present(notBack)) : stopped;
+        }
+        // M3: Off could not put every value back: the game stays in its mode (or its pending restore stays).
+        var notRestored = result.NotRestored.ToList();
+        if (notRestored.Count > 0)
+        {
+            var what = string.Join(", ", notRestored.Select(i => Label(i.Item)));
+            var line = result.ModeId is { } still
+                ? TF("Dm.OffIncomplete", result.GameName, ModeName(still, result.ModeName), what)
+                : TF("Dm.PendingIncomplete", result.GameName, what);
+            var problems = notRestored.Where(i => i.Problem is not null).Select(i => UiLocalizationService.Present(i.Problem).TrimEnd('.')).Distinct().ToList();
+            return problems.Count == 0 ? line : line + " (" + string.Join("; ", problems) + ")";
+        }
         var text = result.TurnedOff ? TF("Dm.TurnedOffLine", result.GameName) : TF("Dm.SwitchedLine", result.GameName, ModeName(result.ModeId, result.ModeName));
         var written = result.Written.ToList();
         text += written.Count > 0

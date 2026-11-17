@@ -98,6 +98,28 @@ public sealed class RenoDxFixes287Tests : IDisposable
         Assert.Contains("Foreign RenoDX protection", update.Message);
     }
 
+    // w14 final review nit: the set-aside happens inside the operation, so a failed install puts the second download back
+    // under its own name (no .rhi-duplicate left, nothing installed).
+    [Fact]
+    public async Task AFailedInstall_PutsASetAsideSecondDownloadBack()
+    {
+        var game = Game("Hogwarts Legacy");
+        var duplicate = Path.Combine(game.BinaryDirectory!, "renodx-ue-extended (1).addon64");
+        PeArchitectureDetectorTests.WritePe(duplicate, 0x8664, 4096);
+        var bytes = File.ReadAllBytes(duplicate);
+        var handler = new Handler { Manifest = $$"""{ "version": 2, "snapshotOverrides": { "Hogwarts Legacy": "{{UeExtendedPages}}" } }""" };
+        var (service, store) = Service(handler);
+        store.SaveFaultForTesting = () => new IOException("disk full"); // the commit point fails
+
+        var installed = await service.InstallAsync(game, [game.ExecutablePath!]);
+
+        Assert.False(installed.Success, installed.Message);
+        Assert.Equal(bytes, File.ReadAllBytes(duplicate));
+        Assert.False(File.Exists(duplicate + RenoDxAddonFileNames.SetAsideSuffix));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "renodx-ue-extended.addon64")));
+        Assert.Null(store.Find(game, ManagedComponentKind.RenoDX));
+    }
+
     [Fact]
     public async Task DroppedSecondDownload_InstallsUnderTheAddonsOwnName()
     {

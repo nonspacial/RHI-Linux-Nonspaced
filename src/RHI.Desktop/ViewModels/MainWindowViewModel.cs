@@ -1061,10 +1061,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 : _library.AllGames.Where(g => _session.TryGetCached(g, out _)).ToDictionary(Key, StringComparer.Ordinal);
             var merged = new List<DetectedGame>(found.Count);
             var adoptedMergedKeys = false;
+            var adoptedDisplayModes = false;
             foreach (var game in found)
             {
                 game.LibraryIdentityPath ??= game.InstallPath;
                 adoptedMergedKeys |= _libraryState.AdoptOlderKeys(game); // older-build and merged-duplicate keys (Refs #55, #147)
+                adoptedDisplayModes |= DisplayModes.AdoptOlderKeys(game, _libraryState); // w14 final review M2
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
                 if (_libraryState.IsRemoved(libraryKey)) continue; // #293: removed from RHI until Restore
                 if (previous is not null && previous.TryGetValue(Key(game), out var kept))
@@ -1081,6 +1083,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 merged.Add(game);
             }
             var adoptRefused = adoptedMergedKeys ? SaveAdoptedLibraryState() : null;
+            if (adoptedDisplayModes && DisplayModes.SaveAdopted() is { } displayModesRefused)
+                adoptRefused = adoptRefused is null ? displayModesRefused : adoptRefused + " " + displayModesRefused;
             _filterFacts.Clear();
             _library.SetGames(merged);
             ApplyFilter();
@@ -2123,7 +2127,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
     // #272's OptiScalerIniChoices is the managed service's own store now (w14 final review m5: a folder move carries it too).
-    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
+    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore, DisplayModes.GameState]; // w14 final review M2
 
     /// <summary>
     /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only
@@ -2176,6 +2180,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 repairedLine += " " + UiLocalizationService.Present(result.Note);
             }
             StatusText = _statusNotice.Raise(repairedLine);
+            DisplayModes.FollowCommittedMove(); // w14 final review M2
             // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
             _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
             var libraryKey = LinuxGameLibraryStore.GameKey(game);
@@ -2351,6 +2356,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     bool ILibraryEditHost.LibraryRepairRunning => LibraryRepairRunning;
     // #293 install folder migration
     IReadOnlyList<LinuxDeploymentRecord> ILibraryEditHost.InstallsIn(DetectedGame game, string? folder) => _managedComponents.InstallsIn(game, folder);
+    string? ILibraryEditHost.InstallFolderLeftBehind(DetectedGame game) => _managedComponents.InstallFolderLeftBehind(game); // w14 final review m15
     Task<bool> ILibraryEditHost.AskFolderMoveAsync(DetectedGame game, string oldDir, string newDir) => AskFolderMoveAsync(game, oldDir, newDir);
     Task<InstallFolderMoveResult> ILibraryEditHost.MoveInstallFolderAsync(DetectedGame oldGame, DetectedGame newGame, string oldDir, string newDir,
         Func<RHI.Platform.Linux.Persistence.StagedFileWrite?>? alongside) => MoveInstallFolderAsync(oldGame, newGame, oldDir, newDir, alongside);

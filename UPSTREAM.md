@@ -1735,6 +1735,20 @@ bits off; Allow gives the owner write back), never its contents. Blocking is ref
 state is read from the file every time, so if Steam replaces the manifest with a new file the switch reads "Block"
 again. Not journaled: nothing in the game folder changes, and the change is undone by the same switch.
 
+What the block protects on Linux (w14 final review, checked 2026-11-17 against the Steam client on the owner's machine,
+not by running an update): Steam writes per-app files by writing `<name>.tmp` beside them and renaming it into place —
+`linux64/steamclient.so` carries the formats `%s/%s.tmp` and `%s/%s_%u.acf` and the log line `[AppID %u] Failed to
+rename temp file for '%s' from '%s' to '%s'`, and every app manifest in that library has the mode a newly created file
+gets (0755 under umask 022), not one carried over from an older file. On Linux, `rename(2)` onto a file needs write
+access to the folder, not to the file, so a read-only `appmanifest_<appid>.acf` does not stop Steam from replacing it:
+the first time Steam writes the manifest (an update queued, a size or state change, a library refresh), the new file
+is writable and the block is gone; the switch then reads "Block Steam updates" again. On Windows (upstream) the same
+replace of a read-only file is refused, which is why the block holds there. So on Linux the block holds only while Steam
+has no reason to rewrite that game's manifest: it is a speed bump for a session, not a lock. Holding it for real needs
+either the file made immutable (`chattr +i`, root only, which RHI does not do) or Steam's own per-game "Only update this
+game when I launch it" setting; neither is wired in. Not changed in code here; the switch and its tooltip are left as
+upstream words them until the owner decides (wave 14 final review, platform-b).
+
 ### #293 — Game folders: Remove from RHI and Removed games (2.9.0–2.9.3; partial)
 
 - **Remove from RHI** (ported): a header action beside Hide for every detected game. The game is gone from every list,

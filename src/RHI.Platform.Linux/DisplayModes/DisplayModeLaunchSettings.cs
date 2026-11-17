@@ -23,10 +23,16 @@ public sealed class DisplayModeLaunchValues
     /// <summary>A switch changed something (the desktop saves the library file and reloads the page's controls).</summary>
     public bool Changed { get; set; }
 
+    // What the copy held when it was taken: ApplyTo puts back only what the switch changed since (w14 final review nit).
+    private (string Hdr, bool Toggle, string? Resolution, uint? Fps, string Nvidia, string? Args)? _taken;
+
+    private (string Hdr, bool Toggle, string? Resolution, uint? Fps, string Nvidia, string? Args) Now()
+        => (HdrMode, ResolutionToggle, Resolution, FpsLimit, System.Text.Json.JsonSerializer.Serialize(Nvidia), LaunchArgs);
+
     public static DisplayModeLaunchValues From(LinuxGameLibraryState state, string key)
     {
         var profile = state.HdrProfiles.TryGetValue(key, out var saved) ? saved.Normalize() : new LinuxHdrGameProfile();
-        return new DisplayModeLaunchValues
+        var values = new DisplayModeLaunchValues
         {
             HdrMode = profile.Mode,
             ResolutionToggle = profile.ResolutionToggle,
@@ -35,28 +41,47 @@ public sealed class DisplayModeLaunchValues
             Nvidia = profile.Nvidia?.Copy() ?? new NvidiaGameSettings(),
             LaunchArgs = state.LaunchArguments is { } args && args.TryGetValue(key, out var text) ? text : null,
         };
+        values._taken = values.Now();
+        return values;
     }
 
-    /// <summary>Puts these values into <paramref name="state"/> (the profile's other settings stay as they are).</summary>
+    /// <summary>
+    /// Puts these values into <paramref name="state"/> (the profile's other settings stay as they are). Only the settings
+    /// the switch changed since the copy was taken: one the user changed on the page while the switch ran stays as the
+    /// user set it (w14 final review nit).
+    /// </summary>
     public void ApplyTo(LinuxGameLibraryState state, string key)
     {
+        var now = Now();
+        var taken = _taken;
+        bool Changed<T>(Func<(string Hdr, bool Toggle, string? Resolution, uint? Fps, string Nvidia, string? Args), T> part)
+            => taken is not { } t || !EqualityComparer<T>.Default.Equals(part(t), part(now));
         var profile = state.HdrProfiles.TryGetValue(key, out var saved) ? saved : new LinuxHdrGameProfile();
-        profile.Mode = HdrMode;
-        profile.ResolutionToggle = ResolutionToggle;
-        profile.Resolution = Resolution;
-        var nvidia = Nvidia.Copy().Normalize();
-        profile.Nvidia = nvidia.IsDefault() ? null : nvidia;
+        if (Changed(v => v.Hdr)) profile.Mode = HdrMode;
+        if (Changed(v => v.Toggle)) profile.ResolutionToggle = ResolutionToggle;
+        if (Changed(v => v.Resolution)) profile.Resolution = Resolution;
+        if (Changed(v => v.Nvidia))
+        {
+            var nvidia = Nvidia.Copy().Normalize();
+            profile.Nvidia = nvidia.IsDefault() ? null : nvidia;
+        }
         profile.Normalize();
         if (profile.IsDefault()) state.HdrProfiles.Remove(key);
         else state.HdrProfiles[key] = profile;
-        var limits = state.FpsLimits ?? new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
-        if (FpsLimit is { } fps) limits[key] = fps;
-        else limits.Remove(key);
-        state.FpsLimits = limits.Count == 0 ? null : limits;
-        var arguments = state.LaunchArguments ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (RHI.Platform.Linux.Launch.LaunchArguments.Normalize(LaunchArgs) is { } text) arguments[key] = text;
-        else arguments.Remove(key);
-        state.LaunchArguments = arguments.Count == 0 ? null : arguments;
+        if (Changed(v => v.Fps))
+        {
+            var limits = state.FpsLimits ?? new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+            if (FpsLimit is { } fps) limits[key] = fps;
+            else limits.Remove(key);
+            state.FpsLimits = limits.Count == 0 ? null : limits;
+        }
+        if (Changed(v => v.Args))
+        {
+            var arguments = state.LaunchArguments ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (RHI.Platform.Linux.Launch.LaunchArguments.Normalize(LaunchArgs) is { } text) arguments[key] = text;
+            else arguments.Remove(key);
+            state.LaunchArguments = arguments.Count == 0 ? null : arguments;
+        }
     }
 }
 
@@ -200,9 +225,10 @@ public sealed class DisplayModeIo(DisplayModeGameFiles files) : IDisplayModeIo
     public string? Read(DisplayModeContext ctx, DisplayModeItem item)
         => item.Target == DisplayModeTarget.LaunchSettings ? DisplayModeLaunchSettings.Read(Launch(ctx), item.Key) : files.Read(ctx, item);
 
-    public Task<string?> WriteAsync(DisplayModeContext ctx, DisplayModeItem item, string value, CancellationToken cancellationToken)
+    public Task<string?> WriteAsync(DisplayModeContext ctx, DisplayModeItem item, string? value, CancellationToken cancellationToken)
         => item.Target == DisplayModeTarget.LaunchSettings
-            ? Task.FromResult(DisplayModeLaunchSettings.Write(Launch(ctx), item.Key, value))
+            // A launch setting always has a value (Read never answers none), so there is nothing to remove.
+            ? Task.FromResult(value is null ? null : DisplayModeLaunchSettings.Write(Launch(ctx), item.Key, value))
             : files.WriteAsync(ctx, item, value, cancellationToken);
 
     private static DisplayModeLaunchValues Launch(DisplayModeContext ctx)

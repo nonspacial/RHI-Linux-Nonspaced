@@ -104,6 +104,8 @@ public sealed class DisplayModeItem
                 return t.Length == 0 ? null : t;
             case DisplayModeValueKind.Text when Key == DisplayModeItemKeys.LaunchArgs:
                 return t.Length == 0 ? "" : RHI.Platform.Linux.Launch.LaunchArguments.Normalize(t);
+            case DisplayModeValueKind.Text when Key == DisplayModeItemKeys.RsPreset:
+                return PresetPath(t);
             case DisplayModeValueKind.ReShadeKey:
                 return ReShadeKey(t);
             case DisplayModeValueKind.ReLimiterKey:
@@ -112,6 +114,16 @@ public sealed class DisplayModeItem
             default:
                 return t;
         }
+    }
+
+    /// <summary>
+    /// w14 final review nit: a ReShade preset as ReShade.ini's PresetPath takes it — one line (a hand-edited value with a
+    /// line break would write a key of its own), at most 260 characters, an .ini or .txt file. Else null.
+    /// </summary>
+    private static string? PresetPath(string t)
+    {
+        if (t.Length == 0 || t.Length > 260 || t.Any(char.IsControl)) return null;
+        return t.EndsWith(".ini", StringComparison.OrdinalIgnoreCase) || t.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ? t : null;
     }
 
     /// <summary>A ReShade key in its ini form "vk,ctrl,shift,alt" (four whole numbers, modifiers 0/1), else null.</summary>

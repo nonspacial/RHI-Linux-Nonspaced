@@ -178,6 +178,7 @@ public sealed class GameLinkCatalogueTests : IDisposable
         var broken = new Fake(_ => Text("<html>nothing here</html>", "text/html"));
         var third = new GameLinkCatalogue(new HttpClient(broken), CacheDir, timeProvider: clock);
         await third.LoadAsync();
+        await third.BackgroundRefreshes; // w14 final review: the older copy is served while the lists are asked again
         Assert.Equal(5, broken.Requests.Count); // stale: every list asked once
         Assert.Equal("https://theultraplace.com/games/codevein2/", third.UltraPlusPageFor(Named("CODE VEIN II")));
         Assert.Equal("https://codeberg.org/Lyall/Shared", third.UltrawideFixPageFor(Named("Shared Game")));
@@ -185,6 +186,7 @@ public sealed class GameLinkCatalogueTests : IDisposable
         var offline = new Fake(_ => throw new HttpRequestException("offline"));
         var fourth = new GameLinkCatalogue(new HttpClient(offline), CacheDir, timeProvider: clock);
         await fourth.LoadAsync();
+        await fourth.BackgroundRefreshes;
         Assert.Equal("https://theultraplace.com/games/codevein2/", fourth.UltraPlusPageFor(Named("CODE VEIN II")));
         Assert.Equal(3, fourth.UltraPlusGames.Count);
     }
@@ -837,6 +839,7 @@ public sealed class GameLinkListCadenceTests : IDisposable
 
         clock.Now += TimeSpan.FromHours(1) + TimeSpan.FromMinutes(1);
         await links.LoadAsync();
+        await links.BackgroundRefreshes; // w14 final review: served at once, asked again in the background
         Assert.Equal(2, Asked(GameLinkCatalogue.UltraPlusGamesUrl));
         Assert.Equal(2, Asked(GameLinkCatalogue.LyallReposUrl));
         Assert.Equal(2, Asked(GameLinkCatalogue.RoseReadmeUrl));

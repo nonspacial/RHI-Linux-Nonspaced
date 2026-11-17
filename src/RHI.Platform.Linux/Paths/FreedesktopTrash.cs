@@ -13,8 +13,10 @@ namespace RHI.Platform.Linux.Paths;
 /// <c>.trashinfo</c> names it by its absolute path.</item>
 /// <item>A file on another file system (a second drive with the game library) goes to that drive's
 /// <c>$topdir/.Trash/$uid</c> when <c>$topdir/.Trash</c> is a real directory with the sticky bit, else to
-/// <c>$topdir/.Trash-$uid</c> (created 0700); its <c>.trashinfo</c> names it relative to <c>$topdir</c>. A file is never
-/// copied across file systems.</item>
+/// <c>$topdir/.Trash-$uid</c> (created 0700); its <c>.trashinfo</c> names it relative to <c>$topdir</c>.</item>
+/// <item>w14 final review nit: the move is <c>rename(2)</c>. Only when the kernel says the two paths are on different file
+/// systems (EXDEV: a bind mount or subvolume the mount table did not tell apart) is it copied and the original removed
+/// after the whole copy; any other failure leaves the file where it is.</item>
 /// <item>The <c>.trashinfo</c> is created first (exclusively, so two trashings never share a name); the file is renamed into
 /// <c>files/</c> after it; when that fails the <c>.trashinfo</c> is removed again.</item>
 /// </list>
@@ -25,6 +27,54 @@ public sealed class FreedesktopTrash
     private readonly Func<string, string> _mountOf;
     private readonly Func<DateTime> _now;
     private readonly string _uid;
+
+    /// <summary>Tests: stands in for <c>rename(2)</c>; returns 0 or the errno.</summary>
+    internal Func<string, string, int>? RenameForTesting { get; set; }
+
+    private const int Exdev = 18;
+
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "rename", SetLastError = true)]
+    private static extern int SysRename(string oldPath, string newPath);
+
+    private int Rename(string from, string to)
+    {
+        if (RenameForTesting is { } rename) return rename(from, to);
+        return SysRename(from, to) == 0 ? 0 : System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
+    }
+
+    // EXDEV only: copied whole, then the original goes. A copy that fails is removed again and the original stays.
+    private static void CopyAcross(string from, string to)
+    {
+        try
+        {
+            if (Directory.Exists(from) && new DirectoryInfo(from).LinkTarget is null)
+            {
+                // Symlinks are copied as links, never followed (a Wine prefix's z: leads to /).
+                Directory.CreateDirectory(to);
+                foreach (var entry in SafeFileEnumeration.Entries(from).OrderBy(e => e.FullName.Length))
+                {
+                    var target = Path.Combine(to, Path.GetRelativePath(from, entry.FullName));
+                    if (entry.LinkTarget is { } link) File.CreateSymbolicLink(target, link);
+                    else if (entry is DirectoryInfo) Directory.CreateDirectory(target);
+                    else File.Copy(entry.FullName, target);
+                }
+            }
+            else if (new FileInfo(from).LinkTarget is { } link) File.CreateSymbolicLink(to, link);
+            else File.Copy(from, to);
+        }
+        catch
+        {
+            try
+            {
+                if (Directory.Exists(to)) Directory.Delete(to, recursive: true);
+                else if (File.Exists(to)) File.Delete(to);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { AppLog.Warn("trash", $"Partial copy {to} left", cleanup); }
+            throw;
+        }
+        if (Directory.Exists(from)) Directory.Delete(from, recursive: true);
+        else File.Delete(from);
+    }
 
     /// <param name="homeTrash">The home trash (default <c>$XDG_DATA_HOME/Trash</c>).</param>
     /// <param name="mountOf">The mount point a path is on (default: <c>/proc/self/mountinfo</c>).</param>
@@ -121,8 +171,9 @@ public sealed class FreedesktopTrash
             }
             try
             {
-                if (Directory.Exists(full)) Directory.Move(full, target);
-                else File.Move(full, target);
+                var errno = Rename(full, target);
+                if (errno == Exdev) CopyAcross(full, target);
+                else if (errno != 0) throw new IOException(new System.ComponentModel.Win32Exception(errno).Message); // the system's reason, as other I/O refusals
                 AppLog.Warn("trash", $"{full} moved to {target}");
                 return target;
             }

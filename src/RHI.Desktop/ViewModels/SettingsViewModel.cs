@@ -91,8 +91,9 @@ public sealed class SettingsViewModel : PanelViewModel
     // w12/hdr-wsi rows
 
     /// <summary>
-    /// Settings' working copy: every setting (w14 final review m10: a whole copy, not a hand-kept list, which had left out
-    /// OptiScaler's Default version and Remove old Nightly builds, so any Settings save put them back to their defaults).
+    /// A copy of the settings in force. w14 final review M6: a JSON round trip (as Settings' own fingerprint and the
+    /// dialog's copy take it), not a field-by-field copy, so a save that starts from it (the OptiScaler and Uplift keys,
+    /// "Apply to all" in Peak Brightness, ReLimiter and ReShade ini) can never reset a setting the copy forgot.
     /// </summary>
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {

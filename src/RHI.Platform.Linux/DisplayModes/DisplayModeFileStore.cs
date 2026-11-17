@@ -30,4 +30,10 @@ public sealed class DisplayModeFileStore
 
     /// <summary>Saves <paramref name="data"/>. Throws <see cref="JsonStoreUnavailableException"/> while an unreadable file is on disk.</summary>
     public void Save(DisplayModeData data) => _file.Save(data);
+
+    /// <summary>
+    /// w14 final review M2: <paramref name="data"/> staged for a multi-file commit (a folder move, Repair after move).
+    /// Throws <see cref="JsonStoreUnavailableException"/> while an unreadable file is on disk, which cancels that commit.
+    /// </summary>
+    public StagedFileWrite? Stage(DisplayModeData data) => _file.Stage(_ => data);
 }

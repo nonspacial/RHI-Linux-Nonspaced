@@ -24,6 +24,8 @@ internal interface ILibraryEditHost : IPanelHost
     void Select(DetectedGame game);
     // #293 install folder migration
     IReadOnlyList<LinuxDeploymentRecord> InstallsIn(DetectedGame game, string? folder);
+    /// <summary>The folder the game's installs were left in when its folder changed without them (or null).</summary>
+    string? InstallFolderLeftBehind(DetectedGame game);
     Task<bool> AskFolderMoveAsync(DetectedGame game, string oldDir, string newDir);
     Task<InstallFolderMoveResult> MoveInstallFolderAsync(DetectedGame oldGame, DetectedGame newGame, string oldDir, string newDir,
         Func<RHI.Platform.Linux.Persistence.StagedFileWrite?>? alongside);
@@ -126,7 +128,7 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
                 // #293 (upstream 2.9.2 Change install folder): RHI offers to move the game's installs to the new folder;
                 // declined, nothing changes (Linux: records left in a folder the game no longer uses would block it). A
                 // change that keeps the folder (another exe or root only) still needs the components removed first.
-                var oldDir = SelectedGame.BinaryDirectory;
+                var oldDir = InstallsFolder(SelectedGame);
                 if (oldDir is null || PathEquals(oldDir, binaries) || Host.InstallsIn(SelectedGame, oldDir).Count == 0)
                     return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
                 if (!await Host.AskFolderMoveAsync(SelectedGame, oldDir, binaries))
@@ -243,9 +245,14 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
         if (Host.DeploymentRecords.FindAll(SelectedGame).Count > 0)
         {
-            var oldDir = SelectedGame.BinaryDirectory;
+            var oldDir = InstallsFolder(SelectedGame);
             if (oldDir is null || Host.InstallsIn(SelectedGame, oldDir).Count == 0)
                 return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
+            // w14 final review m15: a reset that was saved before its move question was answered (RHI closed, or the
+            // edit could not be put back) left the installs in the chosen folder and the game with no edit: Reset offers
+            // the move from there now.
+            if (!Host.WorkingLibraryCopy().GameEdits.ContainsKey(LinuxGameLibraryStore.GameKey(SelectedGame)))
+                return await MoveLeftBehindAsync(SelectedGame, oldDir);
             return await ResetMovingInstallsAsync(oldDir, saved);
         }
         var state = Host.WorkingLibraryCopy();
@@ -263,6 +270,28 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
                 : TF("Vm.NoManualOverridesWereSaved", name);
         StatusText = message;
         return (true, message);
+    }
+
+    /// <summary>
+    /// The folder <paramref name="game"/>'s installs are in: its binary directory, or (w14 final review m15) the folder they
+    /// were left in when the game's folder changed without them, so a later Reset or Edit game can still move them.
+    /// </summary>
+    private string? InstallsFolder(DetectedGame game)
+        => game.BinaryDirectory is { } bin && Host.InstallsIn(game, bin).Count > 0 ? bin : Host.InstallFolderLeftBehind(game) ?? game.BinaryDirectory;
+
+    // m15: the game already uses its detected folder; its installs are still in the folder chosen before.
+    private async Task<(bool Reset, string Message)> MoveLeftBehindAsync(DetectedGame game, string oldDir)
+    {
+        var newDir = game.BinaryDirectory;
+        if (newDir is null || PathEquals(newDir, oldDir)) return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
+        if (!await Host.AskFolderMoveAsync(game, oldDir, newDir))
+            return (false, StatusText = TF("FolderMove.NotChanged", game.Name, oldDir));
+        var result = await Host.MoveInstallFolderAsync(game, game, oldDir, newDir, null);
+        if (!result.Success) return (false, StatusText = UiLocalizationService.Present(result.Message));
+        await Host.ReprobeGameAsync(game);
+        var done = TF("FolderMove.Done", game.Name, newDir);
+        Host.RaiseNotice(done);
+        return (true, done);
     }
 
     /// <summary>
