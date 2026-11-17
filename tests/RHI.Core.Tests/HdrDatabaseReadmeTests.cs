@@ -106,6 +106,7 @@ public sealed class HdrDatabaseReadmeTests : IDisposable
         var handler = Serve(unknownFormat);
         var links = new GameLinkCatalogue(new HttpClient(handler), directory);
         await links.LoadAsync();
+        await links.BackgroundRefreshes; // w14 final review: the stale copy is served while the README is asked again
 
         Assert.Contains(handler.Requests, request => request.RequestUri!.AbsoluteUri == GameLinkCatalogue.HdrDatabaseReadmeUrl);
         Assert.Equal(Discussions + "12", links.HdrDatabasePageFor(Named("Alan Wake 2")));

@@ -47,14 +47,19 @@ public sealed class FreedesktopTrash
     {
         try
         {
-            if (Directory.Exists(from))
+            if (Directory.Exists(from) && new DirectoryInfo(from).LinkTarget is null)
             {
-                foreach (var dir in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories))
-                    Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
+                // Symlinks are copied as links, never followed (a Wine prefix's z: leads to /).
                 Directory.CreateDirectory(to);
-                foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
-                    File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)));
+                foreach (var entry in SafeFileEnumeration.Entries(from).OrderBy(e => e.FullName.Length))
+                {
+                    var target = Path.Combine(to, Path.GetRelativePath(from, entry.FullName));
+                    if (entry.LinkTarget is { } link) File.CreateSymbolicLink(target, link);
+                    else if (entry is DirectoryInfo) Directory.CreateDirectory(target);
+                    else File.Copy(entry.FullName, target);
+                }
             }
+            else if (new FileInfo(from).LinkTarget is { } link) File.CreateSymbolicLink(to, link);
             else File.Copy(from, to);
         }
         catch
@@ -168,7 +173,7 @@ public sealed class FreedesktopTrash
             {
                 var errno = Rename(full, target);
                 if (errno == Exdev) CopyAcross(full, target);
-                else if (errno != 0) throw new IOException($"{full}: rename failed ({new System.ComponentModel.Win32Exception(errno).Message})");
+                else if (errno != 0) throw new IOException(new System.ComponentModel.Win32Exception(errno).Message); // the system's reason, as other I/O refusals
                 AppLog.Warn("trash", $"{full} moved to {target}");
                 return target;
             }
