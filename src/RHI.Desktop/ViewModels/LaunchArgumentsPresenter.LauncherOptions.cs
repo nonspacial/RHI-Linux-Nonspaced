@@ -68,6 +68,27 @@ public sealed partial class LaunchArgumentsPresenter
         }
     }
 
+    /// <summary>
+    /// A scan (w14 last fixes): launcher records saved under keys the games had before (older builds, merged duplicates,
+    /// another spelling of the folder; <see cref="LinuxGameLibraryState.OlderKeysFor"/>) move to their keys now, as the
+    /// library file's own entries do. Nothing is read or written while no game has a record.
+    /// </summary>
+    internal void AdoptOlderKeys(IReadOnlyList<DetectedGame> games, LinuxGameLibraryState library)
+    {
+        try
+        {
+            var store = LauncherOptions.Store;
+            var keys = store.GameKeys;
+            if (keys.Count == 0) return;
+            var pairs = games.Select(game => (Key(game), library.OlderKeysFor(game, keys))).Where(pair => pair.Item2.Count > 0).ToList();
+            if (pairs.Count > 0 && store.AdoptOlderKeys(pairs)) LoadLauncher();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RHI.Core.Services.AppLog.Warn("launcher-options", "Launcher records under older game keys not moved; tried again at the next scan", ex);
+        }
+    }
+
     /// <summary>The game's launcher record, when RHI put arguments into the launcher's options.</summary>
     internal LauncherOptionsRecord? LauncherRecord(DetectedGame game) => LauncherOptions.RecordFor(Key(game));
 
@@ -97,6 +118,21 @@ public sealed partial class LaunchArgumentsPresenter
         _ => "LoArgs.WhereHeroic"
     });
 
+    // "Remove from …" per launcher: PT-BR contracts "de" with each noun's article (das opções, dos argumentos).
+    private static string From(LauncherKind kind) => T(kind switch
+    {
+        LauncherKind.Steam => "LoArgs.FromSteam",
+        LauncherKind.Lutris => "LoArgs.FromLutris",
+        _ => "LoArgs.FromHeroic"
+    });
+
+    internal static string RemoveText(LauncherKind kind) => TF("LoArgs.Remove", From(kind));
+
+    internal static string RemoveTip(LauncherKind kind) => TF("LoArgs.RemoveTip", From(kind));
+
+    internal static string RemovedLine(string gameName, LauncherKind kind, bool keptUserChange)
+        => TF(keptUserChange ? "LoArgs.RemovedKept" : "LoArgs.RemovedRestored", gameName, From(kind));
+
     /// <summary>The button and the launcher line for the selected game.</summary>
     private void LoadLauncher()
     {
@@ -116,8 +152,8 @@ public sealed partial class LaunchArgumentsPresenter
         }
         else if (record is not null)
         {
-            LauncherButtonText = TF("LoArgs.Remove", Where(record.Launcher));
-            LauncherButtonTip = TF("LoArgs.RemoveTip", Where(record.Launcher));
+            LauncherButtonText = RemoveText(record.Launcher);
+            LauncherButtonTip = RemoveTip(record.Launcher);
             LauncherCopyNote = RecordArguments(record) is null ? TF("LoArgs.LinkedEmpty", Where(record.Launcher))
                 : TF("LoArgs.InLauncher", Where(record.Launcher), record.Files.FirstOrDefault()?.Written ?? "");
         }
@@ -190,7 +226,7 @@ public sealed partial class LaunchArgumentsPresenter
             case LauncherOptionsOutcome.Written:
                 return TF("LoArgs.Added", game.DisplayName(), Where(kind), result.Value ?? "");
             case LauncherOptionsOutcome.Removed:
-                return result.KeptUserChange ? TF("LoArgs.RemovedKept", game.DisplayName(), Where(kind)) : TF("LoArgs.RemovedRestored", game.DisplayName(), Where(kind));
+                return RemovedLine(game.DisplayName(), kind, result.KeptUserChange);
             case LauncherOptionsOutcome.Nothing:
                 return "";
             case LauncherOptionsOutcome.LauncherRunning:

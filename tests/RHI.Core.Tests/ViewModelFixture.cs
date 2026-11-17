@@ -25,6 +25,9 @@ internal sealed class ViewModelFixture : IDisposable
     public MainWindowViewModel Vm { get; }
     public LinuxManagedComponentService Managed { get; private set; } = null!;
 
+    /// <summary>#290: the fake pkexec / file flags Block Steam updates uses (never the real pkexec).</summary>
+    public FakePrivilegedRunner SteamPrivileged { get; } = new();
+
     /// <summary>Requests this matches never answer until cancelled (a stalled download; Refs #77).</summary>
     public Func<HttpRequestMessage, bool>? HangWhen { get => _hang.When; set => _hang.When = value; }
 
@@ -140,6 +143,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w5 lane rows: hand the view model what the fixture builds
         // w5/update-policy rows
         Vm.UpdatePolicy = updatePolicy; // #177
+        Vm.SteamUpdates = SteamPrivileged.Service(Path.Combine(ConfigDir, "steam-update-blocks.json")); // #290: never the real pkexec
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

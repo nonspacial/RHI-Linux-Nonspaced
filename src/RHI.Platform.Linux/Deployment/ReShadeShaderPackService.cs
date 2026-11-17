@@ -144,6 +144,24 @@ public sealed class ReShadeShaderPackService
 
     public string CustomRoot => _customRoot;
 
+    private HttpClient? _patreonHttp;
+
+    /// <summary>
+    /// #265: the client for Patreon-hosted packs (<see cref="DownloadSources.ShaderPackPatreon"/>): it follows no redirect
+    /// itself (each one is checked before it is requested) and keeps no cookies. Tests hand in one over recorded answers.
+    /// </summary>
+    internal HttpClient PatreonHttp
+    {
+        get => _patreonHttp ??= new HttpClient(PatreonHandler()) { Timeout = _http.Timeout };
+        set => _patreonHttp = value;
+    }
+
+    /// <summary>The Patreon client's handler: no automatic redirect, no cookie jar.</summary>
+    internal static SocketsHttpHandler PatreonHandler() => new() { AllowAutoRedirect = false, UseCookies = false };
+
+    private static bool IsPatreonFile(string url) => DownloadSources.ShaderPackPatreon.IsTrusted(url)
+        && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IdnHost.Equals("www.patreon.com", StringComparison.OrdinalIgnoreCase);
+
     public IReadOnlyList<ReShadeShaderPackInfo> AvailablePacks =>
         _packs
             .OrderBy(p => p.Category)
@@ -893,9 +911,12 @@ public sealed class ReShadeShaderPackService
         var marker = Path.Combine(packDir, ".complete");
         var sourceMarker = Path.Combine(packDir, ".source");
 
+        // #265: a Patreon file link names one file (a new version gets a new link), so the link is its identity; no HEAD
+        // (it would only reach a freshly signed link).
+        var patreon = pack.SourceKind == ReShadeShaderPackSourceKind.DirectUrl && IsPatreonFile(pack.Url);
         var (downloadUrl, sourceIdentity) = pack.SourceKind == ReShadeShaderPackSourceKind.GhRelease
             ? await ResolveGitHubReleaseAssetAsync(pack.Url, pack.AssetExt ?? ".zip", cancellationToken).ConfigureAwait(false)
-            : (pack.Url, await DirectUrlIdentityAsync(pack.Url, cancellationToken).ConfigureAwait(false));
+            : (pack.Url, patreon ? pack.Url : await DirectUrlIdentityAsync(pack.Url, cancellationToken).ConfigureAwait(false));
         // #265/#267: a branch archive whose server could not be asked (offline, no validator) keeps the copy staged from it.
         if (sourceIdentity == pack.Url && File.Exists(sourceMarker) && IsIdentityOf(File.ReadAllText(sourceMarker), pack.Url))
             sourceIdentity = File.ReadAllText(sourceMarker);
@@ -918,10 +939,12 @@ public sealed class ReShadeShaderPackService
             extension = ".tar.gz";
 
         var raw = Path.Combine(packDir, "raw-" + Guid.NewGuid().ToString("N"));
-        // Shader-pack host policy (GitHub, codeload.github.com, GitLab) on the link and every redirect, size cap (#42).
-        using var download = await TrustedDownload.DownloadToTempAsync(
-            _http, downloadUrl, Path.Combine(packDir, "download" + (string.IsNullOrWhiteSpace(extension) ? "" : extension)),
-            DownloadSources.ShaderPacks, cancellationToken: cancellationToken).ConfigureAwait(false);
+        // Shader-pack host policy (GitHub, codeload.github.com, GitLab) on the link and every redirect, size cap (#42);
+        // #265: a Patreon file link under its own policy, each redirect checked before it is followed, no cookies.
+        var target = Path.Combine(packDir, "download" + (string.IsNullOrWhiteSpace(extension) ? "" : extension));
+        using var download = patreon
+            ? await TrustedDownload.DownloadCheckingEachHopAsync(PatreonHttp, downloadUrl, target, DownloadSources.ShaderPackPatreon, cancellationToken).ConfigureAwait(false)
+            : await TrustedDownload.DownloadToTempAsync(_http, downloadUrl, target, DownloadSources.ShaderPacks, cancellationToken: cancellationToken).ConfigureAwait(false);
         var temp = download.Path;
 
         try
@@ -931,7 +954,8 @@ public sealed class ReShadeShaderPackService
 
             Directory.CreateDirectory(raw);
             if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
-                (pack.AssetExt?.Equals(".zip", StringComparison.OrdinalIgnoreCase) ?? false))
+                (pack.AssetExt?.Equals(".zip", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (string.IsNullOrWhiteSpace(extension) && StartsLikeZip(temp))) // #265: a link without a name (Patreon's /file)
             {
                 await ExtractZipSafelyAsync(temp, raw, cancellationToken).ConfigureAwait(false);
             }
@@ -1043,6 +1067,13 @@ public sealed class ReShadeShaderPackService
         {
             return url;
         }
+    }
+
+    private static bool StartsLikeZip(string path)
+    {
+        Span<byte> head = stackalloc byte[4];
+        using var stream = File.OpenRead(path);
+        return stream.ReadAtLeast(head, 4, throwOnEndOfStream: false) == 4 && head[0] == (byte)'P' && head[1] == (byte)'K' && head[2] == 3 && head[3] == 4;
     }
 
     private static bool IsIdentityOf(string identity, string url)

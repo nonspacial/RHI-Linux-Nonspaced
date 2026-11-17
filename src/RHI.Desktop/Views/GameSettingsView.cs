@@ -10,7 +10,7 @@ namespace RHI.Desktop.Views;
 /// <summary>
 /// Upstream 2.9.4 Game settings (DetailLayoutHost.GameSettings): the ⚙ beside the game's title opens settings that apply to
 /// this game only, one row each — a label and a one-line description on the left, the control on the right. Rows here:
-/// Block Steam updates (a switch) and Display modes (#311). Built in code so tests can build it without a window.
+/// Block Steam updates (a switch and what the block holds) and Display modes (#311). Built in code so tests can build it without a window.
 /// </summary>
 internal static class GameSettingsView
 {
@@ -34,16 +34,28 @@ internal static class GameSettingsView
             {
                 Name = "BlockSteamUpdatesSwitch", IsChecked = vm.SteamUpdatesBlocked, OnContent = T("Ini.On"), OffContent = T("Ini.Off")
             };
+            var status = new TextBlock
+            {
+                Name = "SteamUpdateBlockStatus", Text = vm.SteamUpdateBlockStatus, FontSize = 12, Classes = { "secondary" },
+                TextWrapping = TextWrapping.Wrap, IsVisible = vm.SteamUpdateBlockStatus.Length > 0
+            };
             var syncing = false;
-            steam.IsCheckedChanged += (_, _) =>
+            steam.IsCheckedChanged += async (_, _) =>
             {
                 if (syncing) return;
-                vm.SetSteamUpdatesBlocked(steam.IsChecked == true);
-                syncing = true;
-                try { steam.IsChecked = vm.SteamUpdatesBlocked; } // a refused change springs back
-                finally { syncing = false; }
+                steam.IsEnabled = false; // the password prompt may be open
+                try { await vm.SetSteamUpdatesBlockedAsync(steam.IsChecked == true); }
+                finally
+                {
+                    steam.IsEnabled = true;
+                    syncing = true;
+                    try { steam.IsChecked = vm.SteamUpdatesBlocked; } // a refused change springs back
+                    finally { syncing = false; }
+                    status.Text = vm.SteamUpdateBlockStatus;
+                    status.IsVisible = status.Text.Length > 0;
+                }
             };
-            root.Children.Add(Row(T("Steam.BlockUpdates"), T("Steam.BlockUpdatesTip"), steam));
+            root.Children.Add(Row(T("Steam.BlockUpdates"), T("Steam.BlockUpdatesTip"), steam, status));
         }
 
         // w14/display-modes (#311, upstream 2.9.3 AddDisplayModeRow): Display modes · Choose… opens the game's display mode settings.
@@ -64,12 +76,13 @@ internal static class GameSettingsView
     }
 
     // Upstream's AddGameSettingRow: label and description on the left, the control on the right.
-    private static Grid Row(string label, string description, Control control)
+    private static Grid Row(string label, string description, Control control, Control? below = null)
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 16 };
         var text = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock { Text = label, FontSize = 14, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
         text.Children.Add(new TextBlock { Text = description, FontSize = 12, Classes = { "secondary" }, TextWrapping = TextWrapping.Wrap });
+        if (below is not null) text.Children.Add(below);
         grid.Children.Add(text);
         control.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(control, 1);

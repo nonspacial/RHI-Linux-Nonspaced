@@ -26,10 +26,8 @@ public partial class MainWindowViewModel
     /// The Block Steam updates switch asks for <paramref name="blocked"/>; the switch then shows what the manifest really is
     /// (<see cref="SteamUpdatesBlocked"/>), so a refused change (Steam updating the game) springs back.
     /// </summary>
-    internal void SetSteamUpdatesBlocked(bool blocked)
-    {
-        if (blocked != SteamUpdatesBlocked) ToggleSteamUpdatesCommand.Execute(null);
-    }
+    internal Task SetSteamUpdatesBlockedAsync(bool blocked)
+        => blocked != SteamUpdatesBlocked ? ToggleSteamUpdatesCommand.ExecuteAsync(null) : Task.CompletedTask;
 
     private void NotifyGameSettings()
     {

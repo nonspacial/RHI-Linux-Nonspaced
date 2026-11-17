@@ -1082,6 +1082,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
                 merged.Add(game);
             }
+            LaunchArguments.AdoptOlderKeys(found, _libraryState); // w14 last fixes: launcher records follow older keys
             var adoptRefused = adoptedMergedKeys ? SaveAdoptedLibraryState() : null;
             if (adoptedDisplayModes && DisplayModes.SaveAdopted() is { } displayModesRefused)
                 adoptRefused = adoptRefused is null ? displayModesRefused : adoptRefused + " " + displayModesRefused;
@@ -2127,7 +2128,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
     // #272's OptiScalerIniChoices is the managed service's own store now (w14 final review m5: a folder move carries it too).
-    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore, DisplayModes.GameState]; // w14 final review M2
+    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore, DisplayModes.GameState, LaunchArguments.LauncherOptions.Store]; // w14 final review M2; w14 last fixes (launcher records)
 
     /// <summary>
     /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only

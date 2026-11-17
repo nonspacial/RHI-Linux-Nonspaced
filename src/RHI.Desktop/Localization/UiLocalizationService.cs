@@ -1678,6 +1678,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DownloadSources.SteamWebApi.RefusalPrefix, "Download recusado: links da API Web da Steam devem ser HTTPS em um host confiável (api.steampowered.com). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.SteamGridDbApi.RefusalPrefix, "Download recusado: links da API do SteamGridDB devem ser HTTPS em um host confiável (www.steamgriddb.com). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.SteamGridDbImages.RefusalPrefix, "Download recusado: links da imagem do SteamGridDB devem ser HTTPS em um host confiável (servidores de imagens do SteamGridDB). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.ShaderPackPatreon.RefusalPrefix, "Download recusado: links de pacote de shaders do ReShade (Patreon) devem ser HTTPS em um host confiável (links de arquivo do Patreon e servidores de arquivos do Patreon). Link recusado: "),
         (RHI.Platform.Linux.Artwork.SteamArtworkService.NotAnImageMessage, "O arquivo não é uma imagem JPEG, PNG, WebP ou BMP."),
         (RHI.Platform.Linux.Artwork.SteamArtworkService.TooLargeMessage, "A imagem tem mais de 32 MB."),
         (RHI.Platform.Linux.Artwork.SteamGridDbService.DownloadFailedMessage, "Não foi possível baixar a imagem. Verifique sua conexão e tente novamente."),

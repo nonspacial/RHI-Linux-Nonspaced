@@ -33,11 +33,13 @@ Not on `main` yet.
 > There is no guard against this: 2.8.8 treats a component kind it does not know as damaged and leaves it out, so the
 > records cannot be written in a shape it would keep.
 
-- Known limitation: **Block Steam updates** makes the game's Steam app manifest read-only, as upstream does, but on
-  Linux Steam replaces that file by renaming a new one over it, which a read-only file does not prevent. The block
-  lasts until Steam next rewrites the game's manifest (for example when it queues an update); the switch then reads
-  "Block Steam updates" again. For a block that holds, use Steam's own "Only update this game when I launch it" in the
-  game's properties. Details in UPSTREAM.md (#290).
+- **Block Steam updates now holds on Linux** (#290): Steam replaces a game's app manifest by renaming a new file over
+  it, which a read-only file does not stop. Turning the block on now also sets the game to Steam's "Only update this
+  game when I launch it" and locks the manifest (immutable, `chattr +i`), which asks for your password through the
+  desktop's prompt (polkit); the ⚙ panel says "Blocked" only once the lock is confirmed. Without the lock (no `pkexec`
+  or `chattr`, a file system without immutable files, or the prompt cancelled) the manifest stays launch-only and
+  read-only, and RHI says that Steam may still update the game when you launch it, and why. Turning it off unlocks the
+  manifest (password again) and puts back its mode and update setting. While blocked, Steam may show an update error.
 
 ### Wave 14 — renodx-reshade
 
@@ -48,7 +50,9 @@ Not on `main` yet.
   "Download all shaders" on or off; packs you never used are still downloaded only when needed (#267). Packs that
   come as a branch archive (most of them) now update when their author changes them; before, the first download was
   kept for good. Packs the online manifest adds (SD Shaders, UltrawideSideGlass) update like the others, and
-  UltrawideSideGlass, a single `.fx` file, now installs at all (#265).
+  UltrawideSideGlass, a single `.fx` file, now installs at all (#265). Zenteon+ Shaders, a free file on Patreon, now
+  downloads: only Patreon's file links and file servers are allowed for it, each redirect is checked, and no cookies
+  or tokens are sent (#265).
 - RenoDX add-ons hosted on a modder's own site (such as UE-Extended) install from the same file on the modder's
   GitHub when the site cannot be reached. A second download of an add-on (`renodx-x (1).addon64`) no longer blocks an
   install or update: it is renamed so ReShade does not load it twice (the file is kept), and a dropped one installs
@@ -82,9 +86,9 @@ Wave 14 — library-updates
   the value must be a whole number from 20 to 1000 (upstream 2.8.9).
 - **Games that ship FFmpeg, Qt, SDL or a web view no longer read as DirectX 12** when nothing else says which API they
   use (OpenMW, for example; upstream 2.9.2).
-- **Block Steam updates** (upstream 2.9.4): a new action beside Favourite and Hide for Steam games makes the game's
-  Steam app manifest read-only, so Steam can't update the game and your mods keep working until they're updated. Allow
-  Steam updates turns it off. Refused while Steam is in the middle of updating the game.
+- **Block Steam updates** (upstream 2.9.4): a new action beside Favourite and Hide for Steam games stops Steam updating
+  the game (the app manifest set to launch-only, read-only and locked; see above), so your mods keep working until
+  they're updated. Allow Steam updates turns it off. Refused while Steam is in the middle of updating the game.
 - **Remove from RHI** (upstream 2.9.0): takes a game out of every list, Hidden included, and scans don't bring it back.
   **Settings → Removed games** lists them with Restore. Components RHI installed in the game stay installed.
 
