@@ -368,6 +368,26 @@ Wave 14 — extras-fg-2
   in every theme that keeps upstream's warning colour (#301).
 - ASI Loader has a ⚙, between Install and Remove, that says it has nothing to set, as upstream (#297).
 
+### Wave 14 — layouts-c
+
+- **Launch arguments for each game** (upstream 2.9.0): type them in Game Overrides › Launch arguments (saved when you
+  leave the box or press Enter), or reach the box from Tabs' Launch ▾ › Launch arguments…. RHI adds them when it starts
+  a standalone Wine game itself, and starts a Steam game with `steam -applaunch <id>` and your arguments. Under the box
+  RHI says how they reach the game, or, for Heroic, Lutris, a store client, a non-Steam shortcut or a launch command you
+  typed in Edit game, where to add them instead: RHI never changes a command you typed. **Reset launch options** clears
+  the arguments and the launch command typed in Edit game; Management's Reset Overrides clears the arguments too
+  (#304).
+- Tabs' Launch ▾ menu has upstream's entries: Executable (opens Edit game), Launch arguments…, then Copy launch profile
+  and Create shortcut (#304).
+- **Display modes can swap the launch arguments** (upstream 2.9.3): set them in a mode's Edit… or a game's Custom mode
+  (empty means no arguments in that mode); Off puts the game's own back (#311).
+- **Update All shows how many games have updates, or "All up to date"** (upstream 2.9.0): RHI now checks every game
+  for updates at start and then every 4 hours (every hour with a GitHub token), whether or not automatic updates are on.
+  The check only looks: it changes no file, leaves hidden games out and stops when GitHub's hourly request limit is
+  reached, saying how many games it did not check. Games with an update are marked in the game list (#303).
+- **In Tabs, a component's ⚙ now opens right under the card you clicked**, and the cards after it move down; before,
+  it opened under all the cards. In Extras it opens right under the row (#304).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one
