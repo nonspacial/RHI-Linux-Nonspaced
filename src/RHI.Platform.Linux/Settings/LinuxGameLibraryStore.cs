@@ -347,7 +347,18 @@ public sealed class LinuxGameLibraryState
         return LinuxGameLibraryStore.ResolvedFolderKey(game) is { } resolved && GameEdits.TryGetValue(resolved, out edit!);
     }
 
-    private string[] OlderKeys(RHI.Core.Models.DetectedGame game)
+    /// <summary>
+    /// w14 final review M2: the keys <see cref="AdoptOlderKeys"/> moves state from, for a store kept outside this file
+    /// (display-modes.json): <paramref name="otherKeys"/> are that store's keys, looked at as this file's own are (the same
+    /// folder in another spelling, a Steam library moved). The current key is not listed.
+    /// </summary>
+    public IReadOnlyList<string> OlderKeysFor(RHI.Core.Models.DetectedGame game, IEnumerable<string> otherKeys)
+    {
+        var key = LinuxGameLibraryStore.GameKey(game);
+        return OlderKeys(game, otherKeys.ToArray()).Where(k => !string.Equals(k, key, StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
+
+    private string[] OlderKeys(RHI.Core.Models.DetectedGame game, IReadOnlyCollection<string>? otherKeys = null)
     {
         var keys = new List<string> { LinuxGameLibraryStore.LegacyGameKey(game) };
         if (LinuxGameLibraryStore.ResolvedFolderKey(game) is { } resolved) keys.Add(resolved);
@@ -357,11 +368,12 @@ public sealed class LinuxGameLibraryState
             keys.Add(LinuxGameLibraryStore.LegacyGameKey(alias));
             if (LinuxGameLibraryStore.ResolvedFolderKey(alias) is { } aliasResolved) keys.Add(aliasResolved);
         }
-        keys.AddRange(LinuxGameLibraryStore.SameFolderKeys(game, FavouriteGames.Concat(HiddenGames).Concat(GameEdits.Keys).Concat(HdrProfiles.Keys)).ToArray());
+        var stored = otherKeys ?? FavouriteGames.Concat(HiddenGames).Concat(GameEdits.Keys).Concat(HdrProfiles.Keys).ToArray();
+        keys.AddRange(LinuxGameLibraryStore.SameFolderKeys(game, stored).ToArray());
         if (game.SteamAppId is int appId && LinuxGameLibraryStore.SteamLibraryTail(LinuxGameLibraryStore.IdentityPath(game)) is { } tail)
         {
             var prefix = LinuxGameLibraryStore.LegacyKeyPrefix(game.Source, appId);
-            keys.AddRange(FavouriteGames.Concat(HiddenGames).Concat(GameEdits.Keys).Concat(HdrProfiles.Keys)
+            keys.AddRange(stored
                 .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
                             && string.Equals(LinuxGameLibraryStore.SteamLibraryTail(k[prefix.Length..]), tail, StringComparison.OrdinalIgnoreCase)));
         }

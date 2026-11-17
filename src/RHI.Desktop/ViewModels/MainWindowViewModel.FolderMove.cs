@@ -40,8 +40,10 @@ public partial class MainWindowViewModel
         StatusText = TF("FolderMove.Moving", newGame.Name);
         try
         {
-            return await Task.Run(() => _managedComponents.MoveInstallFolderAsync(oldGame, newGame, oldDir, newDir,
-                [_apiOverrideStore, _optiScalerVariantStore], alongside, op.Token));
+            var result = await Task.Run(() => _managedComponents.MoveInstallFolderAsync(oldGame, newGame, oldDir, newDir,
+                [_apiOverrideStore, _optiScalerVariantStore, DisplayModes.GameState], alongside, op.Token));
+            if (result.Success && !result.NothingToMove) DisplayModes.FollowCommittedMove(); // w14 final review M2
+            return result;
         }
         finally
         {

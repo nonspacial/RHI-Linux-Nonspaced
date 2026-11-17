@@ -407,6 +407,12 @@ public sealed class DisplayModeStore
         lock (_lock) return _games.Remove(gameKey);
     }
 
+    /// <summary>Keys of every game with display mode state (w14 final review M2: older keys a scan adopts).</summary>
+    public IReadOnlyList<string> GameKeys
+    {
+        get { lock (_lock) return _games.Keys.ToList(); }
+    }
+
     /// <summary>The game's state moved to a new library key (a moved game folder): its state follows. True when moved.</summary>
     public bool MoveGame(string oldKey, string newKey)
     {

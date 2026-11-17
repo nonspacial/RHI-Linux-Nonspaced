@@ -32,6 +32,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         _shell = shell;
         _file = new DisplayModeFileStore(Path.Combine(configRoot, "display-modes.json"));
         Store.Load(_file.Load(out _unreadable));
+        GameState = new DisplayModeGameState(Store, _file);
         var files = managed.DisplayModeFiles ?? new DisplayModeGameFiles(records, null, managed.IniWriteRefusal);
         Service = new DisplayModeService(Store, new DisplayModeIo(files)) { GlobalValue = GlobalValue };
         managed.DisplayModeKeeper = KeepForInstall;
@@ -42,6 +43,31 @@ public sealed partial class DisplayModesPresenter : ObservableObject
     }
 
     public DisplayModeStore Store { get; } = new();
+
+    /// <summary>w14 final review M2: display-modes.json as a per-game store that follows a moved or re-keyed game.</summary>
+    public DisplayModeGameState GameState { get; }
+
+    /// <summary>After a committed folder move or Repair after move: the session follows the file (the game's new key).</summary>
+    internal void FollowCommittedMove()
+    {
+        GameState.ReloadAfterCommit();
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// A scan (w14 final review M2): state saved under keys <paramref name="game"/> had before (older builds, merged
+    /// duplicates; <see cref="LinuxGameLibraryState.AdoptOlderKeys"/>) moves to its key now. True when anything moved.
+    /// </summary>
+    internal bool AdoptOlderKeys(DetectedGame game, LinuxGameLibraryState library)
+        => GameState.AdoptOlderKeys(Key(game), library.OlderKeysFor(game, Store.GameKeys));
+
+    /// <summary>Saves what a scan adopted; the localised refusal, or null.</summary>
+    internal string? SaveAdopted()
+    {
+        var refused = Save();
+        RaiseChanged();
+        return refused;
+    }
     public DisplayModeService Service { get; }
     public string FilePath => _file.FilePath;
 
