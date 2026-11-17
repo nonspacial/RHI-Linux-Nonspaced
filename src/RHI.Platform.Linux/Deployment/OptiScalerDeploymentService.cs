@@ -396,13 +396,34 @@ public sealed partial class OptiScalerDeploymentService
     /// generation uses <c>winmm.dll</c>, #136); null = <see cref="DefaultProxyName"/>. Recorded: update and removal use it.</param>
     /// <param name="releaseTag">#270: Stable, DLSS NR or F5 only: the release to pin (its GitHub tag); null = Latest. Recorded:
     /// the update check reports it current and Update leaves it.</param>
-    public async Task<ComponentOperationResult> InstallAsync(
+    public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         OptiScalerVariant variant,
         string? nightlyBuild,
         string? proxyName,
         string? releaseTag,
         CancellationToken cancellationToken = default)
+        => InstallCoreAsync(game, variant, nightlyBuild, proxyName, releaseTag, prepared: null, cancellationToken);
+
+    /// <summary>
+    /// w14 final review m1: installs the package <see cref="PrepareInstallAsync"/> or <see cref="PrepareExactInstallAsync"/>
+    /// already fetched (its version, pin and DLSS NR DLL), so a version switch never downloads after it removed OptiScaler.
+    /// </summary>
+    internal Task<ComponentOperationResult> InstallPreparedAsync(
+        DetectedGame game,
+        PreparedOptiScalerInstall prepared,
+        string? proxyName,
+        CancellationToken cancellationToken = default)
+        => InstallCoreAsync(game, prepared.Variant, prepared.NightlyBuild, proxyName, prepared.ReleaseTag, prepared, cancellationToken);
+
+    private async Task<ComponentOperationResult> InstallCoreAsync(
+        DetectedGame game,
+        OptiScalerVariant variant,
+        string? nightlyBuild,
+        string? proxyName,
+        string? releaseTag,
+        PreparedOptiScalerInstall? prepared,
+        CancellationToken cancellationToken)
     {
         if (releaseTag is not null)
         {
@@ -465,16 +486,17 @@ public sealed partial class OptiScalerDeploymentService
         OptiScalerPackage package;
         string? nrRuntime = null;
         string? nrRuntimeVersion = null;
-        try
+        if (prepared is not null)
+            (package, nrRuntime, nrRuntimeVersion) = (prepared.Package, prepared.NrRuntime, prepared.NrRuntimeVersion);
+        else
         {
-            package = nightlyBuild is not null
-                ? await _packages.GetNightlyBuildAsync(nightlyBuild, cancellationToken).ConfigureAwait(false)
-                : releaseTag is not null
-                    ? await _packages.GetReleaseAsync(variant, releaseTag, cancellationToken).ConfigureAwait(false)
-                    : await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false);
-            (nrRuntime, nrRuntimeVersion) = await PrepareDlssNrRuntimeAsync(variant, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                package = await FetchPackageAsync(variant, nightlyBuild, releaseTag, cancellationToken).ConfigureAwait(false);
+                (nrRuntime, nrRuntimeVersion) = await PrepareDlssNrRuntimeAsync(variant, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
         }
-        catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
 
         // The user's INI template for this channel and GPU setup (#97), seeded on first use; the package's INI otherwise.
         string? iniTemplate = null;
@@ -650,7 +672,7 @@ public sealed partial class OptiScalerDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         SaveReferenceIni(game, package.RootDirectory); // #272: the build's own INI describes All Settings
         return ComponentOperationResult.Ok(
-            $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as {proxyName}" +
+            $"OptiScaler {VariantLabel(variant)} {package.Version} installed from {InstallSourceText(variant)} as {proxyName}" +
             (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled.") + iniTemplateNote + optiPatcherNote,
             proxyTarget);
     }

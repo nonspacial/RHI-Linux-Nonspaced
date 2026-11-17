@@ -331,7 +331,8 @@ public sealed partial class OptiScalerCustomBuildTests : IDisposable
 
         Assert.True(switched.Success, switched.Message);
         Assert.StartsWith(LinuxManagedComponentService.SwitchedPrefix + "Custom: Build A → Custom: Build B.", switched.Message, StringComparison.Ordinal);
-        Assert.EndsWith(LinuxManagedComponentService.SwitchKeptSuffix + "1", switched.Message, StringComparison.Ordinal);
+        Assert.Contains(LinuxManagedComponentService.SwitchKeptSuffix + "1 ", switched.Message, StringComparison.Ordinal);
+        Assert.EndsWith("installed from the custom build in RHI's data folder as dxgi.dll.", switched.Message, StringComparison.Ordinal); // the install's own line stays
         Assert.Equal(b.Variant, managed.GetInstalledOptiScalerVariant(game));
         Assert.Contains("B", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "marker.dll")), StringComparison.Ordinal);
         Assert.Equal("true", OptiScalerIniEditor.GetValueInFile(ini, "Plugins", "LoadReshade")); // the user's value

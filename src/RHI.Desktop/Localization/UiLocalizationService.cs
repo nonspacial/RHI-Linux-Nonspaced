@@ -1450,6 +1450,13 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchNotRestoredPrefix, " A versão anterior também não pôde ser instalada de novo: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchedPrefix, "O OptiScaler foi trocado para outra versão: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchKeptSuffix, " Configurações do OptiScaler.ini mantidas: "),
+        // w14 final review (platform A): the switch's pre-flight (m1) and ANR FG across it (m2)
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchNotStartedPrefix, "O OptiScaler não foi trocado, nada mudou: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchPreviousUnavailablePrefix, "O OptiScaler não foi trocado, nada mudou: não foi possível preparar a versão instalada para voltar se a troca falhasse: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ExactVersionUnknownMessage, "O RHI não consegue saber de qual release veio o OptiScaler instalado, então ele não poderia voltar se a troca falhasse."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchAnrFgCarriedNote, " O ANR FG foi colocado de volta para a nova versão."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchAnrFgDroppedPrefix, " O ANR FG foi removido com a versão antiga e não pôde ser colocado de volta: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchAnrFgClearedNote, " O FG Nvngx Replacement foi definido como None no OptiScaler.ini, então o OptiScaler não o procura."),
         // #272 ANR FG
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgNotManagedMessage, "Instale o OptiScaler (Nightly) primeiro."),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgUnsupportedPrefix, "Esta versão do OptiScaler ainda não carrega o ANR FG: "),

@@ -78,10 +78,13 @@ public sealed partial class LinuxManagedComponentService
     // Every OptiScaler install path (#172): the name OptiScalerProxyNameFor decides, and a plain sentence when the saved
     // choice was skipped because another RHI component holds it.
     private async Task<ComponentOperationResult> InstallOptiScalerUnderChosenNameAsync(
-        DetectedGame game, OptiScalerVariant variant, string? nightlyBuild, CancellationToken cancellationToken, string? releaseTag = null)
+        DetectedGame game, OptiScalerVariant variant, string? nightlyBuild, CancellationToken cancellationToken, string? releaseTag = null,
+        PreparedOptiScalerInstall? prepared = null)
     {
         var skipped = OptiScalerSkippedChoice(game);
-        var result = await _optiscaler.InstallAsync(game, variant, nightlyBuild, OptiScalerProxyNameFor(game), releaseTag, cancellationToken).ConfigureAwait(false);
+        var result = prepared is not null
+            ? await _optiscaler.InstallPreparedAsync(game, prepared, OptiScalerProxyNameFor(game), cancellationToken).ConfigureAwait(false)
+            : await _optiscaler.InstallAsync(game, variant, nightlyBuild, OptiScalerProxyNameFor(game), releaseTag, cancellationToken).ConfigureAwait(false);
         if (result.Success && await ReapplyOptiScalerIniChoicesAsync(game).ConfigureAwait(false) is { Length: > 0 } reapplied) // #272
             result = result with { Message = result.Message + reapplied };
         return result.Success && skipped is not null
