@@ -252,7 +252,7 @@ public sealed class AppUpdatePresenterTests : IDisposable
 
         await presenter.NotifyAtStartupAsync(Task.CompletedTask, notices.Add);
 
-        Assert.Equal(["RHI-Linux 0.9.24 is available (this is 0.9.23.4-beta.1) — see Settings → Accounts & updates."], notices);
+        Assert.Equal(["RHI-Linux 0.9.24 is available (this is 0.9.23.4-beta.1) — see Settings › General › Updates."], notices);
         Assert.Equal("Version 0.9.24 is available (this is 0.9.23.4-beta.1).", presenter.StatusText);
         presenter.OpenReleasePage();
         Assert.Equal(["https://github.com/rhi-tests/fork/releases/tag/v0.9.24"], opened);

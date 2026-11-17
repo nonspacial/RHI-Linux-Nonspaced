@@ -552,7 +552,7 @@ public static class UiLocalizationService
     };
 
 
-    private static readonly (string En, string Pt)[] ExactPresentationPairs =
+    internal static readonly (string En, string Pt)[] ExactPresentationPairs =
     [
         // LinuxGameLauncher.HandoffProfileRefused (#46).
         ("Launch profile not applied: a store launcher starts this game, so the profile has to be entered in that launcher.",
@@ -747,10 +747,10 @@ public static class UiLocalizationService
         // w12/github-cache rows
         // w12/luma rows
         (RHI.Platform.Linux.Network.NexusModUpdateCheck.NoKeyMessage,
-            "O RHI só verifica se há atualizações deste mod no Nexus Mods com uma conta do Nexus conectada: Configurações → Contas e atualizações → Conectar conta do Nexus."),
+            "O RHI só verifica se há atualizações deste mod no Nexus Mods com uma conta do Nexus conectada: Configurações › Contas e dados › Contas e dados dos mods › Conectar conta do Nexus."),
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusCurrentMessage, "Não há um arquivo Luma mais novo no Nexus Mods."),
         (RHI.Platform.Linux.Network.NexusModUpdateCheck.KeyRefusedMessage,
-            "O Nexus Mods recusou a chave do Nexus salva, então o RHI não pôde verificar se há atualizações deste mod. Conecte a conta de novo: Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus."),
+            "O Nexus Mods recusou a chave do Nexus salva, então o RHI não pôde verificar se há atualizações deste mod. Conecte a conta de novo: Configurações › Contas e dados › Contas e dados dos mods › Desconectar e depois Conectar conta do Nexus."),
         (RHI.Platform.Linux.Deployment.LumaFrameworkDeploymentService.NexusOnlyInstallMessage,
             "O mod Luma deste jogo é publicado só no Nexus Mods, então o RHI não pode baixá-lo. Baixe-o na página dele no Nexus Mods e solte o arquivo no RHI para instalá-lo."),
         // w12/epic rows
@@ -777,7 +777,7 @@ public static class UiLocalizationService
             "O Nexus Mods não mostrou os arquivos deste mod (ele pode estar oculto ou removido), então o RHI não pôde verificar se há atualizações."),
     ];
 
-    private static readonly (string En, string Pt)[] PresentationPairs =
+    internal static readonly (string En, string Pt)[] PresentationPairs =
     [
         ("Winetricks is unavailable: this prefix was built by a Proton build that is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library. Missing Proton: ",
          "Winetricks indisponível: este prefixo foi criado por um Proton que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca. Proton ausente: "),
@@ -1243,7 +1243,7 @@ public static class UiLocalizationService
         // w3/scan rows
         ("The app that installed this game is working on it (installing, updating, preparing or running it); RHI changes nothing until it has finished.", "O app que instalou este jogo está trabalhando nele (instalando, atualizando, preparando ou executando); o RHI não altera nada até ele terminar."),
         ("The job list of the app that installed this game could not be read, so RHI cannot tell whether that app is changing it. File: ", "Não foi possível ler a lista de tarefas do app que instalou este jogo, então o RHI não sabe se esse app está alterando o jogo. Arquivo: "),
-        ("This game was installed by a copy of the Xbox app RHI does not know, so it cannot tell whether that app is changing it. Nothing was changed. Start that app once, or add its folder in Settings → Xbox / Game Pass folders. Folder: ", "Este jogo foi instalado por uma cópia do app do Xbox que o RHI não conhece, então não sabe se esse app está alterando o jogo. Nada foi alterado. Abra esse app uma vez ou adicione a pasta dele em Configurações → Pastas do Xbox / Game Pass. Pasta: "),
+        ("This game was installed by a copy of the Xbox app RHI does not know, so it cannot tell whether that app is changing it. Nothing was changed. Start that app once, or add its folder in Settings › Tools & Maintenance › Xbox / Game Pass folders. Folder: ", "Este jogo foi instalado por uma cópia do app do Xbox que o RHI não conhece, então não sabe se esse app está alterando o jogo. Nada foi alterado. Abra esse app uma vez ou adicione a pasta dele em Configurações › Ferramentas e manutenção › Pastas do Xbox / Game Pass. Pasta: "),
         ("An instance file of the Xbox app uses a newer format than this RHI reads (update RHI); that instance is not read from it. File: ", "Um arquivo de instância do app do Xbox usa um formato mais novo do que este RHI lê (atualize o RHI); essa instância não é lida dele. Arquivo: "),
         (RHI.Core.Services.XboxWriteGate.EncryptedExecutableMessage, "Não foi possível determinar se o executável do jogo é de 32 ou 64 bits: este pacote do Xbox o mantém criptografado no disco e não declara sua arquitetura, então o RHI não pode instalar mods nele."),
         ("RHI never changes this file of an Xbox package: the game would no longer start, or the app that installed it would put it back. File: ", "O RHI nunca altera este arquivo de um pacote Xbox: o jogo deixaria de iniciar, ou o app que o instalou o restauraria. Arquivo: "),

@@ -54,7 +54,7 @@ internal static class SpotlightUiStrings
         ("Shots.Many", "{0} capturas de tela", "{0} screenshots"),
         ("Shots.Hint", "Clique em uma captura para abri-la. Clique com o botão direito para mais: defini-la como banner, copiá-la ou excluí-la.", "Click a screenshot to open it. Right-click for more: set it as the banner, copy it or delete it."),
         ("Shots.How", "Tire uma no jogo com a tecla de captura do ReShade (Print Screen por padrão).", "Take one in the game with ReShade's screenshot key (Print Screen by default)."),
-        ("Shots.HowNoFolder", "Tire uma captura no jogo com a tecla de captura do ReShade (Print Screen por padrão) ou defina uma pasta em Configurações › ReShade › Pasta de capturas.", "Take a screenshot in the game with ReShade's screenshot key (Print Screen by default), or set a folder in Settings › ReShade › Screenshot folder."),
+        ("Shots.HowNoFolder", "Tire uma captura no jogo com a tecla de captura do ReShade (Print Screen por padrão) ou defina uma pasta em Configurações › ReShade e RenoDX › Teclas, capturas de tela e brilho › Pasta de capturas de tela.", "Take a screenshot in the game with ReShade's screenshot key (Print Screen by default), or set a folder in Settings › ReShade & RenoDX › Keys, screenshots and brightness › Screenshot folder."),
         ("Shots.More", "Mostrar mais ({0} restantes)", "Show more ({0} left)"),
         ("Shots.Fallback", "Captura {0}", "{0} screenshot"),
         ("Shots.ThumbTip", "{0}\n{1}\nClique para abrir, clique com o botão direito para mais", "{0}\n{1}\nClick to open, right-click for more"),

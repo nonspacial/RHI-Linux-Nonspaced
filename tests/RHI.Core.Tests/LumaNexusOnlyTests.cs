@@ -198,9 +198,9 @@ public sealed class LumaNexusOnlyTests : IDisposable
 
         Assert.True(check.CouldNotCheck);
         Assert.False(check.UpdateAvailable);
-        Assert.Contains("Settings → Accounts & updates → Disconnect, then Connect Nexus account", check.Message, StringComparison.Ordinal);
+        Assert.Contains("Settings › Accounts & Data › Accounts and mod data › Disconnect, then Connect Nexus account", check.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("revoked", check.Message, StringComparison.Ordinal);
-        Assert.Contains("Configurações → Contas e atualizações → Desconectar e depois Conectar conta do Nexus",
+        Assert.Contains("Configurações › Contas e dados › Contas e dados dos mods › Desconectar e depois Conectar conta do Nexus",
             UiLocalizationService.PresentFor("pt-BR", check.Message), StringComparison.Ordinal);
     }
 
@@ -458,7 +458,7 @@ public sealed class NexusModUpdateCheckTests
         var answer = await check.CheckAsync(Page, Installed);
 
         Assert.Equal("KeyRefused", answer.Outcome.ToString());
-        Assert.Contains("Settings → Accounts & updates", answer.Message, StringComparison.Ordinal);
+        Assert.Contains("Settings › Accounts & Data", answer.Message, StringComparison.Ordinal);
     }
 
     // w12 follow-up (coordinator ruling on re-review luma N2): 403 = the mod's files are not shown (hidden or removed), never
@@ -472,7 +472,7 @@ public sealed class NexusModUpdateCheckTests
         await check.CheckAsync(Page, Installed);
 
         Assert.Equal((NexusModUpdateOutcome.Failed, NexusModUpdateCheck.ModNotShownMessage), (answer.Outcome, answer.Message));
-        Assert.DoesNotContain("Accounts & updates", answer.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Accounts & Data", answer.Message, StringComparison.Ordinal);
         Assert.Equal(2, requests.Count);
     }
 

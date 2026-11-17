@@ -40,7 +40,7 @@ public sealed class RemovedGamesTests : IDisposable
 
         await fx.Vm.RemoveFromRhiCommand.ExecuteAsync(null);
 
-        Assert.Equal("Remove Me was removed from RHI. Settings → Removed games brings it back.", fx.Vm.StatusText);
+        Assert.Equal("Remove Me was removed from RHI. Settings › Tools & Maintenance › Troubleshooting › Removed games brings it back.", fx.Vm.StatusText);
         Assert.DoesNotContain(fx.Vm.AllLibraryGames, game => game.Name == "Remove Me");
         fx.Vm.LibraryFilterMode = "Hidden";
         Assert.DoesNotContain(fx.Vm.Games, row => row.Game.Name == "Remove Me");

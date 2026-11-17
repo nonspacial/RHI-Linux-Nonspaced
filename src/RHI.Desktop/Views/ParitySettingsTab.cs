@@ -53,7 +53,7 @@ internal static class ParitySettingsTab
         sync();
     }
 
-    internal static TextBlock Heading(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, FontSize = 15 };
+    internal static TextBlock Heading(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, FontSize = 15, Classes = { "settingsHead" } }; // a heading Find and help paths name
 
     internal static TextBlock Note(string text) => new() { Text = text, FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap };
 

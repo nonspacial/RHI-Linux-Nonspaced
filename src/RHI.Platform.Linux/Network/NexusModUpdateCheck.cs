@@ -43,9 +43,9 @@ public sealed class NexusModUpdateCheck
     public static readonly TimeSpan RateLimitBackoff = TimeSpan.FromMinutes(5);
 
     // Fixed messages (PT-BR presentation pairs); values come last.
-    public const string NoKeyMessage = "RHI checks this mod for updates on Nexus Mods only with a connected Nexus account: Settings → Accounts & updates → Connect Nexus account.";
+    public const string NoKeyMessage = "RHI checks this mod for updates on Nexus Mods only with a connected Nexus account: Settings › Accounts & Data › Accounts and mod data › Connect Nexus account.";
     public const string FailedPrefix = "Nexus Mods could not be asked about this mod just now: ";
-    public const string KeyRefusedMessage = "Nexus Mods refused the saved Nexus key, so RHI could not check this mod for updates. Connect the account again: Settings → Accounts & updates → Disconnect, then Connect Nexus account.";
+    public const string KeyRefusedMessage = "Nexus Mods refused the saved Nexus key, so RHI could not check this mod for updates. Connect the account again: Settings › Accounts & Data › Accounts and mod data › Disconnect, then Connect Nexus account.";
     public const string NotAModPageMessage = "The link is not a Nexus Mods mod page.";
     public const string NoDatedFileMessage = "Nexus Mods lists no dated main file for this mod.";
     /// <summary>
