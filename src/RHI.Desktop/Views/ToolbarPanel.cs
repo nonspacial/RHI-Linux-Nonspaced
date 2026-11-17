@@ -46,6 +46,14 @@ public sealed class ToolbarPanel : Panel
         AvaloniaProperty.RegisterAttached<ToolbarPanel, Control, bool>("Collapsible");
 
     /// <summary>
+    /// w14 final review m5: a leading child (Available Mods, Shaders &amp; Addons) that goes into the '…' menu once every item
+    /// has and the row still does not fit (a narrow window at a large size), from the right end; listed first in the menu.
+    /// Mark only the leading group's last children.
+    /// </summary>
+    public static readonly AttachedProperty<bool> OverflowsProperty =
+        AvaloniaProperty.RegisterAttached<ToolbarPanel, Control, bool>("Overflows");
+
+    /// <summary>
     /// #185: an item with nothing to offer right now (the "New mods" button while nothing is new): never shown, takes no
     /// room and never goes into the overflow menu. Bind it instead of <c>IsVisible</c>, which the panel itself writes.
     /// </summary>
@@ -81,7 +89,7 @@ public sealed class ToolbarPanel : Panel
     {
         _estimates = null;
         InvalidateMeasure();
-    }, [SlotProperty, IsSeparatorProperty, CollapsibleProperty, IsAbsentProperty]);
+    }, [SlotProperty, IsSeparatorProperty, CollapsibleProperty, IsAbsentProperty, OverflowsProperty]);
 
     public static ToolbarSlot GetSlot(Control c) => c.GetValue(SlotProperty);
     public static void SetSlot(Control c, ToolbarSlot v) => c.SetValue(SlotProperty, v);
@@ -89,6 +97,8 @@ public sealed class ToolbarPanel : Panel
     public static void SetIsSeparator(Control c, bool v) => c.SetValue(IsSeparatorProperty, v);
     public static bool GetCollapsible(Control c) => c.GetValue(CollapsibleProperty);
     public static void SetCollapsible(Control c, bool v) => c.SetValue(CollapsibleProperty, v);
+    public static bool GetOverflows(Control c) => c.GetValue(OverflowsProperty);
+    public static void SetOverflows(Control c, bool v) => c.SetValue(OverflowsProperty, v);
     public static bool GetIsAbsent(Control c) => c.GetValue(IsAbsentProperty);
     public static void SetIsAbsent(Control c, bool v) => c.SetValue(IsAbsentProperty, v);
 
@@ -96,7 +106,8 @@ public sealed class ToolbarPanel : Panel
     public double LeadingSpacing { get => GetValue(LeadingSpacingProperty); set => SetValue(LeadingSpacingProperty, value); }
     public double MinGap { get => GetValue(MinGapProperty); set => SetValue(MinGapProperty, value); }
 
-    /// <summary>Items currently moved into the overflow menu, in authored order (separators excluded).</summary>
+    /// <summary>Children currently moved into the overflow menu: overflowed leading children, then items, in authored order
+    /// (separators excluded).</summary>
     public IReadOnlyList<Control> OverflowItems { get; private set; } = [];
 
     /// <summary>Raised (during measure) when <see cref="OverflowItems"/> changes.</summary>
@@ -118,6 +129,8 @@ public sealed class ToolbarPanel : Panel
         public required double LeadingCompact;
         public required Control[] Collapsible;
         public required Control[] Absent;
+        public required Control[] LeadingOverflows;
+        public required double[] LeadingOverflowWidths;
     }
 
     private Estimates Estimate()
@@ -139,11 +152,12 @@ public sealed class ToolbarPanel : Panel
             }
         }
         var collapsible = leading.SelectMany(c => c.GetVisualDescendants().OfType<Control>().Prepend(c)).Where(GetCollapsible).ToArray();
-        var owned = new HashSet<Control>(items.Concat(absent));
+        var leadingOverflows = leading.Where(GetOverflows).ToArray();
+        var owned = new HashSet<Control>(items.Concat(absent).Concat(leadingOverflows));
         if (overflow is not null) owned.Add(overflow);
         Release(owned, collapsible);
         var full = new WidthEstimator(new WidthEstimator.Values { IsIncluded = c => owned.Contains(c) || GetCollapsible(c) || c.IsVisible });
-        var compactLeading = new WidthEstimator(new WidthEstimator.Values { IsIncluded = c => !GetCollapsible(c) && c.IsVisible });
+        var compactLeading = new WidthEstimator(new WidthEstimator.Values { IsIncluded = c => !GetCollapsible(c) && (c.IsVisible || owned.Contains(c)) });
 
         double Group(List<Control> group, WidthEstimator estimator, double spacing)
         {
@@ -170,7 +184,9 @@ public sealed class ToolbarPanel : Panel
             LeadingFull = Group(leading, full, LeadingSpacing),
             LeadingCompact = Group(leading, compactLeading, LeadingSpacing),
             Collapsible = collapsible,
-            Absent = absent.ToArray()
+            Absent = absent.ToArray(),
+            LeadingOverflows = leadingOverflows,
+            LeadingOverflowWidths = leadingOverflows.Select(compactLeading.Estimate).ToArray()
         };
     }
 
@@ -181,7 +197,7 @@ public sealed class ToolbarPanel : Panel
 
         if (double.IsInfinity(availableSize.Width))
         {
-            Apply(e, e.Items.Length, compact: false);
+            Apply(e, e.Items.Length, compact: false, e.LeadingOverflows.Length);
         }
         else
         {
@@ -195,12 +211,17 @@ public sealed class ToolbarPanel : Panel
             allItems += Spacing * Math.Max(0, e.ItemWidths.Length - 1);
             if (allItems <= RightBudget(e.LeadingFull))
             {
-                Apply(e, e.Items.Length, compact: false);
+                Apply(e, e.Items.Length, compact: false, e.LeadingOverflows.Length);
             }
             else
             {
                 var kept = ToolbarOverflow.VisibleCount(e.ItemWidths, e.Separators, Spacing, RightBudget(e.LeadingCompact), e.OverflowWidth);
-                Apply(e, kept, compact: true);
+                // Every item gone and still too wide (a narrow window at a large size): the leading group's overflowable
+                // children follow them into the menu, from the right end, so nothing overlaps the '…' and Settings.
+                var leadingKept = kept > 0 || e.Items.Length == 0 && e.Overflow is null
+                    ? e.LeadingOverflows.Length
+                    : ToolbarOverflow.LeadingKept(e.LeadingCompact, e.LeadingOverflowWidths, LeadingSpacing, RightBudget(0) - e.OverflowWidth);
+                Apply(e, kept, compact: true, leadingKept);
             }
         }
 
@@ -255,7 +276,7 @@ public sealed class ToolbarPanel : Panel
         return new Size(width, height);
     }
 
-    private void Apply(Estimates e, int kept, bool compact)
+    private void Apply(Estimates e, int kept, bool compact, int leadingKept)
     {
         _applying = true;
         try
@@ -263,12 +284,13 @@ public sealed class ToolbarPanel : Panel
             foreach (var c in e.Collapsible) SetShown(c, !compact);
             foreach (var c in e.Absent) SetShown(c, false);
             IsLeadingCompact = compact;
+            for (var i = 0; i < e.LeadingOverflows.Length; i++) SetShown(e.LeadingOverflows[i], i < leadingKept);
             for (var i = 0; i < e.Items.Length; i++) SetShown(e.Items[i], i < kept);
-            var hidden = ToolbarOverflow.Hidden(e.Separators, kept);
-            if (e.Overflow is not null) SetShown(e.Overflow, hidden.Count > 0);
-            if (!SameItems(hidden, e.Items))
+            var hidden = e.LeadingOverflows.Skip(leadingKept).Concat(ToolbarOverflow.Hidden(e.Separators, kept).Select(i => e.Items[i])).ToArray();
+            if (e.Overflow is not null) SetShown(e.Overflow, hidden.Length > 0);
+            if (!hidden.SequenceEqual(OverflowItems))
             {
-                OverflowItems = hidden.Select(i => e.Items[i]).ToArray();
+                OverflowItems = hidden;
                 OverflowItemsChanged?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -276,14 +298,6 @@ public sealed class ToolbarPanel : Panel
         {
             _applying = false;
         }
-    }
-
-    private bool SameItems(IReadOnlyList<int> hidden, Control[] items)
-    {
-        if (hidden.Count != OverflowItems.Count) return false;
-        for (var i = 0; i < hidden.Count; i++)
-            if (!ReferenceEquals(items[hidden[i]], OverflowItems[i])) return false;
-        return true;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -355,6 +369,7 @@ public sealed class ToolbarPanel : Panel
         if (_applying) return false;
         // Item/overflow/collapsible visibility is the panel's own output, not an input of the estimate.
         return !(e.Property == IsVisibleProperty
-                 && (GetCollapsible(sender) || (Children.Contains(sender) && GetSlot(sender) is ToolbarSlot.Item or ToolbarSlot.Overflow)));
+                 && (GetCollapsible(sender) || (Children.Contains(sender)
+                     && (GetSlot(sender) is ToolbarSlot.Item or ToolbarSlot.Overflow || (GetSlot(sender) == ToolbarSlot.Leading && GetOverflows(sender))))));
     }
 }

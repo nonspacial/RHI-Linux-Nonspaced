@@ -202,7 +202,8 @@
     <!-- w14/layouts-a (#303): upstream 2.9.0's top bar, used by every layout. Left: the brand, then Available Mods (with a
          green New tag) and Shaders & Addons; right: when RHI last checked, Refresh, Update All with its count, the layout
          switch (Classic+ | Tabs | Spotlight), Help and Settings. One row (ToolbarPanel): the brand subtitle hides first,
-         then the right group moves into the '…' menu from its right end; Settings stays pinned at the far right. The bar's
+         then the right group moves into the '…' menu from its right end, then (a narrow window at a large size) Shaders &
+         Addons and Available Mods follow it; Settings stays pinned at the far right. The bar's
          own size (#306) scales it on top of the interface size; its bottom edge drags. -->
     <Border x:Name="TopBar" Grid.Row="0" Padding="16,10" Background="{DynamicResource RhiToolbarBrush}" BorderBrush="{DynamicResource RhiBorderBrush}" BorderThickness="0,0,0,1">
       <LayoutTransformControl x:Name="TopBarScaleBox">
@@ -219,7 +220,7 @@
             <TextBlock views:ToolbarPanel.Collapsible="True" Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="{DynamicResource RhiTaglineBrush}"/>
           </StackPanel>
         </StackPanel>
-        <Button x:Name="NavAvailableMods" views:ToolbarPanel.Slot="Leading" Classes="topNav" Click="NavAvailableMods_Click"
+        <Button x:Name="NavAvailableMods" views:ToolbarPanel.Slot="Leading" views:ToolbarPanel.Overflows="True" Classes="topNav" Click="NavAvailableMods_Click"
                 ToolTip.Tip="{Binding NavAvailableModsTip}" AutomationProperties.Name="{DynamicResource Ui.AvailableMods}">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <TextBlock Text="{DynamicResource Ui.AvailableMods}" VerticalAlignment="Center"/>
@@ -229,7 +230,7 @@
             </Border>
           </StackPanel>
         </Button>
-        <Button x:Name="NavShadersAddons" views:ToolbarPanel.Slot="Leading" Classes="topNav" Content="{DynamicResource Ui.ShadersAddons}"
+        <Button x:Name="NavShadersAddons" views:ToolbarPanel.Slot="Leading" views:ToolbarPanel.Overflows="True" Classes="topNav" Content="{DynamicResource Ui.ShadersAddons}"
                 ToolTip.Tip="{DynamicResource Top.ShadersAddonsTip}" AutomationProperties.Name="{DynamicResource Ui.ShadersAddons}">
           <Button.Flyout>
             <MenuFlyout Placement="BottomEdgeAlignedLeft">

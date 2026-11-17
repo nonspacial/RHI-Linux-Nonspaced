@@ -47,4 +47,26 @@ public static class ToolbarOverflow
             if (!isSeparator[i]) hidden.Add(i);
         return hidden;
     }
+
+    /// <summary>
+    /// w14 final review m5: how many of the leading group's overflowable children (its last ones, in order) stay in the row
+    /// once every item has gone into the menu. They go from the right end until the leading group fits
+    /// <paramref name="maxLeadingWidth"/>.
+    /// </summary>
+    /// <param name="leadingWidth">The whole leading group's width, every overflowable child and the gaps included.</param>
+    /// <param name="overflowableWidths">The overflowable children's widths, in order (the group's last children).</param>
+    /// <param name="spacing">The leading group's gap.</param>
+    public static int LeadingKept(double leadingWidth, IReadOnlyList<double> overflowableWidths, double spacing, double maxLeadingWidth)
+    {
+        ArgumentNullException.ThrowIfNull(overflowableWidths);
+        var kept = overflowableWidths.Count;
+        var width = leadingWidth;
+        while (kept > 0 && width > maxLeadingWidth)
+        {
+            var w = overflowableWidths[kept - 1];
+            if (w > 0) width -= w + spacing;
+            kept--;
+        }
+        return kept;
+    }
 }
