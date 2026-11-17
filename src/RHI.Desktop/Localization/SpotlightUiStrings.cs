@@ -25,7 +25,7 @@ internal static class SpotlightUiStrings
         ("Spot.UpdateTag", "Atualizar", "Update"),
         ("Spot.CoverUpdateTip", "{0}: atualização disponível", "{0}: update available"),
         ("Spot.OpenSectionTip", "Abrir {0} no painel lateral", "Open {0} in the side panel"),
-        ("Spot.ShelfOptionsTip", "Opções da faixa de capas", "Cover strip options"),
+        ("Spot.ShelfOptionsTip", "Opções da lista de jogos", "Game list options"),
         ("Spot.CoversBelow", "Capas abaixo da página do jogo", "Covers below the game page"),
         ("Spot.CoversBelowTip", "Mover a busca, os filtros e as capas dos jogos para baixo da página do jogo", "Move the search, filters and game covers below the game page"),
         ("Spot.NoBackground", "Sem fundo", "No background"),

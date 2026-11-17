@@ -497,6 +497,15 @@ public sealed class LayoutsTests : IDisposable
         Assert.DoesNotContain("RemoveFromRhi", File.ReadAllText(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "Views", "GameSettingsView.cs")));
     }
 
+    [Theory]
+    [InlineData("en-US", "Game list options")]
+    [InlineData("pt-BR", "Opções da lista de jogos")]
+    public void HeaderNexusLink_AndTheStripsGear_SayWhatUpstreamSays(string language, string stripGear)
+    {
+        Assert.Equal("Nexus Mods", UiLocalizationService.TextFor(language, "Tabs.NexusLink"));
+        Assert.Equal(stripGear, UiLocalizationService.TextFor(language, "Spot.ShelfOptionsTip"));
+    }
+
     [Fact]
     public void TabsOverview_HeadsTheComponentCards_LikeTheGlanceTiles()
     {

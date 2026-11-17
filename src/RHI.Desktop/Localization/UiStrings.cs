@@ -2207,6 +2207,7 @@ internal static class UiStrings
         ("Cog.CloseInline", "Fechar estas configurações", "Close these settings"),
         // w14/layouts-a (#304): the Tabs header.
         ("Tabs.Launch", "▶ Iniciar", "▶ Launch"),
+        ("Tabs.NexusLink", "Nexus Mods", "Nexus Mods"),
         ("Tabs.LaunchMenuTip", "Executável e comando de inicialização, perfil de inicialização e atalho", "Executable and launch command, launch profile and shortcut"),
         ("Tabs.HdrOnLaunch", "HDR ao iniciar", "HDR on launch"),
         // w14/layouts-a: end of rows (layouts).

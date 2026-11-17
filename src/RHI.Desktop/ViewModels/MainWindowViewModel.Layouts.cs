@@ -339,7 +339,7 @@ public partial class MainWindowViewModel
             if (SelectedGame is not { } game || Parity is not { } parity) return [];
             var links = new List<CardMenuItem>();
             if (GameLinksPresenter.PageFor(game, parity.GameLinks.Games) is { } nexusUrl)
-                links.Add(new("nexus-page", "Nexus", new RelayCommand(() => OpenNexusPage(nexusUrl)), Tip: nexusUrl));
+                links.Add(new("nexus-page", T("Tabs.NexusLink"), new RelayCommand(() => OpenNexusPage(nexusUrl)), Tip: nexusUrl));
             links.AddRange(parity.GameLinks.MenuItemsFor(game, OpenNexusPage));
             return links;
         }

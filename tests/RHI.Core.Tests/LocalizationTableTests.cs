@@ -14,7 +14,7 @@ public sealed class LocalizationTableTests
     // Product names and symbols that read the same in both languages.
     private static readonly HashSet<string> SameInBothLanguages = new(StringComparer.Ordinal)
     {
-        "Sec.Dlss", "Sec.Extras", "Sec.ReShadeCard", "Help.Discord", "Size.Normal", "Set.Tabs", // w14/layouts-a: upstream's names and "100% (normal)"
+        "Sec.Dlss", "Sec.Extras", "Sec.ReShadeCard", "Help.Discord", "Size.Normal", "Set.Tabs", "Tabs.NexusLink", // w14/layouts-a: upstream's names and "100% (normal)"
         "Ui.ShadersAddons", "Ui.Links", "Ui.Motd", "Ui.DlssStreamline", "Ui.Extras", "Ui.Rtx40MfgTitle",
         "Ui.Dlssg2030Title", // w14/extras-fg (#281): the mod's name, as Universal MFG Unlocker's
         "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra",
