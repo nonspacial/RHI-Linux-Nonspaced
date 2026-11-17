@@ -87,6 +87,7 @@ public sealed partial class MainWindow
 
         BuildTabStrip(vm);
         SetVisible("GlancePanel", layout.ShowsOverview);
+        SetVisible("OverviewComponentsHeading", layout.ShowsOverview);
         if (layout.ShowsOverview) RebuildGlance(vm);
         if (_inlineCog is { } open && (!tabs || open.Host.Parent is not Control { IsEffectivelyVisible: true })) CloseInlineCog(false);
         ApplySpotlightLayout(vm); // w14/layouts-b (#305)

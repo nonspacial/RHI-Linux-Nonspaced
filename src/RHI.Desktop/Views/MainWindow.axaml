@@ -1169,6 +1169,9 @@
                   <Button x:Name="ManagedComponentsSectionToggle" Grid.Column="3" Tag="ManagedComponents" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
+                <!-- w14 final review (upstream 2.9.4 DetailLayoutHost.Overview): Tabs' Overview heads its cards "Components", as
+                     it heads the tiles "At a glance" (the section's own header is hidden there). -->
+                <TextBlock x:Name="OverviewComponentsHeading" Text="{DynamicResource Sec.Components}" Classes="glanceHeading" IsVisible="False"/>
 
                 <ItemsControl x:Name="ManagedComponentsSectionBody" ItemsSource="{Binding Components}">
                   <ItemsControl.ItemTemplate>

@@ -498,6 +498,17 @@ public sealed class LayoutsTests : IDisposable
     }
 
     [Fact]
+    public void TabsOverview_HeadsTheComponentCards_LikeTheGlanceTiles()
+    {
+        // Upstream 2.9.4 DetailLayoutHost.Overview: "Components" over the cards, "At a glance" over the tiles.
+        var named = MainWindowXaml().Descendants().Where(e => Name(e) is not null).ToDictionary(e => Name(e)!);
+        var heading = named["OverviewComponentsHeading"];
+        Assert.Contains(heading, named["ManagedComponentsSection"].Descendants());
+        Assert.Equal("{DynamicResource Sec.Components}", (string?)heading.Attribute("Text"));
+        Assert.Equal("glanceHeading", (string?)heading.Attribute("Classes"));
+    }
+
+    [Fact]
     public void TabsHeader_HasUpstreamsTwoColumns_LaunchOnTopOfTheRightOne()
     {
         // Upstream 2.9.4 DetailLayoutHost.Header: the name, tags, path and links on the left; Launch, then HDR, resolution and
