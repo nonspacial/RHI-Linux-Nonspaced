@@ -366,14 +366,17 @@ public sealed class SelectedGameSession
 /// <summary>
 /// A small least-recently-used map: reading or writing an entry makes it the newest; the oldest goes first. Bounded by
 /// entry count and, with <c>weigh</c>, by total weight; the newest entry is always kept, even when it alone is heavier.
+/// w14 final review M7: a read reorders the list, so every member takes one lock (a background reader cannot corrupt it).
 /// </summary>
 public sealed class LruCache<TKey, TValue> where TKey : notnull
 {
+    private readonly object _lock = new();
     private readonly int _capacity;
     private readonly Func<TValue, long> _weigh;
     private readonly long _maxWeight;
     private readonly Dictionary<TKey, LinkedListNode<(TKey Key, TValue Value)>> _map;
     private readonly LinkedList<(TKey Key, TValue Value)> _order = new();
+    private long _weight;
 
     public LruCache(int capacity, IEqualityComparer<TKey>? comparer = null, Func<TValue, long>? weigh = null, long maxWeight = long.MaxValue)
     {
@@ -385,12 +388,23 @@ public sealed class LruCache<TKey, TValue> where TKey : notnull
         _map = new(comparer);
     }
 
-    public int Count => _map.Count;
+    public int Count
+    {
+        get { lock (_lock) return _map.Count; }
+    }
 
     /// <summary>The entries' total weight (0 without a <c>weigh</c> function).</summary>
-    public long Weight { get; private set; }
+    public long Weight
+    {
+        get { lock (_lock) return _weight; }
+    }
 
     public bool TryGet(TKey key, out TValue value)
+    {
+        lock (_lock) return TryGetLocked(key, out value);
+    }
+
+    private bool TryGetLocked(TKey key, out TValue value)
     {
         if (_map.TryGetValue(key, out var node))
         {
@@ -405,35 +419,48 @@ public sealed class LruCache<TKey, TValue> where TKey : notnull
 
     public void Set(TKey key, TValue value)
     {
+        lock (_lock) SetLocked(key, value);
+    }
+
+    private void SetLocked(TKey key, TValue value)
+    {
         if (_map.TryGetValue(key, out var existing))
         {
             _order.Remove(existing);
-            Weight -= _weigh(existing.Value.Value);
+            _weight -= _weigh(existing.Value.Value);
         }
         var node = new LinkedListNode<(TKey, TValue)>((key, value));
         _order.AddFirst(node);
         _map[key] = node;
-        Weight += _weigh(value);
-        while ((_map.Count > _capacity || Weight > _maxWeight) && _order.Count > 1 && _order.Last is { } oldest)
+        _weight += _weigh(value);
+        while ((_map.Count > _capacity || _weight > _maxWeight) && _order.Count > 1 && _order.Last is { } oldest)
         {
             _order.RemoveLast();
             _map.Remove(oldest.Value.Key);
-            Weight -= _weigh(oldest.Value.Value);
+            _weight -= _weigh(oldest.Value.Value);
         }
     }
 
     public bool Remove(TKey key)
     {
+        lock (_lock) return RemoveLocked(key);
+    }
+
+    private bool RemoveLocked(TKey key)
+    {
         if (!_map.Remove(key, out var node)) return false;
         _order.Remove(node);
-        Weight -= _weigh(node.Value.Value);
+        _weight -= _weigh(node.Value.Value);
         return true;
     }
 
     public void Clear()
     {
-        _map.Clear();
-        _order.Clear();
-        Weight = 0;
+        lock (_lock)
+        {
+            _map.Clear();
+            _order.Clear();
+            _weight = 0;
+        }
     }
 }
