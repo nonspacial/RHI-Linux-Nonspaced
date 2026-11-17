@@ -41,7 +41,7 @@ public partial class MainWindowViewModel
         try
         {
             var result = await Task.Run(() => _managedComponents.MoveInstallFolderAsync(oldGame, newGame, oldDir, newDir,
-                [_apiOverrideStore, _optiScalerVariantStore, DisplayModes.GameState], alongside, op.Token));
+                [_apiOverrideStore, _optiScalerVariantStore, DisplayModes.GameState, LaunchArguments.LauncherOptions.Store], alongside, op.Token)); // w14 last fixes: launcher records
             if (result.Success && !result.NothingToMove) DisplayModes.FollowCommittedMove(); // w14 final review M2
             return result;
         }

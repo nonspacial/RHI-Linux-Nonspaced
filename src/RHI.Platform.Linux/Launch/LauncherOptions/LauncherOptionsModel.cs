@@ -1,5 +1,6 @@
 using System.Text.Json;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Launch.LauncherOptions;
 
@@ -49,9 +50,11 @@ public sealed class LauncherOptionsData
 /// <summary>
 /// #318: <c>~/.config/rhi-linux/launcher-options.json</c> (atomic JSON store; an unreadable file is set aside and never saved
 /// over): which games' arguments RHI put into their launcher's options, and what it changed. It is the commit point of each
-/// journaled launcher write.
+/// journaled launcher write. A per-game store (<see cref="IGameStateStore"/>, w14 last fixes): a record follows its game to
+/// a new library key — an install folder move and Repair after move stage it with their commit, and a scan moves it from the
+/// keys the game had before (<see cref="AdoptOlderKeys"/>).
 /// </summary>
-public sealed class LauncherOptionsStore
+public sealed class LauncherOptionsStore : IGameStateStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -78,4 +81,51 @@ public sealed class LauncherOptionsStore
 
     /// <summary>Saves the records. Throws <see cref="JsonStoreUnavailableException"/> while an unreadable file is on disk.</summary>
     public void Save(LauncherOptionsData data) => _file.Save(data);
+
+    /// <summary>Library keys of every game with a launcher record.</summary>
+    public IReadOnlyList<string> GameKeys => Load().Games.Keys.ToList();
+
+    /// <summary>
+    /// "Repair after move" and an install folder move: the game's record under its old key moves to the new one. A record
+    /// already under the new key stays, and so does the old one (it still names what RHI wrote, so it is never dropped).
+    /// </summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        return _file.Stage(current =>
+        {
+            if (current is null) return null;
+            current.Games = new Dictionary<string, LauncherOptionsRecord>(current.Games ?? [], StringComparer.OrdinalIgnoreCase);
+            return Move(current, [(move.NewLibraryKey, move.OldLibraryKeys)]) ? current : null;
+        });
+    }
+
+    /// <summary>
+    /// A scan: records under keys a game had before (older builds, merged duplicates, another spelling of its folder) move
+    /// to its current key, one pair per game. A record already under the current key is the newer one and stays (the older
+    /// one is left). True when anything moved (saved). Throws <see cref="JsonStoreUnavailableException"/> while an
+    /// unreadable file is on disk.
+    /// </summary>
+    public bool AdoptOlderKeys(IEnumerable<(string CurrentKey, IReadOnlyList<string> OlderKeys)> games)
+    {
+        ArgumentNullException.ThrowIfNull(games);
+        var data = Load();
+        if (!Move(data, games)) return false;
+        Save(data);
+        return true;
+    }
+
+    private static bool Move(LauncherOptionsData data, IEnumerable<(string CurrentKey, IReadOnlyList<string> OlderKeys)> games)
+    {
+        var moved = false;
+        foreach (var (current, older) in games)
+        foreach (var old in older)
+        {
+            if (string.Equals(old, current, StringComparison.OrdinalIgnoreCase) || data.Games.ContainsKey(current)) continue;
+            if (!data.Games.Remove(old, out var record)) continue;
+            data.Games[current] = record;
+            moved = true;
+        }
+        return moved;
+    }
 }

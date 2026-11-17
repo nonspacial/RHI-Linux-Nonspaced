@@ -68,6 +68,27 @@ public sealed partial class LaunchArgumentsPresenter
         }
     }
 
+    /// <summary>
+    /// A scan (w14 last fixes): launcher records saved under keys the games had before (older builds, merged duplicates,
+    /// another spelling of the folder; <see cref="LinuxGameLibraryState.OlderKeysFor"/>) move to their keys now, as the
+    /// library file's own entries do. Nothing is read or written while no game has a record.
+    /// </summary>
+    internal void AdoptOlderKeys(IReadOnlyList<DetectedGame> games, LinuxGameLibraryState library)
+    {
+        try
+        {
+            var store = LauncherOptions.Store;
+            var keys = store.GameKeys;
+            if (keys.Count == 0) return;
+            var pairs = games.Select(game => (Key(game), library.OlderKeysFor(game, keys))).Where(pair => pair.Item2.Count > 0).ToList();
+            if (pairs.Count > 0 && store.AdoptOlderKeys(pairs)) LoadLauncher();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RHI.Core.Services.AppLog.Warn("launcher-options", "Launcher records under older game keys not moved; tried again at the next scan", ex);
+        }
+    }
+
     /// <summary>The game's launcher record, when RHI put arguments into the launcher's options.</summary>
     internal LauncherOptionsRecord? LauncherRecord(DetectedGame game) => LauncherOptions.RecordFor(Key(game));
 

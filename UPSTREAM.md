@@ -3137,6 +3137,9 @@ RHI, so the owner asked for a button that puts the arguments where those launche
   the file keeps its mode). A failure before the record is saved puts the files back. At start an entry whose record was
   never saved has each file that still holds RHI's write put back from its copy; a file the launcher or the user changed
   since is left alone and logged.
-- **Linux deviations / limits.** A launcher copy follows the library key it was made under (a game whose key changes
-  keeps the launcher copy; Remove from the new key finds no record). A Lutris entry is rewritten with RHI's single
-  quoted line, not Lutris' own wrapping (Lutris rewrites it its way on its next save).
+- **A new key.** The record follows the game when its library key changes (w14 last fixes): an install folder move and
+  Repair after move stage `launcher-options.json` with their commit (an `IGameStateStore`, as display-modes.json), and a
+  scan moves a record from the keys the game had before (older builds, merged duplicates, another spelling of its
+  folder), so Remove from the new key finds it. A record already under the new key stays, and the older one is kept.
+- **Linux deviations / limits.** A Lutris entry is rewritten with RHI's single quoted line, not Lutris' own wrapping
+  (Lutris rewrites it its way on its next save).
