@@ -299,6 +299,38 @@ public sealed class SettingsLayoutParityTests
     }
 
     [Fact]
+    public async Task Troubleshooting_FullRefreshComesFirst_Red_AndRescansTheLibrary()
+    {
+        // Upstream 2.9.4 Tools & Maintenance › Troubleshooting: Full refresh, then (Linux) Clear cache and Reset settings.
+        UiLocalizationService.Apply("en-US");
+        var steam = new CountingDetector("Steam");
+        using var fx = await ViewModelFixture.StartAsync([], detectors: [steam]);
+        var model = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
+        var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+        var tools = view.GetLogicalDescendants().OfType<StackPanel>().Single(p => p.Tag as string == "Section:Tools");
+        var buttons = tools.GetLogicalDescendants().OfType<Button>().Where(b => b.Classes.Contains("remove")).Select(b => b.Name).ToList();
+        Assert.Equal(["SettingsFullRefresh", "SettingsClearCache", "SettingsReset"], buttons);
+        Assert.Contains(view.Find("Full refresh"), r => r.Entry.SectionKey == "Tools" && r.Entry.Context.Contains("Troubleshooting", StringComparison.Ordinal));
+
+        var before = steam.Scans;
+        await model.FullRefreshCommand.ExecuteAsync(null);
+        Assert.True(steam.Scans > before);
+        Assert.Equal("Full refresh started: the main window shows its progress.", model.Status);
+    }
+
+    private sealed class CountingDetector(string name) : RHI.Core.Services.IGameDetector
+    {
+        private int _scans;
+        public int Scans => Volatile.Read(ref _scans);
+        public string Name => name;
+        public Task<IReadOnlyList<RHI.Core.Models.DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _scans);
+            return Task.FromResult<IReadOnlyList<RHI.Core.Models.DetectedGame>>([]);
+        }
+    }
+
+    [Fact]
     public void TooltipSweep_EveryFilterAndSection_HasItsTooltip_InBothLanguages()
     {
         // #302 (upstream 2.8.9): the library filters and the game panel's sections explain themselves.

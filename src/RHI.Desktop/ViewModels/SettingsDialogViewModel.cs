@@ -382,6 +382,17 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
         finally { CanClearCache = true; }
     }, "Settings_Click");
 
+    /// <summary>
+    /// Tools &amp; Maintenance › Troubleshooting › Full refresh (upstream 2.9.4): the library's full rescan, as the top bar's
+    /// Refresh (queued behind a running operation). It runs in the main window; this line says it started.
+    /// </summary>
+    [RelayCommand]
+    private Task FullRefresh() => UiExceptionGuard.RunAsync(async () =>
+    {
+        Status = T("Set.FullRefreshStarted");
+        await _shell.RefreshCommand.ExecuteAsync(null);
+    }, "Settings_Click");
+
     [RelayCommand(AllowConcurrentExecutions = true)]
     private Task BrowseScreenshots() => UiExceptionGuard.RunAsync(async () =>
     {

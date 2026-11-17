@@ -370,6 +370,14 @@ public sealed partial class SettingsDialogView : UserControl
             Untitled(SupportSettingsTab.Create(vm.Support, Show, model.OpenFolder, model.CopyText).Content as Control), // #192 Copy logs, Open logs folder, Export game data
             SettingsLayout.Row(T("Win.VerboseLogging"), SettingsLayout.OnOff(() => model.VerboseLogging, v => model.VerboseLogging = v, model,
                 nameof(model.VerboseLogging), "VerboseLogging"), T("Win.PreferencePersistedComponentLogsRemainUnder"))));
+        // Upstream 2.9.4 Troubleshooting: Full refresh first. (Its Purge staging files keeps shaders; RHI Linux has one cache,
+        // and Clear cache deletes all of it, shaders included: see UPSTREAM.md.)
+        var fullRefresh = SettingsLayout.Danger(T("Set.FullRefresh"), T("Set.FullRefreshTip"), "SettingsFullRefresh");
+        fullRefresh.Click += async (_, _) =>
+        {
+            if (await SettingsLayout.ConfirmAsync(TopLevel.GetTopLevel(this) as Window, T("Set.FullRefresh"), T("Set.FullRefreshAsk"), T("Set.FullRefresh")))
+                await model.FullRefreshCommand.ExecuteAsync(null);
+        };
         var clearCache = SettingsLayout.Danger(T("Win.ClearCache"), T("Win.ClearCacheRemovesOnlyRHILinux"), "SettingsClearCache");
         clearCache.Click += async (_, _) =>
         {
@@ -384,7 +392,7 @@ public sealed partial class SettingsDialogView : UserControl
                 model.ResetCommand.Execute(null);
         };
         cards[SettingsSections.Tools].Add(SettingsLayout.Card(T("Set.CardTroubleshooting"), T("Set.TroubleshootingDesc"),
-            SettingsLayout.Block(SettingsLayout.Buttons(clearCache, reset)),
+            SettingsLayout.Block(SettingsLayout.Buttons(fullRefresh, clearCache, reset)),
             SettingsLayout.Help(T("Win.ClearCacheRemovesOnlyRHILinux")),
             SettingsLayout.SubHeading(T("Removed.Tab")),
             Unwrap(RemovedGamesSettingsTab.Create(vm, Show)))); // #293 Removed games
