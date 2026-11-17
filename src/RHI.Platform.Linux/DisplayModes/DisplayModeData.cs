@@ -45,10 +45,19 @@ public sealed class GameDisplayModeState
 
     /// <summary>
     /// Item key → the game's value before it entered a mode from Off. Turning the mode off writes these back for items
-    /// with no global setting, and a mode with no value of its own uses them too. Null = none recorded.
+    /// with no global setting, and a mode with no value of its own uses them too. Null dictionary = none recorded; a null
+    /// value (w14 final review m8) = the key or file did not exist then, and Off removes it again.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, string>? Original { get; set; }
+    public Dictionary<string, string?>? Original { get; set; }
+
+    /// <summary>
+    /// w14 final review M3: the game left its mode (the mode or its Custom mode was deleted) before its values from before
+    /// modes could be written back (it was running, not found, or a file could not be written). <see cref="Original"/> is
+    /// kept; Off writes it back, and a switch to a mode keeps it as the game's values from before modes.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RestorePending { get; set; }
 }
 
 /// <summary>

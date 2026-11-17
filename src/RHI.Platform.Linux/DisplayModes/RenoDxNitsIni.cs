@@ -1,4 +1,3 @@
-using System.Globalization;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Platform.Linux.DisplayModes;
@@ -26,7 +25,10 @@ public static class RenoDxNitsIni
         _ => throw new ArgumentOutOfRangeException(nameof(itemKey), itemKey, "Not a RenoDX brightness item.")
     };
 
-    /// <summary>The value from the first preset section that has it (a whole number); RenoDX's spelling wins. Null = none.</summary>
+    /// <summary>
+    /// The value from the first preset section that has it, as the file has it (w14 final review nit: not rounded, so Off
+    /// puts back exactly what was there); RenoDX's spelling wins. Null = none.
+    /// </summary>
     public static string? Read(IReadOnlyList<string> lines, string iniKey)
     {
         string? exact = null, other = null;
@@ -48,11 +50,32 @@ public static class RenoDxNitsIni
             else if (other is null && k.Equals(iniKey, StringComparison.OrdinalIgnoreCase)) other = v;
             if (exact is not null) break;
         }
-        var value = exact ?? other;
-        if (value is null) return null;
-        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
-            ? ((int)Math.Round(d)).ToString(CultureInfo.InvariantCulture)
-            : value;
+        return exact ?? other;
+    }
+
+    /// <summary>
+    /// w14 final review m8: removes every spelling of the key from every preset section (the game had none before modes).
+    /// True when a line went.
+    /// </summary>
+    public static bool Remove(List<string> lines, string iniKey)
+    {
+        var removed = false;
+        var inPreset = false;
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var t = lines[i].Trim();
+            if (IniLines.IsSectionHeader(t))
+            {
+                inPreset = IsPreset(t);
+                continue;
+            }
+            if (!inPreset || t.StartsWith(';') || t.StartsWith('#')) continue;
+            var eq = t.IndexOf('=');
+            if (eq <= 0 || !t[..eq].Trim().Equals(iniKey, StringComparison.OrdinalIgnoreCase)) continue;
+            lines.RemoveAt(i--);
+            removed = true;
+        }
+        return removed;
     }
 
     /// <summary>Sets the value in every preset section (see the class summary). True when a line changed.</summary>

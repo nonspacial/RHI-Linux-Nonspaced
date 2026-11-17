@@ -3,8 +3,41 @@ using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Deployment;
 
-/// <summary>One file of an <see cref="IniLines.WriteAll"/>: its path, its new lines and the link rule it is written under.</summary>
-public sealed record IniFileWrite(string Path, IReadOnlyList<string> Lines, UserFileLinkPolicy Policy);
+/// <summary>
+/// One file of an <see cref="IniLines.WriteAll"/>: its path, its new lines and the link rule it is written under; with a
+/// <see cref="Style"/>, the file keeps its own line endings and BOM (else <see cref="Environment.NewLine"/>, no BOM).
+/// </summary>
+public sealed record IniFileWrite(string Path, IReadOnlyList<string> Lines, UserFileLinkPolicy Policy, IniTextStyle? Style = null);
+
+/// <summary>
+/// w14 final review nit (display modes): how a text file was written — its line ending, a leading UTF-8 BOM, and whether
+/// its last line ends with a line break — so a rewrite of a few lines leaves the rest of the file as it was.
+/// </summary>
+public sealed record IniTextStyle(string NewLine, bool Bom, bool FinalNewLine)
+{
+    public static readonly IniTextStyle Default = new(Environment.NewLine, false, true);
+
+    /// <summary>The style of <paramref name="bytes"/> (the first line ending found; none = the default).</summary>
+    public static IniTextStyle Of(byte[] bytes)
+    {
+        var bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        var text = new UTF8Encoding(false).GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
+        var lf = text.IndexOf('\n');
+        var cr = text.IndexOf('\r');
+        var newLine = lf < 0 && cr < 0 ? Default.NewLine
+            : cr >= 0 && (lf < 0 || cr < lf) ? (cr + 1 < text.Length && text[cr + 1] == '\n' ? "\r\n" : "\r")
+            : "\n";
+        return new IniTextStyle(newLine, bom, text.Length == 0 || text.EndsWith('\n') || text.EndsWith('\r'));
+    }
+
+    /// <summary><paramref name="lines"/> as this style writes them.</summary>
+    public byte[] Encode(IReadOnlyList<string> lines)
+    {
+        var text = string.Join(NewLine, lines) + (FinalNewLine && lines.Count > 0 ? NewLine : "");
+        var body = new UTF8Encoding(false).GetBytes(text);
+        return Bom ? [0xEF, 0xBB, 0xBF, .. body] : body;
+    }
+}
 
 /// <summary>
 /// Line-preserving INI edits for the user files RHI writes settings into (ReShade.ini, relimiter.ini, the user's INI
@@ -21,6 +54,19 @@ public static class IniLines
     /// <summary>The file's lines (a leading UTF-8 BOM dropped), or an empty list when it does not exist.</summary>
     public static List<string> Read(string path)
         => File.Exists(path) ? File.ReadAllLines(path).ToList() : [];
+
+    /// <summary>The file's lines and how it was written (<see cref="IniTextStyle"/>); empty and the default style when it does not exist.</summary>
+    public static List<string> Read(string path, out IniTextStyle style)
+    {
+        if (!File.Exists(path))
+        {
+            style = IniTextStyle.Default;
+            return [];
+        }
+        var bytes = File.ReadAllBytes(path);
+        style = IniTextStyle.Of(bytes);
+        return FromBytes(bytes);
+    }
 
     /// <summary>Lines of template bytes (UTF-8, a leading BOM dropped, any line ending).</summary>
     public static List<string> FromBytes(byte[] bytes)
@@ -181,7 +227,10 @@ public static class IniLines
             for (var i = 0; i < files.Count; i++)
             {
                 if (WriteFaultForTesting.Value?.Invoke(files[i].Path) is { } fault) throw fault;
-                AtomicFile.ReplaceUserFileLines(files[i].Path, files[i].Lines, linkPolicy: files[i].Policy, readOnly: ReadOnlyUserFile.WriteKeepingLock);
+                if (files[i].Style is { } style)
+                    AtomicFile.ReplaceUserFile(files[i].Path, style.Encode(files[i].Lines), files[i].Policy, readOnly: ReadOnlyUserFile.WriteKeepingLock);
+                else
+                    AtomicFile.ReplaceUserFileLines(files[i].Path, files[i].Lines, linkPolicy: files[i].Policy, readOnly: ReadOnlyUserFile.WriteKeepingLock);
                 written.Add(i);
             }
         }

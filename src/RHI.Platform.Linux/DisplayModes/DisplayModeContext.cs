@@ -69,6 +69,9 @@ public interface IDisplayModeIo
     /// <summary>The game's current value, or null when it has none / it cannot be read.</summary>
     string? Read(DisplayModeContext ctx, DisplayModeItem item);
 
-    /// <summary>Writes a value; null on success, else the problem (English, presented by the desktop).</summary>
-    Task<string?> WriteAsync(DisplayModeContext ctx, DisplayModeItem item, string value, CancellationToken cancellationToken);
+    /// <summary>
+    /// Writes a value; null on success, else the problem (English, presented by the desktop). A null
+    /// <paramref name="value"/> removes it (the game had none: w14 final review m8).
+    /// </summary>
+    Task<string?> WriteAsync(DisplayModeContext ctx, DisplayModeItem item, string? value, CancellationToken cancellationToken);
 }

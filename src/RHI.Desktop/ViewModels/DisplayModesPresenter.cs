@@ -190,6 +190,8 @@ public sealed partial class DisplayModesPresenter : ObservableObject
     internal string? Refusal(DetectedGame game)
     {
         if (!Enabled) return T("Dm.TurnOnFirst");
+        // w14 final review m9: a switch records values that could not be saved over the unreadable file.
+        if (UnreadableRefusal() is { } unreadable) return unreadable;
         if (_shell.Updates.UpdateAll.IsRunning(game)) return TF("Dm.CloseGameFirst", game.Name);
         if (string.IsNullOrWhiteSpace(game.BinaryDirectory) && string.IsNullOrWhiteSpace(game.InstallPath)) return T("Dm.NoFolder");
         IPanelHost panel = _shell;
@@ -197,18 +199,28 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         return null;
     }
 
+    // m9: display-modes.json could not be read (it was set aside): nothing a switch records could be saved.
+    private string? UnreadableRefusal()
+        => _unreadable && File.Exists(_file.FilePath) ? TF("Dm.UnreadableNoSwitch", _file.FilePath) : null;
+
     /// <summary>
     /// Switches the game, or with a null <paramref name="modeId"/> turns its mode off. Returns the status line (the
-    /// summary, or why it did not switch).
+    /// summary, or why it did not switch). w14 final review m10: behind the operation gate, so no install, update or
+    /// other operation writes the game's files at the same time.
     /// </summary>
     public async Task<string> SwitchAsync(DetectedGame game, string? modeId, CancellationToken cancellationToken = default)
+        => (await SwitchWithResultAsync(game, modeId, cancellationToken)).Line;
+
+    private async Task<(string Line, DisplayModeService.SwitchResult? Result)> SwitchWithResultAsync(DetectedGame game, string? modeId, CancellationToken cancellationToken = default)
     {
-        if (Refusal(game) is { } refused) return refused;
-        if (_switching) return T("Dm.Busy");
+        if (Refusal(game) is { } refused) return (refused, null);
+        if (_switching) return (T("Dm.Busy"), null);
+        IPanelHost panel = _shell;
+        using var op = panel.BeginOperation("display-mode", cancellable: false);
+        if (op is null) return (T("Vm.AnotherRHIOperationAlreadyRunning"), null);
         _switching = true;
         try
         {
-            IPanelHost panel = _shell;
             panel.AdoptRestoredLibraryFile(reloadHdrControls: true);
             var ctx = Context(game);
             var result = modeId is null
@@ -216,7 +228,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
                 : await Service.SwitchAsync(ctx, modeId, cancellationToken);
             var notSaved = Finish(ctx);
             var line = DisplayModeText.Summary(result);
-            return notSaved is null ? line : line + " " + notSaved;
+            return (notSaved is null ? line : line + " " + notSaved, result);
         }
         finally { _switching = false; }
     }
@@ -225,22 +237,25 @@ public sealed partial class DisplayModesPresenter : ObservableObject
     /// Switches every game that is not hidden or running (upstream: and has a folder); null = turns off every game in a
     /// mode. (switched, running and skipped).
     /// </summary>
-    public async Task<(int Switched, int Running)> SwitchAllAsync(string? modeId, IProgress<(string Line, double Percent)>? progress = null,
+    public async Task<(int Switched, int Running, int NotDone)> SwitchAllAsync(string? modeId, IProgress<(string Line, double Percent)>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        if (!Enabled || _switching) return (0, 0);
+        if (!Enabled || _switching || UnreadableRefusal() is not null) return (0, 0, 0);
+        IPanelHost panel = _shell;
+        using var op = panel.BeginOperation("display-mode", cancellable: false); // m10
+        if (op is null) return (0, 0, 0);
         _switching = true;
         try
         {
-            IPanelHost panel = _shell;
-            if (panel.LibraryWritesPaused()) return (0, 0);
+            if (panel.LibraryWritesPaused()) return (0, 0, 0);
             panel.AdoptRestoredLibraryFile(reloadHdrControls: true);
             var games = panel.UnattendedGames.Where(g => !string.IsNullOrWhiteSpace(g.BinaryDirectory ?? g.InstallPath)
-                                                          && (modeId is not null || Store.IsManaged(Key(g)))).ToList();
+                                                          && (modeId is not null || Store.IsManaged(Key(g)) || Store.HasRestorePending(Key(g)))).ToList();
             var running = games.Where(g => _shell.Updates.UpdateAll.IsRunning(g)).ToList();
             var targets = games.Except(running).ToList();
             var modeName = modeId is null ? T("Dm.Off") : DisplayModeText.ModeName(modeId, Store.NameOf(modeId));
             var done = 0;
+            var notDone = 0;
             for (var i = 0; i < targets.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested) break;
@@ -250,12 +265,15 @@ public sealed partial class DisplayModesPresenter : ObservableObject
                 var ctx = Context(game);
                 try
                 {
-                    _ = modeId is null ? await Service.TurnOffAsync(ctx, cancellationToken) : await Service.SwitchAsync(ctx, modeId, cancellationToken);
+                    var result = modeId is null ? await Service.TurnOffAsync(ctx, cancellationToken) : await Service.SwitchAsync(ctx, modeId, cancellationToken);
                     if (ctx.Launch is { Changed: true } launch) launch.ApplyTo(panel.LibraryState, ctx.Key);
-                    done++;
+                    // M3/m7: a game still in its mode (Off could not put everything back) or not switched is not counted.
+                    if (result.Error is null && !result.NotRestored.Any()) done++;
+                    else notDone++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
                 {
+                    notDone++;
                     RHI.Core.Services.AppLog.Warn("display-modes", $"Could not switch {game.Name}", ex);
                 }
             }
@@ -263,7 +281,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
             Save();
             ReloadSelected();
             RaiseChanged();
-            return (done, running.Count);
+            return (done, running.Count, notDone);
         }
         finally { _switching = false; }
     }
@@ -301,12 +319,15 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         RaiseChanged();
     }
 
-    /// <summary>Deletes the game's Custom mode; when the game is in it, its mode is turned off first (normal values written).</summary>
+    /// <summary>
+    /// Deletes the game's Custom mode; when the game is in it, its mode is turned off first (normal values written). A
+    /// game that could not be turned off keeps its values from before modes as a pending restore (w14 final review M3).
+    /// </summary>
     public async Task<string?> DeleteCustomAsync(DetectedGame game)
     {
         string? line = null;
-        if (DisplayModeStore.IsCustom(Store.ActiveModeId(Key(game))) && Refusal(game) is null)
-            line = await SwitchAsync(game, null);
+        if (DisplayModeStore.IsCustom(Store.ActiveModeId(Key(game))))
+            line = Refusal(game) is null ? await SwitchAsync(game, null) : null;
         Store.DeleteCustom(Key(game));
         Save();
         RaiseChanged();
@@ -326,6 +347,8 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         RaiseChanged();
         if (!DisplayModeStore.IsCustom(Store.ActiveModeId(key))) return null;
         if (Refusal(game) is { } refused) return T("Dm.SavedNotWritten") + " " + refused;
+        using var op = ((IPanelHost)_shell).BeginOperation("display-mode", cancellable: false); // m10
+        if (op is null) return T("Dm.SavedNotWritten") + " " + T("Vm.AnotherRHIOperationAlreadyRunning");
         var ctx = Context(game);
         var problem = Service.ValueFor(ctx, DisplayModeStore.CustomId, item) is { } v ? await Service.ApplyNowAsync(ctx, item, v) : null;
         var notSaved = Finish(ctx);
@@ -366,23 +389,25 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         return ok;
     }
 
-    /// <summary>Deletes a mode. Its games that can be switched are turned off first; the rest are just set to Off. (deleted, turned off).</summary>
-    public async Task<(bool Deleted, int TurnedOff)> DeleteModeAsync(string id)
+    /// <summary>
+    /// Deletes a mode. Its games that can be switched are turned off first. The rest (running, not found, or a value that
+    /// could not be written back) leave the mode with their values from before modes kept as a pending restore, which Off
+    /// writes back later (w14 final review M3). (deleted, turned off, pending).
+    /// </summary>
+    public async Task<(bool Deleted, int TurnedOff, int Pending)> DeleteModeAsync(string id)
     {
-        if (Store.Modes.Count <= 1) return (false, 0);
+        if (Store.Modes.Count <= 1) return (false, 0, 0);
         var inMode = Store.GamesIn(id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var done = 0;
         if (Enabled)
             foreach (var game in ((IPanelHost)_shell).AllGames.Where(g => inMode.Contains(Key(g))).ToList())
-                if (Refusal(game) is null)
-                {
-                    await SwitchAsync(game, null);
+                if (Refusal(game) is null && (await SwitchWithResultAsync(game, null)).Result is { TurnedOff: true })
                     done++;
-                }
         var ok = Store.DeleteMode(id);
+        var pending = ok ? inMode.Count(Store.HasRestorePending) : 0;
         Save();
         RaiseChanged();
-        return (ok, done);
+        return (ok, done, pending);
     }
 
     /// <summary>Sets (or with null clears) a mode's value for an item: every game switched to the mode gets it.</summary>

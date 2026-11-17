@@ -495,8 +495,9 @@ internal sealed class DisplayModesSettingsCard
                 buttons.Add(Action(SettingsLayout.Danger(T("Dm.Delete"), TF("Dm.DeleteTip", name), "DmDelete-" + id), async () =>
                 {
                     if (!await SettingsLayout.ConfirmAsync(_owner(), T("Dm.DeleteTitle"), TF("Dm.DeleteConfirm", name), T("Dm.Delete"))) return;
-                    var (deleted, off) = await _presenter.DeleteModeAsync(id);
-                    if (deleted) Status(off > 0 ? TF("Dm.DeletedOff", name, off) : TF("Dm.Deleted", name), false);
+                    var (deleted, off, pending) = await _presenter.DeleteModeAsync(id);
+                    if (deleted) Status((off > 0 ? TF("Dm.DeletedOff", name, off) : TF("Dm.Deleted", name))
+                                        + (pending > 0 ? " " + TF("Dm.DeletedPending", pending) : ""), false);
                 }));
             _body.Children.Add(SettingsLayout.Row(label, SettingsLayout.Buttons([.. buttons])));
         }
@@ -531,9 +532,10 @@ internal sealed class DisplayModesSettingsCard
         if (!await SettingsLayout.ConfirmAsync(_owner(), T(off ? "Dm.TurnOffAllTitle" : "Dm.SwitchAllTitle"),
                 off ? T("Dm.TurnOffAllConfirm") : TF("Dm.SwitchAllConfirm", modeName), T(off ? "Dm.TurnOffAction" : "Dm.Switch"))) return;
         var progress = new Progress<(string Line, double Percent)>(p => Status(p.Line, false));
-        var (switched, running) = await _presenter.SwitchAllAsync(modeId, progress);
+        var (switched, running, notDone) = await _presenter.SwitchAllAsync(modeId, progress);
         var line = off ? TF("Dm.TurnedOffAll", switched) : TF("Dm.SwitchedAll", switched, modeName);
         if (running > 0) line += " " + TF("Dm.RunningSkipped", running);
+        if (notDone > 0) line += " " + TF("Dm.NotDoneAll", notDone);
         Status(line, false);
     }
 

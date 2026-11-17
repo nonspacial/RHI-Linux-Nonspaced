@@ -49,7 +49,7 @@ public sealed class DisplayModeStore
                 if (_modes.Count >= MaxModes) break;
                 var name = m.Name.Trim();
                 if (name.Length > MaxNameLength) name = name[..MaxNameLength];
-                _modes.Add(new DisplayModeDefinition { Id = m.Id, Name = name, Values = CopyValues(m.Values) });
+                _modes.Add(new DisplayModeDefinition { Id = m.Id, Name = name, Values = ValidValues(m.Values) });
             }
             if (_modes.Count == 0) _modes = CreateDefaults().Modes;
             _games = new(StringComparer.OrdinalIgnoreCase);
@@ -58,9 +58,10 @@ public sealed class DisplayModeStore
                 if (string.IsNullOrWhiteSpace(key) || st is null) continue;
                 var c = Copy(st);
                 foreach (var mode in c.Values.Keys.Where(m => !IsCustom(m)).ToList()) c.Values.Remove(mode);
+                if (c.Values.TryGetValue(CustomId, out var custom)) c.Values[CustomId] = ValidValues(custom); // hand edits (review nit)
                 if (!c.Custom) { c.Items = null; c.Values.Clear(); }
-                if (IsCustom(c.Mode) && !c.Custom) ClearActive(c);
-                if (c.Mode is not null && !IsCustom(c.Mode) && Find(c.Mode) is null) ClearActive(c); // a mode that is gone
+                if (IsCustom(c.Mode) && !c.Custom) LeaveMode(c);
+                if (c.Mode is not null && !IsCustom(c.Mode) && Find(c.Mode) is null) LeaveMode(c); // a mode that is gone
                 if (!IsEmpty(c)) _games[key] = c;
             }
         }
@@ -164,7 +165,7 @@ public sealed class DisplayModeStore
             foreach (var st in _games.Values)
             {
                 st.Values.Remove(m.Id);
-                if (st.Mode is not null && st.Mode.Equals(m.Id, StringComparison.OrdinalIgnoreCase)) ClearActive(st);
+                if (st.Mode is not null && st.Mode.Equals(m.Id, StringComparison.OrdinalIgnoreCase)) LeaveMode(st);
             }
             foreach (var k in _games.Keys.ToList()) Prune(k);
             return true;
@@ -261,7 +262,7 @@ public sealed class DisplayModeStore
             st.Custom = false;
             st.Items = null;
             st.Values.Remove(CustomId);
-            if (IsCustom(st.Mode)) ClearActive(st);
+            if (IsCustom(st.Mode)) LeaveMode(st);
             Prune(gameKey);
         }
     }
@@ -330,7 +331,9 @@ public sealed class DisplayModeStore
         {
             var custom = IsCustom(modeId);
             if (custom ? !(_games.TryGetValue(gameKey, out var cs) && cs.Custom) : Find(modeId) is null) return;
-            GetOrAdd(gameKey).Mode = custom ? CustomId : Find(modeId)!.Id;
+            var st = GetOrAdd(gameKey);
+            st.Mode = custom ? CustomId : Find(modeId)!.Id;
+            st.RestorePending = false; // its values from before modes stay its values from before modes
         }
     }
 
@@ -359,11 +362,41 @@ public sealed class DisplayModeStore
         }
     }
 
-    /// <summary>The game's value from before it entered a mode (null = none recorded).</summary>
+    /// <summary>The game's value from before it entered a mode (null = none recorded, or it had none).</summary>
     public string? OriginalValue(string gameKey, string item)
+        => TryGetOriginal(gameKey, item, out var value) ? value : null;
+
+    /// <summary>
+    /// Whether the game's value from before modes was recorded for <paramref name="item"/>; <paramref name="value"/> null
+    /// = it had none (the key or file did not exist: Off removes it again).
+    /// </summary>
+    public bool TryGetOriginal(string gameKey, string item, out string? value)
     {
         lock (_lock)
-            return _games.TryGetValue(gameKey, out var st) && st.Original is not null && st.Original.TryGetValue(item, out var v) ? v : null;
+        {
+            value = null;
+            return _games.TryGetValue(gameKey, out var st) && st.Original is not null && st.Original.TryGetValue(item, out value);
+        }
+    }
+
+    /// <summary>Records the game's value from before modes; null = it had none (w14 final review m8).</summary>
+    public void RecordOriginal(string gameKey, string item, string? value)
+    {
+        lock (_lock)
+        {
+            var st = GetOrAdd(gameKey);
+            st.Original ??= new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            st.Original[item] = value;
+        }
+    }
+
+    /// <summary>
+    /// w14 final review M3: the game is in no mode, but its values from before modes were not written back yet (its mode
+    /// was deleted while it could not be switched). Off writes them back.
+    /// </summary>
+    public bool HasRestorePending(string gameKey)
+    {
+        lock (_lock) return _games.TryGetValue(gameKey, out var st) && st.Mode is null && st.RestorePending;
     }
 
     public void SetOriginal(string gameKey, string item, string? value)
@@ -378,12 +411,15 @@ public sealed class DisplayModeStore
                 Prune(gameKey);
                 return;
             }
-            st.Original ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            st.Original ??= new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
             st.Original[item] = value;
         }
     }
 
-    /// <summary>Turns the game's mode off: no active mode, and the entry / before-modes records are dropped.</summary>
+    /// <summary>
+    /// Turns the game's mode off: no active mode, and the entry / before-modes records are dropped. Only once every value
+    /// from before modes was written back (w14 final review M3: <see cref="DisplayModeService.TurnOffAsync"/>).
+    /// </summary>
     public void SetOff(string gameKey)
     {
         lock (_lock)
@@ -442,6 +478,32 @@ public sealed class DisplayModeStore
         st.Mode = null;
         st.Entry = null;
         st.Original = null;
+        st.RestorePending = false;
+    }
+
+    // w14 final review M3: the game leaves its mode without a switch (the mode was deleted): what it had before modes is
+    // kept until Off writes it back.
+    private static void LeaveMode(GameDisplayModeState st)
+    {
+        var restore = st.Original is { Count: > 0 } || st.RestorePending;
+        st.Mode = null;
+        st.Entry = null;
+        if (restore) st.RestorePending = true;
+        else ClearActive(st);
+    }
+
+    // Values a hand edit could have broken (an RsPreset with a line break, a number out of range): known items keep only
+    // what their own check takes; items this build does not know are kept as they are (w14 final review nit).
+    private static Dictionary<string, string> ValidValues(Dictionary<string, string>? values)
+    {
+        var copy = CopyValues(values);
+        foreach (var (item, value) in copy.ToList())
+        {
+            if (DisplayModeItems.Get(item) is not { } known) continue;
+            if (known.Normalize(value) is { } valid) copy[item] = valid;
+            else copy.Remove(item);
+        }
+        return copy;
     }
 
     private void Prune(string key)
@@ -450,7 +512,7 @@ public sealed class DisplayModeStore
     }
 
     private static bool IsEmpty(GameDisplayModeState st)
-        => st.Mode is null && !st.Custom && st.Items is null && st.Values.Count == 0 && st.Entry is null && st.Original is null;
+        => st.Mode is null && !st.Custom && st.Items is null && st.Values.Count == 0 && st.Entry is null && st.Original is null && !st.RestorePending;
 
     private static Dictionary<string, string> CopyValues(Dictionary<string, string>? v)
         => v is null ? new(StringComparer.OrdinalIgnoreCase) : new(v.Where(kv => kv.Key is not null && kv.Value is not null), StringComparer.OrdinalIgnoreCase);
@@ -463,7 +525,9 @@ public sealed class DisplayModeStore
             Custom = st.Custom,
             Items = st.Items?.Where(i => !string.IsNullOrWhiteSpace(i)).ToList(),
             Entry = st.Entry is null ? null : new Dictionary<string, string?>(st.Entry, StringComparer.OrdinalIgnoreCase),
-            Original = st.Original is null ? null : CopyValues(st.Original),
+            Original = st.Original is null ? null
+                : new Dictionary<string, string?>(st.Original.Where(kv => kv.Key is not null), StringComparer.OrdinalIgnoreCase),
+            RestorePending = st.RestorePending,
         };
         foreach (var (mode, vals) in st.Values ?? [])
             if (mode is not null && vals is not null) c.Values[mode] = CopyValues(vals);
