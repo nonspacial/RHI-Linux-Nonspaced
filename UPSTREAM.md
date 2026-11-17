@@ -1728,26 +1728,44 @@ what it does to the user's Steam: Steam may show the game as needing an update, 
 is blocked.
 
 Linux details: the manifest is `steamapps/appmanifest_<appid>.acf` in the game's own Steam library (the parent of
-`steamapps/common/<installdir>`), so native and Flatpak Steam libraries and extra library folders all work. RHI checks
-that the manifest's `appid` and `installdir` are this game's before touching it. Only the file's mode changes (all write
-bits off; Allow gives the owner write back), never its contents. Blocking is refused while Steam is updating the game
-(`StateFlags` update running, started or paused); an update that is only queued can be blocked, which is the point. The
-state is read from the file every time, so if Steam replaces the manifest with a new file the switch reads "Block"
-again. Not journaled: nothing in the game folder changes, and the change is undone by the same switch.
+`steamapps/common/<installdir>`), so native and Flatpak Steam libraries (`~/.var/app/com.valvesoftware.Steam/…`, a real
+folder on the host) and extra library folders all work. RHI checks that the manifest's `appid` and `installdir` are this
+game's, and that the path is a regular file and not a link, before touching it. Blocking is refused while Steam is
+updating the game (`StateFlags` update running, started or paused); an update that is only queued can be blocked, which
+is the point. Not journaled: nothing in the game folder changes, and the change is undone by the same switch.
 
-What the block protects on Linux (w14 final review, checked 2026-11-17 against the Steam client on the owner's machine,
-not by running an update): Steam writes per-app files by writing `<name>.tmp` beside them and renaming it into place —
-`linux64/steamclient.so` carries the formats `%s/%s.tmp` and `%s/%s_%u.acf` and the log line `[AppID %u] Failed to
-rename temp file for '%s' from '%s' to '%s'`, and every app manifest in that library has the mode a newly created file
-gets (0755 under umask 022), not one carried over from an older file. On Linux, `rename(2)` onto a file needs write
-access to the folder, not to the file, so a read-only `appmanifest_<appid>.acf` does not stop Steam from replacing it:
-the first time Steam writes the manifest (an update queued, a size or state change, a library refresh), the new file
-is writable and the block is gone; the switch then reads "Block Steam updates" again. On Windows (upstream) the same
-replace of a read-only file is refused, which is why the block holds there. So on Linux the block holds only while Steam
-has no reason to rewrite that game's manifest: it is a speed bump for a session, not a lock. Holding it for real needs
-either the file made immutable (`chattr +i`, root only, which RHI does not do) or Steam's own per-game "Only update this
-game when I launch it" setting; neither is wired in. Not changed in code here; the switch and its tooltip are left as
-upstream words them until the owner decides (wave 14 final review, platform-b).
+Why read-only is not enough here (w14 final review, checked 2026-11-17 against the Steam client on the owner's machine):
+Steam writes per-app files by writing `<name>.tmp` beside them and renaming it into place — `linux64/steamclient.so`
+carries the formats `%s/%s.tmp` and `%s/%s_%u.acf` and the log line `[AppID %u] Failed to rename temp file for '%s' from
+'%s' to '%s'`, and every app manifest in that library has the mode a newly created file gets. On Linux `rename(2)` onto a
+file needs write access to the folder, not the file, so a read-only manifest is simply replaced the next time Steam
+writes it. On Windows (upstream) that replace is refused, which is why the block holds there.
+
+So the Linux port matches upstream's function (Steam can't update the game) in three steps (w14 last fixes):
+
+1. `AutoUpdateBehavior` in the manifest is set to `"1"` (Steam's "Only update this game when I launch it"), editing only
+   that value in place (a missing line is added beside its neighbours, same indentation and separator).
+2. The manifest is made read-only (upstream's step).
+3. It is made immutable: `pkexec <chattr> +i <manifest>`, the exact path as its own argv entry, never through a shell,
+   with the desktop's polkit password prompt. Before running it RHI checks that `pkexec` and `chattr` are on PATH, that
+   the file system has inode flags (`FS_IOC_GETFLAGS` on the open file, as `lsattr` reads it) and that Steam is still not
+   updating the game; afterwards it reads the flag back. An immutable file can be neither written nor replaced by a
+   rename, so Steam cannot record or apply an update.
+
+The ⚙ panel says "Blocked" only when the flag is confirmed. Where step 3 cannot happen — no `pkexec` or `chattr`, a file
+system without the flag, the prompt cancelled or authentication refused (pkexec exit 126/127), chattr failing, or the flag
+not reading as set — steps 1 and 2 stay, the switch stays on, and the status says "Partly blocked": Steam may still
+update the game when it is launched, with the reason; turning the switch off and on again retries the lock. The
+originals (the manifest's mode and its `AutoUpdateBehavior`, or that it had none) are recorded before anything changes, in
+`~/.config/rhi-linux/steam-update-blocks.json` keyed by the manifest path; a retry keeps the first record. Turning it off
+runs `pkexec chattr -i` first (a cancelled prompt changes nothing and says the manifest stays locked), then puts back the
+original `AutoUpdateBehavior` and mode (with the owner's write bit). The tooltip says Steam may show an update or disk
+write error while the manifest is locked. The privileged step is `IPrivilegedRunner` and the flag read `IFileFlagsReader`,
+both injected in `SteamUpdateBlockService`; tests use a fake and never run `pkexec`.
+
+Known gap: if Steam rewrites a launch-only (not immutable) manifest while it is running, it writes its own copy of the
+manifest and can put back its `AutoUpdateBehavior`; the switch then reads off and the recorded originals stay until the
+next block.
 
 ### #293 — Game folders: Remove from RHI and Removed games (2.9.0–2.9.3; partial)
 
