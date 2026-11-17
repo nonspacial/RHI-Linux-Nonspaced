@@ -10,6 +10,7 @@ namespace RHI.Core.Tests;
 /// width right under the line of cards that holds the clicked card, and the lines after it move down; a ⚙ clicked in a row of
 /// a vertical list opens right after that row (upstream's rule: a row at least 400 px wide); closing puts everything back.
 /// </summary>
+[Collection(UiLanguageCollection.Name)]
 public sealed class InlineCogPlacementTests
 {
     // ── The cards panel's plan (pure) ──────────────────────────────────────────
@@ -126,6 +127,39 @@ public sealed class InlineCogPlacementTests
         MainWindow.PlaceInlineCog(host, gear, section);
 
         Assert.Same(host, section.Children[^1]);
+    }
+
+    // ── w14 final review M1: a ⚙ on the page belongs to its game ─────────────────
+
+    [Fact]
+    public async Task OpenCog_ClosesWhenTheSelectionMovesToAnotherGame_NotOnOtherChanges()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"rhi-cogwatch-{Guid.NewGuid():N}");
+        try
+        {
+            using var fx = await ViewModelFixture.StartAsync(
+            [
+                new RHI.Core.Models.DetectedGame { Name = "Game A", InstallPath = Directory.CreateDirectory(Path.Combine(root, "A")).FullName, Source = "Steam" },
+                new RHI.Core.Models.DetectedGame { Name = "Game B", InstallPath = Directory.CreateDirectory(Path.Combine(root, "B")).FullName, Source = "Steam" },
+            ]);
+            var vm = fx.Vm;
+            vm.SelectedGame = vm.AllLibraryGames.Single(g => g.Name == "Game A");
+            var closed = 0;
+            using var watch = new CogGameWatch(vm, () => closed++);
+
+            vm.StatusText = "something else";
+            vm.SelectedGame = vm.SelectedGame; // the same game
+            Assert.Equal(0, closed);
+
+            vm.SelectedGame = vm.AllLibraryGames.Single(g => g.Name == "Game B");
+            Assert.Equal(1, closed);
+            vm.SelectedGame = vm.AllLibraryGames.Single(g => g.Name == "Game A");
+            Assert.Equal(1, closed); // closed once, then it stops listening
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (IOException) { }
+        }
     }
 
     private static void Layout(Control control, double width)

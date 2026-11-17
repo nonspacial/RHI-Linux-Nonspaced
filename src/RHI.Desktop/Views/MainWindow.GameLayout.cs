@@ -39,7 +39,7 @@ public sealed partial class MainWindow
             row.Columns = _cardsShown ? CardColumns : RowColumns;
     }
 
-    private sealed record InlineCog(CogHostWindow Window, Border Host, Control? Source, TaskCompletionSource Done);
+    private sealed record InlineCog(CogHostWindow Window, Border Host, Control? Source, TaskCompletionSource Done, CogGameWatch Watch);
 
     /// <summary>Arranges the game page for the saved layout and tab.</summary>
     private void ApplyGameLayout()
@@ -178,7 +178,7 @@ public sealed partial class MainWindow
     {
         shown = Task.CompletedTask;
         if (TryShowCogInSpotlightPanel(dialog, out shown)) return true; // w14/layouts-b (#305): a ⚙ in Spotlight's side panel
-        if (dialog is not CogHostWindow cog || DataContext is not MainWindowViewModel { Layout.CogsOpenInline: true }) return false;
+        if (dialog is not CogHostWindow cog || DataContext is not MainWindowViewModel { Layout.CogsOpenInline: true } vm) return false;
         var source = _lastPressed?.FindAncestorOfType<Button>(includeSelf: true);
         if (_inlineCog is { } open)
         {
@@ -198,7 +198,8 @@ public sealed partial class MainWindow
         ToolTip.SetTip(close, T("Cog.CloseInline"));
         var host = new Border { Name = "InlineCog", Classes = { "inlineCog" }, Child = new Grid { Children = { frame, close } } };
         var done = new TaskCompletionSource();
-        _inlineCog = new InlineCog(cog, host, source, done);
+        // M1: the ⚙ acts on the game it opened for; another game closes it (as Spotlight's panel).
+        _inlineCog = new InlineCog(cog, host, source, done, new CogGameWatch(vm, () => CloseInlineCog(false)));
         close.Click += (_, _) => CloseInlineCog(false);
         cog.InlineClose = result => CloseInlineCog(result);
         PlaceInlineCog(host, source, panel);
@@ -240,6 +241,7 @@ public sealed partial class MainWindow
     {
         if (_inlineCog is not { } open) return;
         _inlineCog = null;
+        open.Watch.Dispose();
         if (open.Host.Parent is AutoFitPanel cards) cards.HideInset();
         else if (open.Host.Parent is Panel panel) panel.Children.Remove(open.Host);
         open.Window.InlineClose = null;
