@@ -477,6 +477,48 @@ public sealed class LayoutsTests : IDisposable
     }
 
     [Fact]
+    public void TabsHeader_HasUpstreamsTwoColumns_LaunchOnTopOfTheRightOne()
+    {
+        // Upstream 2.9.4 DetailLayoutHost.Header: the name, tags, path and links on the left; Launch, then HDR, resolution and
+        // display modes on the right.
+        var named = MainWindowXaml().Descendants().Where(e => Name(e) is not null).ToDictionary(e => Name(e)!);
+        Assert.Equal(["TabsHeaderLeft", "TabsHeaderRight"], named["TabsHeaderColumns"].Elements().Select(Name));
+        foreach (var left in new[] { "TabsTitle", "TabsTags", "TabsLinks", "TabsFavourite", "TabsGameSettings" })
+            Assert.Contains(named[left], named["TabsHeaderLeft"].Descendants());
+        var right = named["TabsHeaderRight"].Elements().ToList();
+        Assert.Equal("TabsLaunchSplit", Name(right[0]));
+        Assert.Contains(named["TabsHdrMode"], right[1].Descendants());
+        Assert.Equal("TabsResolution", Name(right[2]));
+        Assert.Equal("TabsDisplayModes", Name(right[3]));
+    }
+
+    [Fact]
+    public void TabsHeaderColumns_PutTheRightColumnUnderTheLeft_WhenTheLeftWouldGetTooNarrow()
+    {
+        Assert.False(HeaderColumnsPanel.Stacks(available: 1000, leftMinWidth: 340, rightWidth: 300, spacing: 20));
+        Assert.True(HeaderColumnsPanel.Stacks(available: 640, leftMinWidth: 340, rightWidth: 300, spacing: 20));
+        Assert.False(HeaderColumnsPanel.Stacks(double.PositiveInfinity, 340, 300, 20));
+
+        var left = new Avalonia.Controls.Border { Height = 120 };
+        var right = new Avalonia.Controls.Border { Width = 300, Height = 90, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        var panel = new HeaderColumnsPanel { Spacing = 20, LeftMinWidth = 340, Children = { left, right } };
+        void Lay(double width)
+        {
+            panel.Measure(new Avalonia.Size(width, double.PositiveInfinity));
+            panel.Arrange(new Avalonia.Rect(0, 0, width, panel.DesiredSize.Height));
+        }
+        Lay(1000);
+        Assert.False(panel.IsStacked);
+        Assert.Equal(new Avalonia.Rect(0, 0, 680, 120), left.Bounds);
+        Assert.Equal(new Avalonia.Rect(700, 0, 300, 90), right.Bounds); // beside it, at its own width
+        Lay(600);
+        Assert.True(panel.IsStacked);
+        Assert.Equal(new Avalonia.Rect(0, 0, 600, 120), left.Bounds);
+        Assert.Equal(140, right.Bounds.Y); // under the left column
+        Assert.Equal(230, panel.DesiredSize.Height);
+    }
+
+    [Fact]
     public void TheDisplayModeSwitch_SitsBesideHdrAndResolution_InClassicPlusAndTabs()
     {
         // Upstream 2.9.3/2.9.4: the display mode buttons sit beside the HDR and resolution buttons in every layout (#311).
