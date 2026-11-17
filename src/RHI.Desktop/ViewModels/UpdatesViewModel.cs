@@ -436,6 +436,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     /// <summary>A pass now (after Update All, a background pass that updated something); one already running is joined.</summary>
     internal Task RequestCheckPass()
     {
+        if (!CheckLoopEnabled) return Task.CompletedTask; // tests opt in, as for the loop
         if (_checkRequest is { IsCompleted: false } pending) return pending;
         var token = _checkCts?.Token ?? _followCts.Token;
         var request = RunRequestedCheckAsync(token);

@@ -204,6 +204,8 @@ public sealed class UpdateCheckPassTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([GameIn("Alpha")]);
         Assert.Null(fx.Vm.Updates.LastCheckPass); // tests and the fixture: off
+        await fx.Vm.Updates.RequestCheckPass(); // an Update All's request too
+        Assert.Null(fx.Vm.Updates.LastCheckPass);
 
         var ran = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         fx.Vm.Updates.LoopDelay = async (wait, token) => { ran.TrySetResult(); await Task.Delay(Timeout.Infinite, token); };
