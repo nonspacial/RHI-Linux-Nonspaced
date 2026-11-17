@@ -42,5 +42,28 @@ public sealed class OptiScalerVariantPreferenceStoreTests : IDisposable
         Assert.Equal(OptiScalerVariant.Stable, store.Get(game, fallback: OptiScalerVariant.F5));
     }
 
+    // w14 final review m4: one entry that is not a version drops only that entry; the others read, and saves still work.
+    [Fact]
+    public void OneBadEntry_IsDropped_TheRestReadAndSavesWork()
+    {
+        Directory.CreateDirectory(_root);
+        var path = Path.Combine(_root, "variants-bad.json");
+        var good = new DetectedGame { Name = "Good", Source = "Steam", InstallPath = "/games/good", ExecutablePath = "/games/good/Game.exe" };
+        var other = new DetectedGame { Name = "Other", Source = "Steam", InstallPath = "/games/other", ExecutablePath = "/games/other/Game.exe" };
+        var store = new OptiScalerVariantPreferenceStore(path);
+        store.Set(good, OptiScalerVariant.Nightly);
+        var text = File.ReadAllText(path).TrimEnd().TrimEnd('}').TrimEnd();
+        File.WriteAllText(path, text + ",\n  \"/games/broken|Broken\": \"not-a-version\",\n  \"/games/old|Old\": 2,\n  \"/games/obj|Obj\": {}\n}\n");
+
+        var reread = new OptiScalerVariantPreferenceStore(path);
+
+        Assert.Equal(OptiScalerVariant.Nightly, reread.Get(good));
+        reread.Set(other, OptiScalerVariant.F5);
+        Assert.Equal(OptiScalerVariant.F5, new OptiScalerVariantPreferenceStore(path).Get(other));
+        Assert.Equal(OptiScalerVariant.Nightly, new OptiScalerVariantPreferenceStore(path).Get(good));
+        Assert.Empty(Directory.GetFiles(_root, "variants-bad.json.corrupt-*")); // never quarantined
+        Assert.DoesNotContain("not-a-version", File.ReadAllText(path), StringComparison.Ordinal);
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 }

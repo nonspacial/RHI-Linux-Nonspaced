@@ -1,5 +1,6 @@
 using System.Text.Json;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
@@ -10,7 +11,9 @@ namespace RHI.Platform.Linux.Paths;
 public sealed class OptiScalerVariantPreferenceStore : IGameStateStore
 {
     private readonly string _path;
-    private readonly JsonFileStore<Dictionary<string, OptiScalerVariant>> _file;
+    // w14 final review m4: entries are read one by one, so one value that is not a version drops only that entry (logged),
+    // never the whole file (a converter throw used to quarantine it and refuse every later save).
+    private readonly JsonFileStore<Dictionary<string, JsonElement>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -21,7 +24,7 @@ public sealed class OptiScalerVariantPreferenceStore : IGameStateStore
     public OptiScalerVariantPreferenceStore(string? path = null)
     {
         _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "optiscaler-variants.json");
-        _file = new JsonFileStore<Dictionary<string, OptiScalerVariant>>(_path, JsonOptions);
+        _file = new JsonFileStore<Dictionary<string, JsonElement>>(_path, JsonOptions);
     }
 
     public OptiScalerVariant Get(DetectedGame game) => Get(game, OptiScalerVariant.Stable);
@@ -61,7 +64,23 @@ public sealed class OptiScalerVariantPreferenceStore : IGameStateStore
     }
 
     private Dictionary<string, OptiScalerVariant> LoadUnsafe()
-        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
+    {
+        var entries = new Dictionary<string, OptiScalerVariant>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in JsonStoreMaps.CaseInsensitive(_file.Load().Value))
+        {
+            // An id (string), an old enum name, or an old enum number (#271, OptiScalerVariant.TryParse).
+            var raw = value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Number => value.TryGetInt32(out var number) ? number.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+                _ => null
+            };
+            if (OptiScalerVariant.TryParse(raw, out var variant)) entries[key] = variant;
+            else AppLog.Warn("optiscaler", $"An OptiScaler version choice in {Path.GetFileName(_path)} is not a version and was dropped: {key} = {value.GetRawText()}");
+        }
+        return entries;
+    }
 
-    private void SaveUnsafe(Dictionary<string, OptiScalerVariant> entries) => _file.Save(entries);
+    private void SaveUnsafe(Dictionary<string, OptiScalerVariant> entries)
+        => _file.Save(entries.ToDictionary(entry => entry.Key, entry => JsonSerializer.SerializeToElement(entry.Value.Id), StringComparer.OrdinalIgnoreCase));
 }
