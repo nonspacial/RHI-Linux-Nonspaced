@@ -2349,6 +2349,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     bool ILibraryEditHost.LibraryRepairRunning => LibraryRepairRunning;
     // #293 install folder migration
     IReadOnlyList<LinuxDeploymentRecord> ILibraryEditHost.InstallsIn(DetectedGame game, string? folder) => _managedComponents.InstallsIn(game, folder);
+    string? ILibraryEditHost.InstallFolderLeftBehind(DetectedGame game) => _managedComponents.InstallFolderLeftBehind(game); // w14 final review m15
     Task<bool> ILibraryEditHost.AskFolderMoveAsync(DetectedGame game, string oldDir, string newDir) => AskFolderMoveAsync(game, oldDir, newDir);
     Task<InstallFolderMoveResult> ILibraryEditHost.MoveInstallFolderAsync(DetectedGame oldGame, DetectedGame newGame, string oldDir, string newDir,
         Func<RHI.Platform.Linux.Persistence.StagedFileWrite?>? alongside) => MoveInstallFolderAsync(oldGame, newGame, oldDir, newDir, alongside);
