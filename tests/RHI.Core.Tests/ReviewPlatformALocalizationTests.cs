@@ -16,6 +16,8 @@ public sealed class ReviewPlatformALocalizationTests
         { LinuxManagedComponentService.SwitchNotStartedPrefix + NeuralRenderingRuntimeOwnership.RefusalFor("DLSS5 Feeder"), "nothing changed" },
         { LinuxManagedComponentService.SwitchPreviousUnavailablePrefix + OptiScalerDeploymentService.ExactVersionUnknownMessage, "could not be prepared" },
         { LinuxManagedComponentService.SwitchPreviousUnavailablePrefix + OptiScalerDeploymentService.ExactVersionUnknownMessage, "cannot tell which release" },
+        // m14: ANR FG's own file changed since
+        { OptiScalerDeploymentService.AnrFgChangedFilePrefix + "/jogos/exemplo/OptiScaler/custom/Apex Neural Rendering FG/dlssg/nvngx_dlssg.dll", "was changed since" },
         // M5: the ⚙ writes refused while the component is not installed
         { ComponentSettingsFile.NotInstalledPrefix + "MFG Unlock", "can only be changed while" },
         // m2: ANR FG across a switch

@@ -1464,6 +1464,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgUnsupportedHint, ". Escolha a Versão Nightly, ou uma build baseada em um Nightly recente, e aplique a predefinição de novo."),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgDownloadFailedPrefix, "Não foi possível baixar o ANR FG: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgForeignFilePrefix, "Há na pasta do ANR FG um arquivo que o RHI não instalou, então nada foi alterado: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgChangedFilePrefix, "Um arquivo que o RHI colocou na pasta do ANR FG foi alterado desde então, então nada foi alterado: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgFailedPrefix, "O ANR FG não foi instalado: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgInstalledPrefix, "O ANR FG está no lugar: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgKeptIniNote, " O seu nr_fg.ini foi mantido."),

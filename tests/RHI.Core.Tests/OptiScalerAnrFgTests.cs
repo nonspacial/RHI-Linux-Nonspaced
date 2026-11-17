@@ -168,6 +168,14 @@ public sealed partial class OptiScalerCustomBuildTests
         Assert.DoesNotContain(record.Files, file => file.Path.EndsWith("nr_fg.ini", StringComparison.Ordinal)); // the user's file stays theirs
         Assert.True((await managed.EnsureAnrFgAsync(game)).Success); // again: RHI's own files are replaced
 
+        // w14 final review m14: RHI's own file the user changed since is never overwritten.
+        var dlssg = Path.Combine(provider, "dlssg", "nvngx_dlssg.dll");
+        File.WriteAllText(dlssg, "the user's own build");
+        var changed = await managed.EnsureAnrFgAsync(game);
+        Assert.Equal(OptiScalerDeploymentService.AnrFgChangedFilePrefix + dlssg, changed.Message);
+        Assert.Equal("the user's own build", File.ReadAllText(dlssg));
+        File.Delete(dlssg);
+
         // A file RHI did not put there refuses the install, changing nothing.
         File.WriteAllText(Path.Combine(provider, "dlssg", "path_table.json"), "{}");
         File.Delete(Path.Combine(provider, "dlssg", "nvngx_dlssg.dll"));
