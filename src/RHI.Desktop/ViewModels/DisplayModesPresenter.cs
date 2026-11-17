@@ -155,7 +155,8 @@ public sealed partial class DisplayModesPresenter : ObservableObject
             ResolutionOffered = DisplayModeSwitcher.CanEverApply(game, host),
             // w14/layouts-c: launch arguments only where RHI adds them (a command it built, Steam's -applaunch).
             LaunchArgsOffered = _shell.LaunchArguments.RouteFor(game) is RHI.Platform.Linux.Launch.LaunchArgumentsRoute.Direct
-                or RHI.Platform.Linux.Launch.LaunchArgumentsRoute.Steam,
+                or RHI.Platform.Linux.Launch.LaunchArgumentsRoute.Steam
+                || _shell.LaunchArguments.InLauncher(game), // w14/launcher-options (#318): the launcher's copy follows the switch
             Launch = DisplayModeLaunchValues.From(panel.LibraryState, Key(game)),
         };
     }
@@ -215,6 +216,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
             var targets = games.Except(running).ToList();
             var modeName = modeId is null ? T("Dm.Off") : DisplayModeText.ModeName(modeId, Store.NameOf(modeId));
             var done = 0;
+            var launchChanged = new List<DetectedGame>();
             for (var i = 0; i < targets.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested) break;
@@ -225,7 +227,11 @@ public sealed partial class DisplayModesPresenter : ObservableObject
                 try
                 {
                     _ = modeId is null ? await Service.TurnOffAsync(ctx, cancellationToken) : await Service.SwitchAsync(ctx, modeId, cancellationToken);
-                    if (ctx.Launch is { Changed: true } launch) launch.ApplyTo(panel.LibraryState, ctx.Key);
+                    if (ctx.Launch is { Changed: true } launch)
+                    {
+                        launch.ApplyTo(panel.LibraryState, ctx.Key);
+                        launchChanged.Add(game); // w14/launcher-options (#318)
+                    }
                     done++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -233,7 +239,8 @@ public sealed partial class DisplayModesPresenter : ObservableObject
                     RHI.Core.Services.AppLog.Warn("display-modes", $"Could not switch {game.Name}", ex);
                 }
             }
-            panel.PersistLibraryState("Ui.WhatHdrProfile");
+            if (panel.PersistLibraryState("Ui.WhatHdrProfile") is null)
+                foreach (var game in launchChanged) _shell.LaunchArguments.SyncLauncher(game, keepLink: true); // w14/launcher-options (#318)
             Save();
             ReloadSelected();
             RaiseChanged();
@@ -251,6 +258,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         {
             launch.ApplyTo(panel.LibraryState, ctx.Key);
             refused = panel.PersistLibraryState("Ui.WhatHdrProfile");
+            if (refused is null) _shell.LaunchArguments.SyncLauncher(ctx.Game, keepLink: true); // w14/launcher-options (#318)
         }
         refused ??= Save();
         if (ReferenceEquals(ctx.Game, _shell.SelectedGame)) ReloadSelected();

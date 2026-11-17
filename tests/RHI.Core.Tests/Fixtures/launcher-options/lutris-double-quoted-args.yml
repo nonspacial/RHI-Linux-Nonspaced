@@ -1,0 +1,5 @@
+game:
+  args: "-name \"Pilot One\" -it's"
+  exe: /home/player/Games/sky/sky.exe
+  prefix: /home/player/Games/sky
+name: Sky Sample

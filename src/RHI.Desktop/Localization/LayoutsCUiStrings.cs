@@ -57,5 +57,32 @@ internal static class LayoutsCUiStrings
 
         // Game list: a game with an update (upstream: the orange dot; covers: the purple outline)
         ("Lib.UpdateTip", "Há uma atualização para um componente instalado pelo RHI.", "An update is available for a component RHI installed."),
+
+        // w14/launcher-options (#318, a Linux addition): the Launch arguments row's button that writes them into the launcher's own options
+        ("LoArgs.WhereSteam", "opções de inicialização do Steam", "Steam launch options"),
+        ("LoArgs.WhereLutris", "argumentos do Lutris", "Lutris arguments"),
+        ("LoArgs.WhereHeroic", "argumentos de jogo do Heroic", "Heroic game arguments"),
+        ("LoArgs.Add", "Adicionar em {0}", "Add to {0}"),
+        ("LoArgs.AddTip", "Grava estes argumentos em {0}, para que o jogo os receba de qualquer forma que for iniciado (pelo {1}, um atalho ou o RHI). Suas próprias opções ficam; o RHI só acrescenta a parte dele e a retira com Remover ou Redefinir opções de inicialização. Só com o {1} fechado.", "Writes these arguments into {0}, so the game gets them however it is started (from {1}, a shortcut or RHI). Your own options are kept: RHI only adds its part, and takes it out again with Remove or Reset launch options. Only while {1} is closed."),
+        ("LoArgs.Remove", "Remover de {0}", "Remove from {0}"),
+        ("LoArgs.RemoveTip", "Retira os argumentos do RHI de {0}: suas opções de antes voltam (se você as mudou depois, só a parte do RHI sai).", "Takes RHI's arguments out of {0}: your options from before come back (if you changed them since, only RHI's part is taken out)."),
+        ("LoArgs.StopWaiting", "Parar de esperar", "Stop waiting"),
+        ("LoArgs.StopWaitingTip", "Não fazer a alteração quando o {0} fechar.", "Do not make the change when {0} closes."),
+        ("LoArgs.Waiting", "O {0} está aberto: o RHI faz a alteração assim que o {0} fechar.", "{0} is running: RHI makes the change once {0} has closed."),
+        ("LoArgs.StoppedWaiting", "{0}: o RHI não vai mais esperar para alterar as opções do launcher.", "{0}: RHI no longer waits to change the launcher's options."),
+        ("LoArgs.InLauncher", "Também em {0}: {1}. O jogo os recebe de qualquer forma que for iniciado.", "Also in {0}: {1}. The game gets them however it is started."),
+        ("LoArgs.LinkedEmpty", "Este modo de exibição não tem argumentos, então o RHI tirou a parte dele de {0}; ela volta quando o jogo tiver argumentos de novo.", "This display mode has no arguments, so RHI took its part out of {0}; it comes back when the game has arguments again."),
+        ("LoArgs.NothingToAdd", "Digite os argumentos de inicialização primeiro; depois o RHI pode adicioná-los às opções do launcher.", "Type launch arguments first; then RHI can add them to the launcher's options."),
+        ("LoArgs.Added", "{0}: argumentos de inicialização em {1}: {2}", "{0}: launch arguments are in {1}: {2}"),
+        ("LoArgs.RemovedRestored", "{0}: os argumentos do RHI saíram de {1}; suas opções de antes voltaram.", "{0}: RHI's launch arguments are out of {1}; your options from before are back."),
+        ("LoArgs.RemovedKept", "{0}: os argumentos do RHI saíram de {1}; as opções que você mudou depois ficaram.", "{0}: RHI's launch arguments are out of {1}; the options you changed since are kept."),
+        ("LoArgs.RunningAdd", "O {0} está aberto, então o RHI ainda não mudou nada (o {0} grava a própria cópia das configurações ao fechar). O RHI adiciona os argumentos assim que o {0} fechar.", "{0} is running, so RHI changed nothing yet ({0} writes its own copy of its settings when it closes). RHI adds the arguments once {0} has closed."),
+        ("LoArgs.RunningRemove", "O {0} está aberto, então o RHI ainda não mudou nada (o {0} grava a própria cópia das configurações ao fechar). O RHI retira os argumentos dele assim que o {0} fechar.", "{0} is running, so RHI changed nothing yet ({0} writes its own copy of its settings when it closes). RHI takes its arguments out once {0} has closed."),
+        ("LoArgs.AfterClose", "O {0} fechou. {1}", "{0} has closed. {1}"),
+        ("LoArgs.NoSteamFile", "O RHI não encontrou as configurações do Steam para este jogo (userdata/…/config/localconfig.vdf). Abra o Steam uma vez com sua conta e tente de novo.", "RHI could not find Steam's settings for this game (userdata/…/config/localconfig.vdf). Start Steam once with your account, then try again."),
+        ("LoArgs.NoLutrisFile", "O RHI não encontrou a configuração deste jogo no Lutris (uma única entrada para o slug dele na pasta games do Lutris).", "RHI could not find this game's Lutris configuration (one entry for its slug in Lutris' games folder)."),
+        ("LoArgs.NoHeroicFile", "O Heroic ainda não tem arquivo de configurações para este jogo. Abra as configurações do jogo no Heroic uma vez (o Heroic grava GamesConfig/<app>.json), feche o Heroic e tente de novo.", "Heroic has no settings file for this game yet. Open the game's settings in Heroic once (Heroic then saves GamesConfig/<app>.json), close Heroic and try again."),
+        ("LoArgs.Failed", "O RHI não conseguiu alterar {0}: {1} Nada foi alterado.", "RHI could not change {0}: {1} Nothing was changed."),
+        ("LoArgs.LaunchInLauncher", "Argumentos de inicialização: {0} (de {1}).", "Launch arguments: {0} (from {1})."),
     ];
 }

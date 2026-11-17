@@ -409,6 +409,21 @@ Wave 14 — extras-fg-2
   click steps through your collections. RHI asks to come back to the front when a game it launched closes. If Steam
   is running, Steam Input may hold the controller: see Settings' tooltip (#308).
 
+### Wave 14 — launcher-options
+
+- **Add to Steam launch options** (a Linux addition): a button on Game Overrides' Launch arguments row, and in the Tabs
+  Launch ▾ menu, writes the game's arguments into the launcher's own options, so the game gets them however it is
+  started (the Steam client, a shortcut or RHI). Lutris games get "Add to Lutris arguments" and Heroic games "Add to
+  Heroic game arguments". Your own options are kept: RHI adds its part (for Steam right after `%command%`) and
+  remembers exactly what it added (#318).
+- **Remove from …, Reset launch options and Reset Overrides take RHI's part out again**: your options from before come
+  back, or, when you changed them in the launcher since, only RHI's part is taken out. Editing the arguments, or a
+  display mode switch (#311), updates the launcher's copy once the button was used; RHI's own Launch then leaves the
+  arguments to the launcher instead of passing them twice (#318).
+- **Nothing is written while the launcher is running** (it would save its own copy over RHI's change): the row says so
+  and RHI makes the change once Steam, Lutris or Heroic has closed, unless you click Stop waiting. Every write is
+  journaled with a byte-exact copy of the file; a write that fails, or is cut short by a crash, is put back (#318).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one

@@ -1,0 +1,18 @@
+{
+  "Fakeapp0000000000000000000000001": {
+    "winePrefix": "/home/player/Games/Heroic/Prefixes/default/Sample Saga",
+    "wineVersion": {
+      "bin": "/home/player/.config/heroic/tools/proton/GE-Proton10-25/proton",
+      "name": "Proton - GE-Proton10-25",
+      "type": "proton"
+    },
+    "enableEsync": true,
+    "enableFsync": true,
+    "enviromentOptions": [],
+    "wrapperOptions": [],
+    "showFps": false,
+    "language": ""
+  },
+  "version": "v0",
+  "explicit": false
+}

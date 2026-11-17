@@ -716,8 +716,13 @@
                       </TextBox>
                       <Button x:Name="ResetLaunchOptionsButton" Classes="rhi" Content="{l:T LcArgs.Reset}" Command="{Binding ResetCommand}" IsEnabled="{Binding HasGame}"
                               ToolTip.Tip="{l:T LcArgs.ResetTip}" Padding="10,5"/>
+                      <!-- w14/launcher-options (#318): Add to Steam launch options / Lutris arguments / Heroic game arguments (or Remove). -->
+                      <Button x:Name="LauncherOptionsButton" Classes="rhi" Content="{Binding LauncherButtonText}" Command="{Binding ToggleLauncherOptionsCommand}"
+                              IsVisible="{Binding ShowLauncherButton}" ToolTip.Tip="{Binding LauncherButtonTip}" ToolTip.ShowDelay="1000" Padding="10,5"/>
                     </WrapPanel>
                     <TextBlock x:Name="LaunchArgumentsNote" Text="{Binding Note}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="LauncherOptionsNote" Text="{Binding LauncherCopyNote}" Foreground="{DynamicResource RhiAccentBrush}" FontSize="11" TextWrapping="Wrap"
+                               IsVisible="{Binding LauncherCopyNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="13" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
