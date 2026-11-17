@@ -40,4 +40,8 @@ public partial class MainWindowViewModel
                 string.IsNullOrWhiteSpace(exe) ? UiLocalizationService.Text("LcMenu.ExecutableAuto") : Path.GetFileName(exe));
         }
     }
+
+    // w14/launcher-options (#318): where the launcher-options record (config) and its journal and copies (data) live.
+    internal string LauncherOptionsConfigRoot => _settingsStore.ConfigRoot;
+    internal string LauncherOptionsDataRoot => _settingsStore.DataRoot;
 }

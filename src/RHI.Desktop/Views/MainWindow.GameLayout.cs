@@ -273,6 +273,14 @@ public sealed partial class MainWindow
         var arguments = new MenuItem { Header = T("LcMenu.Arguments"), IsEnabled = vm.HasSelectedGame, Name = "LaunchMenuArguments" };
         arguments.Click += (_, _) => ShowLaunchArguments(vm);
         menu.Items.Add(arguments);
+        // w14/launcher-options (#318): the Launch arguments row's button, here too.
+        if (vm.LaunchArguments.ShowLauncherButton)
+        {
+            var launcherOptions = new MenuItem { Header = vm.LaunchArguments.LauncherButtonText, Name = "LaunchMenuLauncherOptions" };
+            ToolTip.SetTip(launcherOptions, vm.LaunchArguments.LauncherButtonTip);
+            launcherOptions.Click += (_, _) => vm.LaunchArguments.ToggleLauncherOptions();
+            menu.Items.Add(launcherOptions);
+        }
         var profile = new MenuItem { Header = T("Ui.CopyLaunchProfile"), IsEnabled = vm.Runtime.CanCopyHdrLaunchOptions };
         profile.Click += (_, args) => CopyHdrLaunchOptions_Click(anchor, args);
         menu.Items.Add(profile);

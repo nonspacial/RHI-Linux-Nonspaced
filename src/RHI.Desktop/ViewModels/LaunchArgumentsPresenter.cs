@@ -58,7 +58,8 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
         => _shell.LibraryStateForUiLogic.LaunchArguments?.TryGetValue(LinuxGameLibraryStore.GameKey(game), out var text) == true ? text : null;
 
     /// <summary>The arguments a launch of <paramref name="game"/> gets (one entry each), empty when it has none.</summary>
-    internal IReadOnlyList<string> ArgumentsFor(DetectedGame game) => LaunchArguments.Split(Saved(game));
+    /// <remarks>#318: empty while the game's launcher holds them (its own options add them; RHI must not pass them twice).</remarks>
+    internal IReadOnlyList<string> ArgumentsFor(DetectedGame game) => InLauncherNow(game) ? [] : LaunchArguments.Split(Saved(game));
 
     /// <summary>How the arguments reach <paramref name="game"/> when RHI launches it.</summary>
     internal LaunchArgumentsRoute RouteFor(DetectedGame game) => LaunchArguments.RouteFor(game, OnPath);
@@ -69,8 +70,9 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
         _game = _shell.SelectedGame;
         Text = _game is null ? "" : Saved(_game) ?? "";
         Note = _game is null ? "" : NoteFor(_game);
-        Applies = _game is not null && RouteFor(_game) is LaunchArgumentsRoute.Direct or LaunchArgumentsRoute.Steam;
+        Applies = _game is not null && (RouteFor(_game) is LaunchArgumentsRoute.Direct or LaunchArgumentsRoute.Steam || InLauncherNow(_game));
         OnPropertyChanged(nameof(HasGame));
+        LoadLauncher(); // #318
     }
 
     /// <summary>The box lost focus or Enter was pressed: saves the text when it changed.</summary>
@@ -98,9 +100,10 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
             Load();
             return;
         }
-        _shell.StatusText = normalized is null
+        _shell.StatusText = (normalized is null
             ? TF("LcArgs.Cleared", game.DisplayName())
-            : TF("LcArgs.Saved", game.DisplayName(), normalized) + (Applies ? "" : " " + NoteFor(game));
+            : TF("LcArgs.Saved", game.DisplayName(), normalized) + (Applies ? "" : " " + NoteFor(game)))
+            + (LastLauncherLine.Length > 0 ? " " + LastLauncherLine : ""); // #318: the launcher's copy followed
     }
 
     /// <summary>
@@ -113,6 +116,7 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
     {
         if (_game is not { } game) return;
         var hadArgs = Saved(game) is not null;
+        var inLauncher = InLauncher(game); // #318: Reset also takes RHI's part out of the launcher's options
         var hadCommand = !game.IsManuallyAdded && game.UserLaunchCommand is not null;
         if (!hadArgs && !hadCommand)
         {
@@ -134,7 +138,8 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
         if (hadCommand) done.Add(T("LcArgs.ResetCommandPart"));
         if (hadArgs) done.Add(T("LcArgs.ResetArgsPart"));
         var line = TF("LcArgs.ResetDone", game.DisplayName(), string.Join(", ", done))
-                   + (game.IsManuallyAdded && !string.IsNullOrWhiteSpace(game.LaunchCommand) ? " " + T("LcArgs.ResetManualKeepsCommand") : "");
+                   + (game.IsManuallyAdded && !string.IsNullOrWhiteSpace(game.LaunchCommand) ? " " + T("LcArgs.ResetManualKeepsCommand") : "")
+                   + (inLauncher && hadArgs && LastLauncherLine.Length > 0 ? " " + LastLauncherLine : "");
         // A cleared command refreshed the library: the game's new "Ready — …" line carries the result instead of replacing it.
         if (hadCommand) ((ILibraryEditHost)_shell).RaiseNotice(line);
         else _shell.StatusText = line;
@@ -153,6 +158,7 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
         state.LaunchArguments = map.Count == 0 ? null : map;
         if (library.SaveLibraryCopy(state) is { } refused) return refused;
         library.AdoptLibraryCopy(state);
+        LastLauncherLine = SyncLauncher(game); // #318: the launcher's copy follows the saved arguments
         if (ReferenceEquals(game, _game)) Load();
         return null;
     }
@@ -188,6 +194,7 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
     internal string LaunchLine(DetectedGame game)
     {
         if (Saved(game) is not { } saved) return "";
+        if (InLauncherNow(game) && LauncherRecord(game) is { } record) return TF("LoArgs.LaunchInLauncher", saved, Where(record.Launcher)); // #318
         return RouteFor(game) is LaunchArgumentsRoute.Direct or LaunchArgumentsRoute.Steam
             ? TF("LcArgs.LaunchWith", saved)
             : T("LcArgs.LaunchWithout") + " " + NoteFor(game);
