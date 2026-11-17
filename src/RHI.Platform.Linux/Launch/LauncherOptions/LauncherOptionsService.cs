@@ -94,11 +94,15 @@ public sealed class LauncherOptionsService
     /// Puts <paramref name="arguments"/> (RHI's launch arguments text, Windows rules) into the game's launcher options, merged
     /// with the user's own; replaces RHI's previous part when the game already has a record. Empty arguments remove RHI's part.
     /// </summary>
-    public LauncherOptionsResult Apply(DetectedGame game, string key, string? arguments)
+    /// <param name="keepRecord">
+    /// For empty arguments (a display mode with none): take RHI's part out but keep the record, so the launcher's copy comes
+    /// back when the game gets arguments again. Otherwise empty arguments remove the record.
+    /// </param>
+    public LauncherOptionsResult Apply(DetectedGame game, string key, string? arguments, bool keepRecord = false)
     {
         ArgumentNullException.ThrowIfNull(game);
         var words = LaunchArguments.Split(LaunchArguments.Normalize(arguments));
-        if (words.Count == 0) return Remove(key);
+        if (words.Count == 0 && (!keepRecord || _store.Get(key) is null)) return Remove(key);
         var part = LauncherOptionsText.ShellJoin(words);
         var record = _store.Get(key);
         var target = _locator.Locate(game);
@@ -133,7 +137,7 @@ public sealed class LauncherOptionsService
                 {
                     (originalPresent, original, own) = (present, current, current ?? "");
                 }
-                var already = LauncherOptionsText.Contains(own, part);
+                var already = part.Length == 0 || LauncherOptionsText.Contains(own, part);
                 var value = already ? own : LauncherOptionsText.Merge(own, part, target.Kind == LauncherKind.Steam);
                 files.Add(new LauncherOptionsFileRecord { Path = path, OriginalPresent = originalPresent, Original = original, Written = value, Added = already ? "" : part });
                 var after = present && current == value ? before : WriteValue(target, before, value);
@@ -149,7 +153,7 @@ public sealed class LauncherOptionsService
         var id = Guid.NewGuid().ToString("N");
         var newRecord = new LauncherOptionsRecord
         {
-            Launcher = target.Kind, Arguments = LaunchArguments.Normalize(arguments)!, OperationId = id, Files = files,
+            Launcher = target.Kind, Arguments = LaunchArguments.Normalize(arguments) ?? "", OperationId = id, Files = files,
             SteamAppId = target.SteamAppId, HeroicAppName = target.HeroicAppName
         };
         var failure = Commit(id, key, target.Kind, writes, data =>

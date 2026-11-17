@@ -71,6 +71,7 @@ internal static class LayoutsCUiStrings
         ("LoArgs.Waiting", "O {0} está aberto: o RHI faz a alteração assim que o {0} fechar.", "{0} is running: RHI makes the change once {0} has closed."),
         ("LoArgs.StoppedWaiting", "{0}: o RHI não vai mais esperar para alterar as opções do launcher.", "{0}: RHI no longer waits to change the launcher's options."),
         ("LoArgs.InLauncher", "Também em {0}: {1}. O jogo os recebe de qualquer forma que for iniciado.", "Also in {0}: {1}. The game gets them however it is started."),
+        ("LoArgs.LinkedEmpty", "Este modo de exibição não tem argumentos, então o RHI tirou a parte dele de {0}; ela volta quando o jogo tiver argumentos de novo.", "This display mode has no arguments, so RHI took its part out of {0}; it comes back when the game has arguments again."),
         ("LoArgs.NothingToAdd", "Digite os argumentos de inicialização primeiro; depois o RHI pode adicioná-los às opções do launcher.", "Type launch arguments first; then RHI can add them to the launcher's options."),
         ("LoArgs.Added", "{0}: argumentos de inicialização em {1}: {2}", "{0}: launch arguments are in {1}: {2}"),
         ("LoArgs.RemovedRestored", "{0}: os argumentos do RHI saíram de {1}; suas opções de antes voltaram.", "{0}: RHI's launch arguments are out of {1}; your options from before are back."),

@@ -191,6 +191,34 @@ public sealed class LauncherOptionsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task ADisplayModeWithoutArguments_TakesRhisPartOut_AndOffPutsItBack()
+    {
+        using var fx = await StartAsync(new RecordingLauncher());
+        var args = fx.Vm.LaunchArguments;
+        args.Text = "-dx11";
+        args.Commit();
+        args.ToggleLauncherOptions();
+        var modes = fx.Vm.DisplayModes;
+        modes.Enabled = true;
+        var tv = modes.Store.Modes.Single(m => m.Name == "TV").Id;
+        modes.SetModeValue(tv, DisplayModeItemKeys.LaunchArgs, "");
+        var game = fx.Vm.SelectedGame!;
+
+        await modes.SwitchAsync(game, tv);
+        Assert.Equal("gamemoderun %command%", SteamOptions());
+        Assert.Equal("This display mode has no arguments, so RHI took its part out of Steam launch options; it comes back when the game has arguments again.",
+            args.LauncherCopyNote);
+
+        await modes.SwitchAsync(game, null);
+        Assert.Equal("gamemoderun %command% -dx11", SteamOptions());
+
+        await modes.SwitchAsync(game, tv);
+        await args.ResetCommand.ExecuteAsync(null); // Reset with only the link left drops it
+        Assert.Equal(_original, File.ReadAllBytes(_localconfig));
+        Assert.Null(args.LauncherRecord(game));
+    }
+
+    [Fact]
     public async Task ADisplayModeSwitch_LeavesSteamAlone_WhenTheButtonWasNotUsed()
     {
         using var fx = await StartAsync(new RecordingLauncher());

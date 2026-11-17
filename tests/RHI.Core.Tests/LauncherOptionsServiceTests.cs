@@ -89,6 +89,7 @@ public sealed class LauncherOptionsServiceTests : IDisposable
         Assert.Equal(LauncherOptionsOutcome.LauncherRunning, service.Apply(SteamGame(4000001), Key, "-dx11").Outcome);
         Assert.Equal(original, File.ReadAllBytes(file));
         Assert.Null(service.RecordFor(Key));
+        Assert.False(Directory.Exists(service.BackupDirectory)); // refused before anything was prepared
     }
 
     [Fact]
@@ -159,8 +160,10 @@ public sealed class LauncherOptionsServiceTests : IDisposable
         service.Apply(SteamGame(4000001), Key, "-dx11");
         var written = File.ReadAllBytes(file);
         _probe.Running.Add(LauncherKind.Steam);
+        var copies = Directory.GetFiles(service.BackupDirectory).Length;
 
         Assert.Equal(LauncherOptionsOutcome.LauncherRunning, service.Remove(Key).Outcome);
+        Assert.Equal(copies, Directory.GetFiles(service.BackupDirectory).Length); // refused before anything was prepared
         Assert.Equal(written, File.ReadAllBytes(file));
         Assert.NotNull(service.RecordFor(Key));
     }
@@ -251,6 +254,55 @@ public sealed class LauncherOptionsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Recovery_LeavesACommittedWrite_WhoseJournalEntryWasLeftBehind()
+    {
+        var file = SteamUser(SteamRoot, "10000001", Fixture("steam-localconfig.vdf"));
+        var service = Service();
+        var kept = Path.Combine(_root, "entry.json");
+        service.BeforeFilesReplacedForTesting = () => File.Copy(Directory.GetFiles(service.JournalDirectory).Single(), kept);
+        service.Apply(SteamGame(4000001), Key, "-dx11");
+        var written = File.ReadAllBytes(file);
+        // A crash after the record was saved, before the entry was removed.
+        File.Copy(kept, Path.Combine(service.JournalDirectory, Path.GetFileName(kept)));
+
+        Assert.Equal(0, Service().Recover());
+        Assert.Equal(written, File.ReadAllBytes(file));
+        Assert.Empty(Directory.GetFiles(service.JournalDirectory));
+    }
+
+    [Fact]
+    public void ArgumentsChangedTwice_OnAnAppWithoutOptions_RemovalTakesTheKeyOutAgain()
+    {
+        var original = Fixture("steam-localconfig.vdf");
+        var file = SteamUser(SteamRoot, "10000001", original);
+        var service = Service();
+        service.Apply(SteamGame(4000002), Key, "-dx11");
+        service.Apply(SteamGame(4000002), Key, "-dx12");
+
+        service.Remove(Key);
+
+        Assert.Equal(original, File.ReadAllBytes(file));
+    }
+
+    [Fact]
+    public void EmptyArguments_KeepingTheRecord_TakeRhisPartOut_AndTheNextArgumentsGoBackIn()
+    {
+        var original = Fixture("steam-localconfig.vdf");
+        var file = SteamUser(SteamRoot, "10000001", original);
+        var service = Service();
+        service.Apply(SteamGame(4000001), Key, "-dx11");
+
+        service.Apply(SteamGame(4000001), Key, null, keepRecord: true); // a display mode without arguments
+        Assert.Equal("gamemoderun %command%", SteamLocalConfig.Read(File.ReadAllBytes(file), 4000001).LaunchOptions);
+        Assert.Equal("", service.RecordFor(Key)!.Arguments);
+
+        service.Apply(SteamGame(4000001), Key, "-dx11");
+        Assert.Equal("gamemoderun %command% -dx11", SteamLocalConfig.Read(File.ReadAllBytes(file), 4000001).LaunchOptions);
+        service.Remove(Key);
+        Assert.Equal(original, File.ReadAllBytes(file));
+    }
+
+    [Fact]
     public void Steam_WritesEveryAccountThatListsTheApp_ElseTheMostRecent()
     {
         var a = SteamUser(SteamRoot, "10000001", Fixture("steam-localconfig.vdf"));
@@ -317,8 +369,8 @@ public sealed class LauncherOptionsServiceTests : IDisposable
     public void Lutris_TwoEntriesWithTheSameSlug_AreNotGuessedBetween()
     {
         Directory.CreateDirectory(LutrisRoot);
-        File.WriteAllBytes(Path.Combine(LutrisRoot, "sky-1.yml"), Fixture("lutris-double-quoted-args.yml"));
-        File.WriteAllBytes(Path.Combine(LutrisRoot, "sky-2.yml"), Fixture("lutris-double-quoted-args.yml"));
+        File.WriteAllBytes(Path.Combine(LutrisRoot, "sky-1763000001.yml"), Fixture("lutris-double-quoted-args.yml"));
+        File.WriteAllBytes(Path.Combine(LutrisRoot, "sky-1763000002.yml"), Fixture("lutris-double-quoted-args.yml"));
         Assert.Equal(LauncherOptionsOutcome.NotSupported, Service().Apply(LutrisGame("sky"), Key, "-dx11").Outcome);
     }
 

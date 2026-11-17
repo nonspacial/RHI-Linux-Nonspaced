@@ -240,7 +240,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
                 }
             }
             if (panel.PersistLibraryState("Ui.WhatHdrProfile") is null)
-                foreach (var game in launchChanged) _shell.LaunchArguments.SyncLauncher(game); // w14/launcher-options (#318)
+                foreach (var game in launchChanged) _shell.LaunchArguments.SyncLauncher(game, keepLink: true); // w14/launcher-options (#318)
             Save();
             ReloadSelected();
             RaiseChanged();
@@ -258,7 +258,7 @@ public sealed partial class DisplayModesPresenter : ObservableObject
         {
             launch.ApplyTo(panel.LibraryState, ctx.Key);
             refused = panel.PersistLibraryState("Ui.WhatHdrProfile");
-            if (refused is null) _shell.LaunchArguments.SyncLauncher(ctx.Game); // w14/launcher-options (#318)
+            if (refused is null) _shell.LaunchArguments.SyncLauncher(ctx.Game, keepLink: true); // w14/launcher-options (#318)
         }
         refused ??= Save();
         if (ReferenceEquals(ctx.Game, _shell.SelectedGame)) ReloadSelected();

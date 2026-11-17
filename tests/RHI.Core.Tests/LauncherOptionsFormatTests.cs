@@ -39,6 +39,7 @@ public sealed class LauncherOptionsFormatTests
 
     [Theory]
     [InlineData("-dx11x -novid", "-dx11")]
+    [InlineData("x-dx11 -novid", "-dx11")]
     [InlineData("-novid", "-dx11")]
     public void RemovePart_IsNull_WhenThePartIsNotThereAsWholeWords(string current, string part)
         => Assert.Null(LauncherOptionsText.RemovePart(current, part));
@@ -150,6 +151,14 @@ public sealed class LauncherOptionsFormatTests
         var written = Text(LutrisGameArgs.Write(file, "-dx11"));
         Assert.Equal(Text(file).Replace("  args: ''\n", "  args: '-dx11'\n", StringComparison.Ordinal), written);
         Assert.Contains("    args: -installer-only\n", written, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Lutris_FindsTheTopLevelGame_WhenTheScriptComesFirst()
+    {
+        var file = Encoding.UTF8.GetBytes("script:\n  game:\n    args: -installer\n    exe: setup.exe\ngame:\n  exe: game.exe\n");
+        var written = Text(LutrisGameArgs.Write(file, "-dx11"));
+        Assert.Equal("script:\n  game:\n    args: -installer\n    exe: setup.exe\ngame:\n  args: '-dx11'\n  exe: game.exe\n", written);
     }
 
     [Fact]

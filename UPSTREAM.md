@@ -3036,3 +3036,66 @@ yet".
 - Active only while Spotlight shows, RHI is the active window and Settings › General › Windows › **Controller support** is on (default on, upstream's).
 - Linux: SDL2's game controller API through Silk.NET.SDL 2.23.0 (NuGet, maintained; carries its own SDL2; lock files updated) instead of XInput and upstream's own HID readers. It covers Xbox-style pads, DualShock 4 / DualSense / DualSense Edge over USB or Bluetooth (SDL's HIDAPI drivers) and the Steam Controller (SDL's HIDAPI driver, or the virtual pad Steam Input makes). **When Steam runs, Steam Input may take the controller** (it grabs the hidraw device and offers its own virtual pad): leave Steam Input on for RHI in Steam › Settings › Controller (its "Desktop layout" off), or add RHI to Steam as a non-Steam game so Steam gives it the controller; the virtual pad works the same in RHI. Without SDL (an unusual system) the controller is simply off and the reason is logged once.
 - **Back to RHI after a game**: once a game started from RHI has run and closed (the running probe; Steam / Lutris / Heroic hand-offs included, the game must appear within 3 minutes), RHI asks to come to the front, as upstream. Wayland limit: the compositor decides (focus stealing prevention); GNOME and KDE usually only flag RHI as needing attention, X11 raises it.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane launcher-options)
+
+### #318 — Launch arguments into the launcher's own launch options (a Linux addition)
+
+Upstream passes per-game launch arguments only on its own launches (2.9.0+ `LaunchArgsOverrides`, see lane layouts-c
+above); it has no counterpart for this. On Linux many games are started from Steam, Lutris or Heroic rather than from
+RHI, so the owner asked for a button that puts the arguments where those launchers read them (2026-11-17).
+
+- **Where.** Game Overrides › Launch arguments: a button beside Reset launch options, shown for a game whose launcher
+  RHI writes to once the game has arguments (or a launcher copy): **Add to Steam launch options**, **Add to Lutris
+  arguments**, **Add to Heroic game arguments** (each launcher's own name for the setting), then **Remove from …**. The
+  Tabs Launch ▾ menu has the same entry after Launch arguments.... A second line under the box shows the launcher's
+  copy ("Also in Steam launch options: …"), or that RHI is waiting for the launcher to close.
+- **The files** (`RHI.Platform.Linux.Launch.LauncherOptions`):
+  - Steam: `<steam>/userdata/<account>/config/localconfig.vdf`, `UserLocalConfigStore › Software › Valve › Steam ›
+    apps › <appid> › LaunchOptions` (WebStorage's own `apps` block is never touched). The Steam the game's launch uses
+    (Flatpak Steam for `flatpak run com.valvesoftware.Steam`, else native); every account that lists the app, else
+    `config/loginusers.vdf`'s MostRecent account, else the only account. The value is edited in place (only its quoted
+    token, or one added or removed line; bytes as bytes, values UTF-8, backslashes and quotes escaped as Steam escapes
+    them); a game the file does not list yet gets its block.
+  - Lutris: the game's own `games/<slug>-<id>.yml` (native or Flatpak folders; the slug from `lutris:rungame/<slug>`,
+    `pga.db` for the stem; two entries with one slug: none is guessed), top-level `game: args:` only (an installer
+    `script:` repeats it), written as one single-quoted YAML line where PyYAML's sorted keys put a new one. A game
+    started through a store client's entry in a launcher's prefix is not offered (the entry starts the client).
+  - Heroic: `GamesConfig/<appName>.json` (native or Flatpak), `<appName> › launcherArgs`, checked against Heroic v2.22.4
+    (tag commit `5b0c5ac`: `src/backend/game_config.ts`, `src/common/types.ts`, the GOG / sideload / Legendary launches
+    that split it with `shlex`), written as Heroic does (`JSON.stringify(config, null, 2)`). Without the file (the game's
+    settings never saved in Heroic) the row says to open them in Heroic once.
+  - Bottles, itch, a store client in a prefix, the Xbox app, non-Steam shortcuts and a command typed in Edit game keep
+    layouts-c's "add them in …" line.
+- **The text.** RHI's arguments (Windows rules, `LaunchArguments.Split`) become one POSIX shell line, each word quoted
+  only when it needs it (`%` included, so Steam never substitutes an argument). The user's options are kept: for Steam
+  RHI's part goes right after the first `%command%` (`gamemoderun %command% -dx11`, `VAR=1 %command% -dx11 | tee log`),
+  otherwise at the end; arguments already there as whole words are not added again (RHI then adds nothing).
+- **The record** (`~/.config/rhi-linux/launcher-options.json`, atomic JSON store, by library key): per file the options
+  before (or "no such key"), exactly what RHI wrote and exactly the part RHI added; the arguments it came from; the
+  journaled write that made it (its commit point).
+- **Removal** (Remove from …, Reset launch options, Management › Reset Overrides, a cleared box): when the launcher still
+  holds what RHI wrote, the original options come back (the file byte for byte for Steam and Heroic; Lutris' own line
+  folding is not kept); when the user changed them since, only RHI's part is taken out; when that part is gone too, the
+  options are left as they are.
+- **Updates.** An edit of the box and a display mode switch (#311: a switch, Off, Switch all) update the launcher's copy
+  of a game whose arguments are in it (RHI's previous part out, the new one in); a game without a launcher copy is never
+  written to. A mode without arguments takes RHI's part out but keeps the link, so the copy comes back
+  with the next arguments (Off, another mode); Reset launch options then drops the link. While the launcher holds the
+  game's current arguments, RHI's own Launch passes none (Steam's `-applaunch` would add them twice; Lutris and Heroic
+  add their own) and its status line says where they come from; display modes offer the launch arguments item for such
+  a game as well.
+- **Never while the launcher runs** (`/proc`: `steam`, `lutris` or Python running the `lutris` script, `heroic`; native
+  and Flatpak): Steam writes its in-memory copy of localconfig.vdf back when it exits, and Lutris and Heroic save a
+  game's whole settings file from what they loaded. RHI changes nothing, says so and makes the change once the launcher
+  has closed (checked every 3 s while RHI is open), unless Stop waiting is clicked. The check runs again right before the
+  first file is replaced.
+- **Journal.** Before a file changes, a byte-exact copy goes to `~/.local/share/rhi-linux/launcher-options/backups/`
+  (the newest 40 kept) and an entry naming each file, its SHA-256 before and after and the copy is saved (fsync) in
+  `…/launcher-options/journal/`; files are replaced through `AtomicFile.ReplaceUserFile` (temp, fsync, read-back, rename;
+  the file keeps its mode). A failure before the record is saved puts the files back. At start an entry whose record was
+  never saved has each file that still holds RHI's write put back from its copy; a file the launcher or the user changed
+  since is left alone and logged.
+- **Linux deviations / limits.** A launcher copy follows the library key it was made under (a game whose key changes
+  keeps the launcher copy; Remove from the new key finds no record). A Lutris entry is rewritten with RHI's single
+  quoted line, not Lutris' own wrapping (Lutris rewrites it its way on its next save).

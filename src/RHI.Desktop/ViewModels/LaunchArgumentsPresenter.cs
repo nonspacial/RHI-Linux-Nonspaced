@@ -120,7 +120,9 @@ public sealed partial class LaunchArgumentsPresenter : ObservableObject
         var hadCommand = !game.IsManuallyAdded && game.UserLaunchCommand is not null;
         if (!hadArgs && !hadCommand)
         {
-            _shell.StatusText = TF("LcArgs.ResetNothing", game.DisplayName());
+            // #318: a launcher link kept through a display mode without arguments is all there is to reset.
+            _shell.StatusText = inLauncher ? RemoveFromLauncher(game) : TF("LcArgs.ResetNothing", game.DisplayName());
+            Load();
             return;
         }
         if (hadArgs && Save(game, null) is { } refused)

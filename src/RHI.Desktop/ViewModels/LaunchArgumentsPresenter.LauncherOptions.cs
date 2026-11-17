@@ -15,7 +15,7 @@ namespace RHI.Desktop.ViewModels;
 public sealed partial class LaunchArgumentsPresenter
 {
     private LauncherOptionsService? _launcherOptions;
-    private readonly Dictionary<string, DetectedGame> _waiting = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (DetectedGame Game, bool KeepLink)> _waiting = new(StringComparer.OrdinalIgnoreCase);
     private bool _watching;
 
     /// <summary>The launcher writer (tests hand in one on a fake home); built on first use, with its start-up recovery.</summary>
@@ -76,7 +76,10 @@ public sealed partial class LaunchArgumentsPresenter
 
     /// <summary>Whether the launcher holds the game's current arguments (then RHI's own launch leaves them to the launcher).</summary>
     internal bool InLauncherNow(DetectedGame game)
-        => LauncherRecord(game) is { } record && string.Equals(record.Arguments, Saved(game), StringComparison.Ordinal);
+        => LauncherRecord(game) is { Arguments.Length: > 0 } record && string.Equals(record.Arguments, Saved(game), StringComparison.Ordinal);
+
+    // A record made while the game had no arguments (a display mode with none) holds the link, not arguments.
+    private static string? RecordArguments(LauncherOptionsRecord record) => record.Arguments.Length == 0 ? null : record.Arguments;
 
     internal bool IsWaitingForLauncher(DetectedGame game) => _waiting.ContainsKey(Key(game));
 
@@ -115,7 +118,8 @@ public sealed partial class LaunchArgumentsPresenter
         {
             LauncherButtonText = TF("LoArgs.Remove", Where(record.Launcher));
             LauncherButtonTip = TF("LoArgs.RemoveTip", Where(record.Launcher));
-            LauncherCopyNote = TF("LoArgs.InLauncher", Where(record.Launcher), record.Files.FirstOrDefault()?.Written ?? "");
+            LauncherCopyNote = RecordArguments(record) is null ? TF("LoArgs.LinkedEmpty", Where(record.Launcher))
+                : TF("LoArgs.InLauncher", Where(record.Launcher), record.Files.FirstOrDefault()?.Written ?? "");
         }
         else
         {
@@ -144,7 +148,7 @@ public sealed partial class LaunchArgumentsPresenter
         }
         if (InLauncher(game))
         {
-            _shell.StatusText = Line(game, LauncherOptions.Remove(Key(game)), removing: true);
+            _shell.StatusText = RemoveFromLauncher(game);
         }
         else if (Saved(game) is { } arguments)
         {
@@ -157,24 +161,28 @@ public sealed partial class LaunchArgumentsPresenter
         Load();
     }
 
+    /// <summary>Takes RHI's part out of the launcher's options and drops the link; the status line.</summary>
+    internal string RemoveFromLauncher(DetectedGame game) => Line(game, LauncherOptions.Remove(Key(game)), removing: true);
+
     /// <summary>
     /// After the game's arguments changed (the box, Reset, Reset Overrides, a display mode switch): the launcher's copy follows
     /// (updated, or RHI's part taken out when they were cleared). Only for a game whose arguments are in its launcher. Returns
     /// the line to add to the status, or "".
     /// </summary>
-    internal string SyncLauncher(DetectedGame game)
+    /// <param name="keepLink">A display mode switch: arguments that became empty keep the link (the copy comes back with them).</param>
+    internal string SyncLauncher(DetectedGame game, bool keepLink = false)
     {
         if (LauncherRecord(game) is not { } record) return "";
         var saved = Saved(game);
-        if (string.Equals(record.Arguments, saved, StringComparison.Ordinal)) return "";
-        var result = saved is null ? LauncherOptions.Remove(Key(game)) : LauncherOptions.Apply(game, Key(game), saved);
-        var line = Line(game, result, removing: saved is null);
+        if (string.Equals(RecordArguments(record), saved, StringComparison.Ordinal)) return "";
+        var result = saved is null && !keepLink ? LauncherOptions.Remove(Key(game)) : LauncherOptions.Apply(game, Key(game), saved, keepRecord: true);
+        var line = Line(game, result, removing: saved is null, keepLink);
         if (ReferenceEquals(game, _game)) LoadLauncher();
         return line;
     }
 
     // The status line for a launcher write; a refusal because the launcher runs queues the change for when it has closed.
-    private string Line(DetectedGame game, LauncherOptionsResult result, bool removing)
+    private string Line(DetectedGame game, LauncherOptionsResult result, bool removing, bool keepLink = false)
     {
         var kind = result.Launcher ?? LauncherOptionsService.KindOf(game) ?? LauncherKind.Steam;
         switch (result.Outcome)
@@ -186,7 +194,7 @@ public sealed partial class LaunchArgumentsPresenter
             case LauncherOptionsOutcome.Nothing:
                 return "";
             case LauncherOptionsOutcome.LauncherRunning:
-                _waiting[Key(game)] = game;
+                _waiting[Key(game)] = (game, keepLink);
                 if (ReferenceEquals(game, _game)) LoadLauncher();
                 _ = WatchLaunchersAsync();
                 return TF(removing ? "LoArgs.RunningRemove" : "LoArgs.RunningAdd", LauncherName(kind));
@@ -212,17 +220,17 @@ public sealed partial class LaunchArgumentsPresenter
             while (_waiting.Count > 0)
             {
                 await WaitForLauncher(CancellationToken.None);
-                foreach (var (key, game) in _waiting.ToList())
+                foreach (var (key, (game, keepLink)) in _waiting.ToList())
                 {
                     var kind = LauncherRecord(game)?.Launcher ?? LauncherOptionsService.KindOf(game);
                     if (kind is { } k && LauncherOptions.IsRunning(k)) continue;
                     _waiting.Remove(key);
                     var saved = Saved(game);
                     LauncherOptionsResult result;
-                    if (saved is null) result = LauncherOptions.Remove(key);
-                    else result = LauncherOptions.Apply(game, key, saved);
-                    if (result.Outcome == LauncherOptionsOutcome.LauncherRunning) { _waiting[key] = game; continue; } // started again
-                    var line = Line(game, result, removing: saved is null);
+                    if (saved is null && !keepLink) result = LauncherOptions.Remove(key);
+                    else result = LauncherOptions.Apply(game, key, saved, keepRecord: keepLink);
+                    if (result.Outcome == LauncherOptionsOutcome.LauncherRunning) { _waiting[key] = (game, keepLink); continue; } // started again
+                    var line = Line(game, result, removing: saved is null, keepLink);
                     if (line.Length > 0) _shell.StatusText = TF("LoArgs.AfterClose", LauncherName(kind ?? LauncherKind.Steam), line);
                     if (ReferenceEquals(game, _game)) Load();
                 }
