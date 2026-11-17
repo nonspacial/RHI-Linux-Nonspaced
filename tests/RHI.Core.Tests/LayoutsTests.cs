@@ -506,6 +506,43 @@ public sealed class LayoutsTests : IDisposable
         Assert.Equal(stripGear, UiLocalizationService.TextFor(language, "Spot.ShelfOptionsTip"));
     }
 
+    [Theory]
+    [InlineData(260)]
+    [InlineData(650)]
+    [InlineData(1100)]
+    public void AComponentCard_PutsItsButtonsOnALineOfTheirOwn_AtAnyWidth(double width)
+    {
+        // Upstream 2.9.4 OverviewCard: name and status, the description, then the buttons as a row of their own.
+        var row = new ResponsiveRow { ColumnSpacing = 12, LineSpacing = 8, HeadColumns = 2, SkipEmptyColumns = "3" };
+        Avalonia.Controls.Border Cell(int column, double w, double h = 20)
+        {
+            var cell = new Avalonia.Controls.Border { Width = w, Height = h };
+            if (column == 2) cell = new Avalonia.Controls.Border { MinWidth = w, Height = h };
+            Avalonia.Controls.Grid.SetColumn(cell, column);
+            row.Children.Add(cell);
+            return cell;
+        }
+        Cell(0, 90);
+        Cell(1, 70);
+        var description = Cell(2, 60, 18); // a short description
+        var gear = Cell(4, 32, 32);
+        var install = Cell(5, 80, 32);
+        var info = Cell(6, 32, 32);
+        MainWindow.ShapeComponentRow(row, cards: true);
+        row.Measure(new Avalonia.Size(width, double.PositiveInfinity));
+        row.Arrange(new Avalonia.Rect(0, 0, width, row.DesiredSize.Height));
+
+        Assert.True(gear.Bounds.Y >= description.Bounds.Bottom, $"{width}: the buttons share the description's line");
+        Assert.Equal(0, gear.Bounds.X);
+        Assert.Equal(gear.Bounds.Y, install.Bounds.Y);
+        Assert.Equal(gear.Bounds.Y, info.Bounds.Y);
+
+        MainWindow.ShapeComponentRow(row, cards: false); // Classic+'s row keeps one line where it fits
+        row.Measure(new Avalonia.Size(1100, double.PositiveInfinity));
+        row.Arrange(new Avalonia.Rect(0, 0, 1100, row.DesiredSize.Height));
+        Assert.False(row.IsWrapped);
+    }
+
     [Fact]
     public void TabsOverview_HeadsTheComponentCards_LikeTheGlanceTiles()
     {

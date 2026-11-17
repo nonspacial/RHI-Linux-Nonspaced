@@ -33,10 +33,22 @@ public sealed partial class MainWindow
     /// first line, then the description, then the buttons (the same controls, so every rule stays the row's).</summary>
     private const string RowColumns = "220,180,*,Auto,Auto,Auto,Auto", CardColumns = "*,Auto,*,Auto,Auto,Auto,Auto";
 
+    /// <summary>
+    /// w14 final review (upstream 2.9.4 OverviewCard: the buttons are a row of their own under the description): a card's
+    /// description never shares its line with the buttons, whatever the card's width, so every card places them alike.
+    /// </summary>
+    internal const double CardMinStarWidth = 100_000, RowMinStarWidth = 160;
+
+    internal static void ShapeComponentRow(ResponsiveRow row, bool cards)
+    {
+        row.Columns = cards ? CardColumns : RowColumns;
+        row.MinStarWidth = cards ? CardMinStarWidth : RowMinStarWidth;
+    }
+
     private void ShapeComponentRow(Control container)
     {
         if (container.GetVisualDescendants().OfType<ResponsiveRow>().FirstOrDefault() is { } row)
-            row.Columns = _cardsShown ? CardColumns : RowColumns;
+            ShapeComponentRow(row, _cardsShown);
     }
 
     private sealed record InlineCog(CogHostWindow Window, Border Host, Control? Source, TaskCompletionSource Done, CogGameWatch Watch);
