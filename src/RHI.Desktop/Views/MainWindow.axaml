@@ -179,6 +179,18 @@
       <Setter Property="Foreground" Value="{DynamicResource RhiUpdateBrush}"/>
       <Setter Property="FontSize" Value="12"/>
     </Style>
+    <!-- #308: the controller's focus ring (upstream's blue ring) while a controller drives Spotlight. -->
+    <Style Selector="TextBlock.padHints">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavySecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="Window.pad Button:focus-visible, Window.pad ToggleButton:focus-visible, Window.pad ComboBox:focus-visible, Window.pad CheckBox:focus-visible, Window.pad TextBox:focus-visible">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+    <Style Selector="Window.pad ListBox.shelf ListBoxItem:focus-visible Border.shelfCover">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
+      <Setter Property="BorderThickness" Value="3"/>
+    </Style>
     <Style Selector="Border.pickLabel">
       <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
     </Style>
@@ -1332,6 +1344,9 @@
         <!-- #298: background activity, a status line for a while, else when RHI last checked for updates and the next check. -->
         <TextBlock x:Name="StatusBarText" Grid.Column="1" Text="{Binding StatusBar.Text}" Foreground="{DynamicResource RhiMutedTextBrush}" FontSize="10"
                    TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip.Tip="{Binding StatusBar.ToolTip}"/>
+        <!-- w14/layouts-b (#308, upstream 2.9.0): while a controller drives Spotlight, the footer shows its hints instead. -->
+        <TextBlock x:Name="ControllerHintsText" Grid.Column="1" Classes="padHints" IsVisible="False" FontSize="11"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
         <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
         <TextBlock x:Name="ProductVersionText" Grid.Column="2" Text="{Binding ProductVersionText}" Foreground="{DynamicResource RhiFaintTextBrush}" FontSize="10"

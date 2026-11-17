@@ -66,6 +66,7 @@ public sealed partial class MainWindow : Window
         InitializeTopBar(); // w14/layouts-a (#303/#306): top bar, game list switch, sizes
         InitializeInlineCogs(); // w14/layouts-a (#304): a ⚙ opens under its component in Tabs
         InitializeSpotlight(); // w14/layouts-b (#305): Spotlight's strip, banner, tiles and side panel
+        InitializeController(); // w14/layouts-b (#308): a game controller in Spotlight
         _detailLayoutStore = new DetailSectionLayoutStore();
         _detailLayout = _detailLayoutStore.Load();
         ApplyDetailSectionLayout();

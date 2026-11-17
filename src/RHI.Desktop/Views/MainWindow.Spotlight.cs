@@ -262,6 +262,7 @@ public sealed partial class MainWindow
             }
         }
         RefreshAchievements(); // #307: hidden outside Spotlight
+        UpdateControllerRunning(); // #308: the controller drives Spotlight only
         if (!on) return;
         ApplyHeroHeight();
         RefreshHero();

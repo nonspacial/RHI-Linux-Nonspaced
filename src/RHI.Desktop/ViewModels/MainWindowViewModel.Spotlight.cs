@@ -129,6 +129,25 @@ public partial class MainWindowViewModel
         return false;
     }
 
+    /// <summary>#308: Settings › General › Controller support (on by default), saved at once. The refusal, or null.</summary>
+    public string? SetControllerSupport(bool on)
+    {
+        if (_settings.ControllerSupport == on) return null;
+        if (SaveLayoutSettings(s => s.ControllerSupport = on) is { } refused) return refused;
+        _settings.ControllerSupport = on;
+        ControllerSettingChanged?.Invoke();
+        return null;
+    }
+
+    /// <summary>#308: Controller support changed (the window starts or stops reading the controller).</summary>
+    public event Action? ControllerSettingChanged;
+
+    /// <summary>#308: a game started from RHI (its launch went ahead).</summary>
+    public event Action<DetectedGame>? GameLaunched;
+
+    /// <summary>#308: whether the game runs now (the running probe Update All uses).</summary>
+    public bool IsGameRunning(DetectedGame game) => Updates.UpdateAll.IsRunning(game);
+
     /// <summary>Whether a game has an update RHI knows of (the cover's purple outline and Update tag).</summary>
     public bool GameHasUpdate(DetectedGame game) => TopBar.HasUpdate(LinuxGameLibraryStore.GameKey(game));
 }

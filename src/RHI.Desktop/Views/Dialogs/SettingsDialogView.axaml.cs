@@ -218,7 +218,10 @@ public sealed partial class SettingsDialogView : UserControl
                 T("Ui.LanguageNote")),
             // w14/layouts-a (#303): the View mode row (Compact view) left: the top bar's layout switch replaced it, as upstream.
             SettingsLayout.Row(T("Set.MotdAtStart"), SettingsLayout.OnOff(() => model.ShowMotdOnStartup, v => model.ShowMotdOnStartup = v, model,
-                nameof(model.ShowMotdOnStartup), "ShowMotd"), tip: T("Win.ShowEachNewMOTDOnceAt"))));
+                nameof(model.ShowMotdOnStartup), "ShowMotd"), tip: T("Win.ShowEachNewMOTDOnceAt")),
+            // w14/layouts-b (#308, upstream 2.9.0 Settings › General › Windows): Controller support, saved at once.
+            SettingsLayout.Row(T("Pad.Setting"), SettingsLayout.OnOff(() => vm.SpotlightSettings.ControllerSupport,
+                v => vm.StatusText = vm.SetControllerSupport(v) ?? vm.StatusText, name: "ControllerSupport"), T("Pad.SettingHelp"), T("Pad.SettingTip"))));
         // #301 (upstream 2.9.3 Settings › General › Colour theme): the theme, Custom's colours, Share / Import theme.
         cards[SettingsSections.General].Add(SettingsLayout.Card(T("Theme.Title"), T("Theme.Intro"), SettingsLayout.Block(themeRows.Control)));
 

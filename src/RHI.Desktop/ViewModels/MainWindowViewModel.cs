@@ -1167,6 +1167,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         try
         {
             await launch();
+            GameLaunched?.Invoke(game); // w14/layouts-b (#308): Spotlight's controller brings RHI back when it closes
             return true;
         }
         catch (GameLaunchFailedException ex)
