@@ -310,7 +310,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {Collections.ActiveName ?? LibraryFilterDisplay(LibraryFilterMode)}" // #300
                                    + (CustomFilters.ActiveName is { } custom ? $" · {custom}" : ""); // #193
     public bool IsCompactView => string.Equals(ViewMode, "Compact", StringComparison.OrdinalIgnoreCase);
-    public string ViewToggleText => IsCompactView ? UiLocalizationService.Text("Ui.ViewDetail") : UiLocalizationService.Text("Ui.ViewCompact");
     public bool TrayIconEnabled => _settings.TrayIconEnabled;
     public bool CloseToTray => _settings.CloseToTray;
     public bool AddonWatcherEnabled => _settings.AddonWatcherEnabled;
@@ -545,7 +544,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         NotifySelected();
         OnPropertyChanged(nameof(ProductVersionText));
         OnPropertyChanged(nameof(GameCountText));
-        OnPropertyChanged(nameof(ViewToggleText));
         ReShadeProfile.NotifyD3DCompilerText();
         NotifyDlss();
     }
@@ -827,7 +825,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     partial void OnViewModeChanged(string value)
     {
         OnPropertyChanged(nameof(IsCompactView));
-        OnPropertyChanged(nameof(ViewToggleText));
     }
 
     partial void OnSelectedDlss5FeederConsumerChanged(string value)
@@ -2240,7 +2237,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     private void NotifyUxSettings()
     {
         OnPropertyChanged(nameof(IsCompactView));
-        OnPropertyChanged(nameof(ViewToggleText));
         OnPropertyChanged(nameof(GameCountText));
         OnPropertyChanged(nameof(FavouriteActionText));
         OnPropertyChanged(nameof(HideActionText));
