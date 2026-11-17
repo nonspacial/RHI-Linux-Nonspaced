@@ -385,6 +385,12 @@ public sealed partial class SettingsDialogView : UserControl
             SettingsLayout.Help(T("Win.ClearCacheRemovesOnlyRHILinux")),
             SettingsLayout.SubHeading(T("Removed.Tab")),
             Unwrap(RemovedGamesSettingsTab.Create(vm, Show)))); // #293 Removed games
+        // w14/layouts-b (#307, upstream 2.9.2 Settings › Achievements): Steam (off by default) and Show hidden, saved at once.
+        cards[SettingsSections.Achievements].Add(SettingsLayout.Card(T("Ach.Stores"), T("Ach.StoresHelp"),
+            SettingsLayout.Row("Steam", SettingsLayout.OnOff(() => vm.Achievements.SteamOn, v => vm.StatusText = vm.Achievements.SetSteamOn(v) ?? vm.StatusText, name: "SteamAchievements"),
+                tip: T("Ach.SteamTip")),
+            SettingsLayout.Row(T("Ach.ShowHidden"), SettingsLayout.OnOff(() => vm.Achievements.ShowHidden, v => vm.StatusText = vm.Achievements.SetShowHidden(v) ?? vm.StatusText, name: "AchievementsShowHidden"),
+                tip: T("Ach.ShowHiddenTip"))));
         // w14 lane rows: Settings cards (add to cards[SettingsSections.<Key>])
         return cards;
     }

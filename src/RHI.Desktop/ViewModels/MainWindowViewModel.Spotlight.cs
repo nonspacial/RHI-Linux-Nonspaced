@@ -45,12 +45,19 @@ public partial class MainWindowViewModel
     public event Action<DetectedGame, ArtworkKind>? ArtworkChanged;
 
     /// <summary>Wires the artwork services (AppComposition). Without them Spotlight shows names and a plain banner.</summary>
-    public void UseSpotlightServices(HttpClient? http, PcgwCentralDataService? pcgw, SteamArtworkService? artwork = null, SteamGridDbService? steamGridDb = null)
+    public void UseSpotlightServices(HttpClient? http, PcgwCentralDataService? pcgw, SteamArtworkService? artwork = null, SteamGridDbService? steamGridDb = null,
+        RHI.Platform.Linux.Achievements.SteamAchievementService? achievements = null)
     {
         _spotlightPcgw = pcgw;
         Artwork = artwork ?? (http is null ? null : new SteamArtworkService(http));
         SteamGridDb = steamGridDb ?? (http is null ? null : new SteamGridDbService(http, new SecretFileStore(SteamGridDbService.DefaultKeyPath, "steamgriddb")));
+        _achievements = new AchievementsPresenter(() => _settings, SaveLayoutSettings, achievements ?? new RHI.Platform.Linux.Achievements.SteamAchievementService(http: http));
     }
+
+    private AchievementsPresenter? _achievements;
+
+    /// <summary>#307: Settings › Achievements and Spotlight's achievements (Steam's local files).</summary>
+    public AchievementsPresenter Achievements => _achievements ??= new AchievementsPresenter(() => _settings, SaveLayoutSettings, null);
 
     /// <summary>Starts reading PCGamingWiki's data, which names the Steam AppID of games from other stores (Spotlight only).</summary>
     public void PrefetchArtworkNames() => _spotlightPcgw?.Prefetch();

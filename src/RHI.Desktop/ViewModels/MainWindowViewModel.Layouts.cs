@@ -45,6 +45,9 @@ public partial class MainWindowViewModel
         _settings.SpotlightCoverScale = settings.SpotlightCoverScale;
         _settings.SpotlightShelfAtBottom = settings.SpotlightShelfAtBottom;
         _settings.SpotlightShelfPlain = settings.SpotlightShelfPlain;
+        _settings.SteamAchievements = settings.SteamAchievements;
+        _settings.AchievementsShowHidden = settings.AchievementsShowHidden;
+        _settings.ControllerSupport = settings.ControllerSupport;
         return null;
     }
 

@@ -102,6 +102,7 @@ public sealed partial class MainWindow
             old.Games.CollectionChanged -= OnSpotlightGamesChanged;
             old.TopBar.PropertyChanged -= OnSpotlightUpdatesChanged;
             old.ArtworkChanged -= OnArtworkChanged;
+            old.Achievements.Changed -= OnAchievementsSettingChanged;
             old.PickCustomArt = null;
             old.BrowseArt = null;
         }
@@ -113,6 +114,7 @@ public sealed partial class MainWindow
         vm.Games.CollectionChanged += OnSpotlightGamesChanged;
         vm.TopBar.PropertyChanged += OnSpotlightUpdatesChanged;
         vm.ArtworkChanged += OnArtworkChanged;
+        vm.Achievements.Changed += OnAchievementsSettingChanged;
         vm.PickCustomArt = PickCustomArtAsync;
         vm.BrowseArt = (game, kind) =>
         {
@@ -130,6 +132,7 @@ public sealed partial class MainWindow
         {
             case nameof(MainWindowViewModel.SelectedGame):
                 RefreshHero();
+                RefreshAchievements(); // #307
                 RefreshSpotlightTiles();
                 if (_panelCog is not null) CloseSpotlightCog();
                 if (vm.Layout.PanelKey is { } key && IsBuiltPanel(key)) ShowSpotlightPanel(key, rebuild: true);
@@ -139,6 +142,13 @@ public sealed partial class MainWindow
                 RefreshSpotlightSwitch();
                 break;
         }
+    }
+
+    /// <summary>Settings › Achievements changed: the strip follows (upstream AchievementsSettingChanged).</summary>
+    private void OnAchievementsSettingChanged()
+    {
+        RefreshAchievements(force: true);
+        _achPanelRefresh?.Invoke();
     }
 
     private void OnSpotlightChoicesChanged()
@@ -251,6 +261,7 @@ public sealed partial class MainWindow
                 RefreshSpotlightSwitch();
             }
         }
+        RefreshAchievements(); // #307: hidden outside Spotlight
         if (!on) return;
         ApplyHeroHeight();
         RefreshHero();

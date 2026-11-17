@@ -48,8 +48,16 @@ public sealed class SteamArtworkService
     private readonly ConcurrentDictionary<string, Task<string?>> _inFlight = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<int, Task<IReadOnlyDictionary<string, string>?>> _assetLookups = new();
 
-    public SteamArtworkService(HttpClient http, string? cacheRoot = null, string? customRoot = null, Func<DateTime>? utcNow = null)
+    private readonly Func<int, ArtworkKind, string?> _steamLibraryCache;
+
+    /// <param name="steamLibraryCache">
+    /// Linux addition: the Steam client's own copy of the art (<c>appcache/librarycache</c>), used before any download; the
+    /// default looks in native and Flatpak Steam (<see cref="Achievements.SteamLocalFiles"/>).
+    /// </param>
+    public SteamArtworkService(HttpClient http, string? cacheRoot = null, string? customRoot = null, Func<DateTime>? utcNow = null,
+        Func<int, ArtworkKind, string?>? steamLibraryCache = null)
     {
+        _steamLibraryCache = steamLibraryCache ?? DefaultSteamLibraryCache;
         _http = http;
         _cacheRoot = cacheRoot ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "artwork");
         _customRoot = customRoot ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux", "artwork", "custom");
@@ -192,9 +200,15 @@ public sealed class SteamArtworkService
 
     // ---- Steam art -------------------------------------------------------------------------------------------------
 
-    /// <summary>The cached file, or null when it is not downloaded yet. Cheap (file checks only).</summary>
+    private static readonly Achievements.SteamLocalFiles SteamFiles = new();
+
+    private static string? DefaultSteamLibraryCache(int appId, ArtworkKind kind)
+        => SteamFiles.LibraryCacheFile(appId, kind == ArtworkKind.Hero ? "library_hero.jpg" : "library_600x900.jpg");
+
+    /// <summary>The art on disk — Steam's own library cache, else RHI's download — or null. Cheap (file checks only).</summary>
     public string? TryGetCached(int appId, ArtworkKind kind)
     {
+        if (_steamLibraryCache(appId, kind) is { } steams && LooksLikeImage(steams)) return steams;
         var path = LocalPath(appId, kind);
         return File.Exists(path) ? path : null;
     }

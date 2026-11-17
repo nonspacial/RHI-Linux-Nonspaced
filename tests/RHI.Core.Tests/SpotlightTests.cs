@@ -266,7 +266,7 @@ public sealed class SpotlightTests : IDisposable
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(File.ReadAllText(Fixture("storebrowse-2828710.json"))) };
             return url.Contains("/deef1b198941015428f5b3d3e29e819f7ef86abc/library_capsule.jpg", StringComparison.Ordinal) ? Image(Jpeg) : NotFound();
         });
-        var art = new SteamArtworkService(new HttpClient(handler), Path.Combine(_root, "cache"), Path.Combine(_root, "custom"));
+        var art = new SteamArtworkService(new HttpClient(handler), Path.Combine(_root, "cache"), Path.Combine(_root, "custom"), steamLibraryCache: (_, _) => null);
         var path = await art.GetAsync(2828710, ArtworkKind.Cover, CancellationToken.None);
         Assert.Equal(Path.Combine(_root, "cache", "2828710", "cover.jpg"), path);
         Assert.Equal(Jpeg, File.ReadAllBytes(path!));
@@ -284,7 +284,7 @@ public sealed class SpotlightTests : IDisposable
         var handler = new FakeHandler(r => r.RequestUri!.Host == "api.steampowered.com"
             ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"response\":{}}") }
             : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>soft 404</html>", Encoding.UTF8, "text/html") });
-        var art = new SteamArtworkService(new HttpClient(handler), Path.Combine(_root, "cache"), Path.Combine(_root, "custom"), () => now);
+        var art = new SteamArtworkService(new HttpClient(handler), Path.Combine(_root, "cache"), Path.Combine(_root, "custom"), () => now, (_, _) => null);
         Assert.Null(await art.GetAsync(10, ArtworkKind.Hero, CancellationToken.None));
         Assert.False(File.Exists(Path.Combine(_root, "cache", "10", "hero.jpg")));
         var asked = handler.Requests.Count;
@@ -294,6 +294,21 @@ public sealed class SpotlightTests : IDisposable
         now = now.AddDays(2);
         Assert.Null(await art.GetAsync(10, ArtworkKind.Hero, CancellationToken.None));
         Assert.True(handler.Requests.Count > asked);
+    }
+
+    [Fact]
+    public async Task SteamArt_SteamsOwnLibraryCacheIsUsedFirst_NothingDownloaded()
+    {
+        var steam = Path.Combine(_root, "Steam");
+        var cached = Path.Combine(steam, "appcache", "librarycache", "238010", "library_hero.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
+        File.WriteAllBytes(cached, Jpeg);
+        var files = new RHI.Platform.Linux.Achievements.SteamLocalFiles([steam], []);
+        var handler = new FakeHandler(_ => throw new InvalidOperationException("no download expected"));
+        var art = new SteamArtworkService(new HttpClient(handler), Path.Combine(_root, "cache"), Path.Combine(_root, "custom"),
+            steamLibraryCache: (id, kind) => files.LibraryCacheFile(id, kind == ArtworkKind.Hero ? "library_hero.jpg" : "library_600x900.jpg"));
+        Assert.Equal(cached, await art.GetAsync(238010, ArtworkKind.Hero, CancellationToken.None));
+        Assert.Empty(handler.Requests);
     }
 
     [Fact]

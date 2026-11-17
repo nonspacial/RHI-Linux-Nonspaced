@@ -146,6 +146,39 @@
       <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyAccentBrush}"/>
       <Setter Property="BorderThickness" Value="2"/>
     </Style>
+    <Style Selector="Button.achStrip">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="14,10"/>
+    </Style>
+    <Style Selector="Button.achStrip:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowHoverBrush}"/>
+    </Style>
+    <Style Selector="ProgressBar.achBar">
+      <Setter Property="Foreground" Value="{DynamicResource RhiNavyAccentBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource RhiNavyControlBorderBrush}"/>
+    </Style>
+    <Style Selector="Border.achIcon">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyRowHoverBrush}"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <Style Selector="Border.achRow">
+      <Setter Property="Background" Value="{DynamicResource RhiNavyCardBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiNavyCardBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="12,10"/>
+    </Style>
+    <Style Selector="Border.achRow.locked">
+      <Setter Property="Opacity" Value="0.7"/>
+    </Style>
+    <Style Selector="TextBlock.achRarity">
+      <Setter Property="Foreground" Value="{DynamicResource RhiUpdateBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
     <Style Selector="Border.pickLabel">
       <Setter Property="Background" Value="{DynamicResource RhiNavyPageBrush}"/>
     </Style>
@@ -508,6 +541,19 @@
                 <views:DisplayModeSwitchView x:Name="TabsDisplayModeSwitch" VerticalAlignment="Center"/>
               </StackPanel>
             </WrapPanel>
+            <!-- w14/layouts-b (#307, upstream 2.9.2 Spotlight): the Steam achievements strip under Launch — progress, the latest
+                 unlock and the recent ones; a click opens the full list in the side panel (Settings › Achievements › Steam). -->
+            <Button x:Name="SpotlightAchievementsStrip" Classes="achStrip" IsVisible="False" Click="AchievementsStrip_Click"
+                    HorizontalAlignment="Left" ToolTip.Tip="{DynamicResource Ach.StripTip}" AutomationProperties.Name="{DynamicResource Ach.StripTip}">
+              <StackPanel Orientation="Horizontal" Spacing="16">
+                <StackPanel Spacing="6" VerticalAlignment="Center">
+                  <TextBlock x:Name="AchProgressText" Classes="glanceTitle"/>
+                  <ProgressBar x:Name="AchProgressBar" Classes="achBar" Width="170" Height="4" MinHeight="4" Minimum="0" Maximum="100"/>
+                </StackPanel>
+                <StackPanel x:Name="AchRecentIcons" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"/>
+                <TextBlock x:Name="AchLatestText" Classes="statusLine" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+              </StackPanel>
+            </Button>
           </StackPanel>
               </Border>
               <Border x:Name="SpotlightHeroGrip" Classes="resizeGrip" IsVisible="False" Height="10" VerticalAlignment="Bottom"
