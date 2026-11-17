@@ -330,6 +330,81 @@ public sealed class SettingsLayoutParityTests
         }
     }
 
+    // ---- w14 final review m6: rows that went stale ---------------------------------------------------------------------
+
+    [Fact]
+    public void Choice_ARefusedSave_PutsTheDropdownBackToTheSavedValue()
+    {
+        var saved = "Off";
+        var combo = RHI.Desktop.Views.SettingsLayout.Choice(["Off", "On"], () => saved, _ => { /* refused: nothing saved */ });
+        combo.SelectedItem = "On";
+        Assert.Equal("Off", combo.SelectedItem);
+        var accepting = RHI.Desktop.Views.SettingsLayout.Choice(["Off", "On"], () => saved, v => saved = v);
+        accepting.SelectedItem = "On";
+        Assert.Equal("On", accepting.SelectedItem);
+    }
+
+    [Fact]
+    public async Task SizeControllerAndAchievementRows_FollowTheirValues_AndResetSettings()
+    {
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var vm = fx.Vm;
+        var model = new SettingsDialogViewModel(vm, _ => null, _ => Task.FromResult<string?>(null));
+        RHI.Desktop.Views.SettingsLayout.RunOnUi = sync => sync();
+        try
+        {
+            var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+            ComboBox Row(string name) => view.GetLogicalDescendants().OfType<ComboBox>().Single(c => c.Name == name);
+
+            Assert.Null(vm.SetUiScale(150));
+            Assert.Null(vm.SetGameListScale(120));
+            Assert.Null(vm.SetControllerSupport(false));
+            Assert.Null(vm.Achievements.SetSteamOn(true));
+            Assert.Equal("150%", Row("UiScale").SelectedItem);
+            Assert.Equal("120%", Row("GameListScale").SelectedItem);
+            Assert.Equal("Off", Row("ControllerSupport").SelectedItem);
+            Assert.Equal("On", Row("SteamAchievements").SelectedItem);
+
+            model.ResetCommand.Execute(null);
+            Assert.Equal(InterfaceSize.Label(InterfaceSize.Normal), Row("UiScale").SelectedItem);
+            Assert.Equal(InterfaceSize.Label(InterfaceSize.Normal), Row("GameListScale").SelectedItem);
+            Assert.Equal("On", Row("ControllerSupport").SelectedItem);
+            Assert.Equal("Off", Row("SteamAchievements").SelectedItem);
+            Assert.Equal("Off", Row("AchievementsShowHidden").SelectedItem);
+        }
+        finally { RHI.Desktop.Views.SettingsLayout.RunOnUi = sync => Avalonia.Threading.Dispatcher.UIThread.Post(sync); }
+    }
+
+    [Fact]
+    public async Task ARefusedSave_IsShownInSettings_AndTheRowKeepsTheSavedValue()
+    {
+        if (!PermissionDenial.Enforced) return; // PermissionDenial.SkipReason
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var vm = fx.Vm;
+        var model = new SettingsDialogViewModel(vm, _ => null, _ => Task.FromResult<string?>(null));
+        var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+        ComboBox Row(string name) => view.GetLogicalDescendants().OfType<ComboBox>().Single(c => c.Name == name);
+        var mainLine = vm.StatusText;
+        PermissionDenial.MakeReadOnly(fx.ConfigDir);
+        try
+        {
+            foreach (var (name, picked) in new[] { ("UiScale", "150%"), ("ControllerSupport", "Off"), ("SteamAchievements", "On"), ("AchievementsShowHidden", "On") })
+            {
+                var before = Row(name).SelectedItem;
+                model.Status = "";
+                Row(name).SelectedItem = picked;
+                Assert.Equal(before, Row(name).SelectedItem);
+                Assert.False(string.IsNullOrEmpty(model.Status), name);
+            }
+        }
+        finally { PermissionDenial.MakeWritable(fx.ConfigDir); }
+        Assert.Equal(mainLine, vm.StatusText); // not on the main window's line
+        Assert.Equal(InterfaceSize.Normal, vm.UiScale);
+        Assert.True(vm.SpotlightSettings.ControllerSupport);
+    }
+
     [Fact]
     public void TooltipSweep_EveryFilterAndSection_HasItsTooltip_InBothLanguages()
     {

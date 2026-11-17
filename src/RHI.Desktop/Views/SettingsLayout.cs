@@ -144,6 +144,13 @@ internal static class SettingsLayout
         {
             if (syncing || combo.SelectedItem is not string picked || picked == get()) return;
             set(picked);
+            // w14 final review m6: a refused save leaves the value as it was; the dropdown shows it again.
+            if (get() is var saved && saved != picked)
+            {
+                syncing = true;
+                try { combo.SelectedItem = saved; }
+                finally { syncing = false; }
+            }
         };
         Follow(combo, source, property, () =>
         {
@@ -171,13 +178,18 @@ internal static class SettingsLayout
         return box;
     }
 
+    /// <summary>How a row's resync runs after its source changed: on the UI thread (tests run it in place).</summary>
+    internal static Action<Action> RunOnUi { get; set; } = sync => Avalonia.Threading.Dispatcher.UIThread.Post(sync);
+
+    /// <summary>Keeps <paramref name="control"/> in step with <paramref name="source"/> from the start, then while it is shown.</summary>
     private static void Follow(Control control, INotifyPropertyChanged? source, string? property, Action sync)
     {
         if (source is null) return;
         PropertyChangedEventHandler handler = (_, e) =>
         {
-            if (property is null || e.PropertyName == property) Avalonia.Threading.Dispatcher.UIThread.Post(sync);
+            if (property is null || e.PropertyName == property) RunOnUi(sync);
         };
+        source.PropertyChanged += handler;
         control.AttachedToVisualTree += (_, _) => { source.PropertyChanged -= handler; source.PropertyChanged += handler; };
         control.DetachedFromVisualTree += (_, _) => source.PropertyChanged -= handler;
     }

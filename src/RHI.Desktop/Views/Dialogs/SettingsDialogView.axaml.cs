@@ -193,24 +193,21 @@ public sealed partial class SettingsDialogView : UserControl
         SyncTray();
         // w14/layouts-a (#306, upstream 2.9.0–2.9.3 Windows and Admin Mode): Interface size, Top bar size and Game list size,
         // 50–200% in 5% steps, applied and saved as they change (the window's Ctrl + mouse wheel and edge drags set them too).
-        ComboBox SizeChoice(string name, Func<int> get, Func<int, string?> set)
+        // w14 final review m6: each row follows its value (Ctrl + mouse wheel, edge drags, Reset settings), a refused save puts
+        // the dropdown back, and the refusal shows here.
+        ComboBox SizeChoice(string name, string property, Func<int> get, Func<int, string?> set)
         {
             var labels = InterfaceSize.Options.Select(InterfaceSize.Label).ToList();
-            var combo = new ComboBox { Name = name, ItemsSource = labels, MinWidth = 160, MaxDropDownHeight = 320 };
-            combo.SelectedIndex = InterfaceSize.Options.ToList().IndexOf(InterfaceSize.Nearest(get()));
-            combo.SelectionChanged += (_, _) =>
+            return SettingsLayout.Choice(labels, () => InterfaceSize.Label(InterfaceSize.Nearest(get())), label =>
             {
-                if (combo.SelectedIndex < 0) return;
-                var percent = InterfaceSize.Options[combo.SelectedIndex];
-                if (percent == InterfaceSize.Nearest(get())) return;
-                if (set(percent) is { } refused) Show(refused);
-            };
-            return combo;
+                if (set(InterfaceSize.Options[labels.IndexOf(label)]) is { } refused) Show(refused);
+            }, vm, property, name);
         }
+        void Saved(string? refused) { if (refused is not null) Show(refused); }
         cards[SettingsSections.General].Add(SettingsLayout.Card(T("Set.CardWindows"), null,
-            SettingsLayout.Row(T("Size.Interface"), SizeChoice("UiScale", () => vm.UiScale, vm.SetUiScale), tip: T("Size.InterfaceTip")),
-            SettingsLayout.Row(T("Size.TopBar"), SizeChoice("TopBarScale", () => vm.TopBarScale, vm.SetTopBarScale), tip: T("Size.TopBarTip")),
-            SettingsLayout.Row(T("Size.GameList"), SizeChoice("GameListScale", () => vm.GameListScale, vm.SetGameListScale), tip: T("Size.GameListTip")),
+            SettingsLayout.Row(T("Size.Interface"), SizeChoice("UiScale", nameof(vm.UiScale), () => vm.UiScale, vm.SetUiScale), tip: T("Size.InterfaceTip")),
+            SettingsLayout.Row(T("Size.TopBar"), SizeChoice("TopBarScale", nameof(vm.TopBarScale), () => vm.TopBarScale, vm.SetTopBarScale), tip: T("Size.TopBarTip")),
+            SettingsLayout.Row(T("Size.GameList"), SizeChoice("GameListScale", nameof(vm.GameListScale), () => vm.GameListScale, vm.SetGameListScale), tip: T("Size.GameListTip")),
             SettingsLayout.Row(T("Set.TrayIcon"), SettingsLayout.OnOff(() => model.TrayIconEnabled, v => { model.TrayIconEnabled = v; model.TrayIconClicked(); },
                 model, nameof(model.TrayIconEnabled), "TrayIcon"), T("Win.TraySupportDependsDesktopEnvironmentKDE"), T("Win.EnableSystemTrayIconStatusNotifierItemAppIndicat")),
             SettingsLayout.Row(T("Set.CloseToTray"), closeToTray, tip: T("Set.CloseToTrayTip")),
@@ -221,7 +218,7 @@ public sealed partial class SettingsDialogView : UserControl
                 nameof(model.ShowMotdOnStartup), "ShowMotd"), tip: T("Win.ShowEachNewMOTDOnceAt")),
             // w14/layouts-b (#308, upstream 2.9.0 Settings › General › Windows): Controller support, saved at once.
             SettingsLayout.Row(T("Pad.Setting"), SettingsLayout.OnOff(() => vm.SpotlightSettings.ControllerSupport,
-                v => vm.StatusText = vm.SetControllerSupport(v) ?? vm.StatusText, name: "ControllerSupport"), T("Pad.SettingHelp"), T("Pad.SettingTip"))));
+                v => Saved(vm.SetControllerSupport(v)), vm, nameof(vm.SpotlightSettings), "ControllerSupport"), T("Pad.SettingHelp"), T("Pad.SettingTip"))));
         // #301 (upstream 2.9.3 Settings › General › Colour theme): the theme, Custom's colours, Share / Import theme.
         cards[SettingsSections.General].Add(SettingsLayout.Card(T("Theme.Title"), T("Theme.Intro"), SettingsLayout.Block(themeRows.Control)));
 
@@ -398,10 +395,10 @@ public sealed partial class SettingsDialogView : UserControl
             Unwrap(RemovedGamesSettingsTab.Create(vm, Show)))); // #293 Removed games
         // w14/layouts-b (#307, upstream 2.9.2 Settings › Achievements): Steam (off by default) and Show hidden, saved at once.
         cards[SettingsSections.Achievements].Add(SettingsLayout.Card(T("Ach.Stores"), T("Ach.StoresHelp"),
-            SettingsLayout.Row("Steam", SettingsLayout.OnOff(() => vm.Achievements.SteamOn, v => vm.StatusText = vm.Achievements.SetSteamOn(v) ?? vm.StatusText, name: "SteamAchievements"),
-                tip: T("Ach.SteamTip")),
-            SettingsLayout.Row(T("Ach.ShowHidden"), SettingsLayout.OnOff(() => vm.Achievements.ShowHidden, v => vm.StatusText = vm.Achievements.SetShowHidden(v) ?? vm.StatusText, name: "AchievementsShowHidden"),
-                tip: T("Ach.ShowHiddenTip"))));
+            SettingsLayout.Row("Steam", SettingsLayout.OnOff(() => vm.Achievements.SteamOn, v => Saved(vm.Achievements.SetSteamOn(v)),
+                vm, nameof(vm.SpotlightSettings), "SteamAchievements"), tip: T("Ach.SteamTip")),
+            SettingsLayout.Row(T("Ach.ShowHidden"), SettingsLayout.OnOff(() => vm.Achievements.ShowHidden, v => Saved(vm.Achievements.SetShowHidden(v)),
+                vm, nameof(vm.SpotlightSettings), "AchievementsShowHidden"), tip: T("Ach.ShowHiddenTip"))));
         // w14 lane rows: Settings cards (add to cards[SettingsSections.<Key>])
         return cards;
     }

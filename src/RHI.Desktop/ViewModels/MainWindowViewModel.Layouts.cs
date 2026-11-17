@@ -108,6 +108,7 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(UiScale));
         OnPropertyChanged(nameof(TopBarScale));
         OnPropertyChanged(nameof(GameListScale));
+        OnPropertyChanged(nameof(SpotlightSettings)); // m6: Settings' Controller support and achievements rows
         SizesChanged?.Invoke();
     }
 
