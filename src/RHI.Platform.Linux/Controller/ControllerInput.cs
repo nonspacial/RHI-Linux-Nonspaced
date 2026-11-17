@@ -15,7 +15,7 @@ public enum PadAction
     PageBack,    // LT: 10 games back (repeats while held)
     PageForward, // RT: 10 games on (repeats while held)
     CycleFilter, // left stick click: All / Installed / Favourites / Hidden
-    Home,        // right stick click: the next collection (then all games again)
+    Home,        // right stick click: the next collection (then all games again), else back to the selected cover
 }
 
 /// <summary>
@@ -31,7 +31,7 @@ public readonly record struct PadState(ushort Buttons, short LeftX, short LeftY,
 /// w14/layouts-b (#308, upstream 2.9.0 <c>ControllerPoller</c>, unchanged rules): controller state into actions. Buttons
 /// fire once per press; directions (D-pad or left stick) repeat while held after 400 ms, every 80 ms; held triggers
 /// repeat after 350 ms, every 110 ms. Anything held when RHI became active (pressed in a game just before) does nothing
-/// until released. The right stick scrolls. Pure logic, unit tested.
+/// until released. The right stick scrolls (sideways too, for the covers). Pure logic, unit tested.
 /// </summary>
 public sealed class ControllerPoller
 {
@@ -85,7 +85,13 @@ public sealed class ControllerPoller
     }
 
     /// <summary>The actions for this reading; <paramref name="scroll"/> is the right stick's scroll in pixels (down positive).</summary>
-    public List<PadAction> Update(PadState state, long nowMs, out double scroll)
+    public List<PadAction> Update(PadState state, long nowMs, out double scroll) => Update(state, nowMs, out scroll, out _);
+
+    /// <summary>
+    /// As <see cref="Update(PadState, long, out double)"/>, with the right stick's sideways scroll too (right positive; w14
+    /// controller fixes: the covers scroll sideways on the right stick, a Linux addition): the same dead zone and speed.
+    /// </summary>
+    public List<PadAction> Update(PadState state, long nowMs, out double scroll, out double scrollX)
     {
         var buttons = state.Buttons;
         var actions = new List<PadAction>();
@@ -125,9 +131,13 @@ public sealed class ControllerPoller
             actions.Add(dir.Value);
             _nextRepeat = nowMs + RepeatIntervalMs;
         }
-        scroll = Math.Abs((int)state.RightY) > ScrollDeadZone ? -state.RightY / 32767.0 * ScrollPixelsPerTick : 0;
+        scroll = -StickScroll(state.RightY);
+        scrollX = StickScroll(state.RightX);
         return actions;
     }
+
+    // Pixels this tick along one right stick axis (positive: up / right), nothing inside the dead zone.
+    private static double StickScroll(short axis) => Math.Abs((int)axis) > ScrollDeadZone ? axis / 32767.0 * ScrollPixelsPerTick : 0;
 
     /// <summary>The D-pad wins over the stick; on the stick the larger axis wins (positive Y is up).</summary>
     public static PadAction? Direction(ushort buttons, short lx, short ly)

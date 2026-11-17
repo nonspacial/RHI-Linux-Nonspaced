@@ -32,12 +32,15 @@ public static class ControllerPresenter
     private static string T(string key) => UiLocalizationService.Text(key);
 
     /// <summary>
-    /// The index of the control <paramref name="direction"/> of <paramref name="current"/>: only controls whose centre lies that
-    /// way; the nearest in that direction wins, a control off the row (or column) counting three times its offset, so up /
-    /// down go straight to the row above or below (upstream). -1 when there is none.
+    /// The index of the control <paramref name="direction"/> of <paramref name="current"/>, -1 when there is none. Up / down go
+    /// by rows (upstream 2.9.4 MainWindow.Controller.Rows): to the nearest row that way — the controls level with the nearest
+    /// one — and in it the control nearest across (overlapping first, then by centres), so a row's control on the right
+    /// (a setting's drop-down) is reached before a button further down. Left / right go along: the nearest control whose
+    /// centre lies that way, a control off the row counting three times its offset.
     /// </summary>
     public static int Next(IReadOnlyList<Rect> candidates, Rect current, PadAction direction)
     {
+        if (direction is PadAction.Up or PadAction.Down) return NextRow(candidates, current, direction == PadAction.Down);
         var c = current.Center;
         var best = -1;
         var bestScore = double.MaxValue;
@@ -49,14 +52,36 @@ public static class ControllerPresenter
             double along, across;
             switch (direction)
             {
-                case PadAction.Down when p.Y > c.Y + 1 && r.Top >= current.Top + 1: along = p.Y - c.Y; across = Overlap(r.Left, r.Right, current.Left, current.Right, p.X - c.X); break;
-                case PadAction.Up when p.Y < c.Y - 1 && r.Bottom <= current.Bottom - 1: along = c.Y - p.Y; across = Overlap(r.Left, r.Right, current.Left, current.Right, p.X - c.X); break;
                 case PadAction.Right when p.X > c.X + 1 && r.Left >= current.Left + 1: along = p.X - c.X; across = Overlap(r.Top, r.Bottom, current.Top, current.Bottom, p.Y - c.Y); break;
                 case PadAction.Left when p.X < c.X - 1 && r.Right <= current.Right - 1: along = c.X - p.X; across = Overlap(r.Top, r.Bottom, current.Top, current.Bottom, p.Y - c.Y); break;
                 default: continue;
             }
             var score = along + 3 * across;
             if (score < bestScore) { bestScore = score; best = i; }
+        }
+        return best;
+    }
+
+    private static int NextRow(IReadOnlyList<Rect> candidates, Rect current, bool down)
+    {
+        var c = current.Center;
+        bool That(Rect r) => r != current && (down ? r.Center.Y > c.Y + 1 && r.Top >= current.Top + 1 : r.Center.Y < c.Y - 1 && r.Bottom <= current.Bottom - 1);
+        // The nearest row that way: the control whose near edge is closest, and everything level with it.
+        var nearest = -1;
+        for (var i = 0; i < candidates.Count; i++)
+            if (That(candidates[i]) && (nearest < 0 || (down ? candidates[i].Top < candidates[nearest].Top : candidates[i].Bottom > candidates[nearest].Bottom)))
+                nearest = i;
+        if (nearest < 0) return -1;
+        var row = candidates[nearest];
+        var best = -1;
+        (double Gap, double Centre) bestScore = (double.MaxValue, double.MaxValue);
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            var r = candidates[i];
+            if (!That(r) || !(r.Top < row.Bottom - 1 && r.Bottom > row.Top + 1)) continue; // not level with the row
+            var gap = c.X < r.Left ? r.Left - c.X : c.X > r.Right ? c.X - r.Right : 0;
+            var score = (gap, Math.Abs(r.Center.X - c.X));
+            if (score.CompareTo(bestScore) < 0) { bestScore = score; best = i; }
         }
         return best;
     }

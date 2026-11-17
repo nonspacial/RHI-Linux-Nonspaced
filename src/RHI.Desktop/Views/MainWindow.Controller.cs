@@ -3,7 +3,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using RHI.Core.Models;
@@ -22,6 +21,10 @@ namespace RHI.Desktop.Views;
 /// right stick click the collections, the right stick scrolls. The footer shows the hints. Open menus and drop-downs get
 /// the arrow, Enter and Esc keys. When a game RHI started closes, RHI asks to come back to the front (the compositor may
 /// only flag it: Wayland lets the focused app decide).
+/// w14 controller fixes: the right stick click is upstream 2.9.4's full Home (the next collection, else back to the
+/// selected cover); the controller reaches whichever RHI window is active (Settings, see MainWindow.Controller.Windows.cs,
+/// and the other dialog windows), and nothing while another app is; the right stick also scrolls the covers sideways; the
+/// mouse hides the hints and the next controller input takes control back (upstream's Controller.Pointer).
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -32,15 +35,16 @@ public sealed partial class MainWindow
     private bool _padActive;
     private PadStyle _padStyle;
     private CancellationTokenSource? _returnWatch;
+    private WeakReference<Window>? _padWindow;
+
+    private const int PadFastMs = 16, PadSlowMs = 250; // upstream: polled fast while RHI is active, slowly otherwise
 
     private void InitializeController()
     {
+        // The poll keeps running while RHI is not active and checks each time which RHI window is (PadTick). Avalonia raises
+        // Activated before IsActive turns true, so deciding there stopped the controller after any switch away and back (a
+        // dialog, Settings, a popup the mouse opened) until the layout changed (w14 controller fixes, the owner's report).
         Activated += (_, _) => UpdateControllerRunning();
-        Deactivated += (_, _) =>
-        {
-            _padActive = false; // a button held in a game does nothing until released (upstream)
-            UpdateControllerRunning();
-        };
         Closed += (_, _) =>
         {
             _padTimer?.Stop();
@@ -56,9 +60,9 @@ public sealed partial class MainWindow
         };
     }
 
-    private bool ControllerWanted => _spotOn && IsActive && _spotVm?.SpotlightSettings.ControllerSupport == true;
+    private bool ControllerWanted => _spotOn && _spotVm?.SpotlightSettings.ControllerSupport == true;
 
-    /// <summary>Starts or stops reading the controller (Spotlight shown, RHI active, Settings › Controller support on).</summary>
+    /// <summary>Starts or stops reading the controller (Spotlight shown, Settings › Controller support on); it acts only while an RHI window is active.</summary>
     private void UpdateControllerRunning()
     {
         if (!ControllerWanted)
@@ -75,7 +79,7 @@ public sealed partial class MainWindow
 
     private DispatcherTimer NewPadTimer()
     {
-        var timer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(16) };
+        var timer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(PadFastMs) };
         timer.Tick += (_, _) =>
         {
             try { PadTick(); }
@@ -89,7 +93,25 @@ public sealed partial class MainWindow
 
     private void PadTick()
     {
-        if (_pad is null || !ControllerWanted) { UpdateControllerRunning(); return; }
+        if (_pad is null || _padTimer is null || !ControllerWanted) { UpdateControllerRunning(); return; }
+        // Only the active RHI window gets the controller; nothing while another app is active (a game in front).
+        var windows = RhiWindows();
+        var index = PadRouter.Target(windows.Select(w => w.IsActive).ToList());
+        if (index < 0)
+        {
+            _padActive = false; // a button held in a game does nothing until released (upstream)
+            foreach (var w in windows) PadPointerShield.Hide(w); // never leave the shield over another app's turn
+            _padTimer.Interval = TimeSpan.FromMilliseconds(PadSlowMs);
+            return;
+        }
+        _padTimer.Interval = TimeSpan.FromMilliseconds(PadFastMs);
+        var window = windows[index];
+        if (_padWindow is null || !_padWindow.TryGetTarget(out var before) || !ReferenceEquals(before, window))
+        {
+            _padWindow = new WeakReference<Window>(window);
+            _padActive = false; // another window: what is held now does nothing until released
+            HookPadPointer(window);
+        }
         var now = _padClock.ElapsedMilliseconds;
         if (!_pad.TryRead(now, out var state))
         {
@@ -97,19 +119,51 @@ public sealed partial class MainWindow
             ShowPadHints(false);
             return;
         }
+        var memory = PadMemory(window);
         if (!_padActive)
         {
             _padActive = true;
             _padStyle = ControllerPresenter.StyleOf(_pad.Name);
             _poller.Reset(state);
+            if (memory.PointerInUse) return; // the mouse has the window: the next controller input takes it back
             ShowPadHints(true);
-            if (FocusManager?.GetFocusedElement() is not Control { IsEffectivelyVisible: true }) FocusSelectedCover();
+            PadPointerShield.Show(window);
+            if (ReferenceEquals(window, this))
+            {
+                if (FocusManager?.GetFocusedElement() is not Control { IsEffectivelyVisible: true }) FocusSelectedCover();
+            }
+            else EnterPadWindow(window);
             return;
         }
-        var actions = _poller.Update(state, now, out var scroll);
-        foreach (var action in actions) DoPad(action);
-        if (scroll != 0) ScrollFocused(scroll);
-        if (actions.Count > 0) RefreshPadHints();
+        var actions = _poller.Update(state, now, out var scrollY, out var scrollX);
+        if (actions.Count == 0 && scrollY == 0 && scrollX == 0) return;
+        if (memory.PointerInUse) TakeBackFromPointer(window, memory);
+        if (ReferenceEquals(window, this))
+        {
+            foreach (var action in actions) DoPad(action);
+            if (scrollY != 0 || scrollX != 0) ScrollFocused(scrollX, scrollY);
+            if (actions.Count > 0) RefreshPadHints();
+        }
+        else
+        {
+            foreach (var action in actions) DoPadInWindow(window, action);
+            if (scrollY != 0) ScrollInWindow(window, scrollY);
+        }
+    }
+
+    /// <summary>RHI's open windows, the main window first.</summary>
+    private List<Window> RhiWindows()
+    {
+        var list = new List<Window> { this };
+        void Owned(Window owner)
+        {
+            foreach (var w in owner.OwnedWindows)
+                if (w.IsVisible && !list.Contains(w)) { list.Add(w); Owned(w); }
+        }
+        Owned(this); // Settings and the dialogs shown over the main window (a dialog's own dialogs after it)
+        if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            list.AddRange(desktop.Windows.Where(w => w.IsVisible && !list.Contains(w)));
+        return list;
     }
 
     private void ShowPadHints(bool on)
@@ -155,6 +209,10 @@ public sealed partial class MainWindow
         }
         switch (action)
         {
+            case PadAction.Left or PadAction.Right when focused is ListBoxItem { Parent: not null } cover
+                                                          && cover.FindAncestorOfType<ListBox>() is { Name: "SpotlightShelf" }:
+                StepGame(vm, action == PadAction.Right ? 1 : -1); // upstream: on the covers left / right change the game
+                break;
             case PadAction.Up or PadAction.Down or PadAction.Left or PadAction.Right:
                 MoveFocus(action);
                 break;
@@ -187,33 +245,53 @@ public sealed partial class MainWindow
                 if (this.FindControl<ToggleButton>("SpotlightFiltersButton") is { } filters) filters.IsChecked = filters.IsChecked != true;
                 break;
             case PadAction.CycleFilter:
-                vm.ChooseLibraryMainFilter((vm.LibraryMainFilterIndex + 1) % MainWindowViewModel.LibraryMainFilters.Count);
+                // Upstream 2.9.4 CycleMainFilter: All → Installed → Favourites → All; from a collection, All first.
+                vm.ChooseLibraryMainFilter(PadRouter.NextMainFilter(vm.LibraryMainFilterIndex, vm.Collections.ActiveName is not null));
                 FocusSelectedCover();
                 break;
             case PadAction.Home:
-                var names = vm.Collections.Chips.Select(c => c.Name).ToList();
-                if (names.Count == 0) { FocusSelectedCover(); break; }
-                var next = ControllerPoller.NextCollection(names, vm.Collections.ActiveName);
-                vm.Collections.ToggleCommand.Execute(next ?? vm.Collections.ActiveName);
-                FocusSelectedCover();
+                PadHome(vm);
                 break;
         }
     }
 
-    private static void SendKey(Control target, Key key)
-        => target.RaiseEvent(new KeyEventArgs { RoutedEvent = KeyDownEvent, Key = key, Source = target });
+    private static void SendKey(Control target, Key key) => PadControls.SendKey(target, key);
 
     private void PressFocused(Control? focused)
     {
-        switch (focused)
+        if (focused is null) FocusSelectedCover();
+        else PadControls.Press(focused);
+    }
+
+    /// <summary>
+    /// Upstream 2.9.4 <c>PadAction.Home</c> (right stick click): on the covers with collections and no panel open, the next
+    /// collection (after the last one, All games); otherwise back to the selected game's cover — the ⚙ and the side panel
+    /// close and the covers get the focus. (From Settings, MainWindow.Controller.Windows.cs closes Settings first.)
+    /// </summary>
+    private void PadHome(MainWindowViewModel vm)
+    {
+        var panelOpen = vm.Layout.PanelKey is not null || _panelCog is not null;
+        switch (PadRouter.Home(panelOpen, menuOpen: false, vm.Collections.Chips.Count))
         {
-            case ComboBox combo: combo.IsDropDownOpen = true; break;
-            case ListBoxItem item when item.FindAncestorOfType<ListBox>() is { } list: list.SelectedItem = item.DataContext; break;
-            case ToggleButton or CheckBox: SendKey(focused, Key.Space); break;
-            case Button button: button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); if (button.Command?.CanExecute(button.CommandParameter) == true) button.Command.Execute(button.CommandParameter); break;
-            case null: FocusSelectedCover(); break;
-            default: SendKey(focused, Key.Enter); break;
+            case PadHomeRoute.NextCollection:
+                var next = ControllerPoller.NextCollection(vm.Collections.Chips.Select(c => c.Name).ToList(), vm.Collections.ActiveName);
+                if (next is null) vm.ChooseLibraryMainFilter(0); // after the last collection: All games (upstream Filter_Click("Detected"))
+                else vm.Collections.ToggleCommand.Execute(next);
+                Dispatcher.UIThread.Post(FocusSelectedCover, DispatcherPriority.Loaded);
+                break;
+            case PadHomeRoute.BackToCover:
+                BackToCover(vm);
+                break;
         }
+    }
+
+    /// <summary>Closes the ⚙ and the side panel and focuses the selected game's cover.</summary>
+    private void BackToCover(MainWindowViewModel vm)
+    {
+        if (_panelCog is not null) CloseSpotlightCog();
+        if (vm.Layout.PanelKey is not null) vm.Layout.ClosePanel();
+        FocusSelectedCover();
+        Dispatcher.UIThread.Post(FocusSelectedCover, DispatcherPriority.Loaded); // once the panel has gone
     }
 
     private void StepGame(MainWindowViewModel vm, int step)
@@ -246,39 +324,39 @@ public sealed partial class MainWindow
     /// <summary>Moves the focus to the nearest control that way (in the side panel while it is open), row by row.</summary>
     private void MoveFocus(PadAction direction)
     {
-        Visual scope = _panelShown is not null && this.FindControl<Border>("SpotlightPanelSheet") is { } sheet ? sheet : this;
         var reference = (Visual?)_uiScaleHost?.Child ?? this;
-        var candidates = scope.GetVisualDescendants().OfType<Control>()
-            .Where(c => c.Focusable && c.IsEffectivelyVisible && c.IsEffectivelyEnabled
-                        && c is Button or ToggleButton or ComboBox or CheckBox or ListBoxItem or TextBox or Slider)
-            .Select(c => (Control: c, Rect: BoundsIn(c, reference) ?? default))
-            .Where(x => x.Rect is { Width: > 0, Height: > 0 })
-            .ToList();
-        if (candidates.Count == 0) return;
+        var scope = PadScope();
         var focused = FocusManager?.GetFocusedElement() as Control;
-        if (focused is null || !scope.IsVisualAncestorOf(focused) || BoundsIn(focused, reference) is not { } current)
+        // Nothing focused, or the focus somewhere the controller does not work: start at home (upstream PadMove → FocusHome).
+        if (focused is null || !PadControls.Usable(focused, this, ReferenceEquals(scope, this) ? null : scope))
         {
-            candidates[0].Control.Focus(NavigationMethod.Directional);
+            if (PadHomeIn(this, PadWindowKind.Main) is { } home) home.Focus(NavigationMethod.Directional);
+            else FocusSelectedCover();
             return;
         }
-        var index = ControllerPresenter.Next(candidates.Select(c => c.Rect).ToList(), current, direction);
-        if (index < 0) return;
-        var target = candidates[index].Control;
-        target.Focus(NavigationMethod.Directional);
-        target.BringIntoView();
+        var target = PadControls.Move(scope, reference, focused, direction);
         // On the covers the focus is the selection (upstream: the focused cover is the selected game).
         if (target is ListBoxItem item && item.FindAncestorOfType<ListBox>() is { Name: "SpotlightShelf" } shelf) shelf.SelectedItem = item.DataContext;
     }
 
-    private static Rect? BoundsIn(Control control, Visual reference)
-        => control.TranslatePoint(default, reference) is { } origin ? new Rect(origin, control.Bounds.Size) : null;
+    /// <summary>Where the controller works on the main window: the side panel while it is open, else the whole window.</summary>
+    private Visual PadScope() => _panelShown is not null && this.FindControl<Border>("SpotlightPanelSheet") is { } sheet ? sheet : this;
 
-    private void ScrollFocused(double pixels)
+    /// <summary>
+    /// The right stick: up / down scroll what holds the focus (the page, the side panel); on the covers, left / right also
+    /// scroll the shelf sideways (a Linux addition; upstream scrolls up / down only).
+    /// </summary>
+    private void ScrollFocused(double x, double y)
     {
-        var scroller = (FocusManager?.GetFocusedElement() as Visual)?.FindAncestorOfType<ScrollViewer>()
+        var focused = FocusManager?.GetFocusedElement() as Visual;
+        var shelf = this.FindControl<ListBox>("SpotlightShelf");
+        var onShelf = focused is not null && shelf is not null && shelf.IsVisualAncestorOf(focused);
+        var (shelfX, pageY) = PadRouter.Scroll(onShelf, x, y);
+        if (shelfX != 0 && shelf is not null && ShelfScroller(shelf) is { } shelfScroller) PadControls.ScrollBy(shelfScroller, shelfX, 0);
+        if (pageY == 0) return;
+        var scroller = PadControls.VerticalAround(focused)
                        ?? (_panelShown is not null ? this.FindControl<ScrollViewer>("SpotlightPanelScroll") : this.FindControl<ScrollViewer>("DetailScroller"));
-        if (scroller is null) return;
-        scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(scroller.Offset.Y + pixels, 0, Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height)));
+        if (scroller is not null) PadControls.ScrollBy(scroller, 0, pageY);
     }
 
     // ---- back to the front after a game ------------------------------------------------------------------------------
