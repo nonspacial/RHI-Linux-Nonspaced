@@ -324,10 +324,10 @@ public sealed partial class SettingsDialogView : UserControl
             SettingsLayout.Row(T("Fps.Label"), fpsRow.Control, T("Fps.GlobalNote"), T("Fps.GlobalTip"))));
 
         // ── Components ── (upstream: ReLimiter and OptiScaler; GITC Uplift; Custom OptiScaler builds)
+        optiScalerTemplates.PlaceAfterDlssInputs(optiScalerMenuKey.Control);
         cards[SettingsSections.Components].Add(SettingsLayout.Card(T("Set.CardReLimiterOptiScaler"), null,
             relimiterRows.Control,
-            optiScalerTemplates.Control,
-            optiScalerMenuKey.Control));
+            optiScalerTemplates.Control));
         cards[SettingsSections.Components].Add(gitcUplift.Control);
         cards[SettingsSections.Components].Add(SettingsLayout.Card(T("Osc.Title"), null,
             Untitled(new OptiScalerCustomBuildsSettingsRows(vm.OptiScalerCustomBuilds).Control))); // #271 (applies at once)

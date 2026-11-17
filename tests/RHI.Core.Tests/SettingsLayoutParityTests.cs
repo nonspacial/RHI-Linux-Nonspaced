@@ -284,6 +284,21 @@ public sealed class SettingsLayoutParityTests
     }
 
     [Fact]
+    public async Task Components_ReLimiterAndOptiScalerRows_InUpstreamsOrder()
+    {
+        // Upstream 2.9.4 (MainWindow.xaml, Components › ReLimiter and OptiScaler): ReLimiter's Overlay key, Target FPS, Shared
+        // presets, DLSS hooks; OptiScaler's GPU type, DLSS inputs, then its Overlay key.
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var model = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
+        var view = new RHI.Desktop.Views.Dialogs.SettingsDialogView { DataContext = model };
+        var section = view.GetLogicalDescendants().OfType<StackPanel>().Single(p => p.Tag as string == "Section:Components");
+        string[] labels = ["Overlay key", "Target FPS", "Shared presets", "DLSS hooks", "GPU type", UiLocalizationService.Text("Names.OptiScalerDlssInputs")];
+        var order = section.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text).Where(t => labels.Contains(t)).ToList();
+        Assert.Equal(["Overlay key", "Target FPS", "Shared presets", "DLSS hooks", "GPU type", labels[5], "Overlay key"], order);
+    }
+
+    [Fact]
     public void TooltipSweep_EveryFilterAndSection_HasItsTooltip_InBothLanguages()
     {
         // #302 (upstream 2.8.9): the library filters and the game panel's sections explain themselves.
