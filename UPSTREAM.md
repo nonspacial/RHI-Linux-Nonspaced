@@ -1526,9 +1526,19 @@ the whole staged tree.
 Linux deviations: when the server cannot be asked or sends no validator, the staged copy is kept (upstream downloads
 it again on every check). The refresh runs under the pack cache gate; a ReShade install that staged a pack just
 before could see it replaced before it copies it, as two installs at once already could, and its journaled sync then
-fails and is undone rather than deploying a mix. Not ported: upstream's Zenteon+ link is a Patreon file link, which
-the shader-pack download policy (GitHub, GitLab) refuses, so Zenteon+ shows in the list but does not download; adding
-patreon.com as a trusted host is an owner decision.
+fails and is undone rather than deploying a mix.
+
+Zenteon+ (w14 last fixes): upstream 2.9.4's manifest lists "Zenteon+ Shaders by Zenteon" as a `DirectUrl` pack whose
+link is a free Patreon file (`https://www.patreon.com/file?h=…&m=…`, no login), which answers 302 to a signed link on
+`c<digits>.patreonusercontent.com` serving the zip (checked by hand 2026-11-17). It now downloads under its own policy,
+`DownloadSources.ShaderPackPatreon`: HTTPS only, `www.patreon.com` with the path `/file` only (a new path rule in
+`TrustedDownloadPolicy.HostPaths`), redirects only to `c<digits>.patreonusercontent.com`, 64 MiB. The other shader packs
+keep the GitHub / GitLab policy, which still refuses Patreon. The download uses a client that follows no redirect and
+keeps no cookies (`TrustedDownload.DownloadCheckingEachHopAsync`): every redirect target is checked before it is
+requested (at most 3), requests carry the user agent only (no cookie, no token), and a refused link is reported without
+its query string, so the signed `token-hash` never reaches a message or `rhi.log`. The link names one file (a new
+version gets a new link), so it is the pack's identity: no HEAD, and the staged copy is kept until the manifest's link
+changes. A download whose link has no file name is extracted as a zip when it starts like one.
 
 ### #287 — RenoDX: GitHub fallback for modder-hosted add-ons, second-download names, Unreal mod for known UE4/UE5 games
 

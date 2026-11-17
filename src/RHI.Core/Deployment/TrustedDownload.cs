@@ -55,6 +55,12 @@ public sealed record TrustedDownloadPolicy
     public IReadOnlyCollection<string> HostPatterns { get; init; }
 
     /// <summary>
+    /// Path rules (#265): a listed host (lower case) whose links are allowed only with one of these exact paths
+    /// (<c>www.patreon.com</c> → <c>/file</c>). Hosts not named here have no path rule.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyCollection<string>> HostPaths { get; init; } = new Dictionary<string, IReadOnlyCollection<string>>();
+
+    /// <summary>
     /// Fixed text before the refused link in <see cref="UntrustedDownloadException"/>; one per policy, each matched by a
     /// PT-BR presentation pair.
     /// </summary>
@@ -95,7 +101,8 @@ public sealed record TrustedDownloadPolicy
         if (!uri.IsDefaultPort || !string.IsNullOrEmpty(uri.UserInfo)) return false;
         if (uri.HostNameType != UriHostNameType.Dns) return false;
         var host = uri.IdnHost.TrimEnd('.').ToLowerInvariant();
-        if (AllowedHosts.Contains(host, StringComparer.Ordinal)) return true;
+        if (AllowedHosts.Contains(host, StringComparer.Ordinal))
+            return !HostPaths.TryGetValue(host, out var paths) || paths.Contains(uri.AbsolutePath, StringComparer.Ordinal);
         foreach (var parent in SubdomainParents)
         {
             if (!host.EndsWith("." + parent, StringComparison.Ordinal)) continue;
@@ -408,6 +415,57 @@ public static class TrustedDownload
         await using var body = await OpenBodyAsync(response, policy, cancellationToken).ConfigureAwait(false);
         var staged = await AtomicFile.StageStreamAsync(body, targetPath, expectedSha256, null, policy.MaxBytes, cancellationToken).ConfigureAwait(false);
         return new TempDownload(staged);
+    }
+
+    /// <summary>Most redirects <see cref="DownloadCheckingEachHopAsync"/> follows.</summary>
+    public const int MaxCheckedRedirects = 3;
+
+    /// <summary>
+    /// #265: <see cref="DownloadToTempAsync"/> for a client that does not follow redirects (and keeps no cookies): every
+    /// redirect is followed here, its target checked against <paramref name="policy"/> before it is requested, at most
+    /// <see cref="MaxCheckedRedirects"/> of them. Requests carry the user agent only — no cookie, no authorization. A
+    /// refused link is reported without its query string (a signed link's token is never logged or shown).
+    /// </summary>
+    public static async Task<TempDownload> DownloadCheckingEachHopAsync(
+        HttpClient noRedirectHttp,
+        string url,
+        string targetPath,
+        TrustedDownloadPolicy policy,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(noRedirectHttp);
+        ArgumentNullException.ThrowIfNull(policy);
+        var uri = Uri.TryCreate(url, UriKind.Absolute, out var parsed) && policy.Allows(parsed) ? parsed : throw new UntrustedDownloadException(WithoutQuery(url), policy);
+        for (var hop = 0; ; hop++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.UserAgent.Add(DefaultUserAgent);
+            using var response = await SendAsync(noRedirectHttp, request, policy, cancellationToken).ConfigureAwait(false);
+            var status = (int)response.StatusCode;
+            if (status is >= 300 and < 400)
+            {
+                if (hop >= MaxCheckedRedirects || response.Headers.Location is not { } location)
+                    throw new HttpRequestException($"{policy.Name}: too many redirects or a redirect without a target ({status}).");
+                var next = location.IsAbsoluteUri ? location : new Uri(uri, location);
+                if (!policy.Allows(next)) throw new UntrustedDownloadException(WithoutQuery(next.OriginalString), policy);
+                uri = next;
+                continue;
+            }
+            response.EnsureSuccessStatusCode();
+            if (response.Content.Headers.ContentLength is long announced && announced > policy.MaxBytes)
+                throw new InvalidDataException($"{SizeLimitPrefix}{policy.MaxBytes}{AtomicFile.SizeLimitMiddle}{announced} bytes");
+            await using var body = await OpenBodyAsync(response, policy, cancellationToken).ConfigureAwait(false);
+            var staged = await AtomicFile.StageStreamAsync(body, targetPath, null, null, policy.MaxBytes, cancellationToken).ConfigureAwait(false);
+            return new TempDownload(staged);
+        }
+    }
+
+    /// <summary><paramref name="url"/> without its query string or fragment (signed links carry their token there).</summary>
+    public static string? WithoutQuery(string? url)
+    {
+        if (url is null) return null;
+        var cut = url.IndexOfAny(['?', '#']);
+        return cut < 0 ? url : url[..cut];
     }
 
     /// <summary>

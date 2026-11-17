@@ -50,7 +50,9 @@ Not on `main` yet.
   "Download all shaders" on or off; packs you never used are still downloaded only when needed (#267). Packs that
   come as a branch archive (most of them) now update when their author changes them; before, the first download was
   kept for good. Packs the online manifest adds (SD Shaders, UltrawideSideGlass) update like the others, and
-  UltrawideSideGlass, a single `.fx` file, now installs at all (#265).
+  UltrawideSideGlass, a single `.fx` file, now installs at all (#265). Zenteon+ Shaders, a free file on Patreon, now
+  downloads: only Patreon's file links and file servers are allowed for it, each redirect is checked, and no cookies
+  or tokens are sent (#265).
 - RenoDX add-ons hosted on a modder's own site (such as UE-Extended) install from the same file on the modder's
   GitHub when the site cannot be reached. A second download of an add-on (`renodx-x (1).addon64`) no longer blocks an
   install or update: it is renamed so ReShade does not load it twice (the file is kept), and a dropped one installs

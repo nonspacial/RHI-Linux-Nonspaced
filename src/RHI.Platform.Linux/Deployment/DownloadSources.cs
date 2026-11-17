@@ -84,6 +84,20 @@ public static class DownloadSources
         "ReShade shader pack", "GitHub or GitLab", [.. GitHubReleaseHosts, "codeload.github.com", "gitlab.com"], maxBytes: PayloadArchiveMaxBytes);
 
     /// <summary>
+    /// #265: a shader pack the upstream manifest links on Patreon (2.9.4: "Zenteon+ Shaders by Zenteon", a free file, no
+    /// login): <c>https://www.patreon.com/file?h=…&amp;m=…</c> only (path <c>/file</c>), which redirects (302) to a signed
+    /// link on Patreon's file servers (<c>c&lt;digits&gt;.patreonusercontent.com</c>, the only redirect target allowed),
+    /// HTTPS, 64 MiB. Downloaded with every redirect checked, no cookies and no token
+    /// (<see cref="TrustedDownload.DownloadCheckingEachHopAsync"/>).
+    /// </summary>
+    public static readonly TrustedDownloadPolicy ShaderPackPatreon = new(
+        "ReShade shader pack (Patreon)", "Patreon file links and Patreon's file servers", ["www.patreon.com"],
+        maxBytes: 64L * 1024 * 1024, hostPatterns: [@"c[0-9]{1,4}\.patreonusercontent\.com"])
+    {
+        HostPaths = new Dictionary<string, IReadOnlyCollection<string>> { ["www.patreon.com"] = ["/file"] }
+    };
+
+    /// <summary>
     /// Upstream RHI's Engine.ini templates (<c>engineIniFiles</c>): text files in RankFTW/rhi-repo served by
     /// raw.githubusercontent.com, capped like the template parser (256 KiB).
     /// </summary>
@@ -294,5 +308,7 @@ public static class DownloadSources
         OptiScalerCustomBuild, AnrFg,
         // w14/layouts-b rows
         SteamArtwork, SteamWebApi, SteamGridDbApi, SteamGridDbImages,
+        // w14 last fixes
+        ShaderPackPatreon,
     ];
 }
