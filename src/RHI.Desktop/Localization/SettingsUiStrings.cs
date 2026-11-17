@@ -33,7 +33,7 @@ internal static class SettingsUiStrings
         ("Set.FindOne", "1 configuração corresponde a \"{0}\"", "1 setting matches \"{0}\""),
         ("Set.FindMany", "{0} configurações correspondem a \"{1}\"", "{0} settings match \"{1}\""),
         ("Set.FindCapped", ". Mostrando as primeiras {0}; continue digitando para filtrar.", ". Showing the first {0}; keep typing to narrow it down."),
-        ("Set.Tabs", "Abas", "Tabs"),
+        ("Set.Tabs", "Tabs", "Tabs"), // the layout's name, as the top bar's switch says it
         ("Set.TabsTip", "Mostra uma seção por vez, com abas no topo. Clique de novo para ver todas as seções numa página só.", "Shows one section at a time, with tabs along the top. Click again for every section on one page."),
         ("Set.Show", "Mostrar", "Show"),
         ("Set.Hide", "Ocultar", "Hide"),
@@ -146,7 +146,7 @@ internal static class SettingsUiStrings
         ("Tip.SectionNeural", "O método de Renderização Neural recomendado, as versões de cada ferramenta e da DLL do NR.", "The recommended Neural Rendering method, and the versions of each tool and of the NR DLL."), // w14/layouts-a
         ("Tip.SectionDriver", "As opções do driver deste jogo; no Linux, o limite de FPS pelo DXVK / VKD3D-Proton.", "This game's driver options; on Linux, the FPS limit through DXVK / VKD3D-Proton."), // w14/layouts-a
         ("Tip.SectionComponents", "Os componentes que o RHI instala, atualiza e remove neste jogo.", "The components RHI installs, updates and removes in this game."),
-        ("Tip.SectionExtras", "Desbloqueios de geração de quadros, ASI Loader e outros extras.", "Frame generation unlocks, ASI Loader and other extras."),
+        ("Tip.SectionExtras", "O Ultimate ASI Loader, a orquestração do ShortFuse e outros extras. Os desbloqueios de geração de quadros ficam em Componentes.", "Ultimate ASI Loader, ShortFuse's set-up and other extras. The frame generation unlocks are in Components."),
         ("Tip.SectionSummary", "O que a seção recolhida contém. API = API gráfica forçada; os números são as versões instaladas.", "What the collapsed section holds. API = forced graphics API; the numbers are the installed versions."),
         ("Tip.DlssSummary", "Padrões que Aplicar padrões coloca no jogo. SR = Super Resolution (nvngx_dlss.dll), RR = Ray Reconstruction (nvngx_dlssd.dll), FG = Frame Generation (nvngx_dlssg.dll), NR = Neural Rendering (nvngx_dlssnr.dll), SL = Streamline; — = não muda.", "The defaults Apply defaults puts on the game. SR = Super Resolution (nvngx_dlss.dll), RR = Ray Reconstruction (nvngx_dlssd.dll), FG = Frame Generation (nvngx_dlssg.dll), NR = Neural Rendering (nvngx_dlssnr.dll), SL = Streamline; — = not changed."),
         ("Tip.GraphicsApi", "A API gráfica que o jogo usa (DirectX 9/11/12, Vulkan, OpenGL), detectada no executável ou nos dados do RHI. Decide qual DLL do ReShade é usada.", "The graphics API the game uses (DirectX 9/11/12, Vulkan, OpenGL), detected from its executable or RHI's data. It decides which ReShade DLL is used."),
