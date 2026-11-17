@@ -50,6 +50,7 @@ public sealed partial class LinuxManagedComponentService
             // w7/reshade rows
             // w7/shader-sets rows
             _shaderSets, // #179 per-game Global / Select / Off and Select lists
+            OptiScalerIniChoices, _optiscaler?.ReferenceIniState, // w14 final review m5: All Settings edits, saved INI and the build's reference INI
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             // w10/dlss-presets rows

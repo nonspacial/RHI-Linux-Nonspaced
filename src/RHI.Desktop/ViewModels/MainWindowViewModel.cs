@@ -2125,7 +2125,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         => TF("Vm.FolderMissingRemoveOrEdit", game.Name, game.LibraryIdentityPath ?? game.InstallPath);
 
     /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
-    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore, _managedComponents.OptiScalerIniChoices]; // #272
+    // #272's OptiScalerIniChoices is the managed service's own store now (w14 final review m5: a folder move carries it too).
+    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
 
     /// <summary>
     /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only
