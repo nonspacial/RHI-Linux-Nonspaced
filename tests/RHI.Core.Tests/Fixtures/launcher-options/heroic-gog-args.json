@@ -1,0 +1,21 @@
+{
+  "1400000001": {
+    "autoInstallDxvk": true,
+    "launcherArgs": "-nointro -lang=pt-BR",
+    "winePrefix": "/home/player/Games/Heroic/Prefixes/default/Échantillon",
+    "wineVersion": {
+      "bin": "/usr/bin/wine",
+      "name": "Wine Default",
+      "type": "wine"
+    },
+    "enviromentOptions": [
+      {
+        "key": "DXVK_HUD",
+        "value": "fps"
+      }
+    ],
+    "targetExe": ""
+  },
+  "version": "v0",
+  "explicit": true
+}

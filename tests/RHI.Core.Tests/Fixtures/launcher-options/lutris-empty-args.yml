@@ -1,0 +1,26 @@
+game:
+  arch: win64
+  args: ''
+  exe: /home/player/Games/demo-arena/drive_c/Program Files (x86)/Demo Arena/Demo Arena.exe
+  prefix: /home/player/Games/demo-arena
+  working_dir: /home/player/Games/demo-arena/drive_c/Games
+game_slug: demo-arena
+name: Demo Arena
+script:
+  files:
+  - setupfile: N/A:Select the setup file
+  game:
+    args: -installer-only
+    exe: _xXx_AUTO_WIN32_xXx_
+    prefix: $GAMEDIR
+  installer:
+  - task:
+      arch: win64
+      env:
+        LC_ALL: ''
+      executable: /home/player/Downloads/Demo-Arena-Setup.exe
+      prefix: /home/player/Games/demo-arena
+slug: demo-arena
+system:
+  env:
+    ENABLE_HDR_WSI: '1'

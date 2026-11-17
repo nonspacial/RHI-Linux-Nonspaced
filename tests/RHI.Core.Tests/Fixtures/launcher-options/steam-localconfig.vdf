@@ -1,0 +1,68 @@
+"UserLocalConfigStore"
+{
+	"Broadcast"
+	{
+		"Permissions"		"1"
+		"OutputHeight"		"1080"
+	}
+	"AppInfoChangeNumber"		"41000000"
+	"Software"
+	{
+		"Valve"
+		{
+			"Steam"
+			{
+				"apps"
+				{
+					"4000001"
+					{
+						"LastPlayed"		"1700000000"
+						"Playtime"		"178"
+						"BadgeData"		"020000000803"
+						"LaunchOptions"		"gamemoderun %command%"
+					}
+					"4000002"
+					{
+						"LastPlayed"		"1700000001"
+						"Playtime"		"6411"
+						"cloud"
+						{
+							"last_sync_state"		"synchronized"
+						}
+					}
+					"4000003"
+					{
+						"LastPlayed"		"1700000002"
+						"4000003_eula_0"		"1"
+						"LaunchOptions"		""
+						"PlaytimeDisconnected"		"4"
+					}
+					"4000004"
+					{
+						"LastPlayed"		"1700000003"
+						"LaunchOptions"		"PROTON_LOG=\"C:\\\\logs\" %command% -windowed"
+					}
+				}
+			}
+		}
+	}
+	"WebStorage"
+	{
+		"Deck_SeasonalSale"		"{\"sale\":\"\",\"nextCheck\":\"2026-11-16T21:25:11.358Z\"}"
+		"apps"
+		{
+			"4000001"
+			{
+				"DefaultLaunchOption"
+				{
+					"8e2758f2"		"0"
+				}
+			}
+		}
+		"LaunchOptionTipsShown"		"3"
+	}
+	"system"
+	{
+		"EnableGameOverlay"		"1"
+	}
+}

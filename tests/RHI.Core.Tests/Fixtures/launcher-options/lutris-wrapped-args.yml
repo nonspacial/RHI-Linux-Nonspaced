@@ -1,0 +1,10 @@
+game:
+  args: -skipintro -language english -config "C:\Users\player\Documents\Sample Racer\settings
+    custom.ini"
+  exe: /home/player/Games/sample-racer/drive_c/Sample Racer/racer.exe
+  prefix: /home/player/Games/sample-racer
+game_slug: sample-racer
+name: Sample Racer
+slug: sample-racer
+wine:
+  version: wine-ge-8-26

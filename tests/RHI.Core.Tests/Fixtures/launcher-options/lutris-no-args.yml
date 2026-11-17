@@ -1,0 +1,17 @@
+game:
+  arch: win64
+  exe: /home/player/Games/sample-quest/drive_c/Program Files/Sample Studio/Sample Quest/Bin/Sample
+    Quest Launcher.exe
+  prefix: /home/player/Games/sample-quest
+system:
+  pulse_latency: false
+wine:
+  Audio: auto
+  battleye: false
+  eac: false
+  esync: false
+  fsync: false
+  overrides:
+    wineasio: n,b
+  system_winetricks: false
+  version: GE-Proton11-3
