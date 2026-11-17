@@ -121,6 +121,9 @@ public sealed partial class GameLinkCatalogue
     /// <summary>Every list's load (never faults). Tests await it; the app calls <see cref="Prefetch"/>.</summary>
     public Task LoadAsync() => Task.WhenAll(Lists.Select(list => list.LoadAsync()));
 
+    /// <summary>Tests: the lists' background downloads (an older copy is served while its new one comes in) are done.</summary>
+    internal Task BackgroundRefreshes => Task.WhenAll(Lists.Select(list => list.Pending));
+
     /// <summary>
     /// Full Refresh: downloads every list again even when its cached copy is still fresh; lookups keep the copy they have
     /// until the new one is in, and a failed download keeps it. Never blocks, never faults (tests await the task).

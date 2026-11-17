@@ -66,13 +66,25 @@ internal sealed class CachedRemoteList<T> where T : class
 
     public void Prefetch() => _ = LoadAsync();
 
+    /// <summary>The download running now (a background refresh of an older copy included), or a finished task.</summary>
+    internal Task Pending
+    {
+        get { lock (_sync) return _load ?? Task.CompletedTask; }
+    }
+
     public Task LoadAsync()
     {
         lock (_sync)
         {
             // #292: a loaded copy is used until it is older than the freshness, then downloaded again while it stays in use
             // (a list loaded once used to be kept for the whole session). A Full Refresh running meanwhile is not waited for.
-            if (_loaded is { } loaded && _time.GetUtcNow() - loaded.FreshFrom < _freshness) return Task.CompletedTask;
+            if (_loaded is { } loaded)
+            {
+                // w14 final review nit: an older copy is served now and downloaded again in the background; a caller never
+                // waits on the network while there is a copy to show.
+                if (_time.GetUtcNow() - loaded.FreshFrom >= _freshness) StartBackgroundRefreshLocked();
+                return Task.CompletedTask;
+            }
             if (_load is null)
             {
                 if (_time.GetUtcNow() < _retryAfter) return Task.CompletedTask;
@@ -80,6 +92,12 @@ internal sealed class CachedRemoteList<T> where T : class
             }
             return _load;
         }
+    }
+
+    private void StartBackgroundRefreshLocked()
+    {
+        if (_load is not null || _time.GetUtcNow() < _retryAfter) return;
+        _load = Task.Run(() => LoadSharedAsync(refresh: true), CancellationToken.None);
     }
 
     /// <summary>
@@ -113,14 +131,16 @@ internal sealed class CachedRemoteList<T> where T : class
             _load = null;
             if (loaded is not null) _loaded = loaded;
             else _retryAfter = _time.GetUtcNow() + FailureRetryDelay; // a loaded copy stays in use meanwhile
+            // The first load found only an older copy on disk: it is in use now, and the new one comes in the background.
+            if (!refresh && loaded is not null && _time.GetUtcNow() - loaded.FreshFrom >= _freshness) StartBackgroundRefreshLocked();
         }
     }
 
     private async Task<Loaded?> LoadCoreAsync(bool refresh, CancellationToken cancellationToken)
     {
         var cached = ReadCache();
-        if (!refresh && cached is not null && _time.GetUtcNow() - cached.FetchedAtUtc < _freshness && Index(cached.Entries!) is { } fresh)
-            return fresh with { FreshFrom = cached.FetchedAtUtc };
+        if (!refresh && cached is not null && Index(cached.Entries!) is { } onDisk)
+            return onDisk with { FreshFrom = cached.FetchedAtUtc }; // fresh, or served while a download runs (LoadSharedAsync)
         try
         {
             var text = await TrustedDownload.GetStringAsync(_http, _url, _policy, cancellationToken: cancellationToken).ConfigureAwait(false);

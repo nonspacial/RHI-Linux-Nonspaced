@@ -18,17 +18,28 @@ public sealed unsafe class SdlGamepad : IDisposable
     private GameController* _pad;
     private long _nextScanMs;
 
+    /// <summary>
+    /// The hints set before <c>SDL_Init</c>. SDL must not drop events while another window has focus (RHI decides when to
+    /// listen: its window is active). w14 final review nit: SDL_NO_SIGNAL_HANDLERS, so SDL's event subsystem leaves SIGINT
+    /// and SIGTERM to .NET (SDL would turn them into a quit event nobody reads, and Ctrl+C or a session logout would not
+    /// stop RHI).
+    /// </summary>
+    internal static readonly IReadOnlyList<(string Name, string Value)> Hints =
+    [
+        ("SDL_NO_SIGNAL_HANDLERS", "1"),
+        ("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1"),
+        ("SDL_JOYSTICK_HIDAPI", "1"),
+        ("SDL_JOYSTICK_HIDAPI_PS4", "1"),
+        ("SDL_JOYSTICK_HIDAPI_PS5", "1"),
+        ("SDL_JOYSTICK_HIDAPI_STEAM", "1"),
+    ];
+
     public SdlGamepad()
     {
         try
         {
             _sdl = Sdl.GetApi();
-            // RHI decides when to listen (its window is active); SDL must not drop events while another window has focus.
-            _sdl.SetHint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1");
-            _sdl.SetHint("SDL_JOYSTICK_HIDAPI", "1");
-            _sdl.SetHint("SDL_JOYSTICK_HIDAPI_PS4", "1");
-            _sdl.SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
-            _sdl.SetHint("SDL_JOYSTICK_HIDAPI_STEAM", "1");
+            foreach (var (name, value) in Hints) _sdl.SetHint(name, value);
             if (_sdl.Init(Sdl.InitGamecontroller) != 0)
             {
                 AppLog.Warn("controller", "SDL could not start its game controller support: " + _sdl.GetErrorS());
