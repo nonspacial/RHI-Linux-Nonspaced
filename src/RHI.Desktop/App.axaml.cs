@@ -55,6 +55,8 @@ public sealed class App : Application
             vm.Parity = services.Parity; // w3/parity hook
             vm.Updates.CheckStamps = new UpdateCheckStampStore(); // #292: the update cadence counts across restarts
             vm.Updates.HasGitHubToken = () => githubToken.HasUsableToken; // #292: hourly with a token, 4 h without
+            vm.Updates.GitHubRateLimited = () => gitHubCache.RateLimitedNow; // w14/layouts-c: the library check stops at GitHub's limit
+            vm.Updates.CheckLoopEnabled = true; // w14/layouts-c: the top bar's Update All count covers the whole library
             tokenNoticeTarget = vm;
             journal.CopiesGoneInSession += entry => { var gone = LinuxDeploymentRecovery.RecordSettled(entry); Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(gone)); }; // w10/journal-holds hook (review finding 1)
             UiExceptionGuard.SetReporter(message =>

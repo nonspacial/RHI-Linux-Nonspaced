@@ -18,10 +18,10 @@ public sealed record HelpMenuItem(HelpAction Action, string TextKey, bool Separa
 
 /// <summary>
 /// #303 (upstream 2.9.0 top bar, every layout): "Checked … ago" beside Refresh, Update All with the number of games that
-/// have updates, and the Help menu (Quick Start, Guide, Discord; the wikis and GitHub pages; Patch notes, Message of the
-/// day, Update log, About and Donate). The Linux count is the games RHI has seen an update for this session (each game's
-/// own analysis, or the last Update All): RHI Linux checks a game's updates when it is opened or updated, so the button
-/// never claims "All up to date" for games it has not checked.
+/// have updates ("Update All (N)", else "All up to date"), and the Help menu (Quick Start, Guide, Discord; the wikis and
+/// GitHub pages; Patch notes, Message of the day, Update log, About and Donate). w14/layouts-c: the count comes from the
+/// library-wide check-only pass (<see cref="NoteCheckPass"/>, with the background update cadence) and each game's own
+/// analysis; "All up to date" shows only once every game Update All covers has been checked and none has an update.
 /// </summary>
 public sealed partial class TopBarPresenter : ObservableObject
 {
@@ -32,6 +32,9 @@ public sealed partial class TopBarPresenter : ObservableObject
     private readonly Func<DateTimeOffset?> _lastCheck;
     private readonly Func<IReadOnlyCollection<string>> _unattendedKeys;
     private readonly HashSet<string> _withUpdates = new(StringComparer.OrdinalIgnoreCase);
+    // w14/layouts-c: the games whose updates are known (checked by the pass or their own analysis since the last Update All).
+    private readonly HashSet<string> _checked = new(StringComparer.OrdinalIgnoreCase);
+    private int _notChecked;
 
     /// <param name="now">The clock.</param>
     /// <param name="lastCheck">When RHI last checked for updates (the status bar's "Last checked").</param>
@@ -69,21 +72,62 @@ public sealed partial class TopBarPresenter : ObservableObject
 
     public string UpdateCountText => UpdateCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    /// <summary>Update All's tooltip: how many games it will update, or what it does.</summary>
-    public string UpdateAllTip => UpdateCount > 0 ? TF("Top.UpdateAllCountTip", UpdateCount) : T("Top.UpdateAllTip");
+    /// <summary>
+    /// Upstream's "All up to date": every game Update All covers has been checked and none has an update. Never while a game is
+    /// unknown (added since, or not reached because GitHub's request limit was reached).
+    /// </summary>
+    public bool AllUpToDate => UpdateCount == 0 && _unattendedKeys().All(_checked.Contains);
+
+    /// <summary>The button's words: "All up to date", else "Update All" (the count shows beside it).</summary>
+    public string UpdateAllText => AllUpToDate ? T("Top.AllUpToDate") : T("Ui.UpdateAll");
+
+    /// <summary>Update All's tooltip: how many games it will update, that all are up to date, or what it does; and when the
+    /// last check was cut short by GitHub's request limit, how many games it did not reach.</summary>
+    public string UpdateAllTip
+    {
+        get
+        {
+            var tip = UpdateCount > 0 ? TF("Top.UpdateAllFoundTip", UpdateCount) : AllUpToDate ? T("Top.AllUpToDateTip") : T("Top.UpdateAllTip");
+            return _notChecked > 0 ? tip + "\n\n" + TF("Top.CheckCutShort", _notChecked) : tip;
+        }
+    }
+
+    /// <summary>Whether a game has an update RHI knows of (the game list's mark).</summary>
+    public bool HasUpdate(string key) => _withUpdates.Contains(key);
+
+    /// <summary>Raised when the games with updates changed (the game list's marks follow).</summary>
+    public event Action? UpdatesChanged;
 
     /// <summary>A game's analysis says whether any of its components has an update.</summary>
     public void NoteGame(string key, bool hasUpdate)
     {
         var changed = hasUpdate ? _withUpdates.Add(key) : _withUpdates.Remove(key);
+        changed |= _checked.Add(key);
         if (changed) NotifyCount();
     }
 
-    /// <summary>Update All ran: what it updated is current; games it could not update are found again when opened.</summary>
+    /// <summary>
+    /// w14/layouts-c: the library-wide check-only pass's findings (library key → has an update) and how many games it did not
+    /// reach (GitHub's request limit). A game it could not check keeps what was known.
+    /// </summary>
+    public void NoteCheckPass(IReadOnlyDictionary<string, bool> games, int notChecked)
+    {
+        foreach (var (key, hasUpdate) in games)
+        {
+            if (hasUpdate) _withUpdates.Add(key);
+            else _withUpdates.Remove(key);
+            _checked.Add(key);
+        }
+        _notChecked = Math.Max(0, notChecked);
+        NotifyCount();
+    }
+
+    /// <summary>Update All ran: nothing is known until the games are checked again (the shell asks for a check pass).</summary>
     public void UpdateAllRan()
     {
-        if (_withUpdates.Count == 0) return;
+        if (_withUpdates.Count == 0 && _checked.Count == 0) return;
         _withUpdates.Clear();
+        _checked.Clear();
         NotifyCount();
     }
 
@@ -99,6 +143,9 @@ public sealed partial class TopBarPresenter : ObservableObject
         OnPropertyChanged(nameof(HasUpdateCount));
         OnPropertyChanged(nameof(UpdateCountText));
         OnPropertyChanged(nameof(UpdateAllTip));
+        OnPropertyChanged(nameof(AllUpToDate));
+        OnPropertyChanged(nameof(UpdateAllText));
+        UpdatesChanged?.Invoke();
     }
 
     /// <summary>The Help menu, in upstream's order and groups.</summary>

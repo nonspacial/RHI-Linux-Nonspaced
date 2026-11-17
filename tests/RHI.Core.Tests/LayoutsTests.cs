@@ -248,7 +248,7 @@ public sealed class LayoutsTests : IDisposable
         Assert.Equal(2, bar.UpdateCount);
         bar.NoteGame("b", hasUpdate: false); // updated since
         Assert.Equal(1, bar.UpdateCount);
-        Assert.StartsWith("RHI has seen updates for 1 game(s).", bar.UpdateAllTip);
+        Assert.StartsWith("1 game(s) have updates.", bar.UpdateAllTip); // w14/layouts-c: the library-wide check, not only games seen
 
         bar.UpdateAllRan();
         Assert.Equal(0, bar.UpdateCount);

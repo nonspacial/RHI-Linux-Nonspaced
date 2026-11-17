@@ -204,6 +204,14 @@ public sealed class LinuxGameLibraryState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, uint>? FpsLimits { get; set; }
 
+    /// <summary>
+    /// w14/layouts-c (upstream 2.9.0+ <c>LaunchArgsOverrides</c>): a game's launch arguments by library key, as typed (Windows
+    /// command-line rules; <see cref="RHI.Platform.Linux.Launch.LaunchArguments"/>). Null when no game has any, so the file keeps its
+    /// older shape.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? LaunchArguments { get; set; }
+
     /// <summary>#300: the collection the game list shows (remembered across launches), or null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ActiveCollection { get; set; }
@@ -256,6 +264,11 @@ public sealed class LinuxGameLibraryState
         foreach (var key in fps.Keys.ToArray())
             if (fps[key] != RHI.Platform.Linux.Hdr.FrameRateLimit.Off && RHI.Platform.Linux.Hdr.FrameRateLimit.Valid(fps[key]) is null) fps.Remove(key);
         FpsLimits = fps.Count == 0 ? null : fps;
+        var args = JsonStoreMaps.CaseInsensitive(LaunchArguments ?? []); // w14/layouts-c: trimmed text, none when blank
+        foreach (var key in args.Keys.ToArray())
+            if (RHI.Platform.Linux.Launch.LaunchArguments.Normalize(args[key]) is { } text) args[key] = text;
+            else args.Remove(key);
+        LaunchArguments = args.Count == 0 ? null : args;
         return this;
     }
 
@@ -320,6 +333,9 @@ public sealed class LinuxGameLibraryState
         if (FpsLimits is not null)
             foreach (var old in OlderKeys(game))
                 if (!string.Equals(old, key, StringComparison.OrdinalIgnoreCase)) changed |= Move(FpsLimits, old, key); // #310
+        if (LaunchArguments is not null)
+            foreach (var old in OlderKeys(game))
+                if (!string.Equals(old, key, StringComparison.OrdinalIgnoreCase)) changed |= Move(LaunchArguments, old, key); // w14/layouts-c
         return changed;
     }
 
@@ -456,6 +472,7 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
             changed |= move.MoveLibraryEntries(state.HdrProfiles);
             changed |= LinuxGameCollections.ReplaceKeys(state.GameCollections, move.OldLibraryKeys, move.NewLibraryKey); // #300
             if (state.FpsLimits is not null) changed |= move.MoveLibraryEntries(state.FpsLimits); // #310
+            if (state.LaunchArguments is not null) changed |= move.MoveLibraryEntries(state.LaunchArguments); // w14/layouts-c
             return changed ? state.Normalize() : null;
         });
     }

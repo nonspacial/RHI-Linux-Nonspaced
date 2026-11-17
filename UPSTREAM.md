@@ -2924,3 +2924,87 @@ Ported from upstream's 2.9.4 end state (`0d9b39f`, `0002440`, `5f409de`, `0e7552
 - **Colour picker** (#301 owner decision): `Avalonia.Controls.ColorPicker` 12.1.2 (the repo's Avalonia version; lock files updated). Each Custom colour has a picker beside its hex box; a drag is applied and saved once the picker has been still for 250 ms (upstream applies without logging while dragging).
 - **Favourite amber** (`RhiFavouriteBrush`, tint and border too): upstream's FavLook colours. Upstream maps them through its theme mapper like every colour, so they follow the theme's Warning colour; they stay #F0C35A in every built-in theme whose Warning is the default amber (Default, OLED Black, Midnight Blue, Forest, Slate) and change in Ember, Kiro, High Contrast and Colour-blind Friendly, whose Warning differs (pinned in `ColourThemeTests`).
 - **No literal colours in code-built views**: the OptiScaler custom builds trust warning and status line, OptiScaler All Settings' error line (style classes `warningText` / `errorText`) and the theme swatch's outline (`RhiSwatchBorderBrush`). `ColourThemeTests` now fails on `Color.Parse` / `Color.From…`, `Colors.X`, `Brushes.X` (Transparent excepted) or a hex literal anywhere in RHI.Desktop's C#, the theme palette definitions excepted.
+
+## Parity notes (upstream 2.8.9–2.9.4, lane layouts-c)
+
+These notes supersede three Linux deviations above: layouts-a's Update All count ("never says All up to date") and its
+"under the cards, not directly under the clicked card", and display-modes' "Per-mode launch arguments are not ported
+yet".
+
+### #304 — Per-game launch arguments (2.9.0, Game Overrides since 2.8.9)
+
+- **Where** (upstream `LaunchArgsOverrides`, Game Overrides' Launch arguments box beside the executable, Reset launch
+  options; Tabs' Launch ▾ menu: Executable, Launch arguments..., Create desktop shortcut). Game Overrides has a Launch
+  arguments row (Classic+ and the Tabs tab, the same section) with Reset launch options beside the box; the text is
+  saved on focus lost, as upstream, and on Enter. Launch ▾ lists Executable: <file> (Linux: opens Edit game, where the
+  executable and the launch command are chosen), Launch arguments... (the Game Overrides tab with the box focused), then
+  the Linux-only Copy launch profile and Create shortcut. A shortcut launches through RHI, so it gets the arguments too.
+- **Storage.** `game-library.json` `LaunchArguments`, by library key (absent while no game has any; trimmed, line breaks
+  as spaces, at most 4096 characters, a NUL refused). They follow the game to a new key (older keys, merged duplicates)
+  and move with an install-folder move, as the per-game FPS limit (#310) does. Upstream keeps them in settings.json by
+  game name.
+- **How they reach the game on Linux** (`LaunchArguments`). Upstream passes the text as the Windows command line of the
+  exe it starts, or after `steam.exe -applaunch <id>`. RHI Linux splits the text by the Windows rules
+  (CommandLineToArgvW: quotes group, `""` and backslashes as the C runtime reads them), so it means what it means on
+  Windows, and then:
+  - a command RHI built itself (a standalone Wine prefix game: one program call, no launcher in front) gets each
+    argument shell-quoted after the program, so `$`, quotes and spaces reach the game as typed (Wine rebuilds the
+    Windows command line from them); behind a wrapper (gamescope, HDR) the whole command, arguments included, runs in
+    the child shell;
+  - a Steam game starts with `steam -applaunch <appid> <args>` (or the Flatpak client's), as upstream; the `steam://`
+    link RHI uses when no `steam` program is on PATH cannot carry arguments, so then the row says to put them in Steam's
+    launch options (upstream falls back to the link the same way). Without arguments the usual hand-off is unchanged,
+    and the hand-off keeps Steam's own working directory either way;
+  - a launch command typed in Add game or Edit game is never changed (manual and custom-folder games launch only through
+    such a command on Linux); the row says to put the arguments in that command;
+  - Heroic, Lutris, a store client's start, a launcher that only opens (the user starts the game there), the Xbox app
+    and non-Steam shortcuts are left alone, and the row says where to add them in that launcher (as the HDR profile and
+    the FPS limit lines do). Upstream's Epic note (arguments disable the protocol launch) has no Linux counterpart: Epic
+    games start through Heroic or Wine here.
+- The status line says which arguments a launch passed, or that they were not added and where to put them.
+- **Reset launch options** (upstream: clears the launch executable and the arguments). Linux: the arguments, and the
+  launch command typed in Edit game for a detected game (its detected command comes back; the rest of the edit stays). A
+  game added by hand keeps its command, since it is how RHI starts it. **Management › Reset Overrides** clears the
+  arguments too, as upstream's ResetAction does (Linux leaves the launch command to Reset launch options and Reset
+  install folder).
+
+### #311 — Display modes swap the launch arguments (2.9.3)
+
+- Upstream's `LaunchArgs` item (Launch group, after Resolution on launch, a text that may be empty: no arguments in that
+  mode) is in a mode's Edit… and the game's Custom mode; Set with an empty box saves "none in this mode", Clear "not
+  set".
+- As the HDR and resolution items do on Linux, a switch writes the mode's arguments into the game's own (the Game
+  Overrides box shows them and the launch uses them), remembers the game's own from before modes ("" when it had none)
+  and Off puts them back. Upstream keeps the game's own and uses the mode's at launch; the launch ends the same. An edit
+  in the box while in a mode is that mode's value until the mode is left.
+- Greyed for a game whose arguments RHI does not pass (a typed command, another launcher), with the reason.
+
+### #303 — Update All (N) or All up to date (2.9.0)
+
+- **The check-only pass** (`LinuxUpdateAllService.CheckOnlyAsync`, upstream counts the games whose cards show an
+  update): each game Update All covers (hidden games left out, #291) is checked with the same per-component check Update
+  All runs first; components the update inclusion leaves out (#178) are skipped, a held update (NR Cost Scaler, No
+  Addons) is not one, and nothing is updated, installed or written. A game whose every answer was "could not check"
+  keeps what was known. Release lookups go through the app's one HttpClient, so they share the GitHub API cache (ETags,
+  the 60 s reuse, joined requests, #244).
+- **When.** At start and then every 4 hours, hourly with a GitHub token (#292's cadence, on its own clock), whether or
+  not automatic updates are on, and again after Update All or a background pass that updated something. It waits for
+  running operations and does not hold the busy gate, so the page stays usable. "Checked … ago" counts it.
+- **GitHub's rate limit.** Before each game the pass asks the API cache whether GitHub's advertised limit window is open
+  (`RateLimitedNow`) and stops there; the status line and the button's tooltip say how many games were not checked and
+  that a GitHub token raises the limit. The count then covers the games checked, and the next pass carries on.
+- **The button.** "Update All" with the count while games have updates; "✓ All up to date", disabled, as upstream, once
+  every game Update All covers has been checked and none has an update; plain "Update All" while some game is unknown
+  (added since, or not reached). A game's own analysis still updates its entry; Update All starts the count again and
+  asks for a pass.
+- **The game list.** A game with an update has the update colour on its dot and outline (upstream's sidebar dot;
+  Spotlight's covers, #305, read the same `GameRowViewModel.HasUpdate`).
+
+### #304 — A component's ⚙ opens right under it in Tabs (2.9.0)
+
+- Upstream's `ShowCogInPlace`: the ⚙ opens right under the row, or the line of Overview cards, whose ⚙ was clicked. The
+  cards flow in an `AutoFitPanel`; it now shows the ⚙ across the width right under the line that holds the clicked card,
+  and the lines after it move down. A ⚙ in a row of a vertical list at least 400 px wide (Extras) opens right after that
+  row, as upstream; anything else at the end of its section, as before. The same ⚙ again, Close or ✕ closes it.
+- Linux deviation: when the cards are rebuilt while a ⚙ is open, it stays open under the last line (upstream moves it
+  under the rebuilt row, found by the ⚙'s tooltip, or closes it).

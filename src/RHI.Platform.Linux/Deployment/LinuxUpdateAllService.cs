@@ -80,6 +80,17 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
           + (ExcludedUnreadableCount > 0 ? " (the update-inclusion file cannot be read)" : "") + ".";
 }
 
+/// <summary>
+/// w14/layouts-c (upstream 2.9.0 top bar: "Update All (N)" or "All up to date"): what a library-wide check-only pass found. A
+/// game is in <see cref="Games"/> once it was checked (true = a component RHI installed has an update Update All would take);
+/// a game whose every finding was "could not check" is left out, so it keeps what was known before.
+/// </summary>
+/// <param name="NotChecked">The games the pass did not reach because GitHub's request limit was reached (0 = it finished).</param>
+public sealed record LinuxUpdateCheckPassResult(IReadOnlyDictionary<DetectedGame, bool> Games, int NotChecked)
+{
+    public bool CutShort => NotChecked > 0;
+}
+
 public interface ILinuxManagedUpdateBackend
 {
     Task<ManagedUpdateCheck> CheckManagedUpdateAsync(
@@ -221,6 +232,7 @@ public sealed class LinuxUpdateAllService
     private readonly LinuxDeploymentRecordStore _records;
     private readonly ILinuxManagedUpdateBackend _backend;
     private int _runningPass;
+    private int _checkingPass;
 
     public LinuxUpdateAllService(
         LinuxDeploymentRecordStore records,
@@ -363,6 +375,77 @@ public sealed class LinuxUpdateAllService
             Interlocked.Exchange(ref _runningPass, 0);
         }
         return new LinuxUpdateAllResult(results) { RunningGames = running };
+    }
+
+    /// <summary>
+    /// w14/layouts-c: the library-wide check-only pass behind the top bar's Update All count (upstream counts the games whose
+    /// cards show an update). Each game's supported components are checked with the same check Update All runs first (the
+    /// update inclusion's left-out components are skipped, as Update All skips them); nothing is updated and no file changes.
+    /// Release lookups go through the app's one HttpClient, so they share the GitHub API cache with every other lookup.
+    /// <paramref name="stop"/> is asked before each game: once it says GitHub's request limit was reached the pass ends, and
+    /// the games left are counted as not checked. Null when a check pass is already running.
+    /// </summary>
+    /// <param name="indexedFiles">The game's file index, asked for only when the game has components to check.</param>
+    public async Task<LinuxUpdateCheckPassResult?> CheckOnlyAsync(
+        IReadOnlyList<DetectedGame> games,
+        Func<DetectedGame, CancellationToken, Task<IReadOnlyList<string>>> indexedFiles,
+        Func<bool>? stop,
+        CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _checkingPass, 1, 0) != 0) return null;
+        try
+        {
+            var found = new Dictionary<DetectedGame, bool>(ReferenceEqualityComparer.Instance);
+            for (var i = 0; i < games.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (stop?.Invoke() == true) return new LinuxUpdateCheckPassResult(found, games.Count - i);
+                var game = games[i];
+                var targets = _records.FindAll(game)
+                    .Where(record => IsSupported(record.Component))
+                    .Select(record => record.Component)
+                    .Distinct()
+                    .Where(component => _backend.UpdateExclusionFor(game, component) == UpdateExclusion.None)
+                    .OrderBy(UpdateOrder)
+                    .ToArray();
+                if (targets.Length == 0)
+                {
+                    found[game] = false;
+                    continue;
+                }
+                var files = await indexedFiles(game, cancellationToken).ConfigureAwait(false);
+                bool update = false, unknown = false;
+                foreach (var component in targets)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        var check = await _backend.CheckManagedUpdateAsync(game, component, files, cancellationToken).ConfigureAwait(false);
+                        if (check.Managed && check.UpdateAvailable && check.HeldBy is null && !check.Blocked)
+                        {
+                            update = true;
+                            break; // one is enough for the count
+                        }
+                        unknown |= check.Managed && check.CouldNotCheck;
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        RHI.Core.Services.AppLog.Warn("update", $"update check of {component} for {game.Name} failed", ex);
+                        unknown = true;
+                    }
+                }
+                if (update || !unknown) found[game] = update;
+            }
+            return new LinuxUpdateCheckPassResult(found, 0);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _checkingPass, 0);
+        }
     }
 
     public static bool IsSupported(ManagedComponentKind component) => Supported.Contains(component);

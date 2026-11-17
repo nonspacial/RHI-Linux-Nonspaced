@@ -28,6 +28,12 @@ public sealed class DisplayModeContext
     public bool ResolutionOffered { get; init; }
 
     /// <summary>
+    /// w14/layouts-c: RHI adds launch arguments when it launches this game (a command RHI built, or Steam's <c>-applaunch</c>);
+    /// not for a command the user typed or another launcher.
+    /// </summary>
+    public bool LaunchArgsOffered { get; init; }
+
+    /// <summary>
     /// The game's launch settings, copied from the library state for this switch (null = launch items cannot be read or
     /// written); the desktop puts them back when <see cref="DisplayModeLaunchValues.Changed"/>.
     /// </summary>
@@ -50,7 +56,9 @@ public enum DisplayModeUnavailable
     NvidiaNotOffered,
     FpsLimitNotOffered,
     HdrNotOffered,
-    ResolutionNotOffered
+    ResolutionNotOffered,
+    /// <summary>w14/layouts-c: RHI does not add launch arguments when it launches this game.</summary>
+    LaunchArgsNotOffered
 }
 
 /// <summary>Reads and writes the items of one game (game files through the journal, RHI's launch settings in memory).</summary>

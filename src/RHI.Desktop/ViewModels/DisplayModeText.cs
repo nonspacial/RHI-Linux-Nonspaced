@@ -42,6 +42,7 @@ public static class DisplayModeText
         [DisplayModeItemKeys.UlOsdKey] = ("DmItem.UlOsdKey", "DmHelp.UlOsdKey"),
         [DisplayModeItemKeys.Hdr] = ("DmItem.Hdr", "DmHelp.Hdr"),
         [DisplayModeItemKeys.Resolution] = ("DmItem.Resolution", "DmHelp.Resolution"),
+        [DisplayModeItemKeys.LaunchArgs] = ("DmItem.LaunchArgs", "DmHelp.LaunchArgs"), // w14/layouts-c
     };
 
     public static string Label(DisplayModeItem item) => ItemKeys.TryGetValue(item.Key, out var k) ? T(k.Label) : item.Key;
@@ -142,6 +143,7 @@ public static class DisplayModeText
         DisplayModeUnavailable.NvidiaNotOffered => T("DmWhy.NvidiaNotOffered"),
         DisplayModeUnavailable.FpsLimitNotOffered => T("DmWhy.FpsLimitNotOffered"),
         DisplayModeUnavailable.HdrNotOffered => T("DmWhy.HdrNotOffered"),
+        DisplayModeUnavailable.LaunchArgsNotOffered => T("DmWhy.LaunchArgsNotOffered"), // w14/layouts-c
         _ => T("DmWhy.ResolutionNotOffered")
     };
 

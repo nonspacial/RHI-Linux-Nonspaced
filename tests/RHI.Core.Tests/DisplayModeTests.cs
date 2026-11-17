@@ -189,9 +189,9 @@ public sealed class DisplayModeTests : IDisposable
     public void ItemKeys_AreUnique_AndUpstreamsWhereKept()
     {
         Assert.Equal(DisplayModeItems.All.Count, DisplayModeItems.All.Select(i => i.Key).Distinct(StringComparer.OrdinalIgnoreCase).Count());
-        // Upstream's keys (RHI-2.9.4 DisplayModeItemKeys) less RtxHdrPeak / HdrDisplay (no Linux equivalent) and LaunchArgs (owner decision).
+        // Upstream's keys (RHI-2.9.4 DisplayModeItemKeys) less RtxHdrPeak / HdrDisplay (no Linux equivalent); LaunchArgs since w14/layouts-c.
         Assert.Equal(["RdxPeakNits", "RdxGameNits", "RdxUiNits", "UlTargetFps", "DcFpsLimit", "DriverFpsCap", "MfgMode", "DlssSrPreset", "DlssSrScale",
-            "DlssRrPreset", "DlssRrScale", "RsPreset", "RsOverlayKey", "RsScreenshotKey", "RsGamepadNav", "UlOsdKey", "Hdr", "Resolution"],
+            "DlssRrPreset", "DlssRrScale", "RsPreset", "RsOverlayKey", "RsScreenshotKey", "RsGamepadNav", "UlOsdKey", "Hdr", "Resolution", "LaunchArgs"],
             DisplayModeItems.All.Select(i => i.Key));
     }
 

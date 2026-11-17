@@ -97,6 +97,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     /// <summary>Stops the background loop (the shell is closing).</summary>
     internal void StopBackgroundLoop()
     {
+        StopCheckLoop(); // w14/layouts-c
         try { _followCts.Cancel(); }
         catch (ObjectDisposedException) { /* already stopped */ }
         try { _backgroundUpdateCts?.Cancel(); }
@@ -131,6 +132,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             // #292 (upstream: a manual check restarts the countdown): the next automatic pass is a whole interval away.
             RecordPass();
             Shell.TopBar.UpdateAllRan(); // w14/layouts-a (#303): the top bar's count starts again
+            _ = RequestCheckPass(); // w14/layouts-c: and is counted again from what is left
             if (_backgroundUpdateCts is not null) RestartBackgroundUpdateLoop(runImmediate: false);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
@@ -236,6 +238,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             {
                 await InvalidateAllAndReprobeSelectedAsync();
                 StatusText = UiLocalizationService.UpdateAllSummary(result) + Shell.F5Driver.UpdateAllNote(games, result) + T("Vm.Background"); // w11/nr-gpu hook (#231)
+                _ = RequestCheckPass(); // w14/layouts-c: the top bar's count follows what was updated
             }
         }
         catch (OperationCanceledException) when (op.CancelRequested)
@@ -386,5 +389,95 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             AppLog.Warn("dlss-follow", "Follow newest DLSS/Streamline pass failed", ex);
             StatusText = TF("Upd.FollowFailed", UiLocalizationService.Present(ex.Message));
         }
+    }
+
+    // ---- w14/layouts-c: the library-wide check-only pass behind the top bar's Update All count --------------------------
+
+    private CancellationTokenSource? _checkCts;
+    private Task? _checkRequest;
+
+    /// <summary>Whether the check-only loop starts with the background updates (the app turns it on; tests opt in).</summary>
+    internal bool CheckLoopEnabled { get; set; }
+
+    /// <summary>Whether GitHub's request limit is reached now (the app: the GitHub API cache's advertised window).</summary>
+    internal Func<bool> GitHubRateLimited { get; set; } = () => false;
+
+    /// <summary>When the last check-only pass ran to the end (or was cut short), this launch.</summary>
+    internal DateTimeOffset? LastCheckPass { get; private set; }
+
+    /// <summary>"Checked … ago" in the top bar: the last automatic pass, Update All or check-only pass, whichever is latest.</summary>
+    internal DateTimeOffset? LastCheck => LastCheckPass is { } check && (LastPass is not { } pass || check > pass) ? check : LastPass;
+
+    /// <summary>The last check pass a request started (tests wait on it).</summary>
+    internal Task? LastCheckRequest => _checkRequest;
+
+    /// <summary>
+    /// Starts the check-only loop: a pass now (once the start-up work is done), then one every <see cref="Interval"/> (#292: 4 h,
+    /// hourly with a GitHub token), whether or not automatic updates are on. It changes no file, so it needs no setting.
+    /// </summary>
+    internal void RestartCheckLoop()
+    {
+        StopCheckLoop();
+        if (!CheckLoopEnabled) return;
+        _checkCts = new CancellationTokenSource();
+        UiExceptionGuard.Forget(BackgroundUpdateLoop.RunAsync(RunCheckOnlyPassAsync, Interval, runImmediate: true,
+            (_, _) => { /* logged by the loop; a check that failed only leaves the count as it was */ }, _checkCts.Token,
+            delay: LoopDelay, currentInterval: () => Interval), "update-check-loop");
+    }
+
+    private void StopCheckLoop()
+    {
+        try { _checkCts?.Cancel(); }
+        catch (ObjectDisposedException) { /* already stopped */ }
+        _checkCts?.Dispose();
+        _checkCts = null;
+    }
+
+    /// <summary>A pass now (after Update All, a background pass that updated something); one already running is joined.</summary>
+    internal Task RequestCheckPass()
+    {
+        if (!CheckLoopEnabled) return Task.CompletedTask; // tests opt in, as for the loop
+        if (_checkRequest is { IsCompleted: false } pending) return pending;
+        var token = _checkCts?.Token ?? _followCts.Token;
+        var request = RunRequestedCheckAsync(token);
+        _checkRequest = request;
+        UiExceptionGuard.Forget(request, "update-check");
+        return request;
+    }
+
+    private async Task RunRequestedCheckAsync(CancellationToken token)
+    {
+        await Task.Yield(); // the operation that asked still holds the gate until it returns
+        try { await RunCheckOnlyPassAsync(token); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { /* the shell closed */ }
+    }
+
+    /// <summary>
+    /// One check-only pass over the games Update All covers (#291: hidden games left out): the same checks Update All starts
+    /// with, nothing updated. It waits for running operations to finish (an install changes what there is to check) but does
+    /// not hold the gate, so the page stays usable. Stopped by GitHub's request limit, the status line says how many games
+    /// were not checked.
+    /// </summary>
+    internal async Task RunCheckOnlyPassAsync(CancellationToken cancellationToken)
+    {
+        await Host.Operations.WhenIdleAsync(cancellationToken);
+        var games = Host.UnattendedGames.ToArray();
+        using var activity = Shell.BeginActivity("Sb.ActCheckingLibrary");
+        var result = await Task.Run(() => _updateAll.CheckOnlyAsync(games, IndexForCheckAsync, GitHubRateLimited, cancellationToken), cancellationToken);
+        if (result is null) return; // one is running already
+        LastCheckPass = Now();
+        Shell.TopBar.NoteCheckPass(result.Games.ToDictionary(pair => LinuxGameLibraryStore.GameKey(pair.Key), pair => pair.Value, StringComparer.OrdinalIgnoreCase),
+            result.NotChecked);
+        Shell.TopBar.Tick();
+        if (result.CutShort) StatusText = TF("Top.CheckCutShortStatus", result.NotChecked);
+    }
+
+    // The file index a check needs (RenoDX finds its add-on by it): the selection analysis's, else built off the UI thread.
+    private async Task<IReadOnlyList<string>> IndexForCheckAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (!game.HasConfirmedPatchTarget) return Array.Empty<string>();
+        if (Host.Session.CachedFiles(game) is { } cached) return cached;
+        if (string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath)) return Array.Empty<string>();
+        return await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, cancellationToken), cancellationToken);
     }
 }

@@ -40,6 +40,21 @@ public sealed class GameRowViewModel(DetectedGame game) : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// w14/layouts-c (upstream 2.9.0: the sidebar's orange dot, the cover's purple outline): a component RHI installed has an
+    /// update Update All would take (the library-wide check, or the game's own analysis).
+    /// </summary>
+    public bool HasUpdate { get; private set; }
+
+    /// <summary>Sets the update mark; true when it changed.</summary>
+    public bool SetHasUpdate(bool hasUpdate)
+    {
+        if (HasUpdate == hasUpdate) return false;
+        HasUpdate = hasUpdate;
+        OnPropertyChanged(nameof(HasUpdate));
+        return true;
+    }
+
     /// <summary>Sets the favourite/hidden flags and tells the card; true when either changed.</summary>
     public bool SetLibraryFlags(bool favourite, bool hidden)
     {

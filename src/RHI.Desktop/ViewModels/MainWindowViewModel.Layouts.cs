@@ -19,10 +19,10 @@ public partial class MainWindowViewModel
     public GameLayoutPresenter Layout => _layout ??= new GameLayoutPresenter(() => _settings, SaveLayoutSettings);
 
     /// <summary>#303: the top bar's "Checked … ago" and the Update All count.</summary>
-    public TopBarPresenter TopBar => _topBar ??= new TopBarPresenter(
+    public TopBarPresenter TopBar => _topBar ??= WithRowMarks(new TopBarPresenter(
         () => Updates?.Now() ?? DateTimeOffset.UtcNow,
-        () => Updates?.LastPass,
-        () => UnattendedLibraryGames.Select(LinuxGameLibraryStore.GameKey).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        () => Updates?.LastCheck, // w14/layouts-c: the check-only pass counts as a check
+        () => UnattendedLibraryGames.Select(LinuxGameLibraryStore.GameKey).ToHashSet(StringComparer.OrdinalIgnoreCase)));
 
     /// <summary>
     /// Saves only the layout fields (layout, tab, sizes): the file's settings are read, changed and written; the ones in use
@@ -147,7 +147,8 @@ public partial class MainWindowViewModel
 
     /// <summary>
     /// #304 (upstream Management › Reset Overrides): this game's overrides go back to the defaults: the forced graphics API,
-    /// Luma mode, DLL names (#196 Reset DLL names), the Update All inclusion and the NVIDIA settings. HDR and resolution on
+    /// Luma mode, DLL names (#196 Reset DLL names), the Update All inclusion, the NVIDIA settings and the launch arguments
+    /// (w14/layouts-c). HDR and resolution on
     /// launch stay, as upstream. Nothing installed is removed; a DLL name reset renames installed files through its own
     /// journaled path. The status line says what was reset.
     /// </summary>
@@ -196,6 +197,11 @@ public partial class MainWindowViewModel
             return true;
         });
         Step("Mgmt.NvidiaSettings", () => Runtime.ResetNvidiaSettings(game));
+        Step("Mgmt.LaunchArguments", () => // w14/layouts-c (upstream ResetAction clears LaunchArgsOverrides too)
+        {
+            if (LaunchArguments.Saved(game) is null) return false;
+            return LaunchArguments.Save(game, null) is { } refused ? throw new IOException(refused) : true;
+        });
         if (DllNamePicker.CanReset)
         {
             try

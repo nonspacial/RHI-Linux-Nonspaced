@@ -198,18 +198,47 @@ public sealed partial class MainWindow
         _inlineCog = new InlineCog(cog, host, source, done);
         close.Click += (_, _) => CloseInlineCog(false);
         cog.InlineClose = result => CloseInlineCog(result);
-        panel.Children.Add(host);
+        PlaceInlineCog(host, source, panel);
         cog.RaiseOpenedInline();
         Dispatcher.UIThread.Post(() => host.BringIntoView());
         shown = done.Task;
         return true;
     }
 
+    /// <summary>
+    /// w14/layouts-c (upstream 2.9.0 <c>ShowCogInPlace</c>: "right under the row (or the Overview cards) whose ⚙ was clicked"):
+    /// under the line of cards that holds the clicked card (the cards flow in an <see cref="AutoFitPanel"/>, so the ⚙ spans the
+    /// width under that line and the lines after it move down); else right after the row it was clicked in, when that row is
+    /// one of a vertical list's own children at least 400 px wide (upstream's rule); else at the end of the section.
+    /// </summary>
+    internal static void PlaceInlineCog(Border host, Control? source, Panel section)
+    {
+        if (source?.GetVisualAncestors().OfType<Control>().FirstOrDefault(c => c.GetVisualParent() is AutoFitPanel) is { } card
+            && card.GetVisualParent() is AutoFitPanel cards)
+        {
+            cards.ShowInset(host, card);
+            return;
+        }
+        var row = source?.GetVisualAncestors().OfType<Control>().FirstOrDefault(c =>
+            c.GetVisualParent() is StackPanel { Orientation: Orientation.Vertical } list && list.Children.Contains(c) && !IsItemsHost(list)
+            && c.Bounds.Width >= 400 && section.IsVisualAncestorOf(c));
+        if (row?.GetVisualParent() is StackPanel rows)
+        {
+            rows.Children.Insert(rows.Children.IndexOf(row) + 1, host);
+            return;
+        }
+        section.Children.Add(host);
+    }
+
+    // An ItemsControl's panel belongs to it: nothing else is put among its children.
+    private static bool IsItemsHost(Panel panel) => panel.GetVisualParent() is Avalonia.Controls.Presenters.ItemsPresenter;
+
     private void CloseInlineCog(bool result)
     {
         if (_inlineCog is not { } open) return;
         _inlineCog = null;
-        if (open.Host.Parent is Panel panel) panel.Children.Remove(open.Host);
+        if (open.Host.Parent is AutoFitPanel cards) cards.HideInset();
+        else if (open.Host.Parent is Panel panel) panel.Children.Remove(open.Host);
         open.Window.InlineClose = null;
         try { open.Window.RaiseClosedInline(); }
         finally { open.Done.TrySetResult(); }
@@ -225,19 +254,49 @@ public sealed partial class MainWindow
         vm.StatusText = message;
     });
 
-    /// <summary>The Tabs header's Launch menu: executable and launch command, the launch profile, a shortcut.</summary>
+    /// <summary>
+    /// The Tabs header's Launch menu (upstream 2.9.0: Executable, Launch arguments..., Create desktop shortcut): the executable
+    /// (opens Edit game, where Linux chooses it and the launch command), Launch arguments... (Game Overrides' box), the launch
+    /// profile (Linux), a shortcut.
+    /// </summary>
     private void TabsLaunchMenu_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control anchor || DataContext is not MainWindowViewModel vm) return;
         var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft, FlyoutPresenterClasses = { "navy" } };
-        var edit = new MenuItem { Header = T("Tabs.EditLaunch"), IsEnabled = vm.CanEditSelectedGame };
+        var edit = new MenuItem { Header = vm.LaunchMenuExecutableText, IsEnabled = vm.CanEditSelectedGame, Name = "LaunchMenuExecutable" };
+        ToolTip.SetTip(edit, T("LcMenu.ExecutableTip"));
         edit.Click += (_, args) => EditGame_Click(anchor, args);
         menu.Items.Add(edit);
+        var arguments = new MenuItem { Header = T("LcMenu.Arguments"), IsEnabled = vm.HasSelectedGame, Name = "LaunchMenuArguments" };
+        arguments.Click += (_, _) => ShowLaunchArguments(vm);
+        menu.Items.Add(arguments);
         var profile = new MenuItem { Header = T("Ui.CopyLaunchProfile"), IsEnabled = vm.Runtime.CanCopyHdrLaunchOptions };
         profile.Click += (_, args) => CopyHdrLaunchOptions_Click(anchor, args);
         menu.Items.Add(profile);
         foreach (var item in vm.LaunchMenuItems()) menu.Items.Add(CardMenuView(item));
         menu.ShowAt(anchor);
+    }
+
+    /// <summary>Launch ▾ › Launch arguments...: Game Overrides' tab (upstream), with the box focused.</summary>
+    private void ShowLaunchArguments(MainWindowViewModel vm)
+    {
+        if (vm.Layout.ShowSection(GamePageSections.GameOverrides) is { } refused)
+        {
+            vm.StatusText = refused;
+            return;
+        }
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (this.FindControl<TextBox>("LaunchArgumentsBox") is not { } box) return;
+            box.BringIntoView();
+            box.Focus();
+        }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>The Launch arguments box lost focus: its text is saved (upstream saves on focus lost).</summary>
+    private void LaunchArgumentsBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm) vm.LaunchArguments.Commit();
     }
 
     private static MenuItem CardMenuView(CardMenuItem item)

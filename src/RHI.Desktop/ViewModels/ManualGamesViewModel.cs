@@ -209,6 +209,35 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
 
     /// <summary>Drops the selected game's manual overrides; <c>Reset</c> is false only when the reset was refused.</summary>
     /// <param name="saved">Runs once the change is on disk, before the refresh waits for a running operation.</param>
+    /// <summary>
+    /// w14/layouts-c (Game Overrides › Reset launch options): drops the launch command typed in Edit game for a detected game,
+    /// so it starts with its detected command again; the rest of its edit (target, names, launcher) stays. Null when done (or
+    /// there was none), else the localised refusal.
+    /// </summary>
+    internal async Task<string?> ClearLaunchCommandAsync(DetectedGame game)
+    {
+        if (game.IsManuallyAdded) return null;
+        var state = Host.WorkingLibraryCopy();
+        var key = LinuxGameLibraryStore.GameKey(game);
+        if (!state.GameEdits.TryGetValue(key, out var edit) || edit.LaunchCommand is null) return null;
+        var kept = new LinuxGameEditOverride
+        {
+            LaunchProvider = edit.LaunchProvider,
+            PatchExecutablePath = edit.PatchExecutablePath,
+            GameRootPath = edit.GameRootPath,
+            BinaryDirectory = edit.BinaryDirectory,
+            DisplayName = edit.DisplayName,
+            WikiName = edit.WikiName,
+            Architecture = edit.Architecture
+        }.Normalize();
+        if (kept.IsEmpty()) state.GameEdits.Remove(key);
+        else state.GameEdits[key] = kept;
+        if (Host.SaveLibraryCopy(state) is { } notSaved) return notSaved;
+        Host.AdoptLibraryCopy(state);
+        Host.Session.Invalidate(game);
+        return await Host.RefreshWhenIdleAsync(MainWindowViewModel.NoDetectors) ? null : TF("Vm.ChangesSavedButLibraryWasNot", game.Name);
+    }
+
     public async Task<(bool Reset, string Message)> ResetSelectedGameEditAsync(Action? saved = null)
     {
         if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
