@@ -184,18 +184,39 @@ public sealed class HsfDeploymentServiceTests : IDisposable
         Assert.Equal("Techniques=" + HsfPackage.LaunchpadToken + ",HSF_Motion@HSF.fx\r\n", File.ReadAllText(preset));
     }
 
+    // Nit (weak test): the player's own Launchpad where HSF now places it (the shared tree, w14/nr-2).
     [Fact]
     public async Task Launchpad_AUsersOwnImmerseFile_IsLeftAndNeverRecorded()
     {
         var fx = Fixture("user-immerse", GraphicsApi.DirectX11);
-        var users = Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE", "MartysMods_LAUNCHPAD.fx");
+        var users = Path.Combine(ImmerseLaunchpadService.TreeRoot(fx.Bin), "Shaders", "MartysMods_LAUNCHPAD.fx");
         Directory.CreateDirectory(Path.GetDirectoryName(users)!);
         File.WriteAllText(users, "the player's iMMERSE");
 
         Assert.True((await fx.Service.InstallAsync(fx.Game)).Success);
+        Assert.Equal("the player's iMMERSE", File.ReadAllText(users));
+        Assert.DoesNotContain(fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!.Files, file => file.Path == users);
+        Assert.True((await fx.Service.SetLaunchpadAsync(fx.Game, false)).Success);
+        Assert.Equal("the player's iMMERSE", File.ReadAllText(users));
         Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
 
         Assert.Equal("the player's iMMERSE", File.ReadAllText(users));
+    }
+
+    // w14 final review m11: opening the ⚙ with nothing to move makes no journaled change and never writes the record.
+    [Fact]
+    public async Task KeepLaunchpadFirst_WithNothingToMove_LeavesTheRecordAlone()
+    {
+        var fx = Fixture("gear-open", GraphicsApi.DirectX12);
+        Assert.True((await fx.Service.InstallAsync(fx.Game)).Success);
+        File.WriteAllText(Path.Combine(fx.Bin, "ReShadePreset.ini"), "Techniques=" + HsfPackage.LaunchpadToken + ",HSF_Motion@HSF.fx\r\n");
+        var ledger = Path.Combine(_root, "gear-open-records.json");
+        var saved = File.ReadAllBytes(ledger);
+
+        var opened = await fx.Service.KeepLaunchpadFirstAsync(fx.Game);
+
+        Assert.Equal((true, ""), (opened.Success, opened.Message));
+        Assert.Equal(saved, File.ReadAllBytes(ledger));
     }
 
     // ── w14/nr-2: one iMMERSE Launchpad for HSF and GITC Uplift ──────────────────────────────────────────────────────
@@ -301,6 +322,33 @@ public sealed class HsfDeploymentServiceTests : IDisposable
 
         Assert.Equal("edited by the player", File.ReadAllText(olderFx));
         Assert.False(Directory.Exists(ImmerseLaunchpadService.TreeRoot(fx.Bin)));
+    }
+
+    // Nit (Launchpad hash checks): turning Launchpad off deletes an older HSF copy only while it holds HSF's bytes.
+    [Fact]
+    public async Task OlderHsfRecord_LaunchpadOff_LeavesACopyChangedSince()
+    {
+        var fx = Fixture("older-off", GraphicsApi.DirectX12);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, launchpadOn: false)).Success);
+        var record = LinuxDeploymentRecordStore.Clone(fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!);
+        var shaders = Path.Combine(fx.Bin, "reshade-shaders", "Shaders", "iMMERSE");
+        Directory.CreateDirectory(shaders);
+        var changed = Path.Combine(shaders, "MartysMods_LAUNCHPAD.fx");
+        var same = Path.Combine(shaders, "MartysMods_LAUNCHPAD_helper.fxh");
+        File.WriteAllText(changed, "launchpad");
+        File.WriteAllText(same, "helper");
+        record.Files.Add(new LinuxDeployedFile { Path = changed, Sha256 = FileHash.Sha256Hex(changed) });
+        record.Files.Add(new LinuxDeployedFile { Path = same, Sha256 = FileHash.Sha256Hex(same) });
+        record.Metadata[HsfDeploymentService.MetaLaunchpadFiles] = changed + "\n" + same;
+        record.Metadata[HsfDeploymentService.MetaLaunchpad] = "on";
+        fx.Records.Upsert(record);
+        File.WriteAllText(changed, "edited by the player");
+
+        Assert.True((await fx.Service.SetLaunchpadAsync(fx.Game, false)).Success);
+
+        Assert.Equal("edited by the player", File.ReadAllText(changed));
+        Assert.False(File.Exists(same));
+        Assert.DoesNotContain(fx.Records.Find(fx.Game, ManagedComponentKind.Hsf)!.Files, file => file.Path == changed); // the player's now
     }
 
     [Fact]

@@ -412,7 +412,12 @@ public sealed class HsfDeploymentService
                 {
                     await ImmerseLaunchpadService.DeleteOwnedAsync(scope, updated, _records, game).ConfigureAwait(false);
                     var older = LaunchpadPaths(updated); // HSF's own copies from before w14/nr-2
-                    foreach (var path in older) await scope.DeleteAsync(path, CancellationToken.None).ConfigureAwait(false);
+                    // Nit (Launchpad hash checks): an older copy goes only while it holds the bytes HSF recorded for it; one
+                    // changed since stays on disk and becomes the user's (its entry is dropped below with the rest).
+                    foreach (var file in updated.Files.Where(f => older.Contains(f.Path)).ToList())
+                        if (File.Exists(file.Path) && file.Sha256 is { Length: > 0 } sha
+                            && FileHash.HexEquals(await FileHash.Sha256HexAsync(file.Path, CancellationToken.None).ConfigureAwait(false), sha))
+                            await scope.DeleteAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
                     updated.Files.RemoveAll(f => ImmerseLaunchpadService.IsLaunchpadFile(f.Path) || older.Contains(f.Path));
                     updated.Metadata.Remove(MetaLaunchpadFiles);
                     await ImmerseLaunchpadService.RemoveSearchPathsIfLastAsync(scope, game, updated.BinaryDirectory, _records, ManagedComponentKind.Hsf,
@@ -457,8 +462,17 @@ public sealed class HsfDeploymentService
         if (GetRecord(game) is null) return ComponentOperationResult.Fail(NotInstalledMessage);
         await MigrateLaunchpadAsync(game, cancellationToken).ConfigureAwait(false); // w14/nr-2: older records first
         if (GetRecord(game) is not { } record) return ComponentOperationResult.Fail(NotInstalledMessage);
+        // w14 final review m11: opening the ⚙ changes nothing (no journaled operation, no record write) unless the order must move.
+        if (!LaunchpadNeedsMoving(game, record)) return ComponentOperationResult.Ok("");
         return await ChangeAsync(game, record, "HSF Launchpad order", async (scope, updated, _) =>
             await KeepLaunchpadFirstInScopeAsync(scope, game, updated).ConfigureAwait(false) ? "moved" : "", cancellationToken).ConfigureAwait(false);
+    }
+
+    private bool LaunchpadNeedsMoving(DetectedGame game, LinuxDeploymentRecord record)
+    {
+        if (record.Metadata.GetValueOrDefault(MetaLaunchpad) == "off" || PresetPath(game) is not { } preset || !File.Exists(preset)) return false;
+        try { return ImmerseLaunchpadService.KeepFirst(File.ReadAllText(preset)).Changed; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
     private async Task<bool> KeepLaunchpadFirstInScopeAsync(DeploymentScope scope, DetectedGame game, LinuxDeploymentRecord record)
@@ -494,7 +508,10 @@ public sealed class HsfDeploymentService
         await using var scope = opened!;
         _ = OperationCancellation.BeginWrites(cancellationToken);
         var created = new List<string>();
-        var updated = LinuxDeploymentRecordStore.Clone(record);
+        // w14 final review m11: the record as the ledger holds it now (another change may have saved it since the caller
+        // read it), so a stale copy is never written back.
+        if (_records.Find(game, ManagedComponentKind.Hsf) is not { } current) return ComponentOperationResult.Fail(NotInstalledMessage);
+        var updated = LinuxDeploymentRecordStore.Clone(current);
         string message;
         try
         {
