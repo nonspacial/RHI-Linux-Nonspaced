@@ -971,9 +971,9 @@
                   <Button x:Name="ManagementSectionToggle" Grid.Column="2" Tag="Management" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
-                <!-- w14/layouts-a (#304, upstream Management): Classic+ lays the actions out in one row in upstream's order; Tabs shows
-                     them as tiles with a line under each (Change install folder, Reset Overrides, Copy Report, Reset install folder,
-                     Remove from RHI). -->
+                <!-- w14/layouts-a (#304, upstream Management): Classic+ lays the actions out in one row in upstream's Classic+ order
+                     (as written here); Tabs and Spotlight show them as tiles with a line under each, in upstream's Tabs order and
+                     colours (ManagementActions; the window reorders them). -->
                 <StackPanel x:Name="ManagementSectionBody" Spacing="8">
                   <views:AutoFitPanel x:Name="ManagementActions" MinColumnWidth="150" Spacing="8">
                     <Button x:Name="ManagementChangeFolder" Classes="rhi managementTile" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
@@ -990,14 +990,14 @@
                         <TextBlock Text="{DynamicResource Mgmt.ResetFolderDesc}" Classes="tileDesc"/>
                       </StackPanel>
                     </Button>
-                    <Button x:Name="ManagementRemove" Classes="rhi managementTile" Classes.remove="True" Command="{Binding RemoveFromRhiAnyCommand}" IsEnabled="{Binding CanRemoveFromRhiAny}"
+                    <Button x:Name="ManagementRemove" Classes="rhi managementTile remove" Command="{Binding RemoveFromRhiAnyCommand}" IsEnabled="{Binding CanRemoveFromRhiAny}"
                             ToolTip.Tip="{Binding RemoveFromRhiAnyTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
                       <StackPanel Spacing="2">
                         <TextBlock Text="{DynamicResource Removed.Remove}" Classes="tileTitle"/>
                         <TextBlock Text="{Binding RemoveFromRhiDesc}" Classes="tileDesc"/>
                       </StackPanel>
                     </Button>
-                    <Button x:Name="ManagementResetOverrides" Classes="rhi managementTile" Classes.remove="True" Command="{Binding ResetOverridesCommand}" IsEnabled="{Binding CanResetOverrides}"
+                    <Button x:Name="ManagementResetOverrides" Classes="rhi managementTile remove" Command="{Binding ResetOverridesCommand}" IsEnabled="{Binding CanResetOverrides}"
                             ToolTip.Tip="{DynamicResource Mgmt.ResetOverridesTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
                       <StackPanel Spacing="2">
                         <TextBlock Text="{DynamicResource Mgmt.ResetOverrides}" Classes="tileTitle"/>

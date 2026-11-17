@@ -82,6 +82,7 @@ public sealed partial class MainWindow
         {
             management.MinColumnWidth = chrome ? 220 : 150;
             management.Classes.Set("tiles", chrome);
+            ArrangeManagement(management, chrome);
         }
 
         BuildTabStrip(vm);
@@ -89,6 +90,19 @@ public sealed partial class MainWindow
         if (layout.ShowsOverview) RebuildGlance(vm);
         if (_inlineCog is { } open && (!tabs || open.Host.Parent is not Control { IsEffectivelyVisible: true })) CloseInlineCog(false);
         ApplySpotlightLayout(vm); // w14/layouts-b (#305)
+    }
+
+    /// <summary>Management's actions in the look's order and colours (upstream: <see cref="ViewModels.ManagementActions"/>).</summary>
+    internal static void ArrangeManagement(Panel management, bool tiles)
+    {
+        var byName = management.Children.OfType<Control>().Where(c => c.Name is not null).ToDictionary(c => c.Name!);
+        var order = ViewModels.ManagementActions.Order(tiles).Where(byName.ContainsKey).Select(n => byName[n]).ToList();
+        if (!order.SequenceEqual(management.Children.Where(byName.ContainsValue)))
+        {
+            foreach (var action in order) management.Children.Remove(action);
+            management.Children.AddRange(order);
+        }
+        foreach (var action in order) action.Classes.Set("remove", ViewModels.ManagementActions.IsDanger(action.Name!, tiles));
     }
 
     private void SetVisible(string name, bool visible)

@@ -378,10 +378,40 @@ public sealed class LayoutsTests : IDisposable
 
         fx.Vm.SelectedGame = Library(fx, "Hand Added");
         Assert.False(fx.Vm.CanResetInstallFolder);
-        Assert.False(fx.Vm.ShowResetInstallFolder);
+        Assert.True(fx.Vm.ShowResetInstallFolder); // Classic+: greyed, its tip says why (upstream)
+        var shown = new List<bool>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainWindowViewModel.ShowResetInstallFolder)) shown.Add(fx.Vm.ShowResetInstallFolder); };
+        shown.Clear();
+        fx.Vm.Layout.SetLayout(MainLayout.Tabs);
+        Assert.False(fx.Vm.ShowResetInstallFolder); // the tiles leave it out
+        Assert.False(shown.LastOrDefault(true)); // and the page is told
+        fx.Vm.Layout.SetLayout(MainLayout.Classic);
         Assert.Equal("You added this game yourself, so there's no detected folder to go back to. Use Change install folder.", fx.Vm.ResetInstallFolderTip);
         Assert.True(fx.Vm.CanRemoveFromRhiAny);
         Assert.Equal("Remove this game you added yourself", fx.Vm.RemoveFromRhiDesc);
+    }
+
+    [Fact]
+    public void Management_ClassicPlusRow_AndTabsTiles_FollowUpstreamsOrderAndColours()
+    {
+        // Upstream 2.9.4 DetailPanelBuilder.Overrides.Dxvk.cs: the Classic+ row, then the Tabs tiles (Tabs and Spotlight).
+        Assert.Equal(["ManagementChangeFolder", "ManagementResetFolder", "ManagementRemove", "ManagementResetOverrides", "ManagementCopyReport"],
+            ManagementActions.Order(tiles: false));
+        Assert.Equal(["ManagementChangeFolder", "ManagementResetOverrides", "ManagementCopyReport", "ManagementResetFolder", "ManagementRemove"],
+            ManagementActions.Order(tiles: true));
+        Assert.True(ManagementActions.IsDanger(ManagementActions.ResetOverrides, tiles: false));
+        Assert.False(ManagementActions.IsDanger(ManagementActions.ResetOverrides, tiles: true));
+        Assert.True(ManagementActions.IsDanger(ManagementActions.Remove, tiles: true));
+
+        // The window rearranges the same buttons both ways.
+        var panel = new Avalonia.Controls.StackPanel();
+        foreach (var name in ManagementActions.Order(tiles: false)) panel.Children.Add(new Avalonia.Controls.Button { Name = name });
+        MainWindow.ArrangeManagement(panel, tiles: true);
+        Assert.Equal(ManagementActions.Order(tiles: true), panel.Children.Select(c => c.Name));
+        Assert.Equal(["ManagementRemove"], panel.Children.Where(c => c.Classes.Contains("remove")).Select(c => c.Name));
+        MainWindow.ArrangeManagement(panel, tiles: false);
+        Assert.Equal(ManagementActions.Order(tiles: false), panel.Children.Select(c => c.Name));
+        Assert.Equal(["ManagementRemove", "ManagementResetOverrides"], panel.Children.Where(c => c.Classes.Contains("remove")).Select(c => c.Name));
     }
 
     [Fact]
