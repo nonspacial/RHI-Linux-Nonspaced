@@ -43,7 +43,8 @@ public enum ManagedComponentKind
     // value, so another wave-14 lane's new kind cannot take the same number unnoticed; renumber at the merge if wanted.
     Hsf = 30,
 
-    // w14 lane rows: new component kinds (next free value 26; each row ends with a comma)
+    // w14 lane rows: new component kinds. Taken: 0–25 and 30 (HSF, above); the next free value is 26 (then 27–29, 31).
+    // Values are stored in records and settings, so a kind keeps its number; each row ends with a comma.
     // w14/nr rows
     // #274: GITC Uplift, a Neural Rendering method (ReShade add-on + helper, its NR DLL in a GITC-Uplift subfolder).
     GitcUplift = 24,
