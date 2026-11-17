@@ -276,9 +276,20 @@ public sealed class OptiScalerCustomBuildStore
             var oldDir = slugDir + ".old";
             if (System.IO.Directory.Exists(oldDir)) System.IO.Directory.Delete(oldDir, recursive: true);
             if (System.IO.Directory.Exists(slugDir)) System.IO.Directory.Move(slugDir, oldDir);
-            System.IO.Directory.Move(tmpDir, slugDir);
+            try
+            {
+                BeforeSwapForTesting?.Invoke();
+                System.IO.Directory.Move(tmpDir, slugDir);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // w14 final review m6: a failed Replace puts the build that was there back.
+                if (!System.IO.Directory.Exists(slugDir) && System.IO.Directory.Exists(oldDir)) System.IO.Directory.Move(oldDir, slugDir);
+                TryDelete(tmpDir);
+                throw;
+            }
             TryDelete(oldDir);
-            AppLog.Current?.Write("optiscaler", $"{(previous is null ? "Added" : "Replaced")} custom OptiScaler build '{meta.Name}' ({slug}) from {origin}: version {meta.DllVersion ?? "?"}, NR DLL {meta.NeedsNrDll}.");
+            AppLog.Current?.Write("optiscaler", $"{(previous is null ? "Added" : "Replaced")} custom OptiScaler build '{meta.Name}' ({slug}) from {ForLog(origin)}: version {meta.DllVersion ?? "?"}, NR DLL {meta.NeedsNrDll}.");
             Reload();
             return new(Get(OptiScalerVariant.Custom(slug)), null, looksRight ? null : NotOptiScalerNote);
         }
@@ -286,7 +297,7 @@ public sealed class OptiScalerCustomBuildStore
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or HttpRequestException
                                        or InvalidOperationException or UntrustedDownloadException or JsonException)
         {
-            AppLog.Warn("optiscaler", $"Custom OptiScaler build not added from {source}", ex);
+            AppLog.Warn("optiscaler", $"Custom OptiScaler build not added from {ForLog(source)}", ex);
             return new(null, CouldNotAddPrefix + ex.Message);
         }
         finally
@@ -296,6 +307,18 @@ public sealed class OptiScalerCustomBuildStore
     }
 
     private static readonly JsonSerializerOptions MetaJson = new() { WriteIndented = true };
+
+    /// <summary>Test seam: runs between moving the old build aside and moving the new one in (a Replace that fails there).</summary>
+    internal Action? BeforeSwapForTesting { get; set; }
+
+    /// <summary>
+    /// Nit (log redaction): a link as the log shows it — up to its path; the query and fragment (a signed link's token) are
+    /// left out. Anything that is not a web link is shown as it is.
+    /// </summary>
+    internal static string ForLog(string source)
+        => Uri.TryCreate(source, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            ? uri.GetLeftPart(UriPartial.Path) + (uri.Query.Length > 0 || uri.Fragment.Length > 0 ? "?…" : "")
+            : source;
 
     /// <summary>Downloads a link through the custom-build policy; the server's file name wins (it carries the extension).</summary>
     private static async Task<(string? Error, string Path)> DownloadAsync(HttpClient http, Uri uri, string folder, CancellationToken cancellationToken)

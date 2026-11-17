@@ -124,6 +124,40 @@ public sealed class OptiScalerCustomBuildsPresenterTests : IDisposable
         Assert.StartsWith("1 game(s) have it installed.", prompts.Messages[^1], StringComparison.Ordinal);
     }
 
+    // w14 final review m6: Replace, Remove and the NR tick wait for the app's operation gate (an install copies from the
+    // build's folder); adding a new build does not.
+    [Fact]
+    public async Task ReplaceRemoveAndTick_AreRefusedWhileAnotherOperationRuns()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var (presenter, prompts) = Presenter(fx);
+        prompts.Names.Enqueue("Mine");
+        Assert.True(await presenter.AddPathAsync(Build("g1")));
+        var build = Assert.Single(presenter.Rows).Build;
+        var dll = Path.Combine(build.Directory, "OptiScaler.dll");
+        var before = File.ReadAllBytes(dll);
+
+        using (var running = ((IPanelHost)fx.Vm).BeginOperation("component"))
+        {
+            Assert.NotNull(running);
+            prompts.Files.Enqueue(Build("g2"));
+            Assert.False(await presenter.ReplaceFromFileAsync(build));
+            Assert.Equal(RHI.Desktop.Localization.UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"), presenter.Status);
+            prompts.Confirms.Enqueue(true);
+            await presenter.RemoveAsync(build);
+            presenter.SetNeedsNrDll(build, true);
+            prompts.Names.Enqueue("Other");
+            Assert.True(await presenter.AddPathAsync(Build("g3"))); // a new build is not gated
+        }
+
+        Assert.Equal(before, File.ReadAllBytes(dll));
+        var mine = presenter.Rows.Single(row => row.Name == "Mine");
+        Assert.False(mine.NeedsNrDll);
+        prompts.Files.Enqueue(Build("g2"));
+        Assert.True(await presenter.ReplaceFromFileAsync(mine.Build)); // free again
+        Assert.Contains("g2", File.ReadAllText(dll), StringComparison.Ordinal);
+    }
+
     private (OptiScalerCustomBuildsPresenter Presenter, FakePrompts Prompts) Presenter(ViewModelFixture fx)
     {
         var presenter = fx.Vm.OptiScalerCustomBuilds;
