@@ -52,3 +52,45 @@ public sealed partial class RtxEncoreDeploymentServiceTests
         Assert.False(File.Exists(Path.Combine(_bin, "version.dll")));
     }
 }
+
+/// <summary>
+/// w14 final review m12: the game's own DLL ASI Loader moved aside to its Hooked name (<c>UAL.HookedPath</c>) is held:
+/// RTX Encore never offers that name nor installs over it. Without one, ASI Loader's Hooked name stays offered (#284).
+/// </summary>
+public sealed partial class RtxEncoreDeploymentServiceTests
+{
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AsiLoadersHookedName_IsHeld_WhileItHoldsTheGamesOwnDll(bool movedTheGamesDll)
+    {
+        var proxy = Path.Combine(_bin, "dinput8.dll");
+        File.WriteAllBytes(proxy, Pe(0x41));
+        var hooked = Path.Combine(_bin, "dinput8Hooked.dll");
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["UAL.ProxyName"] = "dinput8.dll" };
+        if (movedTheGamesDll)
+        {
+            File.WriteAllText(hooked, "the game's own dinput8.dll");
+            metadata["UAL.HookedPath"] = hooked;
+        }
+        _records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(_game), GameName = _game.Name, Component = ManagedComponentKind.UltimateAsiLoader,
+            BinaryDirectory = _bin, Version = "9.7.0", Metadata = metadata,
+            Files = [new LinuxDeployedFile { Path = proxy, Sha256 = FileHash.Sha256Hex(proxy) }]
+        });
+        var service = Service(new EncoreHandler());
+
+        var offered = service.OfferedNames(_game);
+        var saved = service.SetName(_game, "dinput8Hooked.dll");
+
+        Assert.Equal(!movedTheGamesDll, offered.Contains("dinput8Hooked.dll", StringComparer.OrdinalIgnoreCase));
+        Assert.Equal(!movedTheGamesDll, saved.Success);
+        if (!movedTheGamesDll) return;
+        // A name saved before ASI Loader moved the game's DLL is refused at install, the game's file untouched.
+        _names.SetRtxEncore(_game, "dinput8Hooked.dll");
+        var install = await service.InstallAsync(_game);
+        Assert.Equal(RtxEncoreDeploymentService.NameHeldPrefix + "dinput8Hooked.dll", install.Message);
+        Assert.Equal("the game's own dinput8.dll", File.ReadAllText(hooked));
+    }
+}

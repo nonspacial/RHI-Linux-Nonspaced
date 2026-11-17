@@ -761,6 +761,10 @@ public sealed partial class RtxEncoreDeploymentService
             foreach (var file in record.Files)
                 if (string.Equals(Path.GetDirectoryName(Path.GetFullPath(file.Path)), binaryDir, StringComparison.Ordinal))
                     held.Add(Path.GetFileName(file.Path));
+            // w14 final review m12: the game's own DLL ASI Loader moved aside (its Hooked name) is ASI Loader's to put back.
+            if (UltimateAsiLoaderDeploymentService.HookedPathOf(record) is { } hooked
+                && string.Equals(Path.GetDirectoryName(Path.GetFullPath(hooked)), binaryDir, StringComparison.Ordinal))
+                held.Add(Path.GetFileName(hooked));
         }
         return held;
     }
