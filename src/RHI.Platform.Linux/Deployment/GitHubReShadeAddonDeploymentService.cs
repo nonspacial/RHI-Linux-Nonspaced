@@ -68,7 +68,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         if (await ManagedUpdateFileGuard.HeldAsync(_journal, game, _definition.Kind, record.Version).ConfigureAwait(false) is { } held)
             return held;
         // #237: an add-on the user deleted is never put back by an update (seen before any network call).
-        if (ManagedUpdateFileGuard.Removed(record.Files.Select(file => file.Path), record.Version) is { } removed)
+        if (ManagedUpdateFileGuard.Removed(AddonFiles(record).Select(file => file.Path), record.Version) is { } removed)
             return removed;
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return new ManagedUpdateCheck(true, false, "Game executable is unavailable; update check skipped.", record.Version, CouldNotCheck: true,
@@ -89,7 +89,7 @@ public sealed class GitHubReShadeAddonDeploymentService
                     : $"{_definition.DisplayName} {record.Version ?? latest.Version} is current ({mode}).",
                 record.Version, latest.Version);
             // #237 (w11 lesson): a swap is planned only while every add-on file still holds RHI's bytes (hashed only then).
-            return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, record.Files.Select(file => (file.Path, file.Sha256)), cancellationToken)
+            return await ManagedUpdateFileGuard.BeforePlanningAsync(planned, AddonFiles(record).Select(file => (file.Path, file.Sha256)), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -114,7 +114,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         // A game held by its own earlier undo gets the hold's restart text, not a refusal about its half-undone files.
         if (await DeploymentScope.HoldRefusalAsync(_journal, game, _definition.Kind).ConfigureAwait(false) is { } held)
             return ComponentOperationResult.Fail(held);
-        if (record.Files.FirstOrDefault(file => !File.Exists(file.Path)) is { } removed)
+        if (AddonFiles(record).FirstOrDefault(file => !File.Exists(file.Path)) is { } removed)
             return ComponentOperationResult.Fail(ManagedUpdateFileGuard.RemovedOutsideRhiPrefix + removed.Path);
         return await InstallAsync(game, releaseTag, cancellationToken).ConfigureAwait(false);
     }
@@ -149,7 +149,7 @@ public sealed class GitHubReShadeAddonDeploymentService
 
         var target = Path.Combine(deployDir, deployFileName);
         var record = _records.Find(game, _definition.Kind);
-        var existingManaged = record?.Files.FirstOrDefault();
+        var existingManaged = record is null ? null : AddonFiles(record).FirstOrDefault();
 
         // Protect any same-family external/legacy add-on before network access.
         foreach (var candidate in FindComponentAddonFiles(deployDir, _definition.Kind))
@@ -256,6 +256,7 @@ public sealed class GitHubReShadeAddonDeploymentService
                 }
             };
             UserIniService.CarryMetadata(record, installed, createdConfigSha); // w5/ini-presets hook (#181 review 2)
+            ComponentSettingsFile.Carry(record, installed); // w14 final review M5: a settings file a ⚙ write created stays listed
             IntelXessFiles.CarryMetadata(record, installed); // w14/extras-fg hook (#279): the Intel files MFG Unlock placed stay listed
             _records.Upsert(scope.Stamp(installed));
         }
@@ -281,7 +282,7 @@ public sealed class GitHubReShadeAddonDeploymentService
 
         // Every file is checked before the first one is deleted: a modified second file used to stop the removal after
         // the first was already gone.
-        foreach (var file in record.Files)
+        foreach (var file in AddonFiles(record))
         {
             if (!File.Exists(file.Path)) continue;
             var currentHash = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
@@ -299,7 +300,11 @@ public sealed class GitHubReShadeAddonDeploymentService
             // The removal never stops half-way.
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             foreach (var file in record.Files)
-                await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
+            {
+                // w14 final review M5: a settings file a ⚙ write created goes only while it holds what RHI wrote.
+                if (ComponentSettingsFile.IsSettingsFile(file)) await ComponentSettingsFile.DeleteIfUnchangedAsync(scope, file, cancellationToken).ConfigureAwait(false);
+                else await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
+            }
             _records.Remove(game, _definition.Kind);
         }
         catch (Exception ex)
@@ -311,6 +316,10 @@ public sealed class GitHubReShadeAddonDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok($"RHI-managed {_definition.DisplayName} removed.");
     }
+
+    /// <summary>The add-on's own files on its record (a ⚙ settings file listed beside them is not one, w14 final review M5).</summary>
+    private static IEnumerable<LinuxDeployedFile> AddonFiles(LinuxDeploymentRecord record)
+        => record.Files.Where(file => !ComponentSettingsFile.IsSettingsFile(file));
 
     internal Task<GitHubAddonRelease> ResolveLatestAsync(PeArchitecture architecture, CancellationToken cancellationToken = default)
         => ResolveReleaseAsync(architecture, releaseTag: null, cancellationToken);

@@ -1063,22 +1063,22 @@ public sealed partial class Dlssg2030UnlockDeploymentService
     /// INI changed outside RHI stays the user's (kept whole on update and removal). Returns the refusal, or null.
     /// </summary>
     public string? SetIniSetting(DetectedGame game, Dlssg2030Setting setting, int index)
+        => Task.Run(() => SetIniSettingAsync(game, setting, index)).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// <see cref="SetIniSetting"/> as one journaled operation (w14 final review M5): the write and the record's new hash
+    /// commit together, so a crash between them can no longer leave an INI RHI wrote that its record calls changed.
+    /// </summary>
+    public async Task<string?> SetIniSettingAsync(DetectedGame game, Dlssg2030Setting setting, int index, CancellationToken cancellationToken = default)
     {
         if (GetRecord(game) is not { } record) return Dlssg2030Ini.NotInstalledMessage;
         var iniPath = Path.Combine(record.BinaryDirectory, IniFileName);
         if (!File.Exists(iniPath)) return Dlssg2030Ini.NotInstalledMessage;
-        var iniRecord = record.Files.FirstOrDefault(file => PathsEqual(file.Path, iniPath));
-        var owned = iniRecord?.Sha256 is { Length: > 0 } recorded && FileHash.HexEquals(FileHash.Sha256Hex(iniPath), recorded);
         var lines = IniLines.Read(iniPath);
         if (Dlssg2030Ini.Apply(lines, setting, index) is { } refusal) return refusal;
-        IniLines.Write(iniPath, lines, [record.BinaryDirectory]);
-        if (owned)
-        {
-            var updated = LinuxDeploymentRecordStore.Clone(record);
-            updated.Files.First(file => PathsEqual(file.Path, iniPath)).Sha256 = FileHash.Sha256Hex(iniPath);
-            _records.Upsert(updated);
-        }
-        return null;
+        var written = await ComponentSettingsFile.WriteAsync(_journal, _records, game, ManagedComponentKind.Dlssg2030Unlock, "20/30 FG Unlock", iniPath,
+            () => IniLines.Write(iniPath, lines, [record.BinaryDirectory]), cancellationToken).ConfigureAwait(false);
+        return written.Success ? null : written.Message;
     }
 
     /// <summary>The installed INI's lines (empty when not installed or the file is gone), for the ⚙.</summary>

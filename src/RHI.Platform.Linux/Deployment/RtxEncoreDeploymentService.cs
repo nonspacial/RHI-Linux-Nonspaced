@@ -337,6 +337,11 @@ public sealed partial class RtxEncoreDeploymentService
             xessRemoved = await IntelXessFiles.RemoveAsync(scope, xessEntries, cancellationToken).ConfigureAwait(false); // #280
             foreach (var file in record.Files)
             {
+                if (ComponentSettingsFile.IsSettingsFile(file)) // w14 final review M5: rtx-encore.jsonc a ⚙ write created
+                {
+                    await ComponentSettingsFile.DeleteIfUnchangedAsync(scope, file, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
                 await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 var keptName = NeuralRenderingRuntimeOwnership.DllName.Equals(Path.GetFileName(file.Path), StringComparison.OrdinalIgnoreCase)
                     ? record.Metadata.GetValueOrDefault(MetaNrKept)
@@ -729,7 +734,7 @@ public sealed partial class RtxEncoreDeploymentService
 
     private static async Task<string?> FirstModifiedAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
-        foreach (var file in record.Files)
+        foreach (var file in record.Files.Where(file => !ComponentSettingsFile.IsSettingsFile(file))) // the user's settings may change
         {
             if (!File.Exists(file.Path)) continue;
             if (file.Sha256 is not { Length: > 0 } || !FileHash.HexEquals(await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false), file.Sha256))

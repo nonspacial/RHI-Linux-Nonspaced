@@ -94,6 +94,9 @@ public sealed class MfgUnlockFiles(IntelXessFiles xess, LinuxDeploymentRecordSto
     public const string DueMessage = "MFG Unlock is up to date, but Intel's XeSS files for its XeMFG modes are not installed yet; Update adds them.";
     public const string RestoreFailedPrefix = "MFG Unlock was not removed: Intel's XeSS files could not be put back first: ";
 
+    /// <summary>The journal MFG Unlock's own steps use (its ⚙ writes too, w14 final review M5).</summary>
+    internal DeploymentJournal? Journal => journal;
+
     /// <summary>Whether RHI's MFG Unlock record has had its XeSS step (installs from before #279 have not).</summary>
     public bool NeedsFiles(LinuxDeploymentRecord record) => !IntelXessFiles.HasEntries(record.Metadata, Prefix);
 

@@ -39,7 +39,7 @@ public sealed class CogViewsTests
         // RTX Encore's sections: the same compact grid (upstream AddCompactGrid); the others list name / option / explanation.
         var proxy = Load("App.axaml").Descendants().Single(e => e.Name.LocalName == "DataTemplate" && (string?)e.Attribute(X + "DataType") == "vm:ProxyComponentDialogViewModel");
         Assert.Equal("{Binding Compact}", (string?)ItemsFor(new XDocument(proxy), "{Binding Rows}").Attribute("IsVisible"));
-        Assert.All(FgSettingsBuilder.RtxEncore(null), section => Assert.True(section.Compact));
+        Assert.All(FgSettingsBuilder.RtxEncore(null, FgSettingsWriters.NotInstalled), section => Assert.True(section.Compact));
     }
 
     [Fact]

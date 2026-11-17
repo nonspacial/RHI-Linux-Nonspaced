@@ -16,6 +16,8 @@ public sealed class ReviewPlatformALocalizationTests
         { LinuxManagedComponentService.SwitchNotStartedPrefix + NeuralRenderingRuntimeOwnership.RefusalFor("DLSS5 Feeder"), "nothing changed" },
         { LinuxManagedComponentService.SwitchPreviousUnavailablePrefix + OptiScalerDeploymentService.ExactVersionUnknownMessage, "could not be prepared" },
         { LinuxManagedComponentService.SwitchPreviousUnavailablePrefix + OptiScalerDeploymentService.ExactVersionUnknownMessage, "cannot tell which release" },
+        // M5: the ⚙ writes refused while the component is not installed
+        { ComponentSettingsFile.NotInstalledPrefix + "MFG Unlock", "can only be changed while" },
         // m2: ANR FG across a switch
         { LinuxManagedComponentService.SwitchAnrFgCarriedNote, "was put back" },
         { LinuxManagedComponentService.SwitchAnrFgDroppedPrefix + OptiScalerDeploymentService.AnrFgUnsupportedPrefix + "Custom: B" + OptiScalerDeploymentService.AnrFgUnsupportedHint + LinuxManagedComponentService.SwitchAnrFgClearedNote, "could not be put back" },

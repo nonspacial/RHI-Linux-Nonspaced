@@ -1456,6 +1456,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.ExactVersionUnknownMessage, "O RHI não consegue saber de qual release veio o OptiScaler instalado, então ele não poderia voltar se a troca falhasse."),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchAnrFgCarriedNote, " O ANR FG foi colocado de volta para a nova versão."),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchAnrFgDroppedPrefix, " O ANR FG foi removido com a versão antiga e não pôde ser colocado de volta: "),
+        (RHI.Platform.Linux.Deployment.ComponentSettingsFile.NotInstalledPrefix, "Esta configuração fica salva em um arquivo que a instalação do RHI controla, então só pode ser alterada enquanto o RHI gerencia o componente: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.SwitchAnrFgClearedNote, " O FG Nvngx Replacement foi definido como None no OptiScaler.ini, então o OptiScaler não o procura."),
         // #272 ANR FG
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.AnrFgNotManagedMessage, "Instale o OptiScaler (Nightly) primeiro."),

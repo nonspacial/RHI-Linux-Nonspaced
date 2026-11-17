@@ -262,7 +262,7 @@ public sealed partial class RtxEncoreDeploymentServiceTests
     {
         var path = Path.Combine(_bin, RtxEncoreConfig.FileName);
         File.WriteAllText(path, Sample);
-        var sections = FgSettingsBuilder.RtxEncore(path);
+        var sections = FgSettingsBuilder.RtxEncore(path, FgSettingsWriters.Encore(path));
         var rows = sections.SelectMany(section => section.Rows).ToArray();
         string? shown = null;
         foreach (var row in rows) { row.Changed = line => shown = line; row.Refresh(); }
@@ -288,7 +288,7 @@ public sealed partial class RtxEncoreDeploymentServiceTests
         frameLimit.NumberText = "141";
         Assert.Equal("141", RtxEncoreConfig.Get(File.ReadAllText(path), "nativeMenuFeatures", "reflexFrameLimit"));
 
-        var notInstalled = FgSettingsBuilder.RtxEncore(null).SelectMany(section => section.Rows).ToArray();
+        var notInstalled = FgSettingsBuilder.RtxEncore(null, FgSettingsWriters.NotInstalled).SelectMany(section => section.Rows).ToArray();
         foreach (var row in notInstalled) row.Refresh();
         Assert.All(notInstalled, row => Assert.False(row.IsEnabled));
         Assert.Contains(ComponentDialogLine.Warning(UiLocalizationService.Text("Enc.NotInstalled")), FgSettingsBuilder.RtxEncoreLines(false, false, null, null, gameRunning: false));
