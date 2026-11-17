@@ -1753,7 +1753,7 @@ writes it. On Windows (upstream) that replace is refused, which is why the block
 
 So the Linux port matches upstream's function (Steam can't update the game) in three steps (w14 last fixes):
 
-1. `AutoUpdateBehavior` in the manifest is set to `"1"` (Steam's "Only update this game when I launch it"), editing only
+1. `AutoUpdateBehavior` in the manifest is set to `"1"` (Steam's "Wait until I launch the game"), editing only
    that value in place (a missing line is added beside its neighbours, same indentation and separator).
 2. The manifest is made read-only (upstream's step).
 3. It is made immutable: `pkexec <chattr> +i <manifest>`, the exact path as its own argv entry, never through a shell,

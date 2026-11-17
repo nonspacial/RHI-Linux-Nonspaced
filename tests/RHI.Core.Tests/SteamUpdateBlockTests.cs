@@ -465,8 +465,8 @@ public sealed class SteamUpdateBlockViewModelTests : IDisposable
     }
 
     [Theory]
-    [InlineData("en-US", "Steam updates only partly blocked for Elden Ring: pkexec (polkit) is not installed, so RHI could not lock the manifest. The manifest is set to \"Only update this game when I launch it\" and read-only, but Steam may still update the game when you launch it.", "Partly blocked:")]
-    [InlineData("pt-BR", "Atualizações da Steam só em parte bloqueadas para Elden Ring: o pkexec (polkit) não está instalado, então o RHI não pôde travar o manifesto. O manifesto está em \"Só atualizar este jogo quando eu o iniciar\" e somente leitura, mas a Steam ainda pode atualizar o jogo quando você o iniciar.", "Só em parte:")]
+    [InlineData("en-US", "Steam updates only partly blocked for Elden Ring: pkexec (polkit) is not installed, so RHI could not lock the manifest. The manifest is set to \"Wait until I launch the game\" and read-only, but Steam may still update the game when you launch it.", "Partly blocked:")]
+    [InlineData("pt-BR", "Atualizações da Steam só em parte bloqueadas para Elden Ring: o pkexec (polkit) não está instalado, então o RHI não pôde travar o manifesto. O manifesto está em \"Esperar até eu iniciar o jogo\" e somente leitura, mas a Steam ainda pode atualizar o jogo quando você o iniciar.", "Só em parte:")]
     public async Task WithoutPkexec_TheSwitchIsOn_ButNeverSaysBlocked(string language, string done, string status)
     {
         var steamapps = Path.Combine(_root, "steamapps");

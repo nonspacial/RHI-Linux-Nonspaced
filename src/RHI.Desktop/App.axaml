@@ -378,6 +378,13 @@
       <Setter Property="Padding" Value="10,7"/>
     </Style>
 
+    <!-- Flyouts (the ⚙ Game settings panel, preset rename): the theme caps the box at 456 px and scrolls content sideways,
+         which cut the left of wider panels off. Room for a 520 px panel, and content wraps to the box instead of scrolling. -->
+    <Style Selector="FlyoutPresenter">
+      <Setter Property="MaxWidth" Value="560"/>
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+    </Style>
+
     <!-- The toolbar '…' overflow menu and the library card menu use the tooltip surface and the button text colour
          (scoped: other menus, e.g. text-box context menus, keep the theme defaults). -->
     <Style Selector="MenuFlyoutPresenter.toolbarOverflow">

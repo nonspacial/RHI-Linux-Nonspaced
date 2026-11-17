@@ -139,4 +139,22 @@ public sealed class GameSettingsCogTests : IDisposable
         Assert.True(fx.Vm.SelectedGame?.IsManuallyAdded);
         Assert.False(fx.Vm.ShowGameSettings);
     }
+
+    // Owner test (Xbox Elite 2 round): the ⚙ panel was cut off on the left. The theme caps a flyout at 456 px and scrolls
+    // wider content sideways; App.axaml gives flyouts room for the 520 px panel and wraps content instead of scrolling.
+    [Fact]
+    public void Flyouts_HaveRoomForTheGameSettingsPanel_AndNeverScrollSideways()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(dir, "RHI-Linux.sln"))) dir = Path.GetDirectoryName(dir)!;
+        var app = System.Xml.Linq.XDocument.Load(Path.Combine(dir, "src", "RHI.Desktop", "App.axaml"));
+        var style = app.Descendants().Single(e => e.Name.LocalName == "Style" && (string?)e.Attribute("Selector") == "FlyoutPresenter");
+        string? Setter(string property) => style.Elements().FirstOrDefault(e => (string?)e.Attribute("Property") == property)?.Attribute("Value")?.Value;
+        Assert.Equal("Disabled", Setter("ScrollViewer.HorizontalScrollBarVisibility"));
+        var view = File.ReadAllText(Path.Combine(dir, "src", "RHI.Desktop", "Views", "GameSettingsView.cs"));
+        var panel = double.Parse(System.Text.RegularExpressions.Regex.Match(view, @"MaxWidth = (\d+), Name = ""GameSettingsPanel""").Groups[1].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+        // The presenter's padding and border take about 34 px (measured in the screenshot harness: 548 px around 514).
+        Assert.True(double.Parse(Setter("MaxWidth")!, System.Globalization.CultureInfo.InvariantCulture) >= panel + 34);
+    }
 }

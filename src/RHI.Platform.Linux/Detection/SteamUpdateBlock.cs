@@ -22,7 +22,7 @@ public enum SteamUpdateBlockState
     Allowed,
 
     /// <summary>
-    /// The manifest is read-only (and set to "Only update this game when I launch it") but not immutable: Steam can still
+    /// The manifest is read-only (and set to "Wait until I launch the game") but not immutable: Steam can still
     /// replace it, and updates the game when it is launched.
     /// </summary>
     LaunchOnly,
@@ -145,7 +145,7 @@ public sealed class IoctlFileFlagsReader : IFileFlagsReader
 /// <c>appmanifest_&lt;appid&gt;.acf</c> read-only, which holds on Windows; on Linux Steam replaces the manifest by renaming a
 /// new file over it, which a read-only file does not stop. So here turning it on:
 /// <list type="number">
-/// <item>sets the manifest's <c>AutoUpdateBehavior</c> to <c>"1"</c> ("Only update this game when I launch it"), editing
+/// <item>sets the manifest's <c>AutoUpdateBehavior</c> to <c>"1"</c> ("Wait until I launch the game"), editing
 /// that one value in place;</item>
 /// <item>makes the manifest read-only (upstream's step);</item>
 /// <item>makes it immutable (<c>pkexec chattr +i &lt;manifest&gt;</c>, the desktop's polkit password prompt), which a rename
@@ -165,7 +165,7 @@ public sealed class SteamUpdateBlockService
 
     private const UnixFileMode WriteBits = UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
 
-    /// <summary>Steam's "Only update this game when I launch it".</summary>
+    /// <summary>Steam's "Wait until I launch the game".</summary>
     public const string LaunchOnlyBehavior = "1";
 
     public const string NotSteamMessage = "Block Steam updates is only for Steam games whose Steam app manifest RHI can find.";

@@ -452,6 +452,13 @@ Wave 14 — extras-fg-2
   and RHI makes the change once Steam, Lutris or Heroic has closed, unless you click Stop waiting. Every write is
   journaled with a byte-exact copy of the file; a write that fails, or is cut short by a crash, is put back (#318).
 
+### Wave 14 — owner test fixes
+
+- **The ⚙ Game settings panel is no longer cut off on the left.** Flyouts had room for 456 px and scrolled wider content
+  sideways; they now fit the panel and wrap their text.
+- **Block Steam updates names Steam's current setting**, "Wait until I launch the game" (Steam renamed "Only update
+  this game when I launch it"; the manifest value is the same).
+
 ## 2.8.8 — 2026-11-16: level with upstream RHI 2.8.8
 
 - The second upstream level: the same downloads as 2.8.7.1 (AppImage, `.deb`, `.rpm`, `.tar.gz` and one
