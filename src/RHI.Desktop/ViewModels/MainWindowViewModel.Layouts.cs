@@ -114,9 +114,10 @@ public partial class MainWindowViewModel
 
     // ---- #303 Update All count --------------------------------------------------------------------------------------
 
-    /// <summary>A game's analysis was published: whether any of its components has an update (the top bar's count).</summary>
+    /// <summary>A game's analysis was published: whether it has an update Update All would make (the top bar's count),
+    /// by the check pass's rules.</summary>
     private void NoteAnalysisUpdates(DetectedGame game, GameAnalysis analysis)
-        => TopBar.NoteGame(LinuxGameLibraryStore.GameKey(game), analysis.Components.Any(c => c.Availability == ComponentAvailability.UpdateAvailable));
+        => TopBar.NoteGame(LinuxGameLibraryStore.GameKey(game), TopBarPresenter.AnalysisFindsUpdate(game, analysis.Components));
 
     // ---- #304 Management (each look's order and colours: ManagementActions) -------------------------------------------
 

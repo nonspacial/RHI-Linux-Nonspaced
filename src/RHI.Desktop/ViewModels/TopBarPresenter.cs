@@ -98,7 +98,21 @@ public sealed partial class TopBarPresenter : ObservableObject
     /// <summary>Raised when the games with updates changed (the game list's marks follow).</summary>
     public event Action? UpdatesChanged;
 
-    /// <summary>A game's analysis says whether any of its components has an update.</summary>
+    /// <summary>
+    /// w14 final review m7: whether a game's analysis finds an update Update All would make, by the check pass's rules
+    /// (<see cref="RHI.Platform.Linux.Deployment.LinuxUpdateAllService.CheckOnlyAsync"/>): a component RHI installed that
+    /// Update All updates, not left out by the update inclusion (#178), in a game whose executable is confirmed (else
+    /// updates are blocked). A row's own update state is all an analysis knows: what holds a component (a layer, the No
+    /// Addons build) is the check pass's to say.
+    /// </summary>
+    public static bool AnalysisFindsUpdate(RHI.Core.Models.DetectedGame game, IEnumerable<RHI.Core.Models.ManagedComponent> rows)
+        => game.HasConfirmedPatchTarget && rows.Any(row =>
+            row.Availability == RHI.Core.Models.ComponentAvailability.UpdateAvailable
+            && row.ManagedByRhi
+            && RHI.Platform.Linux.Deployment.LinuxUpdateAllService.IsSupported(row.Kind)
+            && row.UpdateExclusion == RHI.Core.Models.UpdateExclusion.None);
+
+    /// <summary>A game's analysis says whether any of its components has an update (<see cref="AnalysisFindsUpdate"/>).</summary>
     public void NoteGame(string key, bool hasUpdate)
     {
         var changed = hasUpdate ? _withUpdates.Add(key) : _withUpdates.Remove(key);

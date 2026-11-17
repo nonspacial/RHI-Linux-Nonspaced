@@ -238,6 +238,27 @@ public sealed class LayoutsTests : IDisposable
     }
 
     [Fact]
+    public void AnAnalysis_CountsAnUpdate_ByTheCheckPassesRules()
+    {
+        // w14 final review m7: as LinuxUpdateAllService.CheckOnlyAsync, a component left out of Update All (#178), one RHI
+        // did not install, one Update All does not update, or a game whose executable is not confirmed adds nothing.
+        var game = new DetectedGame { Name = "Count Game", InstallPath = "/games/count" };
+        Assert.True(game.HasConfirmedPatchTarget);
+        ManagedComponent Row(ManagedComponentKind kind, UpdateExclusion exclusion = UpdateExclusion.None, bool rhi = true) => new()
+        {
+            Kind = kind, DisplayName = kind.ToString(), Availability = ComponentAvailability.UpdateAvailable, ManagedByRhi = rhi, UpdateExclusion = exclusion,
+        };
+        Assert.True(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade)]));
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade, UpdateExclusion.ThisGame)])); // its only update is left out
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade, UpdateExclusion.AllGames)]));
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.ReShade, rhi: false)]));
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(game, [Row(ManagedComponentKind.Dlss)])); // not an Update All component
+        var missing = new DetectedGame { Name = "Missing", InstallPath = "/games/missing", FolderMissing = true };
+        Assert.False(missing.HasConfirmedPatchTarget);
+        Assert.False(TopBarPresenter.AnalysisFindsUpdate(missing, [Row(ManagedComponentKind.ReShade)])); // updates blocked
+    }
+
+    [Fact]
     public void UpdateAllCount_CountsGamesWithUpdates_ThatUpdateAllCovers_AndStartsAgainAfterUpdateAll()
     {
         var covered = new HashSet<string> { "a", "b" };
