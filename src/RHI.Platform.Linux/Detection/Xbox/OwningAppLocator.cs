@@ -70,7 +70,7 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
         return string.Join(' ', words);
     }
 
-    /// <summary>How to open the Xodus or Nexus Launcher GUI; null while neither is installed.</summary>
+    // Finds an installed Xodus or Nexus Launcher GUI.
     public string? Xodus()
         => DesktopEntry(stem => stem.Equals("io.github.xodus-gaming.xodus", StringComparison.OrdinalIgnoreCase) ||
                                 stem.Equals("org.xodusgaming.nexus", StringComparison.OrdinalIgnoreCase) ||
@@ -78,6 +78,13 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
                name => name.Equals("Xodus", StringComparison.OrdinalIgnoreCase) ||
                        name.Equals("Nexus Launcher", StringComparison.OrdinalIgnoreCase))
            ?? OnPath("xodus-gui", "xodus-nexus", "nexus-launcher");
+
+    // Finds Nexus Launcher itself, excluding the legacy Xodus GUI.
+    public string? Nexus()
+        => DesktopEntry(stem => stem.Equals("org.xodusgaming.nexus", StringComparison.OrdinalIgnoreCase) ||
+                                stem.Equals("nexus-launcher", StringComparison.OrdinalIgnoreCase),
+               name => name.Equals("Nexus Launcher", StringComparison.OrdinalIgnoreCase))
+           ?? OnPath("xodus-nexus", "nexus-launcher");
 
     // <instance>/state/{app} → <instance>/run.sh, when it is an executable script that starts the installer app.
     private static string? InstanceScript(string stateDir)

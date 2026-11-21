@@ -68,6 +68,28 @@ public sealed class LinuxGameLauncherTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task NexusNativeLauncher_DropsAppImageVariables()
+    {
+        var launcher = Path.Combine(_root, "nexus-launcher");
+        var output = Path.Combine(_root, "launcher.out");
+        File.WriteAllText(launcher, $"#!/bin/sh\nprintf '%s|%s|%s|%s\\ndone\\n' \"${{APPIMAGE-unset}}\" \"${{APPDIR-unset}}\" \"${{ARGV0-unset}}\" \"${{OWD-unset}}\" > {Quote(output)}\n");
+        File.SetUnixFileMode(launcher, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var (install, exe) = GameTree("Bin");
+        var game = new DetectedGame
+        {
+            Name = "Nexus native", Source = "Xbox / Game Pass", InstallPath = install, LaunchExecutablePath = exe,
+            LaunchCommand = $"env -u APPIMAGE -u APPDIR -u ARGV0 -u OWD {Quote(launcher)} --nexus-profile {Quote(_root)} --launch-game 0123456789abcdef"
+        };
+
+        await new LinuxGameLauncher().LaunchAsync(game, new GameLaunchOptions(new Dictionary<string, string>
+        {
+            ["APPIMAGE"] = "/tmp/RHI.AppImage", ["APPDIR"] = "/tmp/AppDir", ["ARGV0"] = "RHI", ["OWD"] = "/tmp"
+        }));
+
+        Assert.Equal(["unset|unset|unset|unset", "done"], await ReadWhenWritten(output));
+    }
+
     private (string Install, string Exe) GameTree(string binaryDirectory)
     {
         var install = Path.Combine(_root, "Fake Game");

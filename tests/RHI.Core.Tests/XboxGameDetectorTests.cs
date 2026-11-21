@@ -351,19 +351,23 @@ public sealed class XboxGameDetectorTests : IDisposable
         var runtimeRoot = _tree.Dir("nexus-data", "runtimes");
         var prefix = _tree.Dir("nexus-data", "compatdata", id, "pfx");
         _tree.Dir("nexus-data", "compatdata", id, "pfx", "drive_c");
+        var apps = _tree.Dir("nexus-apps");
+        _tree.File("[Desktop Entry]\nName=Nexus Launcher\nExec=/opt/nexus/nexus-launcher %U\nType=Application\n", "nexus-apps", "nexus-launcher.desktop");
         var state = _tree.File(JsonSerializer.Serialize(new
         {
             settings = new { runtimeRoot },
             games = new[] { new { id, path = dir, title = "John Carpenter's Toxic Commando", runtime = "nexus-cachyos" } }
         }), "nexus", "launcher-state.json");
 
-        var (games, warnings) = Detect(Inputs(userFolders: [], nexusLauncherState: state));
+        var (games, warnings) = Detect(Inputs(userFolders: [], applicationDirs: [apps], nexusLauncherState: state));
 
         var game = Assert.Single(games);
         Assert.Empty(warnings);
         Assert.Equal(prefix, game.PrefixPath);
         Assert.Equal("wine", game.CompatibilityLayerType);
         Assert.Equal("Nexus Launcher", game.Runner);
+        Assert.Null(game.ParentLauncherName);
+        Assert.Equal($"env -u APPIMAGE -u APPDIR -u ARGV0 -u OWD /opt/nexus/nexus-launcher --nexus-profile '{Path.GetDirectoryName(state)}' --launch-game '{id}'", game.LaunchCommand);
         Assert.Equal(Path.Combine([dir, .. exe.Split('/')]), game.ExecutablePath);
     }
 

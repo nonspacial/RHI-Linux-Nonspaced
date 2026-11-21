@@ -11,7 +11,6 @@ namespace RHI.Platform.Linux.Detection.Xbox;
 /// <param name="UserFolders">The "Xbox / Game Pass folders" setting.</param>
 /// <param name="BreadcrumbDir">Where installer-app instances announce themselves (<see cref="InstallerBreadcrumb"/>).</param>
 /// <param name="Apps">How the owning apps are opened.</param>
-/// <param name="NexusLauncherStateFile">Nexus Launcher's persisted game/prefix map, when installed.</param>
 internal sealed record XboxDiscoveryInputs(
     string Home,
     IReadOnlyList<string> DefaultStateDirs,
@@ -69,7 +68,7 @@ public sealed class XboxGameDetector : IGameDetector
         var seenStates = new HashSet<string>(StringComparer.Ordinal);
         var payloadRoots = new HashSet<string>(StringComparer.Ordinal);
         var xodusRoots = new List<string> { Path.Combine(inputs.Home, "Games") };
-        var nexusPrefixes = NexusLauncherPrefixes(inputs.NexusLauncherStateFile);
+        var nexusTitles = NexusLauncherTitles(inputs.NexusLauncherStateFile);
         var defaults = inputs.DefaultStateDirs.Select(PathIdentity.Canonicalize).ToHashSet(StringComparer.Ordinal);
         // The installer app's breadcrumbs are the primary source (one per instance, newest per state folder).
         var breadcrumbs = InstallerBreadcrumb.ReadAll(inputs.BreadcrumbDir)
@@ -117,8 +116,8 @@ public sealed class XboxGameDetector : IGameDetector
             }
         }
 
-        string? xodusCommand = null;
-        var xodusLooked = false;
+        string? xodusCommand = null, nexusCommand = null;
+        var launcherLooked = false;
         foreach (var root in xodusRoots.Distinct(StringComparer.Ordinal))
             foreach (var dir in PackageFolders(root, ct))
             {
@@ -126,13 +125,15 @@ public sealed class XboxGameDetector : IGameDetector
                 // A known installer-app payload folder decides on its own: what it did not list is unfinished or not its own.
                 if (payloadRoots.Contains(PathIdentity.Canonicalize(Path.GetDirectoryName(dir) ?? dir))) continue;
                 if (File.Exists(Path.Combine(dir, XboxInstallerInstance.PartialMarker))) continue;
-                if (!xodusLooked)
+                if (!launcherLooked)
                 {
                     xodusCommand = inputs.Apps.Xodus();
-                    xodusLooked = true;
+                    nexusCommand = inputs.Apps.Nexus();
+                    launcherLooked = true;
                 }
-                nexusPrefixes.TryGetValue(PathIdentity.Canonicalize(dir), out var nexusPrefix);
-                if (FromFolder(dir, xodusCommand, nexusPrefix) is { } game) games.Add(game);
+                nexusTitles.TryGetValue(PathIdentity.Canonicalize(dir), out var nexus);
+                var command = nexus?.LaunchCommand(nexusCommand) ?? xodusCommand;
+                if (FromFolder(dir, command, nexus?.Prefix, nexus is not null && nexusCommand is not null) is { } game) games.Add(game);
             }
         return games;
     }
@@ -180,7 +181,7 @@ public sealed class XboxGameDetector : IGameDetector
         return game;
     }
 
-    private static DetectedGame? FromFolder(string dir, string? xodusCommand, string? nexusPrefix)
+    private static DetectedGame? FromFolder(string dir, string? openCommand, string? nexusPrefix, bool nexusLaunchesGame)
     {
         var package = XboxPackageReader.Read(dir);
         if (package is null) return null;
@@ -190,27 +191,31 @@ public sealed class XboxGameDetector : IGameDetector
             DetectorDiagnostics.Warn($"Xbox package {dir}: {package.Problem}; listed without a modding target");
         var name = package.DisplayName ?? Path.GetFileName(dir);
         var game = Card(name, dir, package.HasExecutable ? package : null,
-            new XboxPackageInfo(package.StoreId, ownedByInstallerApp ? InstallerApp : XodusApp, ownedByInstallerApp ? null : xodusCommand, JobsFile: null));
+            new XboxPackageInfo(package.StoreId, ownedByInstallerApp ? InstallerApp : XodusApp, ownedByInstallerApp ? null : openCommand, JobsFile: null));
         game.Runner = ownedByInstallerApp ? InstallerApp : XodusApp;
         if (nexusPrefix is not null)
         {
             game.PrefixPath = nexusPrefix;
             game.CompatibilityLayerType = "wine";
             game.Runner = "Nexus Launcher";
+            if (nexusLaunchesGame) game.ParentLauncherName = null;
         }
         XboxWriteGate.Register(game.XboxPackage!, dir);
         return game;
     }
 
-    /// <summary>
-    /// Nexus Launcher stores Game Pass prefixes outside the payload: its state maps the payload folder to an opaque
-    /// 16-hex game id, and the prefix is <c>dirname(runtimeRoot)/compatdata/&lt;id&gt;/pfx</c>.  This is deliberately
-    /// read-only; an incomplete or stale state entry is ignored unless it names an initialized prefix.
-    /// </summary>
-    private static IReadOnlyDictionary<string, string> NexusLauncherPrefixes(string? stateFile)
+    // Nexus keeps the game ID and initialized prefix outside the payload. Ignore incomplete or stale entries.
+    private sealed record NexusLauncherTitle(string Prefix, string Id, string Profile)
     {
-        var prefixes = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (string.IsNullOrWhiteSpace(stateFile) || !File.Exists(stateFile)) return prefixes;
+        // AppImage variables must not leak from RHI into Nexus's per-title handoff.
+        public string? LaunchCommand(string? launcher)
+            => launcher is null ? null : $"env -u APPIMAGE -u APPDIR -u ARGV0 -u OWD {launcher} --nexus-profile {OwningAppLocator.Shell(Profile)} --launch-game {OwningAppLocator.Shell(Id)}";
+    }
+
+    private static IReadOnlyDictionary<string, NexusLauncherTitle> NexusLauncherTitles(string? stateFile)
+    {
+        var titles = new Dictionary<string, NexusLauncherTitle>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(stateFile) || !File.Exists(stateFile)) return titles;
         try
         {
             using var doc = JsonDocument.Parse(XboxInstallerInstance.ReadSmall(stateFile, 16 * 1024 * 1024));
@@ -219,9 +224,10 @@ public sealed class XboxGameDetector : IGameDetector
                 ? XboxInstallerInstance.String(settings, "runtimeRoot")
                 : null;
             var dataRoot = runtimeRoot is null ? null : Path.GetDirectoryName(runtimeRoot);
-            if (runtimeRoot is null || !Path.IsPathRooted(runtimeRoot) || dataRoot is null ||
+            var profile = Path.GetDirectoryName(stateFile);
+            if (runtimeRoot is null || !Path.IsPathRooted(runtimeRoot) || dataRoot is null || profile is null || !Path.IsPathRooted(profile) ||
                 !root.TryGetProperty("games", out var games) || games.ValueKind != JsonValueKind.Array)
-                return prefixes;
+                return titles;
 
             foreach (var game in games.EnumerateArray())
             {
@@ -229,14 +235,14 @@ public sealed class XboxGameDetector : IGameDetector
                 var path = XboxInstallerInstance.String(game, "path");
                 if (id is null || path is null || !Path.IsPathRooted(path) || id.Length != 16 || !id.All(char.IsAsciiHexDigit)) continue;
                 var prefix = Path.Combine(dataRoot, "compatdata", id, "pfx");
-                if (Directory.Exists(Path.Combine(prefix, "drive_c"))) prefixes.TryAdd(PathIdentity.Canonicalize(path), prefix);
+                if (Directory.Exists(Path.Combine(prefix, "drive_c"))) titles.TryAdd(PathIdentity.Canonicalize(path), new NexusLauncherTitle(prefix, id, profile));
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             DetectorDiagnostics.Warn($"Nexus Launcher state {stateFile} unreadable; its Wine/Proton prefixes were not detected", ex);
         }
-        return prefixes;
+        return titles;
     }
 
     /// <summary>
