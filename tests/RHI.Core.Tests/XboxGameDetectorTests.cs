@@ -89,9 +89,10 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     private XboxDiscoveryInputs Inputs(IReadOnlyList<string>? userFolders = null, string? breadcrumbs = null,
-        IReadOnlyList<string>? applicationDirs = null, IReadOnlyList<string>? pathDirs = null, IReadOnlyList<string>? defaults = null)
+        IReadOnlyList<string>? applicationDirs = null, IReadOnlyList<string>? pathDirs = null, IReadOnlyList<string>? defaults = null,
+        string? nexusLauncherState = null)
         => new(_home, defaults ?? [Path.Combine(_home, ".local", "state", XboxInstallerApp.FolderName)], userFolders ?? [_state], breadcrumbs,
-            new OwningAppLocator(applicationDirs ?? [], pathDirs ?? []));
+            new OwningAppLocator(applicationDirs ?? [], pathDirs ?? []), nexusLauncherState);
 
     private static (IReadOnlyList<DetectedGame> Games, IReadOnlyList<string> Warnings) Detect(XboxDiscoveryInputs inputs)
         => DetectorDiagnostics.CollectAsync(() => Task.FromResult(XboxGameDetector.DetectIn(inputs, CancellationToken.None))).GetAwaiter().GetResult();
@@ -328,6 +329,35 @@ public sealed class XboxGameDetectorTests : IDisposable
         var withGui = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [apps])).Games);
         Assert.Equal("/opt/xodus/xodus-gui", withGui.LaunchCommand);
         Assert.Equal("Xodus", withGui.ParentLauncherName);
+    }
+
+    [Fact]
+    public void NexusLauncherTitle_AttachesItsInitializedCompatdataPrefix()
+    {
+        // Acceptance fixture: the layout reported by Nexus Launcher for John Carpenter's Toxic Commando.
+        var dir = _tree.Dir("home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando");
+        const string id = "0123456789abcdef";
+        const string exe = "client_pc/root/bin/pc/John Carpenter's Toxic Commando.exe";
+        _tree.File("msixvc", "home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", XboxPackageReader.StreamingFileName);
+        _tree.File(GdkConfig(exe, "9TOXIC", "John Carpenter's Toxic Commando"), "home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", "MicrosoftGame.config");
+        _tree.Bytes(Encrypted, ["home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", .. exe.Split('/')]);
+        var runtimeRoot = _tree.Dir("nexus-data", "runtimes");
+        var prefix = _tree.Dir("nexus-data", "compatdata", id, "pfx");
+        _tree.Dir("nexus-data", "compatdata", id, "pfx", "drive_c");
+        var state = _tree.File(JsonSerializer.Serialize(new
+        {
+            settings = new { runtimeRoot },
+            games = new[] { new { id, path = dir, title = "John Carpenter's Toxic Commando", runtime = "nexus-cachyos" } }
+        }), "nexus", "launcher-state.json");
+
+        var (games, warnings) = Detect(Inputs(userFolders: [], nexusLauncherState: state));
+
+        var game = Assert.Single(games);
+        Assert.Empty(warnings);
+        Assert.Equal(prefix, game.PrefixPath);
+        Assert.Equal("wine", game.CompatibilityLayerType);
+        Assert.Equal("Nexus Launcher", game.Runner);
+        Assert.Equal(Path.Combine([dir, .. exe.Split('/')]), game.ExecutablePath);
     }
 
     [Fact]

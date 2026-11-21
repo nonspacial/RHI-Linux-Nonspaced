@@ -1,3 +1,4 @@
+using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -10,12 +11,14 @@ namespace RHI.Platform.Linux.Detection.Xbox;
 /// <param name="UserFolders">The "Xbox / Game Pass folders" setting.</param>
 /// <param name="BreadcrumbDir">Where installer-app instances announce themselves (<see cref="InstallerBreadcrumb"/>).</param>
 /// <param name="Apps">How the owning apps are opened.</param>
+/// <param name="NexusLauncherStateFile">Nexus Launcher's persisted game/prefix map, when installed.</param>
 internal sealed record XboxDiscoveryInputs(
     string Home,
     IReadOnlyList<string> DefaultStateDirs,
     IReadOnlyList<string> UserFolders,
     string? BreadcrumbDir,
-    OwningAppLocator Apps);
+    OwningAppLocator Apps,
+    string? NexusLauncherStateFile = null);
 
 /// <summary>
 /// Xbox / Game Pass games (Refs #90; owner: listed straight away). Linux has no official client: installs come from
@@ -45,7 +48,8 @@ public sealed class XboxGameDetector : IGameDetector
             [Path.Combine(LinuxPaths.StateHome, XboxInstallerApp.FolderName), Path.Combine(LinuxPaths.Home, ".local", "state", XboxInstallerApp.FolderName)],
             folders.Folders(),
             Path.Combine(LinuxPaths.DataHome, XboxInstallerApp.FolderName, "instances"),
-            OwningAppLocator.FromEnvironment(LinuxPaths.Home, LinuxPaths.DataHome)))
+            OwningAppLocator.FromEnvironment(LinuxPaths.Home, LinuxPaths.DataHome),
+            Path.Combine(LinuxPaths.ConfigHome, "xodus-nexus", "launcher-state.json")))
         => FolderStore = folders;
 
     /// <summary>The "Xbox / Game Pass folders" setting this detector reads (the app passes its one shared store).</summary>
@@ -65,6 +69,7 @@ public sealed class XboxGameDetector : IGameDetector
         var seenStates = new HashSet<string>(StringComparer.Ordinal);
         var payloadRoots = new HashSet<string>(StringComparer.Ordinal);
         var xodusRoots = new List<string> { Path.Combine(inputs.Home, "Games") };
+        var nexusPrefixes = NexusLauncherPrefixes(inputs.NexusLauncherStateFile);
         var defaults = inputs.DefaultStateDirs.Select(PathIdentity.Canonicalize).ToHashSet(StringComparer.Ordinal);
         // The installer app's breadcrumbs are the primary source (one per instance, newest per state folder).
         var breadcrumbs = InstallerBreadcrumb.ReadAll(inputs.BreadcrumbDir)
@@ -126,7 +131,8 @@ public sealed class XboxGameDetector : IGameDetector
                     xodusCommand = inputs.Apps.Xodus();
                     xodusLooked = true;
                 }
-                if (FromFolder(dir, xodusCommand) is { } game) games.Add(game);
+                nexusPrefixes.TryGetValue(PathIdentity.Canonicalize(dir), out var nexusPrefix);
+                if (FromFolder(dir, xodusCommand, nexusPrefix) is { } game) games.Add(game);
             }
         return games;
     }
@@ -174,7 +180,7 @@ public sealed class XboxGameDetector : IGameDetector
         return game;
     }
 
-    private static DetectedGame? FromFolder(string dir, string? xodusCommand)
+    private static DetectedGame? FromFolder(string dir, string? xodusCommand, string? nexusPrefix)
     {
         var package = XboxPackageReader.Read(dir);
         if (package is null) return null;
@@ -186,8 +192,51 @@ public sealed class XboxGameDetector : IGameDetector
         var game = Card(name, dir, package.HasExecutable ? package : null,
             new XboxPackageInfo(package.StoreId, ownedByInstallerApp ? InstallerApp : XodusApp, ownedByInstallerApp ? null : xodusCommand, JobsFile: null));
         game.Runner = ownedByInstallerApp ? InstallerApp : XodusApp;
+        if (nexusPrefix is not null)
+        {
+            game.PrefixPath = nexusPrefix;
+            game.CompatibilityLayerType = "wine";
+            game.Runner = "Nexus Launcher";
+        }
         XboxWriteGate.Register(game.XboxPackage!, dir);
         return game;
+    }
+
+    /// <summary>
+    /// Nexus Launcher stores Game Pass prefixes outside the payload: its state maps the payload folder to an opaque
+    /// 16-hex game id, and the prefix is <c>dirname(runtimeRoot)/compatdata/&lt;id&gt;/pfx</c>.  This is deliberately
+    /// read-only; an incomplete or stale state entry is ignored unless it names an initialized prefix.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> NexusLauncherPrefixes(string? stateFile)
+    {
+        var prefixes = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(stateFile) || !File.Exists(stateFile)) return prefixes;
+        try
+        {
+            using var doc = JsonDocument.Parse(XboxInstallerInstance.ReadSmall(stateFile, 16 * 1024 * 1024));
+            var root = doc.RootElement;
+            var runtimeRoot = root.TryGetProperty("settings", out var settings)
+                ? XboxInstallerInstance.String(settings, "runtimeRoot")
+                : null;
+            var dataRoot = runtimeRoot is null ? null : Path.GetDirectoryName(runtimeRoot);
+            if (runtimeRoot is null || !Path.IsPathRooted(runtimeRoot) || dataRoot is null ||
+                !root.TryGetProperty("games", out var games) || games.ValueKind != JsonValueKind.Array)
+                return prefixes;
+
+            foreach (var game in games.EnumerateArray())
+            {
+                var id = XboxInstallerInstance.String(game, "id");
+                var path = XboxInstallerInstance.String(game, "path");
+                if (id is null || path is null || !Path.IsPathRooted(path) || id.Length != 16 || !id.All(char.IsAsciiHexDigit)) continue;
+                var prefix = Path.Combine(dataRoot, "compatdata", id, "pfx");
+                if (Directory.Exists(Path.Combine(prefix, "drive_c"))) prefixes.TryAdd(PathIdentity.Canonicalize(path), prefix);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            DetectorDiagnostics.Warn($"Nexus Launcher state {stateFile} unreadable; its Wine/Proton prefixes were not detected", ex);
+        }
+        return prefixes;
     }
 
     /// <summary>
