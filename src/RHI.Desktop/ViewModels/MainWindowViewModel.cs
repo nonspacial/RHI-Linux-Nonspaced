@@ -88,20 +88,79 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>The ReShade profile section and the Shaders/Add-ons manager behind it (concern 12 of the split).</summary>
     public ReShadeProfileViewModel ReShadeProfile { get; }
 
+    private static readonly Func<LinuxAppSettings, object?>[] LaunchButtonSettings =
+    [
+        static value => value.ShowHdrLaunchButton,
+        static value => value.ShowResLaunchButton
+    ];
+
+    private static readonly Func<LinuxAppSettings, object?>[] DlssDefaultSettings =
+    [
+        static value => value.DefaultDlssVersion,
+        static value => value.DefaultDlssdVersion,
+        static value => value.DefaultDlssgVersion,
+        static value => value.DefaultDlssnrVersion,
+        static value => value.DefaultStreamlineVersion,
+        static value => value.DefaultSrPreset,
+        static value => value.DefaultRrPreset,
+        static value => value.DefaultFgPreset
+    ];
+
+    private static readonly Func<LinuxAppSettings, object?>[] ThemeSettings =
+    [
+        static value => value.ColourTheme,
+        static value => value.CustomThemeColours,
+        static value => value.GlobalFpsLimit
+    ];
+
+    private static readonly Func<LinuxAppSettings, object?>[] LayoutSettings =
+    [
+        static value => value.MainLayout,
+        static value => value.DetailSelectedTab,
+        static value => value.UiScale,
+        static value => value.TopBarScale,
+        static value => value.GameListScale,
+        static value => value.SpotlightHeroHeight,
+        static value => value.SpotlightCoverScale,
+        static value => value.SpotlightShelfAtBottom,
+        static value => value.SpotlightShelfPlain,
+        static value => value.SteamAchievements,
+        static value => value.AchievementsShowHidden,
+        static value => value.ControllerSupport
+    ];
+
+    private static bool SettingsChanged(LinuxAppSettings previous, LinuxAppSettings current,
+        Func<LinuxAppSettings, object?> property)
+        => !Equals(property(previous), property(current));
+
+    private static bool SettingsChanged(LinuxAppSettings previous, LinuxAppSettings current,
+        IEnumerable<Func<LinuxAppSettings, object?>> properties)
+        => properties.Any(property => !Equals(property(previous), property(current)));
+
     /// <summary>Saved or reset settings take effect: language, view mode, ReShade default, DLSS defaults, background loop.</summary>
     internal void AdoptSettings(LinuxAppSettings settings, bool restartLoop, bool runImmediate)
     {
+        var previous = _settings;
+        var languageChanged = SettingsChanged(previous, settings, static value => value.UiLanguage);
+        var reShadeManageIniChanged = SettingsChanged(previous, settings, static value => value.ReShadeManageIni);
+        var launchButtonsChanged = SettingsChanged(previous, settings, LaunchButtonSettings);
+        var dlssDefaultsChanged = SettingsChanged(previous, settings, DlssDefaultSettings);
+        var themeChanged = SettingsChanged(previous, settings, ThemeSettings);
+        var layoutChanged = SettingsChanged(previous, settings, LayoutSettings);
+
         _settings = settings;
-        UiLocalizationService.Apply(_settings.UiLanguage);
+        if (languageChanged) UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
-        ReShadeProfile.ReShadeManageIni = _settings.ReShadeManageIni;
-        RefreshLocalizedPresentation();
+        if (reShadeManageIniChanged) ReShadeProfile.ReShadeManageIni = _settings.ReShadeManageIni;
+        // Settings saves are automatic. Rebuilding the selected game's complete component list for every unrelated
+        // checkbox or text edit starves Avalonia's UI thread, especially while start-up downloads are active.
+        if (languageChanged) RefreshLocalizedPresentation();
         NotifyUxSettings();
-        Runtime?.NotifyLaunchButtonsShown(); // #312: Settings › Display & HDR › HDR / Resolution button
+        if (launchButtonsChanged) Runtime?.NotifyLaunchButtonsShown(); // #312: Settings › Display & HDR › HDR / Resolution button
         if (restartLoop) Updates.RestartBackgroundUpdateLoop(runImmediate);
-        NotifyDlssDefaults();
-        AdoptTheme(); // #301
-        AdoptLayoutSettings(); // w14/layouts-a (#303/#306)
+        if (dlssDefaultsChanged) NotifyDlssDefaults();
+        if (themeChanged) AdoptTheme(); // #301
+        if (languageChanged || layoutChanged) AdoptLayoutSettings(); // w14/layouts-a (#303/#306)
     }
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>

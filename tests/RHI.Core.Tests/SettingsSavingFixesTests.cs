@@ -57,6 +57,20 @@ public sealed class SettingsSavingFixesTests : IDisposable
         Assert.Equal("", fx.Settings.Load().AddonWatchFolder);
     }
 
+    [Fact]
+    public async Task SavingAnUnrelatedSetting_DoesNotRebuildTheSelectedGamePane()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var notifications = new List<string?>();
+        fx.Vm.PropertyChanged += (_, e) => notifications.Add(e.PropertyName);
+
+        var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+        settings.VerboseLogging = !settings.VerboseLogging;
+        fx.Vm.Settings.SaveLinuxSettings(settings);
+
+        Assert.DoesNotContain(nameof(MainWindowViewModel.SelectedTitle), notifications);
+    }
+
     [Theory]
     [InlineData(165.0, 120, 165, false)]
     [InlineData(null, 120, 120, true)] // an empty box: the saved cap stays and the line says why
