@@ -137,6 +137,7 @@ public sealed partial class LinuxManagedComponentService
     {
         var record = _records.Find(game, ManagedComponentKind.ReShade);
         if (record is null) return new(ShaderSetOutcome.NotApplicable, "");
+        RestoreManagedReShadeTarget(game, record);
         if (EffectiveShaderPacks(game) is not { } packs) return new(ShaderSetOutcome.Failed, ShaderSetsUnreadableMessage);
         if (SamePacks(ReShadeDeploymentService.RecordedShaderPacks(record), packs)) return new(ShaderSetOutcome.Unchanged, "");
         if (PatchTargetGuard(game) is { } guard) return new(ShaderSetOutcome.Failed, guard.Message);
@@ -179,13 +180,22 @@ public sealed partial class LinuxManagedComponentService
     /// </summary>
     public async Task<ShaderSetApplyResult> ApplyAddonSetAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
-        if (_records.Find(game, ManagedComponentKind.ReShade) is null) return new(ShaderSetOutcome.NotApplicable, "");
+        var record = _records.Find(game, ManagedComponentKind.ReShade);
+        if (record is null) return new(ShaderSetOutcome.NotApplicable, "");
+        RestoreManagedReShadeTarget(game, record);
         if (EffectiveAddons(game) is not { } effective) return new(ShaderSetOutcome.Failed, ShaderSetsUnreadableMessage);
         if (effective.HeldByNoAddons) return new(ShaderSetOutcome.Held, ReShadeAddonSwitch.HeldPrefix + ReShadeAddonManagerService.DisplayName);
         if (!AddonSetBehind(game)) return new(ShaderSetOutcome.Unchanged, "");
         var result = await Track(game, ManagedComponentKind.ReShadeAddonManager, ComponentUpdateAction.Update,
             () => ApplyReShadeAddonSelectionAsync(game, effective.Ids, cancellationToken)).ConfigureAwait(false);
         return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message, result.Landed);
+    }
+
+    private static void RestoreManagedReShadeTarget(DetectedGame game, LinuxDeploymentRecord record)
+    {
+        if (!string.IsNullOrWhiteSpace(game.BinaryDirectory) || string.IsNullOrWhiteSpace(record.BinaryDirectory)
+            || !Directory.Exists(record.BinaryDirectory) || !PathIdentity.IsSameOrInside(record.BinaryDirectory, game.InstallPath)) return;
+        game.BinaryDirectory = record.BinaryDirectory;
     }
 
     /// <summary>The message when the shader and add-on choices cannot be read (PT-BR pair).</summary>

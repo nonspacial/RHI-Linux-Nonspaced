@@ -649,7 +649,7 @@ public sealed partial class ReShadeDeploymentService
             ReShadeIniApplyResult? iniResult = null;
             var iniDefaults = IniDefaults?.Invoke(game, false);
             if (options.ManageIni)
-                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, iniDefaults, game.InstallPath); // w5/ini-presets hook (#181, review 8)
+                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, NexusReShadeSearchPaths.ForGame(game, shaderResult.EffectSearchPaths), NexusReShadeSearchPaths.ForGame(game, shaderResult.TextureSearchPaths), iniDefaults, game.InstallPath, NexusReShadeSearchPaths.AddonPathForGame(game)); // w5/ini-presets hook (#181, review 8)
             await DeclareIniWritesAsync().ConfigureAwait(false);
             if (xnaFolder is not null)
             {

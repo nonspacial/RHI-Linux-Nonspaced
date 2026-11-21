@@ -89,9 +89,10 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     private XboxDiscoveryInputs Inputs(IReadOnlyList<string>? userFolders = null, string? breadcrumbs = null,
-        IReadOnlyList<string>? applicationDirs = null, IReadOnlyList<string>? pathDirs = null, IReadOnlyList<string>? defaults = null)
+        IReadOnlyList<string>? applicationDirs = null, IReadOnlyList<string>? pathDirs = null, IReadOnlyList<string>? defaults = null,
+        string? nexusLauncherState = null)
         => new(_home, defaults ?? [Path.Combine(_home, ".local", "state", XboxInstallerApp.FolderName)], userFolders ?? [_state], breadcrumbs,
-            new OwningAppLocator(applicationDirs ?? [], pathDirs ?? []));
+            new OwningAppLocator(applicationDirs ?? [], pathDirs ?? []), nexusLauncherState);
 
     private static (IReadOnlyList<DetectedGame> Games, IReadOnlyList<string> Warnings) Detect(XboxDiscoveryInputs inputs)
         => DetectorDiagnostics.CollectAsync(() => Task.FromResult(XboxGameDetector.DetectIn(inputs, CancellationToken.None))).GetAwaiter().GetResult();
@@ -328,6 +329,56 @@ public sealed class XboxGameDetectorTests : IDisposable
         var withGui = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [apps])).Games);
         Assert.Equal("/opt/xodus/xodus-gui", withGui.LaunchCommand);
         Assert.Equal("Xodus", withGui.ParentLauncherName);
+
+        // Nexus Launcher supersedes the upstream GUI and advertises this desktop entry on current Linux packages.
+        var nexusApps = _tree.Dir("nexus-apps");
+        _tree.File("[Desktop Entry]\nName=Nexus Launcher\nExec=/usr/bin/nexus-launcher %U\nType=Application\n", "nexus-apps", "nexus-launcher.desktop");
+        var withNexus = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [nexusApps])).Games);
+        Assert.Equal("/usr/bin/nexus-launcher", withNexus.LaunchCommand);
+        Assert.Equal("Xodus", withNexus.ParentLauncherName);
+    }
+
+    [Fact]
+    public void NexusLauncherTitle_AttachesItsInitializedCompatdataPrefix()
+    {
+        // Acceptance fixture: the layout reported by Nexus Launcher for John Carpenter's Toxic Commando.
+        var dir = _tree.Dir("home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando");
+        const string id = "0123456789abcdef";
+        const string exe = "client_pc/root/bin/pc/John Carpenter's Toxic Commando.exe";
+        _tree.File("msixvc", "home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", XboxPackageReader.StreamingFileName);
+        _tree.File(GdkConfig(exe, "9TOXIC", "John Carpenter's Toxic Commando"), "home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", "MicrosoftGame.config");
+        _tree.Bytes(Encrypted, ["home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", .. exe.Split('/')]);
+        _tree.File("msixvc", "home", "Games", "Xodus Nexus", ".xodus-chain-running", XboxPackageReader.StreamingFileName);
+        _tree.File(GdkConfig(exe, "9TOXIC", "John Carpenter's Toxic Commando"), "home", "Games", "Xodus Nexus", ".xodus-chain-running", "MicrosoftGame.config");
+        var runtimeRoot = _tree.Dir("nexus-data", "runtimes");
+        var prefix = _tree.Dir("nexus-data", "compatdata", id, "pfx");
+        _tree.Dir("nexus-data", "compatdata", id, "pfx", "drive_c");
+        const string runtime = "nexus-cachyos";
+        const string buildId = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+        var wine = _tree.File("wine", "nexus-data", "runtimes", "variants", runtime, "releases", buildId, "files", "bin", "wine");
+        var wineServer = _tree.File("wineserver", "nexus-data", "runtimes", "variants", runtime, "releases", buildId, "files", "bin", "wineserver");
+        _tree.File(JsonSerializer.Serialize(new { buildId }), "nexus-data", "runtimes", "variants", runtime, "current.json");
+        var apps = _tree.Dir("nexus-apps");
+        _tree.File("[Desktop Entry]\nName=Nexus Launcher\nExec=/opt/nexus/nexus-launcher %U\nType=Application\n", "nexus-apps", "nexus-launcher.desktop");
+        var state = _tree.File(JsonSerializer.Serialize(new
+        {
+            settings = new { runtimeRoot },
+            games = new[] { new { id, path = dir, title = "John Carpenter's Toxic Commando", runtime } }
+        }), "nexus", "launcher-state.json");
+
+        var (games, warnings) = Detect(Inputs(userFolders: [], applicationDirs: [apps], nexusLauncherState: state));
+
+        var game = Assert.Single(games);
+        Assert.Empty(warnings);
+        Assert.Equal(prefix, game.PrefixPath);
+        Assert.Equal("wine", game.CompatibilityLayerType);
+        Assert.Equal("Nexus Launcher", game.Runner);
+        Assert.Equal(runtime, game.CompatibilityTool);
+        Assert.Equal(wine, game.WineBinaryPath);
+        Assert.Equal(wineServer, game.WineServerPath);
+        Assert.Null(game.ParentLauncherName);
+        Assert.Equal($"env -u APPIMAGE -u APPDIR -u ARGV0 -u OWD /opt/nexus/nexus-launcher --nexus-profile '{Path.GetDirectoryName(state)}' --launch-game '{id}'", game.LaunchCommand);
+        Assert.Equal(Path.Combine([dir, .. exe.Split('/')]), game.ExecutablePath);
     }
 
     [Fact]

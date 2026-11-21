@@ -18,6 +18,9 @@ public sealed class ShaderAddonManagerTests : IDisposable
         Assert.Equal(49, ReShadeShaderPackCatalog.DefaultPacks.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.Contains(ReShadeShaderPackCatalog.DefaultPacks, x => x.Id == "Lilium" && x.Category == ReShadeShaderPackCategory.Essential);
         Assert.Contains(ReShadeShaderPackCatalog.DefaultPacks, x => x.Id == "RenoFXHDRToolkit" && x.Category == ReShadeShaderPackCategory.Recommended);
+        var pumbo = Assert.Single(ReShadeShaderPackCatalog.DefaultPacks, x => x.Id == "PumboAutoHDR");
+        Assert.Equal(ReShadeShaderPackSourceKind.DirectUrl, pumbo.SourceKind);
+        Assert.Equal("https://github.com/Filoppi/PumboAutoHDR/archive/refs/heads/master.zip", pumbo.Url);
     }
 
     [Fact]

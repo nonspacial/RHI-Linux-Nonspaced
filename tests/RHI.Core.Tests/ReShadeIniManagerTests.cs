@@ -50,6 +50,23 @@ public sealed class ReShadeIniManagerTests : IDisposable
     }
 
     [Fact]
+    public void Apply_AddsRequestedAddonPathWithoutReplacingTheUsersPath()
+    {
+        var requested = @"Z:\\home\\user\\Games\\payload\\bin";
+        var fresh = ReShadeIniManager.Apply(_root, [], [], addonPath: requested);
+        Assert.Contains("AddonPath=" + requested, File.ReadAllText(fresh.Path));
+
+        var existing = Path.Combine(_root, "existing");
+        Directory.CreateDirectory(existing);
+        File.WriteAllText(Path.Combine(existing, "ReShade.ini"), "[ADDON]\nAddonPath=.\\custom-addons\n");
+        ReShadeIniManager.Apply(existing, [], [], addonPath: requested);
+
+        var text = File.ReadAllText(Path.Combine(existing, "ReShade.ini"));
+        Assert.Contains("AddonPath=.\\custom-addons", text);
+        Assert.DoesNotContain("AddonPath=" + requested, text);
+    }
+
+    [Fact]
     public void Cleanup_PreexistingIni_RemovesOnlyRhiPaths()
     {
         var path = Path.Combine(_root, "ReShade.ini");

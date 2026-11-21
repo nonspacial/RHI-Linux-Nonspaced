@@ -1,3 +1,4 @@
+using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -15,7 +16,8 @@ internal sealed record XboxDiscoveryInputs(
     IReadOnlyList<string> DefaultStateDirs,
     IReadOnlyList<string> UserFolders,
     string? BreadcrumbDir,
-    OwningAppLocator Apps);
+    OwningAppLocator Apps,
+    string? NexusLauncherStateFile = null);
 
 /// <summary>
 /// Xbox / Game Pass games (Refs #90; owner: listed straight away). Linux has no official client: installs come from
@@ -45,7 +47,8 @@ public sealed class XboxGameDetector : IGameDetector
             [Path.Combine(LinuxPaths.StateHome, XboxInstallerApp.FolderName), Path.Combine(LinuxPaths.Home, ".local", "state", XboxInstallerApp.FolderName)],
             folders.Folders(),
             Path.Combine(LinuxPaths.DataHome, XboxInstallerApp.FolderName, "instances"),
-            OwningAppLocator.FromEnvironment(LinuxPaths.Home, LinuxPaths.DataHome)))
+            OwningAppLocator.FromEnvironment(LinuxPaths.Home, LinuxPaths.DataHome),
+            Path.Combine(LinuxPaths.ConfigHome, "xodus-nexus", "launcher-state.json")))
         => FolderStore = folders;
 
     /// <summary>The "Xbox / Game Pass folders" setting this detector reads (the app passes its one shared store).</summary>
@@ -65,6 +68,7 @@ public sealed class XboxGameDetector : IGameDetector
         var seenStates = new HashSet<string>(StringComparer.Ordinal);
         var payloadRoots = new HashSet<string>(StringComparer.Ordinal);
         var xodusRoots = new List<string> { Path.Combine(inputs.Home, "Games") };
+        var nexusTitles = NexusLauncherTitles(inputs.NexusLauncherStateFile);
         var defaults = inputs.DefaultStateDirs.Select(PathIdentity.Canonicalize).ToHashSet(StringComparer.Ordinal);
         // The installer app's breadcrumbs are the primary source (one per instance, newest per state folder).
         var breadcrumbs = InstallerBreadcrumb.ReadAll(inputs.BreadcrumbDir)
@@ -112,8 +116,8 @@ public sealed class XboxGameDetector : IGameDetector
             }
         }
 
-        string? xodusCommand = null;
-        var xodusLooked = false;
+        string? xodusCommand = null, nexusCommand = null;
+        var launcherLooked = false;
         foreach (var root in xodusRoots.Distinct(StringComparer.Ordinal))
             foreach (var dir in PackageFolders(root, ct))
             {
@@ -121,12 +125,15 @@ public sealed class XboxGameDetector : IGameDetector
                 // A known installer-app payload folder decides on its own: what it did not list is unfinished or not its own.
                 if (payloadRoots.Contains(PathIdentity.Canonicalize(Path.GetDirectoryName(dir) ?? dir))) continue;
                 if (File.Exists(Path.Combine(dir, XboxInstallerInstance.PartialMarker))) continue;
-                if (!xodusLooked)
+                if (!launcherLooked)
                 {
                     xodusCommand = inputs.Apps.Xodus();
-                    xodusLooked = true;
+                    nexusCommand = inputs.Apps.Nexus();
+                    launcherLooked = true;
                 }
-                if (FromFolder(dir, xodusCommand) is { } game) games.Add(game);
+                nexusTitles.TryGetValue(PathIdentity.Canonicalize(dir), out var nexus);
+                var command = nexus?.LaunchCommand(nexusCommand) ?? xodusCommand;
+                if (FromFolder(dir, command, nexus, nexus is not null && nexusCommand is not null) is { } game) games.Add(game);
             }
         return games;
     }
@@ -174,7 +181,7 @@ public sealed class XboxGameDetector : IGameDetector
         return game;
     }
 
-    private static DetectedGame? FromFolder(string dir, string? xodusCommand)
+    private static DetectedGame? FromFolder(string dir, string? openCommand, NexusLauncherTitle? nexus, bool nexusLaunchesGame)
     {
         var package = XboxPackageReader.Read(dir);
         if (package is null) return null;
@@ -184,10 +191,87 @@ public sealed class XboxGameDetector : IGameDetector
             DetectorDiagnostics.Warn($"Xbox package {dir}: {package.Problem}; listed without a modding target");
         var name = package.DisplayName ?? Path.GetFileName(dir);
         var game = Card(name, dir, package.HasExecutable ? package : null,
-            new XboxPackageInfo(package.StoreId, ownedByInstallerApp ? InstallerApp : XodusApp, ownedByInstallerApp ? null : xodusCommand, JobsFile: null));
+            new XboxPackageInfo(package.StoreId, ownedByInstallerApp ? InstallerApp : XodusApp, ownedByInstallerApp ? null : openCommand, JobsFile: null));
         game.Runner = ownedByInstallerApp ? InstallerApp : XodusApp;
+        if (nexus is not null)
+        {
+            game.PrefixPath = nexus.Prefix;
+            game.CompatibilityLayerType = "wine";
+            game.Runner = "Nexus Launcher";
+            game.WineBinaryPath = nexus.Wine;
+            game.WineServerPath = nexus.WineServer;
+            game.CompatibilityTool = nexus.Runtime;
+            if (nexusLaunchesGame) game.ParentLauncherName = null;
+        }
         XboxWriteGate.Register(game.XboxPackage!, dir);
         return game;
+    }
+
+    // Nexus keeps the game ID and initialized prefix outside the payload. Ignore incomplete or stale entries.
+    private sealed record NexusLauncherTitle(string Prefix, string Id, string Profile, string? Runtime, string? Wine, string? WineServer)
+    {
+        // AppImage variables must not leak from RHI into Nexus's per-title handoff.
+        public string? LaunchCommand(string? launcher)
+            => launcher is null ? null : $"env -u APPIMAGE -u APPDIR -u ARGV0 -u OWD {launcher} --nexus-profile {OwningAppLocator.Shell(Profile)} --launch-game {OwningAppLocator.Shell(Id)}";
+    }
+
+    private static IReadOnlyDictionary<string, NexusLauncherTitle> NexusLauncherTitles(string? stateFile)
+    {
+        var titles = new Dictionary<string, NexusLauncherTitle>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(stateFile) || !File.Exists(stateFile)) return titles;
+        try
+        {
+            using var doc = JsonDocument.Parse(XboxInstallerInstance.ReadSmall(stateFile, 16 * 1024 * 1024));
+            var root = doc.RootElement;
+            var runtimeRoot = root.TryGetProperty("settings", out var settings)
+                ? XboxInstallerInstance.String(settings, "runtimeRoot")
+                : null;
+            var dataRoot = runtimeRoot is null ? null : Path.GetDirectoryName(runtimeRoot);
+            var profile = Path.GetDirectoryName(stateFile);
+            if (runtimeRoot is null || !Path.IsPathRooted(runtimeRoot) || dataRoot is null || profile is null || !Path.IsPathRooted(profile) ||
+                !root.TryGetProperty("games", out var games) || games.ValueKind != JsonValueKind.Array)
+                return titles;
+
+            foreach (var game in games.EnumerateArray())
+            {
+                var id = XboxInstallerInstance.String(game, "id");
+                var path = XboxInstallerInstance.String(game, "path");
+                if (id is null || path is null || !Path.IsPathRooted(path) || id.Length != 16 || !id.All(char.IsAsciiHexDigit)) continue;
+                var prefix = Path.Combine(dataRoot, "compatdata", id, "pfx");
+                if (!Directory.Exists(Path.Combine(prefix, "drive_c"))) continue;
+                var runtime = ResolveNexusRuntime(runtimeRoot, XboxInstallerInstance.String(game, "runtime"));
+                titles.TryAdd(PathIdentity.Canonicalize(path), new NexusLauncherTitle(prefix, id, profile, runtime.Name, runtime.Wine, runtime.WineServer));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            DetectorDiagnostics.Warn($"Nexus Launcher state {stateFile} unreadable; its Wine/Proton prefixes were not detected", ex);
+        }
+        return titles;
+    }
+
+    // Nexus publishes the selected managed build in variants/<family>/current.json. Use only that exact build's Wine;
+    // selecting another release (or system Wine) for a Nexus prefix can run wineboot over an incompatible prefix.
+    private static (string? Name, string? Wine, string? WineServer) ResolveNexusRuntime(string runtimeRoot, string? family)
+    {
+        if (string.IsNullOrWhiteSpace(family) || !family.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_')) return default;
+        var pointer = Path.Combine(runtimeRoot, "variants", family, "current.json");
+        try
+        {
+            if (!File.Exists(pointer)) return (family, null, null);
+            using var doc = JsonDocument.Parse(XboxInstallerInstance.ReadSmall(pointer, 64 * 1024));
+            var buildId = XboxInstallerInstance.String(doc.RootElement, "buildId");
+            if (buildId is null || buildId.Length != 64 || !buildId.All(char.IsAsciiHexDigit)) return (family, null, null);
+            var bin = Path.Combine(runtimeRoot, "variants", family, "releases", buildId, "files", "bin");
+            var wine = Path.Combine(bin, "wine");
+            var wineServer = Path.Combine(bin, "wineserver");
+            return File.Exists(wine) && File.Exists(wineServer) ? (family, wine, wineServer) : (family, null, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            DetectorDiagnostics.Warn($"Nexus Launcher runtime selection {pointer} unreadable; its Wine binary was not detected", ex);
+            return (family, null, null);
+        }
     }
 
     /// <summary>
@@ -248,6 +332,8 @@ public sealed class XboxGameDetector : IGameDetector
                 DetectorDiagnostics.Warn($"Xbox folder search stopped in {root} after {XodusScanMaxDirectories} folders");
                 yield break;
             }
+            // Nexus materializes these temporary streaming copies while a title runs. They are not game installs.
+            if (Path.GetFileName(dir).StartsWith(".xodus-chain-", StringComparison.Ordinal)) continue;
             if (XboxPackageReader.LooksLikePackage(dir))
             {
                 yield return dir;

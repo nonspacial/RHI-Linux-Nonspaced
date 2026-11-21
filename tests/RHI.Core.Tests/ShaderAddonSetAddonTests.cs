@@ -154,6 +154,23 @@ public sealed class ShaderAddonSetAddonTests : IDisposable
     }
 
     [Fact]
+    public async Task GlobalAddonBatch_UsesTheManagedReShadeTarget_WhenTheLibraryCardWasNotAnalysed()
+    {
+        var s = Fixture();
+        var game = Game(s, "unanalysed", 111);
+        var binary = game.BinaryDirectory!;
+        s.Sets.SetGlobalAddonIds(["01"]);
+        game.BinaryDirectory = null;
+
+        var result = await new ShaderAddonSetBatch(s.Managed, new NeverRunning())
+            .ApplyAsync([game], ShaderAddonSetPart.Addons, CancellationToken.None);
+
+        Assert.Equal(1, result.Changed);
+        Assert.Equal(binary, game.BinaryDirectory);
+        Assert.True(File.Exists(Path.Combine(binary, "one.addon64")));
+    }
+
+    [Fact]
     public async Task UpdateAll_WithoutAStore_ReappliesTheRecordedSelection()
     {
         var s = Fixture();

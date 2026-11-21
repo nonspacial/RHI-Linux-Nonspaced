@@ -290,7 +290,8 @@ public sealed class D3DCompilerToolInstaller
 
     public static bool IsLauncherManagedPrefix(DetectedGame game)
         => game.Source.StartsWith("Heroic", StringComparison.OrdinalIgnoreCase)
-           || string.Equals(game.Source, "Lutris", StringComparison.OrdinalIgnoreCase);
+           || string.Equals(game.Source, "Lutris", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(game.Runner, "Nexus Launcher", StringComparison.OrdinalIgnoreCase);
 
     private static ProcessStartInfo BaseStartInfo(string executable)
         => new(executable)

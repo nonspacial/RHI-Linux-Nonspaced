@@ -75,7 +75,8 @@ internal static class ReShadeIniManager
         IReadOnlyList<string> effectPaths,
         IReadOnlyList<string> texturePaths,
         ReShadeIniDefaults? defaults = null,
-        string? gameRoot = null)
+        string? gameRoot = null,
+        string? addonPath = null)
     {
         var path = ResolveIniPath(gameDirectory);
         var existed = File.Exists(path);
@@ -100,6 +101,7 @@ internal static class ReShadeIniManager
                 "[OVERLAY]",
                 "TutorialProgress=4"
             ];
+            if (!string.IsNullOrWhiteSpace(addonPath)) IniLines.Set(baseline, "ADDON", "AddonPath", addonPath);
             if (defaults is not null) ApplySettings(baseline, defaults);
             SelectPresetInNewFile(baseline, defaults);
             Write(path, baseline, gameDirectory, gameRoot);
@@ -117,6 +119,8 @@ internal static class ReShadeIniManager
                 recordTemplatePaths: true, overwrite: defaults.TemplateKeysWin);
         if (defaults is not null) ApplySettings(lines, defaults);
         if (!existed) SelectPresetInNewFile(lines, defaults);
+        if (!string.IsNullOrWhiteSpace(addonPath) && IniLines.Get(lines, "ADDON", "AddonPath") is null)
+            IniLines.Set(lines, "ADDON", "AddonPath", addonPath);
         MergeSearchPath(lines, "GENERAL", EffectKey, effectPaths, effectAdded);
         MergeSearchPath(lines, "GENERAL", TextureKey, texturePaths, textureAdded);
         var effectKeyCreated = effectKeyWasMissing && IniLines.Get(lines, "GENERAL", EffectKey) is not null;

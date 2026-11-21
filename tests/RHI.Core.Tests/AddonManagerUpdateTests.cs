@@ -318,36 +318,29 @@ public sealed class AddonManagerUpdateTests : IDisposable
         Assert.Equal(0, await service.PrefetchMissingAsync());
     }
 
-    /// <summary>One GitHub-release pack (PumboAutoHDR) whose release moves on with every lookup; everything else 404s.</summary>
-    private sealed class MovingReleaseHandler : HttpMessageHandler
+    /// <summary>One branch-archive pack (PumboAutoHDR) whose ETag moves on every lookup; everything else 404s.</summary>
+    private sealed class MovingBranchHandler : HttpMessageHandler
     {
-        private const string Api = "https://api.github.com/repos/Filoppi/PumboAutoHDR/releases/latest";
-        private int _release;
-        public int ReleaseLookups => Volatile.Read(ref _release);
+        private const string Archive = "https://github.com/Filoppi/PumboAutoHDR/archive/refs/heads/master.zip";
+        private int _downloads;
+        public int Downloads => Volatile.Read(ref _downloads);
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.AbsoluteUri;
-            if (url == Api)
+            if (url != Archive) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            if (request.Method == HttpMethod.Head)
             {
-                var tag = "v" + Interlocked.Increment(ref _release);
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(JsonSerializer.Serialize(new
-                    {
-                        tag_name = tag,
-                        assets = new[] { new { name = "Pumbo.zip", browser_download_url = $"https://github.com/Filoppi/PumboAutoHDR/releases/download/{tag}/Pumbo.zip" } }
-                    }), Encoding.UTF8)
-                });
+                var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([]) };
+                response.Headers.ETag = new EntityTagHeaderValue("\"pumbo-main\"");
+                return Task.FromResult(response);
             }
-            const string download = "https://github.com/Filoppi/PumboAutoHDR/releases/download/";
-            if (!url.StartsWith(download, StringComparison.Ordinal)) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-            var release = url[download.Length..].Split('/')[0];
+            var download = Interlocked.Increment(ref _downloads);
             using var stream = new MemoryStream();
             using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
             {
                 using var entry = new StreamWriter(zip.CreateEntry("Pumbo-main/Shaders/Pumbo.fx", CompressionLevel.NoCompression).Open());
-                entry.Write($"// {release} " + new string('x', 600));
+                entry.Write($"// {download} " + new string('x', 600));
             }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(stream.ToArray()) });
         }
@@ -359,7 +352,7 @@ public sealed class AddonManagerUpdateTests : IDisposable
     [Fact]
     public async Task Prefetch_ChecksForAStagedPackUnderTheCacheGate_AnInstallStagingItMeanwhileKeepsItsTree()
     {
-        var handler = new MovingReleaseHandler();
+        var handler = new MovingBranchHandler();
         using var http = new HttpClient(handler);
         var cache = P("race-cache");
         var service = new ReShadeShaderPackService(http, cache, customRoot: P("race-custom"));
@@ -376,10 +369,10 @@ public sealed class AddonManagerUpdateTests : IDisposable
 
         Assert.Null(installFailed);
         Assert.NotNull(installStaged);
-        Assert.Equal(1, handler.ReleaseLookups); // the install's lookup only: the prefetch left the staged pack alone
+        Assert.Equal(1, handler.Downloads); // the install's download only: the prefetch left the staged pack alone
         Assert.Equal(0, fetched);
         var shader = Assert.Single(Directory.GetFiles(installStaged!, "Pumbo.fx", SearchOption.AllDirectories));
-        Assert.StartsWith("// v1 ", File.ReadAllText(shader), StringComparison.Ordinal);
+        Assert.StartsWith("// 1 ", File.ReadAllText(shader), StringComparison.Ordinal);
     }
 
     public void Dispose()
