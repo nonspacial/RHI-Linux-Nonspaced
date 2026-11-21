@@ -209,7 +209,7 @@ public sealed partial class ReShadeDeploymentService
             // ReShade's layer stays inactive without a ReShade.ini beside the game, so the layer always manages one.
             var shaderResult = await _shaderPacks.ApplySyncAsync(preparedShaders, scope.Operation, cancellationToken).ConfigureAwait(false); // #169: journaled
             // w5 integration: the user's reshade.vulkan.ini template and Settings (#181), depth defines kept.
-            var iniResult = ReShadeIniManager.Apply(binaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths,
+            var iniResult = ReShadeIniManager.Apply(binaryDirectory, NexusReShadeSearchPaths.ForGame(game, shaderResult.EffectSearchPaths), NexusReShadeSearchPaths.ForGame(game, shaderResult.TextureSearchPaths),
                 IniDefaults?.Invoke(game, true), game.InstallPath);
             await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
 
