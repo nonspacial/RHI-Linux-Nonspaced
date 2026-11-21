@@ -23,6 +23,22 @@ public sealed class NexusReShadeSearchPathsTests
     }
 
     [Fact]
+    public void NexusAddonPath_UsesTheStablePayloadDirectory()
+    {
+        var binary = Path.Combine(Path.GetTempPath(), "rhi nexus payload", "bin");
+        var game = new DetectedGame
+        {
+            Runner = "Nexus Launcher",
+            PrefixPath = Path.Combine(Path.GetTempPath(), "rhi nexus prefix"),
+            BinaryDirectory = binary
+        };
+
+        var path = NexusReShadeSearchPaths.AddonPathForGame(game);
+
+        Assert.Equal("Z:" + Path.GetFullPath(binary).Replace('/', '\\'), path);
+    }
+
+    [Fact]
     public void NonNexusShaderPath_StaysRelative()
     {
         var game = new DetectedGame { Runner = "Proton", BinaryDirectory = Path.GetTempPath() };

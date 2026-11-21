@@ -133,7 +133,7 @@ public sealed partial class ReShadeDeploymentService
                 // user changed (an in-game hotkey) survives a shader toggle.
                 var recreates = !File.Exists(ReShadeIniManager.ResolveIniPath(binaryDirectory));
                 iniResult = ReShadeIniManager.Apply(binaryDirectory, NexusReShadeSearchPaths.ForGame(game, shaderResult.EffectSearchPaths), NexusReShadeSearchPaths.ForGame(game, shaderResult.TextureSearchPaths),
-                    recreates ? IniDefaults?.Invoke(game, layer) : null, game.InstallPath);
+                    recreates ? IniDefaults?.Invoke(game, layer) : null, game.InstallPath, NexusReShadeSearchPaths.AddonPathForGame(game));
             }
             foreach (var ini in inis) await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
 

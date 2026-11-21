@@ -210,7 +210,7 @@ public sealed partial class ReShadeDeploymentService
             var shaderResult = await _shaderPacks.ApplySyncAsync(preparedShaders, scope.Operation, cancellationToken).ConfigureAwait(false); // #169: journaled
             // w5 integration: the user's reshade.vulkan.ini template and Settings (#181), depth defines kept.
             var iniResult = ReShadeIniManager.Apply(binaryDirectory, NexusReShadeSearchPaths.ForGame(game, shaderResult.EffectSearchPaths), NexusReShadeSearchPaths.ForGame(game, shaderResult.TextureSearchPaths),
-                IniDefaults?.Invoke(game, true), game.InstallPath);
+                IniDefaults?.Invoke(game, true), game.InstallPath, NexusReShadeSearchPaths.AddonPathForGame(game));
             await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
 
             var files = new List<LinuxDeployedFile>
