@@ -9,8 +9,8 @@ namespace RHI.Platform.Linux.Detection.Xbox;
 /// item 4: a card without a breadcrumb-backed instance opens the owning app if found, else Play is disabled). Sources,
 /// in order: the <c>run.sh</c> of an installer-app instance folder (the folder holding its <c>state/{app}</c>), and, for
 /// the user's default state folder only, the installer app's own desktop entry or a program on PATH (they start the installer app with
-/// the default state, so they would open another instance for any other folder). The Xodus GUI for Xodus-only
-/// installs. Desktop entries that start one title (a per-game shortcut) are never taken for the app.
+/// the default state, so they would open another instance for any other folder). The Xodus or Nexus Launcher GUI for
+/// Xodus-only installs. Desktop entries that start one title (a per-game shortcut) are never taken for the app.
 /// </summary>
 internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IReadOnlyList<string> pathDirs)
 {
@@ -70,11 +70,14 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
         return string.Join(' ', words);
     }
 
-    /// <summary>How to open the Xodus GUI (upstream app id <c>io.github.xodus-gaming.xodus</c>); null while none is installed.</summary>
+    /// <summary>How to open the Xodus or Nexus Launcher GUI; null while neither is installed.</summary>
     public string? Xodus()
-        => DesktopEntry(stem => stem.Equals("io.github.xodus-gaming.xodus", StringComparison.OrdinalIgnoreCase),
-               name => name.Equals("Xodus", StringComparison.OrdinalIgnoreCase))
-           ?? OnPath("xodus-gui");
+        => DesktopEntry(stem => stem.Equals("io.github.xodus-gaming.xodus", StringComparison.OrdinalIgnoreCase) ||
+                                stem.Equals("org.xodusgaming.nexus", StringComparison.OrdinalIgnoreCase) ||
+                                stem.Equals("nexus-launcher", StringComparison.OrdinalIgnoreCase),
+               name => name.Equals("Xodus", StringComparison.OrdinalIgnoreCase) ||
+                       name.Equals("Nexus Launcher", StringComparison.OrdinalIgnoreCase))
+           ?? OnPath("xodus-gui", "xodus-nexus", "nexus-launcher");
 
     // <instance>/state/{app} → <instance>/run.sh, when it is an executable script that starts the installer app.
     private static string? InstanceScript(string stateDir)

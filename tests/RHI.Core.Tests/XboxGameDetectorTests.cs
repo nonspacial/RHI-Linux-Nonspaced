@@ -329,6 +329,13 @@ public sealed class XboxGameDetectorTests : IDisposable
         var withGui = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [apps])).Games);
         Assert.Equal("/opt/xodus/xodus-gui", withGui.LaunchCommand);
         Assert.Equal("Xodus", withGui.ParentLauncherName);
+
+        // Nexus Launcher supersedes the upstream GUI and advertises this desktop entry on current Linux packages.
+        var nexusApps = _tree.Dir("nexus-apps");
+        _tree.File("[Desktop Entry]\nName=Nexus Launcher\nExec=/usr/bin/nexus-launcher %U\nType=Application\n", "nexus-apps", "nexus-launcher.desktop");
+        var withNexus = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [nexusApps])).Games);
+        Assert.Equal("/usr/bin/nexus-launcher", withNexus.LaunchCommand);
+        Assert.Equal("Xodus", withNexus.ParentLauncherName);
     }
 
     [Fact]
