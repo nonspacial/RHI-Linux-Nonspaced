@@ -303,6 +303,8 @@ public sealed class XboxGameDetector : IGameDetector
                 DetectorDiagnostics.Warn($"Xbox folder search stopped in {root} after {XodusScanMaxDirectories} folders");
                 yield break;
             }
+            // Nexus materializes these temporary streaming copies while a title runs. They are not game installs.
+            if (Path.GetFileName(dir).StartsWith(".xodus-chain-", StringComparison.Ordinal)) continue;
             if (XboxPackageReader.LooksLikePackage(dir))
             {
                 yield return dir;

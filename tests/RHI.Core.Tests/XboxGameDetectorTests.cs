@@ -348,6 +348,8 @@ public sealed class XboxGameDetectorTests : IDisposable
         _tree.File("msixvc", "home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", XboxPackageReader.StreamingFileName);
         _tree.File(GdkConfig(exe, "9TOXIC", "John Carpenter's Toxic Commando"), "home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", "MicrosoftGame.config");
         _tree.Bytes(Encrypted, ["home", "Games", "Xodus Nexus", "John-Carpenter-s-Toxic-Commando", .. exe.Split('/')]);
+        _tree.File("msixvc", "home", "Games", "Xodus Nexus", ".xodus-chain-running", XboxPackageReader.StreamingFileName);
+        _tree.File(GdkConfig(exe, "9TOXIC", "John Carpenter's Toxic Commando"), "home", "Games", "Xodus Nexus", ".xodus-chain-running", "MicrosoftGame.config");
         var runtimeRoot = _tree.Dir("nexus-data", "runtimes");
         var prefix = _tree.Dir("nexus-data", "compatdata", id, "pfx");
         _tree.Dir("nexus-data", "compatdata", id, "pfx", "drive_c");
