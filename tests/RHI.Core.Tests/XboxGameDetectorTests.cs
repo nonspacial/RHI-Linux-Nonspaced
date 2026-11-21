@@ -353,12 +353,17 @@ public sealed class XboxGameDetectorTests : IDisposable
         var runtimeRoot = _tree.Dir("nexus-data", "runtimes");
         var prefix = _tree.Dir("nexus-data", "compatdata", id, "pfx");
         _tree.Dir("nexus-data", "compatdata", id, "pfx", "drive_c");
+        const string runtime = "nexus-cachyos";
+        const string buildId = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+        var wine = _tree.File("wine", "nexus-data", "runtimes", "variants", runtime, "releases", buildId, "files", "bin", "wine");
+        var wineServer = _tree.File("wineserver", "nexus-data", "runtimes", "variants", runtime, "releases", buildId, "files", "bin", "wineserver");
+        _tree.File(JsonSerializer.Serialize(new { buildId }), "nexus-data", "runtimes", "variants", runtime, "current.json");
         var apps = _tree.Dir("nexus-apps");
         _tree.File("[Desktop Entry]\nName=Nexus Launcher\nExec=/opt/nexus/nexus-launcher %U\nType=Application\n", "nexus-apps", "nexus-launcher.desktop");
         var state = _tree.File(JsonSerializer.Serialize(new
         {
             settings = new { runtimeRoot },
-            games = new[] { new { id, path = dir, title = "John Carpenter's Toxic Commando", runtime = "nexus-cachyos" } }
+            games = new[] { new { id, path = dir, title = "John Carpenter's Toxic Commando", runtime } }
         }), "nexus", "launcher-state.json");
 
         var (games, warnings) = Detect(Inputs(userFolders: [], applicationDirs: [apps], nexusLauncherState: state));
@@ -368,6 +373,9 @@ public sealed class XboxGameDetectorTests : IDisposable
         Assert.Equal(prefix, game.PrefixPath);
         Assert.Equal("wine", game.CompatibilityLayerType);
         Assert.Equal("Nexus Launcher", game.Runner);
+        Assert.Equal(runtime, game.CompatibilityTool);
+        Assert.Equal(wine, game.WineBinaryPath);
+        Assert.Equal(wineServer, game.WineServerPath);
         Assert.Null(game.ParentLauncherName);
         Assert.Equal($"env -u APPIMAGE -u APPDIR -u ARGV0 -u OWD /opt/nexus/nexus-launcher --nexus-profile '{Path.GetDirectoryName(state)}' --launch-game '{id}'", game.LaunchCommand);
         Assert.Equal(Path.Combine([dir, .. exe.Split('/')]), game.ExecutablePath);

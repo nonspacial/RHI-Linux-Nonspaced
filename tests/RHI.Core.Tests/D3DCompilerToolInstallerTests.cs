@@ -45,10 +45,11 @@ public sealed class D3DCompilerToolInstallerTests
     }
 
     [Fact]
-    public void LauncherManagedPrefix_RecognizesHeroicAndLutrisButNotStandaloneWine()
+    public void LauncherManagedPrefix_RecognizesHeroicLutrisAndNexusButNotStandaloneWine()
     {
         Assert.True(D3DCompilerToolInstaller.IsLauncherManagedPrefix(new RHI.Core.Models.DetectedGame { Source = "Heroic/Epic" }));
         Assert.True(D3DCompilerToolInstaller.IsLauncherManagedPrefix(new RHI.Core.Models.DetectedGame { Source = "Lutris" }));
+        Assert.True(D3DCompilerToolInstaller.IsLauncherManagedPrefix(new RHI.Core.Models.DetectedGame { Source = "Xbox", Runner = "Nexus Launcher" }));
         Assert.False(D3DCompilerToolInstaller.IsLauncherManagedPrefix(new RHI.Core.Models.DetectedGame { Source = "Manual", Runner = "Wine" }));
     }
     [Fact]
